@@ -1,26 +1,161 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* MCR Brand — shared across themes */
+  --color-accent: #E94560;
+  --color-success: #00B894;
+  --color-warning: #F39C12;
+  --color-destructive: #E74C3C;
+
+  /* Theme-aware colors via CSS variables */
+  --color-primary: var(--mcr-primary);
+  --color-surface: var(--mcr-surface);
+  --color-foreground: var(--mcr-foreground);
+  --color-border: var(--mcr-border);
+  --color-muted: var(--mcr-muted);
+  --color-card: var(--mcr-card);
+  --color-input-bg: var(--mcr-input-bg);
+
+  /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   DARK THEME (default)
+   ============================================================ */
+:root,
+[data-theme="dark"] {
+  --mcr-primary: #0F1322;
+  --mcr-surface: #171D2E;
+  --mcr-card: #1C2333;
+  --mcr-foreground: #E8ECF1;
+  --mcr-border: rgba(255, 255, 255, 0.08);
+  --mcr-muted: rgba(255, 255, 255, 0.45);
+  --mcr-input-bg: #0F1322;
+  color-scheme: dark;
+}
+
+/* ============================================================
+   LIGHT THEME
+   ============================================================ */
+[data-theme="light"] {
+  --mcr-primary: #F7F8FA;
+  --mcr-surface: #FFFFFF;
+  --mcr-card: #FFFFFF;
+  --mcr-foreground: #0B0E16;
+  --mcr-border: rgba(0, 0, 0, 0.12);
+  --mcr-muted: rgba(11, 14, 22, 0.72);
+  --mcr-input-bg: #F0F2F5;
+  color-scheme: light;
+}
+
+/* Stronger body weight in light mode for readability on LCD displays */
+[data-theme="light"] body {
+  font-weight: 450;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--mcr-primary);
+  color: var(--mcr-foreground);
+  font-family: var(--font-geist-sans, Arial, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--mcr-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: #E94560;
+  border-radius: 3px;
+}
+
+/* ============================================================
+   Light theme overrides for opacity-based patterns
+   ============================================================ */
+[data-theme="light"] .border-white\/8 {
+  border-color: var(--mcr-border);
+}
+[data-theme="light"] .border-white\/6 {
+  border-color: var(--mcr-border);
+}
+[data-theme="light"] .border-white\/5 {
+  border-color: var(--mcr-border);
+}
+[data-theme="light"] .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"] .border-white\/15 {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .border-white\/20 {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] .bg-primary\/40 {
+  background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .bg-primary\/50 {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .bg-surface\/40 {
+  background: rgba(0, 0, 0, 0.02);
+}
+[data-theme="light"] .bg-surface\/50 {
+  background: #FAFBFC;
+}
+[data-theme="light"] .bg-surface\/60 {
+  background: #F5F6F8;
+}
+[data-theme="light"] .bg-accent\/5 {
+  background: rgba(233, 69, 96, 0.05);
+}
+[data-theme="light"] .bg-accent\/10 {
+  background: rgba(233, 69, 96, 0.08);
+}
+[data-theme="light"] .hover\:bg-surface\/40:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .hover\:bg-primary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .text-foreground\/25 {
+  color: rgba(11, 14, 22, 0.55);
+}
+[data-theme="light"] .text-foreground\/30 {
+  color: rgba(11, 14, 22, 0.6);
+}
+[data-theme="light"] .text-foreground\/40 {
+  color: rgba(11, 14, 22, 0.68);
+}
+[data-theme="light"] .text-foreground\/50 {
+  color: rgba(11, 14, 22, 0.75);
+}
+[data-theme="light"] .text-foreground\/55 {
+  color: rgba(11, 14, 22, 0.78);
+}
+[data-theme="light"] .text-foreground\/60 {
+  color: rgba(11, 14, 22, 0.82);
+}
+[data-theme="light"] .text-foreground\/70 {
+  color: rgba(11, 14, 22, 0.88);
+}
+[data-theme="light"] .text-foreground\/80 {
+  color: rgba(11, 14, 22, 0.92);
+}
+[data-theme="light"] .text-foreground\/90 {
+  color: rgba(11, 14, 22, 0.96);
+}
+
+/* Light theme cards get a subtle shadow */
+[data-theme="light"] .rounded-xl {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
 }
