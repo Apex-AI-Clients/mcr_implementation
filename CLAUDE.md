@@ -112,7 +112,7 @@ mcr_implementation/
     ├── types/
     │   ├── database.ts                   # Supabase generated types (auto-generated)
     │   └── app.ts                        # Application-level interfaces
-    └── middleware.ts                     # Next.js middleware: admin auth guard
+    └── proxy.ts                          # Next.js proxy: admin auth guard
 ```
 
 ---
