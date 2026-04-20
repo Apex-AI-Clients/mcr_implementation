@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useSyncExternalStore, useCallback } from 'react'
 
 type Theme = 'light' | 'dark'
 
@@ -16,30 +16,33 @@ export function useTheme() {
   return useContext(ThemeContext)
 }
 
+function getSnapshot(): Theme {
+  return (localStorage.getItem('mcr-theme') as Theme | null) ?? 'dark'
+}
+
+function getServerSnapshot(): Theme {
+  return 'dark'
+}
+
+function subscribe(callback: () => void) {
+  window.addEventListener('storage', callback)
+  return () => window.removeEventListener('storage', callback)
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark')
-  const [mounted, setMounted] = useState(false)
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- theme hydration on mount
   useEffect(() => {
-    const stored = localStorage.getItem('mcr-theme') as Theme | null
-    const initial = stored ?? 'dark'
-    setTheme(initial)
-    document.documentElement.setAttribute('data-theme', initial)
-    setMounted(true)
-  }, [])
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
-  function toggle() {
+  const toggle = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    document.documentElement.setAttribute('data-theme', next)
     localStorage.setItem('mcr-theme', next)
-  }
-
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return <>{children}</>
-  }
+    document.documentElement.setAttribute('data-theme', next)
+    // Trigger re-render via storage event for useSyncExternalStore
+    window.dispatchEvent(new StorageEvent('storage', { key: 'mcr-theme', newValue: next }))
+  }, [theme])
 
   return (
     <ThemeContext.Provider value={{ theme, toggle }}>

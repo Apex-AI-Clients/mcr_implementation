@@ -20,41 +20,40 @@ Seed test data first using the `seed-client` skill.
 
 - [ ] `http://localhost:3000/admin` — loads without errors
 - [ ] Client table shows seeded clients with correct status badges
-- [ ] "Add Client" form: submit name + email → row appears in table
-- [ ] Click into a client → document status grid shows 8 empty slots
-- [ ] "Send Reminder" button fires → check `follow_ups` table for new row
+- [ ] "Add Client" form: submit name + email → row appears in table, Supabase sends invite email
+- [ ] Click into a client → document status grid shows 6 category slots
 
 ## Portal Flow
 
-- [ ] `http://localhost:3000/portal/test-token-dev-abc123` — loads with client name
-- [ ] Document checklist shows all 8 required documents as missing (red)
+- [ ] Sign in at `http://localhost:3000/portal/login` with test client email + password
+- [ ] Document checklist shows all 6 document categories
+- [ ] ATO admin confirmation step works
+- [ ] Accountant details form saves
 - [ ] Upload a PDF → progress indicator appears
 - [ ] After upload: file appears in list, checklist updates
-- [ ] Check `documents` table: row exists with `status = 'processing'` initially
-- [ ] After classification: row updates with `ai_doc_type` and `ai_confidence`
+- [ ] Check `documents` table: row exists with `status = 'ready'`
 - [ ] Upload 60MB file → rejected with size error message
 - [ ] Upload `.exe` file → rejected with type error message
 
-## Token Validation
+## Auth Flow
 
-- [ ] `http://localhost:3000/portal/token-expired-004` → expired error page shown
-- [ ] Completely random token → 404 or error page
-- [ ] After using a valid token once → same token shows error on second visit
+- [ ] `/portal/login` — login form renders
+- [ ] `/portal/set-password` — accessible after invite link click
+- [ ] `/portal/settings` — shows signed-in email; password field is masked
+- [ ] Sign out (from portal header) → redirected to `/portal/login`
+- [ ] Unauthenticated `/portal` access → redirected to `/portal/login`
+- [ ] Client session on `/admin` → redirected to `/portal`
+- [ ] Admin session on `/portal` → redirected to `/admin`
 
 ## API Endpoint Checks
 
 ```bash
-# Valid token
-curl "http://localhost:3000/api/portal/validate-token?token=test-token-dev-abc123"
+# Portal me (requires session)
+curl http://localhost:3000/api/portal/me
+# Expected: 401 without session
 
-# classify-document rejects unauthenticated
-curl -X POST http://localhost:3000/api/classify-document \
-  -H "Content-Type: application/json" \
-  -d '{"text":"test","filename":"test.pdf"}'
-# Expected: 403
-
-# Cron without secret
-curl http://localhost:3000/api/cron/send-reminders
+# Upload without session
+curl -X POST http://localhost:3000/api/portal/upload
 # Expected: 401
 ```
 

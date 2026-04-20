@@ -5,11 +5,11 @@ import { MCR_ADMIN_INFO } from '@/lib/constants'
 import { CheckCircle, Shield } from 'lucide-react'
 
 interface ATOAdminConfirmationProps {
-  clientToken: string
   confirmed: boolean
+  onComplete?: () => void
 }
 
-export function ATOAdminConfirmation({ clientToken, confirmed: initialConfirmed }: ATOAdminConfirmationProps) {
+export function ATOAdminConfirmation({ confirmed: initialConfirmed, onComplete }: ATOAdminConfirmationProps) {
   const [confirmed, setConfirmed] = useState(initialConfirmed)
   const [saving, setSaving] = useState(false)
 
@@ -20,10 +20,10 @@ export function ATOAdminConfirmation({ clientToken, confirmed: initialConfirmed 
     try {
       const res = await fetch('/api/portal/ato-admin-confirm', {
         method: 'POST',
-        headers: { 'x-client-token': clientToken },
       })
       if (res.ok) {
         setConfirmed(true)
+        onComplete?.()
       }
     } catch {
       // Silently fail — user can retry

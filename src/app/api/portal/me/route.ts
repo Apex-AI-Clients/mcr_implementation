@@ -1,42 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { getPortalClient } from '@/lib/auth/portal'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { isTokenExpired } from '@/lib/tokens'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 
-export async function GET(req: NextRequest) {
+/**
+ * Returns the authenticated client's profile, documents, accountant details,
+ * and ATO admin confirmation status. Backs the portal landing page.
+ */
+export async function GET() {
   try {
-    const token = req.nextUrl.searchParams.get('token')
-
-    if (!token) {
-      return NextResponse.json({ error: 'Token is required' }, { status: 400 })
+    const ctx = await getPortalClient()
+    if (!ctx) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = await getSupabaseServerClient()
+    const supabase = getSupabaseServerClient()
 
     const { data: client, error } = await supabase
       .from('clients')
-      .select('id, name, email, status, magic_link_token, link_expires_at, ato_admin_confirmed, ato_admin_confirmed_at')
-      .eq('magic_link_token', token)
+      .select('id, name, email, status, ato_admin_confirmed, ato_admin_confirmed_at')
+      .eq('id', ctx.clientId)
       .single()
 
     if (error || !client) {
-      return NextResponse.json(
-        { error: 'This link is invalid or has already been used.' },
-        { status: 404 },
-      )
+      return NextResponse.json({ error: 'Client profile not found' }, { status: 404 })
     }
 
-    if (isTokenExpired(client.link_expires_at)) {
-      return NextResponse.json(
-        {
-          error:
-            'This link has expired. Please contact your MCR Partners advisor for a new link.',
-        },
-        { status: 410 },
-      )
-    }
-
-    // Fetch documents
     const { data: rawDocs } = await supabase
       .from('documents')
       .select('*')
@@ -55,7 +44,6 @@ export async function GET(req: NextRequest) {
       uploadedAt: d.uploaded_at,
     }))
 
-    // Fetch accountant details
     const { data: rawAccountant } = await supabase
       .from('accountant_details')
       .select('*')
@@ -76,12 +64,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       clientId: client.id,
       clientName: client.name,
+      clientEmail: client.email,
       atoAdminConfirmed: client.ato_admin_confirmed,
       documents,
       accountantDetails,
     })
   } catch (err) {
-    console.error('[GET /api/portal/validate-token]', err)
-    return NextResponse.json({ error: 'Failed to validate token' }, { status: 500 })
+    console.error('[GET /api/portal/me]', err)
+    return NextResponse.json({ error: 'Failed to load portal data' }, { status: 500 })
   }
 }

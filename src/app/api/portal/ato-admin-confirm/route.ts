@@ -1,40 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { isTokenExpired } from '@/lib/tokens'
+import { getPortalClient } from '@/lib/auth/portal'
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
-    const token = req.headers.get('x-client-token')
-    if (!token) {
-      return NextResponse.json({ error: 'Missing client token' }, { status: 401 })
-    }
+    const ctx = await getPortalClient()
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const supabase = await getSupabaseServerClient()
-
-    const { data: client } = await supabase
-      .from('clients')
-      .select('id, link_expires_at')
-      .eq('magic_link_token', token)
-      .single()
-
-    if (!client) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    if (isTokenExpired(client.link_expires_at)) {
-      return NextResponse.json({ error: 'Token expired' }, { status: 410 })
-    }
-
+    const supabase = getSupabaseServerClient()
     const { error } = await supabase
       .from('clients')
       .update({
         ato_admin_confirmed: true,
         ato_admin_confirmed_at: new Date().toISOString(),
       })
-      .eq('id', client.id)
+      .eq('id', ctx.clientId)
 
     if (error) throw error
-
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[POST /api/portal/ato-admin-confirm]', err)

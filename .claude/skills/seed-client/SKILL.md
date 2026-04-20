@@ -12,53 +12,59 @@ Creates realistic test records so you can test the full portal and admin flow lo
 npx supabase start   # Must be running
 ```
 
-## Quick Seed — Single Client (Portal Testing)
+## Quick Seed — Single Client via Admin API
 
-Run in Supabase Studio (http://localhost:54323) SQL editor or `npx supabase db shell`:
+The easiest way is through the admin panel at `http://localhost:3000/admin/clients`:
+1. Sign in as admin
+2. Use the "Add New Client" form with a test email
+3. Supabase Auth sends the invite email automatically
+
+## Quick Seed — Single Client via SQL + Auth
+
+If you need direct DB access, first create a Supabase Auth user, then link it:
 
 ```sql
+-- Step 1: Create auth user via Supabase Dashboard (Authentication → Users → Invite User)
+-- Or use the admin API: supabase.auth.admin.inviteUserByEmail('test@example.com')
+
+-- Step 2: Insert client row (replace AUTH_USER_ID with the UUID from step 1)
 INSERT INTO clients (
-  id, name, email, status, magic_link_token, link_expires_at
+  id, name, email, status, auth_user_id
 ) VALUES (
   gen_random_uuid(),
   'Acme Pty Ltd (TEST)',
   'test@example.com',
   'invited',
-  'test-token-dev-abc123',
-  now() + interval '15 days'
+  'AUTH_USER_ID'
 )
 ON CONFLICT (email) DO UPDATE SET
-  magic_link_token = 'test-token-dev-abc123',
-  link_expires_at  = now() + interval '15 days',
-  status           = 'invited';
+  status = 'invited';
 ```
 
-Portal URL: `http://localhost:3000/portal/test-token-dev-abc123`
+Portal URL: `http://localhost:3000/portal/login`
 
 ## Seed Multiple Clients (Admin Dashboard Testing)
 
 ```sql
-INSERT INTO clients (name, email, status, magic_link_token, link_expires_at) VALUES
-  ('Acme Pty Ltd',   'acme@example.com',  'in_progress', 'token-acme-001',    now() + interval '15 days'),
-  ('Smith & Sons',   'smith@example.com', 'invited',     'token-smith-002',   now() + interval '10 days'),
-  ('Greenfield Co',  'green@example.com', 'complete',    'token-green-003',   now() + interval '5 days'),
-  ('Expired Corp',   'old@example.com',   'invited',     'token-expired-004', now() - interval '1 day');
+-- NOTE: Each client needs a corresponding auth.users row with auth_user_id linked.
+-- Use the admin panel "Add Client" form for the simplest workflow.
+INSERT INTO clients (name, email, status) VALUES
+  ('Acme Pty Ltd',   'acme@example.com',  'in_progress'),
+  ('Smith & Sons',   'smith@example.com', 'invited'),
+  ('Greenfield Co',  'green@example.com', 'complete');
 ```
-
-## Seed an Expired Token (Error State Testing)
-
-The `Expired Corp` row above has `link_expires_at` in the past — use `token-expired-004` to test the expired link error page.
 
 ## Reset All Test Data
 
 ```sql
-DELETE FROM follow_ups WHERE client_id IN (SELECT id FROM clients WHERE email LIKE '%@example.com');
-DELETE FROM documents   WHERE client_id IN (SELECT id FROM clients WHERE email LIKE '%@example.com');
-DELETE FROM clients     WHERE email LIKE '%@example.com';
+DELETE FROM accountant_details WHERE client_id IN (SELECT id FROM clients WHERE email LIKE '%@example.com');
+DELETE FROM documents WHERE client_id IN (SELECT id FROM clients WHERE email LIKE '%@example.com');
+DELETE FROM clients WHERE email LIKE '%@example.com';
+-- Also delete corresponding auth.users via Supabase Dashboard → Authentication → Users
 ```
 
 ## After Seeding
 
 - Admin dashboard: http://localhost:3000/admin
-- Test client portal: http://localhost:3000/portal/test-token-dev-abc123
-- Expired token: http://localhost:3000/portal/token-expired-004
+- Client portal login: http://localhost:3000/portal/login
+- Client settings: http://localhost:3000/portal/settings

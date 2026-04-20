@@ -7,11 +7,11 @@ import { CheckCircle } from 'lucide-react'
 import type { AccountantDetails } from '@/types/app'
 
 interface AccountantDetailsFormProps {
-  clientToken: string
   initial: AccountantDetails | null
+  onComplete?: () => void
 }
 
-export function AccountantDetailsForm({ clientToken, initial }: AccountantDetailsFormProps) {
+export function AccountantDetailsForm({ initial, onComplete }: AccountantDetailsFormProps) {
   const [companyName, setCompanyName] = useState(initial?.companyName ?? '')
   const [contactPerson, setContactPerson] = useState(initial?.contactPerson ?? '')
   const [phoneNumber, setPhoneNumber] = useState(initial?.phoneNumber ?? '')
@@ -28,10 +28,7 @@ export function AccountantDetailsForm({ clientToken, initial }: AccountantDetail
     try {
       const res = await fetch('/api/portal/accountant-details', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-token': clientToken,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyName, contactPerson, phoneNumber, emailAddress }),
       })
 
@@ -44,6 +41,7 @@ export function AccountantDetailsForm({ clientToken, initial }: AccountantDetail
 
       setSaved(true)
       setSaving(false)
+      onComplete?.()
     } catch {
       setError('Failed to save. Please try again.')
       setSaving(false)

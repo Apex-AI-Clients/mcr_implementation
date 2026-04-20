@@ -2,11 +2,10 @@ import { notFound } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
-import { ReminderButton } from '@/components/admin/ReminderButton'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
-import type { DocumentRecord, FollowUpRecord, AccountantDetails } from '@/types/app'
+import type { DocumentRecord, AccountantDetails } from '@/types/app'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle, XCircle, Building } from 'lucide-react'
 
@@ -18,14 +17,9 @@ interface Props {
 
 export default async function ClientDetailPage({ params }: Props) {
   const { id } = await params
-  const supabase = await getSupabaseServerClient()
+  const supabase = getSupabaseServerClient()
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', id)
-    .single()
-
+  const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
   if (!client) notFound()
 
   const { data: rawDocs } = await supabase
@@ -33,12 +27,6 @@ export default async function ClientDetailPage({ params }: Props) {
     .select('*')
     .eq('client_id', id)
     .order('uploaded_at', { ascending: false })
-
-  const { data: rawFollowUps } = await supabase
-    .from('follow_ups')
-    .select('*')
-    .eq('client_id', id)
-    .order('sent_at', { ascending: false })
 
   const { data: rawAccountant } = await supabase
     .from('accountant_details')
@@ -58,15 +46,6 @@ export default async function ClientDetailPage({ params }: Props) {
     uploadedAt: d.uploaded_at,
   }))
 
-  const followUps: FollowUpRecord[] = (rawFollowUps ?? []).map((f) => ({
-    id: f.id,
-    clientId: f.client_id,
-    type: f.type,
-    missingItems: f.missing_items ?? [],
-    sentAt: f.sent_at,
-    emailStatus: f.email_status,
-  }))
-
   const accountantDetails: AccountantDetails | null = rawAccountant
     ? {
         id: rawAccountant.id,
@@ -77,8 +56,6 @@ export default async function ClientDetailPage({ params }: Props) {
         emailAddress: rawAccountant.email_address,
       }
     : null
-
-  const lastFollowUp = followUps[0] ?? null
 
   const STATUS_LABELS: Record<
     string,
@@ -93,7 +70,6 @@ export default async function ClientDetailPage({ params }: Props) {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      {/* Back */}
       <Link
         href="/admin/clients"
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
@@ -102,32 +78,26 @@ export default async function ClientDetailPage({ params }: Props) {
         All Clients
       </Link>
 
-      {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">{client.name}</h1>
           <p className="mt-0.5 text-sm text-foreground/50">{client.email}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-          <ReminderButton clientId={client.id} lastSentAt={lastFollowUp?.sentAt ?? null} />
-        </div>
+        <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>
 
-      {/* Completeness */}
       <Card className="mb-4">
         <CompletenessBar documents={documents} />
       </Card>
 
-      {/* Meta row */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs text-foreground/50">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 text-xs text-foreground/50">
         <div>
           <p className="text-foreground/30 mb-0.5">Invite Sent</p>
           <p>{formatDate(client.created_at)}</p>
         </div>
         <div>
-          <p className="text-foreground/30 mb-0.5">Link Expires</p>
-          <p>{client.link_expires_at ? formatDate(client.link_expires_at) : '--'}</p>
+          <p className="text-foreground/30 mb-0.5">Last Updated</p>
+          <p>{formatDate(client.updated_at)}</p>
         </div>
         <div>
           <p className="text-foreground/30 mb-0.5">ATO Admin</p>
@@ -145,13 +115,8 @@ export default async function ClientDetailPage({ params }: Props) {
             )}
           </div>
         </div>
-        <div>
-          <p className="text-foreground/30 mb-0.5">Last Reminder</p>
-          <p>{lastFollowUp ? formatDate(lastFollowUp.sentAt) : 'None sent'}</p>
-        </div>
       </div>
 
-      {/* Accountant Details */}
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -183,43 +148,10 @@ export default async function ClientDetailPage({ params }: Props) {
         )}
       </Card>
 
-      {/* Document grid */}
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
         <DocumentStatusGrid documents={documents} />
       </div>
-
-      {/* Follow-up history */}
-      {followUps.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Reminder History</CardTitle>
-          </CardHeader>
-          <div className="flex flex-col gap-2">
-            {followUps.map((fu) => (
-              <div
-                key={fu.id}
-                className="flex items-center justify-between text-xs border-b border-white/5 last:border-0 pb-2 last:pb-0"
-              >
-                <div>
-                  <span className="text-foreground/70 capitalize">{fu.type} reminder</span>
-                  {fu.missingItems.length > 0 && (
-                    <span className="text-foreground/40 ml-2">
-                      ({fu.missingItems.length} items missing)
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-foreground/40">
-                  <span>{formatDate(fu.sentAt)}</span>
-                  <Badge variant={fu.emailStatus === 'sent' ? 'success' : 'muted'}>
-                    {fu.emailStatus}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react'
 import { PortalHeader } from '@/components/portal/PortalHeader'
 import { PortalStepper, type StepDescriptor } from '@/components/portal/PortalStepper'
@@ -36,16 +36,20 @@ interface WizardStep extends StepDescriptor {
 }
 
 export default function PortalPage() {
-  const { token } = useParams<{ token: string }>()
+  const router = useRouter()
   const [state, setState] = useState<State>({ phase: 'loading' })
   const [activeStepId, setActiveStepId] = useState<string>('ato')
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/portal/validate-token?token=${encodeURIComponent(token)}`)
+      const res = await fetch('/api/portal/me')
+      if (res.status === 401) {
+        router.replace('/login')
+        return
+      }
       if (!res.ok) {
         const data = await res.json()
-        setState({ phase: 'error', message: data.error ?? 'Invalid or expired link.' })
+        setState({ phase: 'error', message: data.error ?? 'Unable to load portal.' })
         return
       }
       const data = await res.json()
@@ -59,21 +63,26 @@ export default function PortalPage() {
     } catch {
       setState({ phase: 'error', message: 'Unable to load portal. Please try again.' })
     }
-  }, [token])
+  }, [router])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const handleStepComplete = useCallback(() => {
+    load()
+  }, [load])
 
   const handleUploadComplete = useCallback(() => {
     setTimeout(load, 1500)
   }, [load])
 
-  // Build the step list based on current state (must be declared before any early returns)
   const steps = useMemo<WizardStep[]>(() => {
     if (state.phase !== 'ready') return []
 
     const uploadedCategories = new Set(state.documents.map((d) => d.docCategory))
 
-    const list: WizardStep[] = [
+    return [
       {
         id: 'ato',
         title: 'ATO Admin Access',
@@ -107,19 +116,16 @@ export default function PortalPage() {
         kind: { kind: 'review' },
       },
     ]
-    return list
   }, [state])
 
-  // Auto-advance default step once ready — land on first incomplete required step
   useEffect(() => {
     if (state.phase !== 'ready' || steps.length === 0) return
     setActiveStepId((current) => {
-      // Keep current step if still valid
       if (steps.some((s) => s.id === current)) return current
       const firstIncomplete = steps.find((s) => !s.isComplete && !s.isOptional)
       return firstIncomplete?.id ?? steps[0].id
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on ready
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase])
 
   if (state.phase === 'loading') {
@@ -136,7 +142,7 @@ export default function PortalPage() {
         <div className="h-16 w-16 rounded-2xl bg-destructive/10 flex items-center justify-center mb-4">
           <span className="text-2xl text-destructive">!</span>
         </div>
-        <h1 className="text-lg font-semibold text-foreground">Link Unavailable</h1>
+        <h1 className="text-lg font-semibold text-foreground">Portal Unavailable</h1>
         <p className="mt-2 text-sm text-muted max-w-xs">{state.message}</p>
         <p className="mt-4 text-xs text-muted">
           If you believe this is a mistake, please contact your MCR Partners advisor.
@@ -169,7 +175,6 @@ export default function PortalPage() {
       <PortalHeader clientName={clientName} />
 
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
         <div className="hidden md:flex w-80 shrink-0">
           <PortalStepper
             steps={steps}
@@ -180,9 +185,7 @@ export default function PortalPage() {
           />
         </div>
 
-        {/* Main content */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Mobile progress bar */}
           <div className="md:hidden px-4 py-3 border-b border-border bg-surface/40">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted">
@@ -200,10 +203,8 @@ export default function PortalPage() {
             </div>
           </div>
 
-          {/* Step content (scrollable) */}
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-3xl w-full px-6 md:px-10 py-8 md:py-10">
-              {/* Step heading */}
               <div className="mb-6">
                 <p className="text-xs uppercase tracking-wider text-accent font-medium">
                   Step {activeIndex + 1} of {steps.length}
@@ -216,26 +217,18 @@ export default function PortalPage() {
                 )}
               </div>
 
-              {/* Step body */}
               <div>
                 {activeStep.kind.kind === 'ato' && (
-                  <ATOAdminConfirmation
-                    clientToken={token}
-                    confirmed={atoAdminConfirmed}
-                  />
+                  <ATOAdminConfirmation confirmed={atoAdminConfirmed} onComplete={handleStepComplete} />
                 )}
 
                 {activeStep.kind.kind === 'accountant' && (
-                  <AccountantDetailsForm
-                    clientToken={token}
-                    initial={accountantDetails}
-                  />
+                  <AccountantDetailsForm initial={accountantDetails} onComplete={handleStepComplete} />
                 )}
 
                 {activeStep.kind.kind === 'document' && (
                   <CategoryUploadSection
                     category={activeStep.kind.category}
-                    clientToken={token}
                     documents={documents}
                     onUploadComplete={handleUploadComplete}
                     hideTitle
@@ -254,15 +247,9 @@ export default function PortalPage() {
             </div>
           </div>
 
-          {/* Navigation footer */}
           <div className="border-t border-border bg-surface/40 px-6 md:px-10 py-4">
             <div className="mx-auto max-w-3xl w-full flex items-center justify-between gap-3">
-              <Button
-                variant="ghost"
-                size="md"
-                onClick={goPrev}
-                disabled={isFirstStep}
-              >
+              <Button variant="ghost" size="md" onClick={goPrev} disabled={isFirstStep}>
                 <ArrowLeft className="h-4 w-4" />
                 Previous
               </Button>
@@ -282,12 +269,7 @@ export default function PortalPage() {
                 ))}
               </div>
 
-              <Button
-                variant="primary"
-                size="md"
-                onClick={goNext}
-                disabled={isLastStep}
-              >
+              <Button variant="primary" size="md" onClick={goNext} disabled={isLastStep}>
                 {isLastStep ? 'Complete' : 'Next'}
                 {!isLastStep && <ArrowRight className="h-4 w-4" />}
               </Button>
@@ -316,7 +298,6 @@ function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: Rev
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Banner */}
       <div
         className={`rounded-xl border p-6 ${
           allRequiredComplete
@@ -332,9 +313,7 @@ function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: Rev
           )}
           <div className="flex-1">
             <h3 className="text-base font-semibold text-foreground">
-              {allRequiredComplete
-                ? `Thank you, ${clientName.split(' ')[0]}.`
-                : 'Almost there.'}
+              {allRequiredComplete ? `Thank you, ${clientName.split(' ')[0]}.` : 'Almost there.'}
             </h3>
             <p className="mt-1 text-sm text-muted leading-relaxed">
               {allRequiredComplete
@@ -345,7 +324,6 @@ function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: Rev
         </div>
       </div>
 
-      {/* Missing required */}
       {requiredMissing.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-foreground mb-3">Required items outstanding</h4>
@@ -368,7 +346,6 @@ function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: Rev
         </div>
       )}
 
-      {/* Full summary */}
       <div>
         <h4 className="text-sm font-semibold text-foreground mb-3">Submission summary</h4>
         <div className="rounded-xl border border-border bg-surface/30 divide-y divide-border">

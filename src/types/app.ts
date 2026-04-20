@@ -41,21 +41,11 @@ export interface ClientDetail {
   status: 'invited' | 'in_progress' | 'complete' | 'missing_items'
   atoAdminConfirmed: boolean
   atoAdminConfirmedAt: string | null
-  linkExpiresAt: string | null
+  authUserId: string | null
   createdAt: string
   updatedAt: string
   documents: DocumentRecord[]
   accountantDetails: AccountantDetails | null
-  followUps: FollowUpRecord[]
-}
-
-export interface FollowUpRecord {
-  id: string
-  clientId: string
-  type: 'auto' | 'manual'
-  missingItems: string[]
-  sentAt: string
-  emailStatus: string
 }
 
 export interface ApiError {

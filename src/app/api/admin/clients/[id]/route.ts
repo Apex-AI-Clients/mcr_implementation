@@ -7,17 +7,23 @@ interface Params {
 
 async function requireAdmin() {
   const authClient = await getSupabaseAuthClient()
-  const { data: { user }, error } = await authClient.auth.getUser()
+  const {
+    data: { user },
+    error,
+  } = await authClient.auth.getUser()
   if (error) console.error('[requireAdmin] auth error:', error.message)
   if (!user) return null
+  if (user.app_metadata?.role === 'client') return null
   return user
 }
 
 export async function GET(_req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
+    if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id } = await params
-    const supabase = await getSupabaseServerClient()
+    const supabase = getSupabaseServerClient()
 
     const { data: client, error } = await supabase
       .from('clients')
@@ -35,13 +41,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       .eq('client_id', id)
       .order('uploaded_at', { ascending: false })
 
-    const { data: followUps } = await supabase
-      .from('follow_ups')
-      .select('*')
-      .eq('client_id', id)
-      .order('sent_at', { ascending: false })
-
-    return NextResponse.json({ ...client, documents: documents ?? [], followUps: followUps ?? [] })
+    return NextResponse.json({ ...client, documents: documents ?? [] })
   } catch (err) {
     console.error('[GET /api/admin/clients/[id]]', err)
     return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
@@ -50,10 +50,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
+    if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id } = await params
     const body = await req.json()
-    const supabase = await getSupabaseServerClient()
+    const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
       .from('clients')

@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/Badge'
 
 interface CategoryUploadSectionProps {
   category: DocCategory
-  clientToken: string
   documents: DocumentRecord[]
   onUploadComplete: () => void
   /** When true, hide the category label (useful when the parent already renders it as a heading). */
@@ -21,7 +20,6 @@ interface CategoryUploadSectionProps {
 
 export function CategoryUploadSection({
   category,
-  clientToken,
   documents,
   onUploadComplete,
   hideTitle = false,
@@ -49,7 +47,6 @@ export function CategoryUploadSection({
 
           const res = await fetch('/api/portal/upload', {
             method: 'POST',
-            headers: { 'x-client-token': clientToken },
             body: formData,
           })
 
@@ -69,7 +66,7 @@ export function CategoryUploadSection({
       setUploading(false)
       onUploadComplete()
     },
-    [category, clientToken, onUploadComplete],
+    [category, onUploadComplete],
   )
 
   const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({

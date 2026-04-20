@@ -19,7 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     'use server'
     const supabase = await getSupabaseAuthClient()
     await supabase.auth.signOut()
-    redirect('/admin/login')
+    redirect('/login')
   }
 
   return (

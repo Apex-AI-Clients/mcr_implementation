@@ -6,9 +6,16 @@
 
 ## Project Overview
 
-A two-sided B2B web application built on Next.js 16 App Router. **MCR staff** manage clients and track document completeness via an admin panel. **Clients** upload financial documents via a passwordless magic-link portal. An **AI layer** (Claude Sonnet) classifies each upload, identifies financial years, and scores completeness. Automated follow-up emails fire at Day 2 and Day 5 for missing documents.
+A two-sided B2B web application built on Next.js 16 App Router. **MCR staff** manage clients and track document completeness via an admin panel. **Clients** upload financial documents via a password-protected portal. An **AI layer** (Claude Sonnet) classifies each upload, identifies financial years, and scores completeness.
 
-Key constraint: clients never create passwords. Auth is a single-use, 15-day magic link token only. The client portal must feel premium and non-technical — MCR's word is "exclusive".
+Authentication is Supabase Auth (email + password) for **both** sides:
+
+- **Admins** — pre-created in Supabase, sign in at `/admin/login`.
+- **Clients** — invited by an admin via `supabase.auth.admin.inviteUserByEmail()`. Supabase sends the invite email from its built-in SMTP. The client clicks it, lands on `/portal/set-password`, sets a password, and is dropped into the portal. On future visits they sign in at `/portal/login` with their email + password.
+
+Role separation is enforced via `auth.users.app_metadata.role` — clients are tagged `role: 'client'`, admins have no `role` or `role !== 'client'`. The proxy (`src/proxy.ts`) redirects mismatched users to the correct side. There is no automated reminder system in the current build.
+
+The portal must feel premium and non-technical — MCR's word is "exclusive".
 
 ---
 
@@ -28,7 +35,9 @@ mcr_implementation/
 ├── supabase/
 │   ├── config.toml
 │   └── migrations/
-│       └── 0001_initial_schema.sql
+│       ├── 0001_initial_schema.sql
+│       ├── 0002_portal_overhaul.sql
+│       └── 0003_supabase_auth_clients.sql
 ├── .claude/
 │   └── skills/
 │       ├── new-migration/SKILL.md
@@ -38,41 +47,40 @@ mcr_implementation/
 │       └── type-audit/SKILL.md
 └── src/
     ├── app/
-    │   ├── layout.tsx                    # Root layout
+    │   ├── layout.tsx                        # Root layout
     │   ├── globals.css
-    │   ├── (admin)/                      # Route group — MCR staff only
-    │   │   ├── layout.tsx                # Admin shell: sidebar, auth guard
+    │   ├── (admin)/                          # Route group — MCR staff only
+    │   │   ├── layout.tsx                    # Admin shell: sidebar, auth guard
     │   │   └── admin/
-    │   │       ├── page.tsx              # Dashboard overview
+    │   │       ├── login/page.tsx            # Admin email + password sign-in
+    │   │       ├── page.tsx                  # Dashboard overview
     │   │       └── clients/
-    │   │           ├── page.tsx          # Client list + invite form
+    │   │           ├── page.tsx              # Client list + invite form
     │   │           └── [id]/
-    │   │               └── page.tsx      # Client detail: docs + actions
-    │   ├── (portal)/                     # Route group — magic link only
-    │   │   ├── layout.tsx                # Portal shell: branding only
+    │   │               └── page.tsx          # Client detail: docs + accountant
+    │   ├── (portal)/                         # Route group — client session required
+    │   │   ├── layout.tsx                    # Portal shell: branding only
     │   │   └── portal/
-    │   │       └── [token]/
-    │   │           └── page.tsx          # Client upload page
+    │   │       ├── page.tsx                  # Session-gated upload wizard
+    │   │       ├── login/page.tsx            # Client email + password sign-in
+    │   │       ├── set-password/page.tsx     # First-visit password setup (post-invite)
+    │   │       └── settings/page.tsx         # Account info (email view + password change)
     │   └── api/
     │       ├── admin/
     │       │   └── clients/
-    │       │       ├── route.ts          # GET list, POST create + send invite
-    │       │       └── [id]/
-    │       │           ├── route.ts      # GET detail, PATCH update
-    │       │           └── send-reminder/
-    │       │               └── route.ts  # POST manual reminder
+    │       │       ├── route.ts              # GET list, POST invite via Supabase Auth
+    │       │       └── [id]/route.ts         # GET detail, PATCH update
     │       ├── portal/
-    │       │   ├── validate-token/
-    │       │   │   └── route.ts          # GET — validate magic link token
-    │       │   └── upload/
-    │       │       └── route.ts          # POST — receive file, store, classify
-    │       ├── classify-document/
-    │       │   └── route.ts              # POST — server-only Claude API call
-    │       └── cron/
-    │           └── send-reminders/
-    │               └── route.ts          # GET — Vercel cron, every 6 hours
+    │       │   ├── me/route.ts               # GET — session-scoped client profile
+    │       │   ├── upload/route.ts           # POST — receive file, store
+    │       │   ├── accountant-details/route.ts
+    │       │   └── ato-admin-confirm/route.ts
+    │       ├── auth/
+    │       │   └── callback/route.ts         # Exchange Supabase PKCE code → session
+    │       └── classify-document/
+    │           └── route.ts                  # POST — server-only Claude API call
     ├── components/
-    │   ├── ui/                           # Primitive, reusable
+    │   ├── ui/                               # Primitive, reusable
     │   │   ├── Button.tsx
     │   │   ├── Badge.tsx
     │   │   ├── Card.tsx
@@ -80,39 +88,36 @@ mcr_implementation/
     │   │   ├── Progress.tsx
     │   │   └── Spinner.tsx
     │   ├── admin/
-    │   │   ├── ClientTable.tsx           # Sortable client list
-    │   │   ├── InviteClientForm.tsx      # Add client + send magic link
-    │   │   ├── DocumentStatusGrid.tsx    # 8-doc checklist per client
-    │   │   ├── CompletenessBar.tsx       # Visual progress bar
-    │   │   └── ReminderButton.tsx        # Trigger manual follow-up
+    │   │   ├── ClientTable.tsx               # Sortable client list
+    │   │   ├── ClientsPageClient.tsx
+    │   │   ├── InviteClientForm.tsx          # Add client + send Supabase invite
+    │   │   ├── DocumentStatusGrid.tsx        # Doc checklist per client
+    │   │   └── CompletenessBar.tsx           # Visual progress bar
     │   └── portal/
-    │       ├── DropZone.tsx              # react-dropzone wrapper
-    │       ├── DocumentChecklist.tsx     # What's needed vs uploaded
-    │       ├── UploadedFileRow.tsx       # Single file: name, type, status
-    │       └── PortalHeader.tsx          # Branded MCR header
+    │       ├── PortalHeader.tsx              # Branded header, settings, sign-out
+    │       ├── PortalStepper.tsx             # Vertical step nav
+    │       ├── CategoryUploadSection.tsx     # Drop zone for one doc category
+    │       ├── AccountantDetailsForm.tsx
+    │       └── ATOAdminConfirmation.tsx
     ├── lib/
     │   ├── supabase/
-    │   │   ├── client.ts                 # Browser Supabase client (singleton)
-    │   │   └── server.ts                 # Server Supabase client (cookies)
+    │   │   ├── client.ts                     # Browser Supabase client (singleton)
+    │   │   └── server.ts                     # Server Supabase clients (service role + SSR auth)
+    │   ├── auth/
+    │   │   └── portal.ts                     # getPortalClient(): session → clients row
     │   ├── ai/
-    │   │   ├── classify.ts               # Orchestrates the classification pipeline
-    │   │   └── prompts.ts                # ALL Claude prompt templates (single source of truth)
-    │   ├── email/
-    │   │   ├── resend.ts                 # Resend client singleton
-    │   │   └── templates/
-    │   │       ├── MagicLinkEmail.tsx    # React Email: invite template
-    │   │       └── ReminderEmail.tsx     # React Email: reminder template
+    │   │   ├── classify.ts                   # Orchestrates the classification pipeline
+    │   │   └── prompts.ts                    # ALL Claude prompt templates
     │   ├── storage/
-    │   │   └── upload.ts                 # Supabase Storage helpers
+    │   │   └── upload.ts                     # Supabase Storage helpers
     │   ├── ocr/
-    │   │   └── extract.ts                # pdf-parse + Tesseract.js pipeline
-    │   ├── tokens.ts                     # Magic link generation + validation
-    │   ├── constants.ts                  # DOCUMENT_TYPES, thresholds (see below)
-    │   └── utils.ts                      # cn(), formatBytes(), formatDate()
+    │   │   └── extract.ts                    # pdf-parse + Tesseract.js pipeline
+    │   ├── constants.ts                      # Document categories, size limits
+    │   └── utils.ts                          # cn(), formatBytes(), formatDate()
     ├── types/
-    │   ├── database.ts                   # Supabase generated types (auto-generated)
-    │   └── app.ts                        # Application-level interfaces
-    └── proxy.ts                          # Next.js proxy: admin auth guard
+    │   ├── database.ts                       # Supabase generated types (auto-generated)
+    │   └── app.ts                            # Application-level interfaces
+    └── proxy.ts                              # Next.js proxy: admin + portal auth guards
 ```
 
 ---
@@ -123,70 +128,64 @@ All required. Never expose server-only vars to the browser.
 
 ```bash
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=              # https://[ref].supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=  # anon/public key (browser-safe)
-SUPABASE_SERVICE_ROLE_KEY=             # service_role key — SERVER ONLY
+NEXT_PUBLIC_SUPABASE_URL=            # https://[ref].supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= # anon/public key (browser-safe)
+SUPABASE_SERVICE_ROLE_KEY=           # service_role key — SERVER ONLY
 
 # AI
-ANTHROPIC_API_KEY=                     # sk-ant-... SERVER ONLY, only in /api/classify-document
-
-# Email
-RESEND_API_KEY=                        # re_...
-RESEND_FROM_EMAIL=                     # verified sending address
-
-# Security
-CRON_SECRET=                           # Random 32-char string
+ANTHROPIC_API_KEY=                   # sk-ant-... SERVER ONLY, only in /api/classify-document
 
 # App
-NEXT_PUBLIC_APP_URL=                   # https://your-domain.vercel.app (no trailing slash)
+NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no trailing slash)
 ```
 
 **Non-negotiable security rules:**
-- `SUPABASE_SERVICE_ROLE_KEY` must never appear in `src/components/` or `src/app/(portal)/`
-- `ANTHROPIC_API_KEY` must only appear in `src/app/api/classify-document/route.ts`
-- All file downloads use `createSignedUrl()` with ≤ 300s expiry — never `getPublicUrl()`
-- Magic link tokens are nulled in DB on first use (in validate-token route, not the page)
+- `SUPABASE_SERVICE_ROLE_KEY` must never appear in `src/components/` or `src/app/(portal)/`.
+- `ANTHROPIC_API_KEY` must only appear in `src/app/api/classify-document/route.ts`.
+- All file downloads use `createSignedUrl()` with ≤ 300s expiry — never `getPublicUrl()`.
+- Client sessions are enforced server-side via `getPortalClient()` (see `src/lib/auth/portal.ts`). Never trust a `client_id` that comes from the request body.
+- Admins must never reach client routes and vice-versa — enforced by `proxy.ts` using `app_metadata.role`.
+
+---
+
+## Supabase Dashboard Configuration
+
+The invite flow requires three dashboard settings to be correct. Set these once per project:
+
+1. **Site URL** (`Authentication → URL Configuration → Site URL`) — set to `NEXT_PUBLIC_APP_URL`.
+2. **Redirect URLs** — add `${NEXT_PUBLIC_APP_URL}/api/auth/callback` to the allow list. Also add `http://localhost:3000/api/auth/callback` for local dev.
+3. **Email templates** — customise the "Invite user" email at `Authentication → Email Templates → Invite user` if you want MCR branding; the default Supabase template also works.
+
+For production, switch `Authentication → Email → SMTP Settings` to a real provider (Resend, SendGrid, SES) because the built-in Supabase SMTP has strict per-hour limits.
 
 ---
 
 ## Development Commands
 
 ```bash
-npm run dev          # Start dev server (localhost:3000)
-npm run type-check   # tsc --noEmit — MUST pass before marking any task complete
-npm run lint         # ESLint — zero warnings in new files
-npm run build        # Full production build
-npm run test         # Vitest unit tests
-npm run test:e2e     # Playwright end-to-end
+npm run dev                                         # Start dev server (localhost:3000)
+npm run type-check                                  # tsc --noEmit — MUST pass before marking any task complete
+npm run lint                                        # ESLint — zero warnings in new files
+npm run build                                       # Full production build
+npm run test                                        # Vitest unit tests
+npm run test:e2e                                    # Playwright end-to-end
 ```
 
 Supabase CLI:
 ```bash
-npx supabase start                                                   # Start local stack
-npx supabase db reset                                                # Apply all migrations fresh
-npx supabase migration new <name>                                    # New migration file
-npx supabase gen types typescript --local > src/types/database.ts   # Regenerate types
+npx supabase start                                  # Start local stack
+npx supabase db reset                               # Apply all migrations fresh
+npx supabase migration new <name>                   # New migration file
+npx supabase gen types typescript --local > src/types/database.ts  # Regenerate types
 ```
 
 **Rule:** After every migration, regenerate types and commit both files together.
 
 ---
 
-## Document Types — Canonical Reference
+## Document Categories — Canonical Reference
 
-Source of truth: `src/lib/constants.ts`. Never use ad-hoc strings.
-
-| Key | DB Value | Label | Format | Years |
-|---|---|---|---|---|
-| `FINANCIAL_STATEMENTS` | `financial_statements` | Financial Statements (P&L + Balance Sheet) | PDF or CSV | Last 2–3 years |
-| `ICA` | `integrated_client_account` | Integrated Client Account (ICA) | CSV preferred | Full history |
-| `INCOME_TAX` | `income_tax_account` | Income Tax Account | CSV preferred | Full history |
-| `BAS` | `bas_statements` | BAS Statements | PDF | Last 2–3 years |
-| `CREDITOR_LIST` | `creditor_list` | Creditor List with Amounts | CSV or PDF | Current |
-| `ATO_DEBT` | `ato_debt_letters` | ATO Debt Letters / Statements | PDF | Current |
-| `DIRECTOR_LOAN` | `director_loan_account` | Director Loan Account Details | PDF or CSV | Last 2–3 years |
-| `SUPERANNUATION` | `superannuation_records` | Superannuation Records | PDF | Current |
-| `UNKNOWN` | `unknown` | Unknown Document | — | — |
+Source of truth: `src/lib/constants.ts` (`DOCUMENT_CATEGORIES` / `CATEGORY_META`). Never use ad-hoc strings. The six categories are `current_financials`, `historical_financials`, `integrated_client_account`, `director_penalty_notices`, `trust_deed`, and `company_licences`. See `constants.ts` for the full metadata (accepted MIME types, labels, required vs optional).
 
 ---
 
@@ -195,16 +194,15 @@ Source of truth: `src/lib/constants.ts`. Never use ad-hoc strings.
 | Route | Method | Auth | Purpose |
 |---|---|---|---|
 | `/api/admin/clients` | GET | Admin session | List all clients with doc counts |
-| `/api/admin/clients` | POST | Admin session | Create client, generate token, send invite email |
-| `/api/admin/clients/[id]` | GET | Admin session | Single client with all docs + follow-up history |
+| `/api/admin/clients` | POST | Admin session | Create client row + invite via Supabase Auth |
+| `/api/admin/clients/[id]` | GET | Admin session | Single client with all docs |
 | `/api/admin/clients/[id]` | PATCH | Admin session | Update client status |
-| `/api/admin/clients/[id]/send-reminder` | POST | Admin session | Send manual reminder email |
-| `/api/portal/validate-token` | GET | None | Validate magic link, return client name, null the token |
-| `/api/portal/upload` | POST | Token header | Store file to Supabase Storage, trigger classification |
+| `/api/portal/me` | GET | Client session | Return current client profile, docs, accountant, ATO flag |
+| `/api/portal/upload` | POST | Client session | Store file to Supabase Storage |
+| `/api/portal/accountant-details` | GET / POST | Client session | Read / upsert current accountant info |
+| `/api/portal/ato-admin-confirm` | POST | Client session | Mark ATO admin step complete |
+| `/api/auth/callback` | GET | None | Exchange Supabase PKCE code for session cookie |
 | `/api/classify-document` | POST | `x-internal-secret` header | Extract text → Claude API → return classification JSON |
-| `/api/cron/send-reminders` | GET | `CRON_SECRET` bearer | Check all in-progress clients, send Day 2 / Day 5 emails |
-
-Classification flow: `portal/upload` → `lib/ocr/extract.ts` → POST `/api/classify-document` → update `documents` row.
 
 ---
 
@@ -214,21 +212,19 @@ Classification flow: `portal/upload` → `lib/ocr/extract.ts` → POST `/api/cla
 1. `SUPABASE_SERVICE_ROLE_KEY` — server-only. Zero tolerance elsewhere.
 2. `ANTHROPIC_API_KEY` — only in `/api/classify-document/route.ts`.
 3. File downloads: always `createSignedUrl()`, expiry ≤ 300s. Never `getPublicUrl()`.
-4. Magic link tokens: single-use. Null in DB on first validation, before page renders.
+4. Portal API routes resolve the client via `getPortalClient()` — they never accept a `client_id` from the request.
 5. RLS enabled on every table.
-6. Cron endpoint: verify `Authorization: Bearer $CRON_SECRET`. Return 401 if wrong.
+6. The admin invite flow must (a) call `supabase.auth.admin.inviteUserByEmail`, (b) stamp `app_metadata.role = 'client'` on the new auth user, (c) insert the `clients` row with `auth_user_id` set. If (c) fails, the auth user is deleted to keep state consistent.
 
 ### Code Patterns
-7. Server Supabase client in all API routes and Server Components. Browser client only for real-time in Client Components.
+7. Service-role Supabase client (`getSupabaseServerClient`) for data operations in API routes; SSR auth client (`getSupabaseAuthClient`) only for reading the session. Browser client only for client-side auth + real-time.
 8. All DB calls typed using generated `database.ts` types.
 9. API routes return `{ error: string }` with correct HTTP status on failure.
 10. File uploads stored at `documents/{client_id}/{uuid}.{ext}` in Supabase Storage.
 
 ### AI Integration
 11. Claude model: `claude-sonnet-4-20250514`. Hardcode only in `lib/ai/prompts.ts` as `CLAUDE_MODEL` constant.
-12. Classification prompt must include all 8 canonical document type values from `constants.ts`.
-13. Confidence < 0.6 → `ai_doc_type = 'unknown'`, `status = 'needs_review'`.
-14. Store raw Claude response in `ai_raw_response jsonb` column for cost auditing.
+12. Store raw Claude response in `ai_raw_response jsonb` column for cost auditing.
 
 ### AI Confidence Thresholds
 | Confidence | Action | UI Badge |
@@ -238,16 +234,16 @@ Classification flow: `portal/upload` → `lib/ocr/extract.ts` → POST `/api/cla
 | < 0.60 | Set unknown, needs_review | Red |
 
 ### Naming
-15. API route directories: kebab-case. Filename: `route.ts`.
-16. Components: PascalCase filename, named export.
-17. Hooks: `use` prefix, camelCase.
-18. DB columns: snake_case.
+13. API route directories: kebab-case. Filename: `route.ts`.
+14. Components: PascalCase filename, named export.
+15. Hooks: `use` prefix, camelCase.
+16. DB columns: snake_case.
 
 ### Before Marking Any Task Complete
-19. `npm run type-check` → zero errors.
-20. `npm run lint` → zero errors in modified files.
-21. If DB schema changed: regenerate `src/types/database.ts` and commit with migration.
-22. If new env var added: add to `.env.example`.
+17. `npm run type-check` → zero errors.
+18. `npm run lint` → zero errors in modified files.
+19. If DB schema changed: regenerate `src/types/database.ts` and commit with migration.
+20. If new env var added: add to `.env.example`.
 
 ---
 
@@ -257,24 +253,32 @@ Classification flow: `portal/upload` → `lib/ocr/extract.ts` → POST `/api/cla
 -- clients
 id uuid PK, name text, email text UNIQUE,
 status text CHECK (status IN ('invited','in_progress','complete','missing_items')),
-magic_link_token text UNIQUE, link_expires_at timestamptz,
+auth_user_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
+ato_admin_confirmed boolean DEFAULT false, ato_admin_confirmed_at timestamptz,
 created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
 
 -- documents
 id uuid PK, client_id uuid FK→clients,
 file_path text, original_filename text, file_type text, file_size_bytes bigint,
-ai_doc_type text CHECK (ai_doc_type IN ('financial_statements','integrated_client_account',
-  'income_tax_account','bas_statements','creditor_list','ato_debt_letters',
-  'director_loan_account','superannuation_records','unknown')),
-ai_financial_years text[], ai_confidence float, ai_raw_response jsonb,
-status text CHECK (status IN ('processing','classified','needs_review','rejected')),
+doc_category text CHECK (doc_category IN ('current_financials','historical_financials',
+  'integrated_client_account','director_penalty_notices','trust_deed','company_licences')),
+ai_doc_type text, ai_financial_years text[], ai_confidence float, ai_raw_response jsonb,
+extracted_text text,
+status text CHECK (status IN ('uploaded','processing_text','ready','rejected')),
 uploaded_at timestamptz DEFAULT now()
 
--- follow_ups
-id uuid PK, client_id uuid FK→clients,
-type text CHECK (type IN ('auto','manual')),
-missing_items text[], sent_at timestamptz, email_status text
+-- accountant_details
+id uuid PK, client_id uuid FK→clients UNIQUE,
+company_name text, contact_person text, phone_number text, email_address text,
+created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+
+-- document_chunks (pgvector for RAG)
+id uuid PK, document_id uuid FK, client_id uuid FK,
+chunk_index int, chunk_text text, embedding vector(1536), metadata jsonb,
+created_at timestamptz DEFAULT now()
 ```
+
+> **Note:** the `follow_ups` table and the `clients.magic_link_token` / `link_expires_at` columns were removed in migration `0003_supabase_auth_clients.sql`. Do not re-introduce them without a product-side decision.
 
 ---
 
@@ -294,4 +298,4 @@ Use only via Tailwind config — never hardcode hex in components.
 
 ---
 
-*MCR Partners × Apex AI — Phase 1. Prepared 10 April 2026.*
+*MCR Partners × Apex AI — Phase 1. Prepared 10 April 2026. Auth refactor 20 April 2026.*
