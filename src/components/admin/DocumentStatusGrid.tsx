@@ -4,14 +4,16 @@ import { Badge } from '@/components/ui/Badge'
 import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { CheckCircle2, XCircle, Download } from 'lucide-react'
+import { ReuploadRequestButton } from '@/components/admin/ReuploadRequestButton'
 import { formatBytes } from '@/lib/utils'
 import { useState } from 'react'
 
 interface DocumentStatusGridProps {
   documents: DocumentRecord[]
+  clientId?: string
 }
 
-export function DocumentStatusGrid({ documents }: DocumentStatusGridProps) {
+export function DocumentStatusGrid({ documents, clientId }: DocumentStatusGridProps) {
   const byCategory = new Map<string, DocumentRecord[]>()
   for (const doc of documents) {
     const existing = byCategory.get(doc.docCategory) ?? []
@@ -56,7 +58,7 @@ export function DocumentStatusGrid({ documents }: DocumentStatusGridProps) {
             <p className="mt-1.5 ml-6.5 text-xs text-foreground/40">{meta.formatLabel}</p>
 
             {docs.map((doc) => (
-              <DocumentRow key={doc.id} doc={doc} />
+              <DocumentRow key={doc.id} doc={doc} clientId={clientId} />
             ))}
 
             {!received && (
@@ -69,7 +71,7 @@ export function DocumentStatusGrid({ documents }: DocumentStatusGridProps) {
   )
 }
 
-function DocumentRow({ doc }: { doc: DocumentRecord }) {
+function DocumentRow({ doc, clientId }: { doc: DocumentRecord; clientId?: string }) {
   const [downloading, setDownloading] = useState(false)
 
   async function handleDownload() {
@@ -101,6 +103,13 @@ function DocumentRow({ doc }: { doc: DocumentRecord }) {
           >
             <Download className="h-3.5 w-3.5" />
           </button>
+          {clientId && (
+            <ReuploadRequestButton
+              clientId={clientId}
+              documentId={doc.id}
+              documentName={doc.originalFilename}
+            />
+          )}
         </div>
       </div>
       {doc.status === 'ready' && (

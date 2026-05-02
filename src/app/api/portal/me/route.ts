@@ -61,6 +61,25 @@ export async function GET() {
         }
       : null
 
+    const { data: rawCompany } = await supabase
+      .from('company_details')
+      .select('*')
+      .eq('client_id', client.id)
+      .maybeSingle()
+
+    const companyDetails = rawCompany
+      ? {
+          id: rawCompany.id,
+          clientId: rawCompany.client_id,
+          companyName: rawCompany.company_name,
+          acnNumber: rawCompany.acn_number,
+          abnNumber: rawCompany.abn_number,
+          trustName: rawCompany.trust_name,
+          phoneNumber: rawCompany.phone_number,
+          emailAddress: rawCompany.email_address,
+        }
+      : null
+
     return NextResponse.json({
       clientId: client.id,
       clientName: client.name,
@@ -68,6 +87,7 @@ export async function GET() {
       atoAdminConfirmed: client.ato_admin_confirmed,
       documents,
       accountantDetails,
+      companyDetails,
     })
   } catch (err) {
     console.error('[GET /api/portal/me]', err)

@@ -7,7 +7,8 @@ import { PortalHeader } from '@/components/portal/PortalHeader'
 import { PortalStepper, type StepDescriptor } from '@/components/portal/PortalStepper'
 import { CategoryUploadSection } from '@/components/portal/CategoryUploadSection'
 import { AccountantDetailsForm } from '@/components/portal/AccountantDetailsForm'
-import { ATOAdminConfirmation } from '@/components/portal/ATOAdminConfirmation'
+import { CompanyDetailsForm } from '@/components/portal/CompanyDetailsForm'
+import type { CompanyDetails } from '@/components/portal/CompanyDetailsForm'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { CHECKLIST_ORDER, CATEGORY_META, REQUIRED_CATEGORIES } from '@/lib/constants'
@@ -23,10 +24,11 @@ type State =
       documents: DocumentRecord[]
       atoAdminConfirmed: boolean
       accountantDetails: AccountantDetails | null
+      companyDetails: CompanyDetails | null
     }
 
 type StepKind =
-  | { kind: 'ato' }
+  | { kind: 'company' }
   | { kind: 'accountant' }
   | { kind: 'document'; category: DocCategory }
   | { kind: 'review' }
@@ -38,7 +40,7 @@ interface WizardStep extends StepDescriptor {
 export default function PortalPage() {
   const router = useRouter()
   const [state, setState] = useState<State>({ phase: 'loading' })
-  const [activeStepId, setActiveStepId] = useState<string>('ato')
+  const [activeStepId, setActiveStepId] = useState<string>('accountant')
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +61,7 @@ export default function PortalPage() {
         documents: data.documents,
         atoAdminConfirmed: data.atoAdminConfirmed,
         accountantDetails: data.accountantDetails,
+        companyDetails: data.companyDetails,
       })
     } catch {
       setState({ phase: 'error', message: 'Unable to load portal. Please try again.' })
@@ -83,13 +86,7 @@ export default function PortalPage() {
     const uploadedCategories = new Set(state.documents.map((d) => d.docCategory))
 
     return [
-      {
-        id: 'ato',
-        title: 'ATO Admin Access',
-        subtitle: 'Add MCR Partners as administrator',
-        isComplete: state.atoAdminConfirmed,
-        kind: { kind: 'ato' },
-      },
+      // 1. Accountant Details
       {
         id: 'accountant',
         title: 'Accountant Details',
@@ -97,6 +94,15 @@ export default function PortalPage() {
         isComplete: !!state.accountantDetails,
         kind: { kind: 'accountant' },
       },
+      // 2. Company or Trust Details
+      {
+        id: 'company',
+        title: 'Company or Trust Details',
+        subtitle: 'Your business information',
+        isComplete: !!state.companyDetails,
+        kind: { kind: 'company' },
+      },
+      // 3-8. Document categories
       ...CHECKLIST_ORDER.map<WizardStep>((category) => {
         const meta = CATEGORY_META[category]
         return {
@@ -108,6 +114,7 @@ export default function PortalPage() {
           kind: { kind: 'document', category },
         }
       }),
+      // 9. Review & Submit
       {
         id: 'review',
         title: 'Review & Submit',
@@ -151,7 +158,7 @@ export default function PortalPage() {
     )
   }
 
-  const { clientName, documents, atoAdminConfirmed, accountantDetails } = state
+  const { clientName, documents, accountantDetails, companyDetails } = state
 
   const requiredSteps = steps.filter((s) => !s.isOptional && s.kind.kind !== 'review')
   const completedRequired = requiredSteps.filter((s) => s.isComplete).length
@@ -218,8 +225,8 @@ export default function PortalPage() {
               </div>
 
               <div>
-                {activeStep.kind.kind === 'ato' && (
-                  <ATOAdminConfirmation confirmed={atoAdminConfirmed} onComplete={handleStepComplete} />
+                {activeStep.kind.kind === 'company' && (
+                  <CompanyDetailsForm initial={companyDetails} onComplete={handleStepComplete} />
                 )}
 
                 {activeStep.kind.kind === 'accountant' && (

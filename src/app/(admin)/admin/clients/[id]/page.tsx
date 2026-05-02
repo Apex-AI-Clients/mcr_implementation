@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle, XCircle, Building } from 'lucide-react'
+import { ArrowLeft, Building } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,7 +90,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <CompletenessBar documents={documents} />
       </Card>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 text-xs text-foreground/50">
+      <div className="mb-6 grid grid-cols-2 gap-3 text-xs text-foreground/50">
         <div>
           <p className="text-foreground/30 mb-0.5">Invite Sent</p>
           <p>{formatDate(client.created_at)}</p>
@@ -98,22 +98,6 @@ export default async function ClientDetailPage({ params }: Props) {
         <div>
           <p className="text-foreground/30 mb-0.5">Last Updated</p>
           <p>{formatDate(client.updated_at)}</p>
-        </div>
-        <div>
-          <p className="text-foreground/30 mb-0.5">ATO Admin</p>
-          <div className="flex items-center gap-1">
-            {client.ato_admin_confirmed ? (
-              <>
-                <CheckCircle className="h-3.5 w-3.5 text-success" />
-                <span className="text-success">Confirmed</span>
-              </>
-            ) : (
-              <>
-                <XCircle className="h-3.5 w-3.5 text-foreground/30" />
-                <span>Not confirmed</span>
-              </>
-            )}
-          </div>
         </div>
       </div>
 
@@ -150,7 +134,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
-        <DocumentStatusGrid documents={documents} />
+        <DocumentStatusGrid documents={documents} clientId={id} />
       </div>
     </div>
   )

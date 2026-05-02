@@ -2,7 +2,7 @@
 
 @theme inline {
   /* MCR Brand — shared across themes */
-  --color-accent: #E94560;
+  --color-accent: #2563EB;
   --color-success: #00B894;
   --color-warning: #F39C12;
   --color-destructive: #E74C3C;
@@ -75,7 +75,7 @@ body {
   background: var(--mcr-surface);
 }
 ::-webkit-scrollbar-thumb {
-  background: #E94560;
+  background: #2563EB;
   border-radius: 3px;
 }
 
@@ -116,10 +116,10 @@ body {
   background: #F5F6F8;
 }
 [data-theme="light"] .bg-accent\/5 {
-  background: rgba(233, 69, 96, 0.05);
+  background: rgba(37, 99, 235, 0.05);
 }
 [data-theme="light"] .bg-accent\/10 {
-  background: rgba(233, 69, 96, 0.08);
+  background: rgba(37, 99, 235, 0.08);
 }
 [data-theme="light"] .hover\:bg-surface\/40:hover {
   background: rgba(0, 0, 0, 0.03);

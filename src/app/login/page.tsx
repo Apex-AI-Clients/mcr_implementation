@@ -52,73 +52,9 @@ function LoginInner() {
 
   return (
     <div className="flex min-h-screen bg-primary">
-      {/* Left branding panel */}
-      <div className="hidden lg:flex lg:w-[55%] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0a0e1a] via-[#111827] to-[#1a1032]" />
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(233,69,96,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(233,69,96,0.3) 1px, transparent 1px)',
-            backgroundSize: '60px 60px',
-          }}
-        />
-        <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-accent/10 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-accent/8 blur-[100px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-purple-500/5 blur-[80px]" />
-
-        <div className="relative z-10 flex flex-col justify-between p-12 xl:p-16 w-full">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="h-11 w-11 rounded-xl bg-accent flex items-center justify-center shadow-lg shadow-accent/25">
-                <span className="text-white text-lg font-bold tracking-tight">M</span>
-              </div>
-              <span className="text-white/90 text-xl font-semibold tracking-tight">
-                MCR Partners
-              </span>
-            </div>
-            <p className="text-white/40 text-sm ml-14">Your Business, Our Expertise</p>
-          </div>
-
-          <div className="max-w-md">
-            <h1 className="text-4xl xl:text-5xl font-bold text-white leading-tight tracking-tight">
-              Streamline your
-              <br />
-              <span className="text-accent">client documents</span>
-            </h1>
-            <p className="mt-5 text-white/50 text-base leading-relaxed">
-              AI-powered document collection, classification, and compliance tracking —
-              built for financial professionals.
-            </p>
-
-            <div className="mt-10 flex flex-col gap-4">
-              {[
-                { icon: FileCheck, label: 'Assess', desc: 'Identify missing documents instantly' },
-                { icon: Shield, label: 'Secure', desc: 'Encrypted portal with role-based access' },
-                { icon: BarChart3, label: 'Track', desc: 'Real-time completeness dashboard' },
-              ].map(({ icon: Icon, label, desc }) => (
-                <div key={label} className="flex items-start gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] border border-white/[0.08]">
-                    <Icon className="h-5 w-5 text-accent" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white/90">{label}</p>
-                    <p className="text-sm text-white/40">{desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <p className="text-white/25 text-xs">
-            MCR Partners &times; Apex AI &mdash; Secure Portal
-          </p>
-        </div>
-      </div>
-
-      {/* Right login panel */}
+      {/* Left login panel */}
       <div className="flex w-full lg:w-[45%] flex-col items-center justify-center px-6 sm:px-12 relative">
-        <div className="absolute top-5 right-5">
+        <div className="absolute top-5 left-5">
           <ThemeToggle />
         </div>
 
@@ -136,7 +72,7 @@ function LoginInner() {
 
           {/* Desktop heading */}
           <div className="hidden lg:block mb-8">
-            <h2 className="text-2xl font-semibold text-foreground tracking-tight">Welcome</h2>
+            <h2 className="text-2xl font-semibold text-foreground tracking-tight">Sign In</h2>
             <p className="text-sm text-muted mt-1.5">Sign in to your MCR Partners account</p>
           </div>
 
@@ -182,6 +118,68 @@ function LoginInner() {
 
           <p className="mt-6 text-center text-xs text-muted">
             Haven&apos;t received an invite? Contact your MCR Partners advisor.
+          </p>
+        </div>
+      </div>
+
+      {/* Right branding / welcome panel */}
+      <div className="hidden lg:flex lg:w-[55%] relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-bl from-[#0a0e1a] via-[#111827] to-[#1a1032]" />
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(37,99,235,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.3) 1px, transparent 1px)',
+            backgroundSize: '60px 60px',
+          }}
+        />
+        <div className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-accent/10 blur-[120px]" />
+        <div className="absolute bottom-0 left-0 h-80 w-80 rounded-full bg-accent/8 blur-[100px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-purple-500/5 blur-[80px]" />
+
+        <div className="relative z-10 flex flex-col justify-between p-12 xl:p-16 w-full">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-11 w-11 rounded-xl bg-accent flex items-center justify-center shadow-lg shadow-accent/25">
+                <span className="text-white text-lg font-bold tracking-tight">M</span>
+              </div>
+              <span className="text-white/90 text-xl font-semibold tracking-tight">
+                MCR Partners
+              </span>
+            </div>
+            <p className="text-white/40 text-sm ml-14">Your Business, Our Expertise</p>
+          </div>
+
+          <div className="max-w-md">
+            <h1 className="text-4xl xl:text-5xl font-bold text-white leading-tight tracking-tight">
+              Welcome
+            </h1>
+            <p className="mt-5 text-white/50 text-base leading-relaxed">
+              AI-powered document collection, classification, and compliance tracking —
+              built for financial professionals.
+            </p>
+
+            <div className="mt-10 flex flex-col gap-4">
+              {[
+                { icon: FileCheck, label: 'Assess', desc: 'Identify missing documents instantly' },
+                { icon: Shield, label: 'Secure', desc: 'Encrypted portal with role-based access' },
+                { icon: BarChart3, label: 'Track', desc: 'Real-time completeness dashboard' },
+              ].map(({ icon: Icon, label, desc }) => (
+                <div key={label} className="flex items-start gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] border border-white/[0.08]">
+                    <Icon className="h-5 w-5 text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-white/90">{label}</p>
+                    <p className="text-sm text-white/40">{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-white/25 text-xs">
+            MCR Partners &times; Apex AI &mdash; Secure Portal
           </p>
         </div>
       </div>

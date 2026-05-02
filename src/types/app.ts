@@ -48,6 +48,17 @@ export interface ClientDetail {
   accountantDetails: AccountantDetails | null
 }
 
+export interface CompanyDetails {
+  id: string
+  clientId: string
+  companyName: string
+  acnNumber: string
+  abnNumber: string
+  trustName: string
+  phoneNumber: string
+  emailAddress: string
+}
+
 export interface ApiError {
   error: string
 }

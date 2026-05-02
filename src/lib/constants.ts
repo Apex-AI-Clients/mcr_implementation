@@ -18,8 +18,18 @@ export type DocCategory = (typeof DOCUMENT_CATEGORIES)[keyof typeof DOCUMENT_CAT
 
 // MIME type constants
 const MIME_PDF = 'application/pdf'
-const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const MIME_CSV = 'text/csv'
+
+/**
+ * Returns the current financial year date range string.
+ * e.g. "1 July 25 until now" — adjusts annually on 1 July.
+ */
+export function getCurrentFinancialPeriod(): string {
+  const now = new Date()
+  const year = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+  const shortYear = String(year).slice(-2)
+  return `1 July ${shortYear} until now`
+}
 
 export interface CategoryMeta {
   label: string
@@ -33,20 +43,20 @@ export interface CategoryMeta {
 
 export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   current_financials: {
-    label: 'Current Period P&L & Balance Sheet',
+    label: 'Current Period Profit and Loss & Balance Sheet',
     description:
-      "Copy of the Current Period Company's Profit & Loss Statement & Balance Sheet as of today. (Draft is Acceptable)",
-    acceptedFormats: [MIME_PDF, MIME_DOCX],
-    formatLabel: 'PDF or DOCX',
+      "Copy of the Current Period Company's Profit and Loss Statement & Balance Sheet as of today. (Draft is Acceptable)",
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
     isOptional: false,
     multipleFiles: true,
   },
   historical_financials: {
-    label: 'Last 4 Years P&L & Balance Sheet',
+    label: 'Last 4 Years Profit and Loss & Balance Sheet',
     description:
-      "Copy of the Last 4 years Company's Profit & Loss Statement & Balance Sheet (2022, 2023, 2024 & Draft 2025) (accountant prepared)",
-    acceptedFormats: [MIME_PDF, MIME_DOCX],
-    formatLabel: 'PDF or DOCX',
+      "Copy of the Last 4 years Company's Profit and Loss Statement & Balance Sheet (2022, 2023, 2024 & Draft 2025) (accountant prepared)",
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
     isOptional: false,
     multipleFiles: true,
   },
@@ -64,24 +74,24 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
     label: "Director Penalty Notices (DPN's)",
     description:
       "Copies of ALL Director Penalty Notices issued by the ATO (DPN's) (if applicable)",
-    acceptedFormats: [MIME_PDF, MIME_DOCX],
-    formatLabel: 'PDF or DOCX',
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
     isOptional: true,
     multipleFiles: true,
   },
   trust_deed: {
     label: 'Trust Deed',
     description: 'Copy of Trust Deed (if applicable)',
-    acceptedFormats: [MIME_PDF, MIME_DOCX],
-    formatLabel: 'PDF or DOCX',
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
     isOptional: true,
     multipleFiles: false,
   },
   company_licences: {
     label: 'Company Licences',
     description: 'Copy of any licences held by the Company (if applicable)',
-    acceptedFormats: [MIME_PDF, MIME_DOCX],
-    formatLabel: 'PDF or DOCX',
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
     isOptional: true,
     multipleFiles: true,
   },
@@ -105,7 +115,7 @@ export const REQUIRED_CATEGORIES: DocCategory[] = [
 ]
 
 // All accepted MIME types (union of all categories)
-export const ALL_ACCEPTED_MIME_TYPES = [MIME_PDF, MIME_DOCX, MIME_CSV] as const
+export const ALL_ACCEPTED_MIME_TYPES = [MIME_PDF, MIME_CSV] as const
 
 // ============================================================
 // MCR Partners admin info (displayed on portal)

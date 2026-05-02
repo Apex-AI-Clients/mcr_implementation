@@ -2,8 +2,9 @@
 
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, CheckCircle, FileText, ExternalLink, AlertCircle } from 'lucide-react'
-import { CATEGORY_META } from '@/lib/constants'
+import { Upload, CheckCircle, FileText, ExternalLink, AlertCircle, Trash2, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { CATEGORY_META, getCurrentFinancialPeriod } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { cn } from '@/lib/utils'
@@ -26,8 +27,11 @@ export function CategoryUploadSection({
 }: CategoryUploadSectionProps) {
   const meta = CATEGORY_META[category]
   const [uploading, setUploading] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<DocumentRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploadedCount, setUploadedCount] = useState(0)
+  const [totalFiles, setTotalFiles] = useState(0)
 
   const categoryDocs = documents.filter((d) => d.docCategory === category)
   const hasFiles = categoryDocs.length > 0
@@ -38,6 +42,7 @@ export function CategoryUploadSection({
       setError(null)
       setUploading(true)
       setUploadedCount(0)
+      setTotalFiles(acceptedFiles.length)
 
       for (const file of acceptedFiles) {
         try {
@@ -68,6 +73,28 @@ export function CategoryUploadSection({
     },
     [category, onUploadComplete],
   )
+
+  async function handleDelete(documentId: string) {
+    setDeleting(documentId)
+    setError(null)
+    try {
+      const res = await fetch('/api/portal/delete-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error ?? 'Failed to delete')
+      } else {
+        onUploadComplete()
+      }
+    } catch {
+      setError('Failed to delete. Please try again.')
+    } finally {
+      setDeleting(null)
+    }
+  }
 
   const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
     onDrop,
@@ -101,9 +128,16 @@ export function CategoryUploadSection({
               </Badge>
             )}
           </div>
-          <p className={cn('text-xs text-foreground/50 leading-relaxed', !hideTitle && 'mt-1')}>
-            {meta.description}
-          </p>
+          <div className={cn('mt-2 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3')}>
+            <p className="text-sm font-semibold text-foreground leading-relaxed">
+              <StyledDescription text={meta.description} />
+            </p>
+            {(category === 'current_financials' || category === 'historical_financials') && (
+              <p className="text-xs text-accent font-medium mt-2">
+                Period: {getCurrentFinancialPeriod()}
+              </p>
+            )}
+          </div>
           {meta.externalLink && (
             <a
               href={meta.externalLink}
@@ -135,9 +169,20 @@ export function CategoryUploadSection({
               <span className="text-xs text-foreground/30 shrink-0">
                 {formatBytes(doc.fileSizeBytes)}
               </span>
-              {doc.status === 'ready' && (
+              {deleting === doc.id ? (
+                <Loader2 className="h-3.5 w-3.5 text-accent animate-spin shrink-0" />
+              ) : doc.status === 'ready' ? (
                 <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
-              )}
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(doc)}
+                disabled={deleting === doc.id}
+                className="text-foreground/30 hover:text-destructive transition-colors disabled:opacity-50 shrink-0"
+                title="Delete file"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           ))}
         </div>
@@ -156,9 +201,12 @@ export function CategoryUploadSection({
       >
         <input {...getInputProps()} />
         {uploading ? (
-          <p className="text-xs text-foreground/50">
-            Uploading... ({uploadedCount} files uploaded)
-          </p>
+          <div className="flex flex-col items-center gap-2 py-1">
+            <Loader2 className="h-6 w-6 text-accent animate-spin" />
+            <p className="text-xs text-foreground/50">
+              Uploading {uploadedCount} of {totalFiles} file{totalFiles > 1 ? 's' : ''}...
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col items-center gap-1.5">
             <Upload className="h-5 w-5 text-foreground/30" />
@@ -176,6 +224,70 @@ export function CategoryUploadSection({
           {error || `Only ${meta.formatLabel} files are accepted.`}
         </div>
       )}
+
+      {/* Delete confirmation popup */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setConfirmDelete(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-xl p-6 w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-foreground mb-2">Delete File</h3>
+            <p className="text-xs text-muted mb-1">Are you sure you want to delete this file?</p>
+            <p className="text-xs text-foreground font-medium mb-4 truncate">
+              {confirmDelete.originalFilename}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="flex-1"
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="flex-1"
+                loading={deleting === confirmDelete.id}
+                onClick={async () => {
+                  await handleDelete(confirmDelete.id)
+                  setConfirmDelete(null)
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+/** Renders description text with "Profit and Loss" and "Balance Sheet" in bold red */
+function StyledDescription({ text }: { text: string }) {
+  const highlights = ['Profit and Loss', 'Profit & Loss', 'Balance Sheet']
+  const regex = new RegExp(`(${highlights.join('|')})`, 'gi')
+  const parts = text.split(regex)
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        highlights.some((h) => h.toLowerCase() === part.toLowerCase()) ? (
+          <span key={i} className="font-bold text-destructive">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   )
 }
