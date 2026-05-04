@@ -5,9 +5,9 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
-import type { DocumentRecord, AccountantDetails } from '@/types/app'
+import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import Link from 'next/link'
-import { ArrowLeft, Building } from 'lucide-react'
+import { ArrowLeft, Building, Landmark } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +34,12 @@ export default async function ClientDetailPage({ params }: Props) {
     .eq('client_id', id)
     .maybeSingle()
 
+  const { data: rawCompany } = await supabase
+    .from('company_details')
+    .select('*')
+    .eq('client_id', id)
+    .maybeSingle()
+
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
     clientId: d.client_id,
@@ -54,6 +60,19 @@ export default async function ClientDetailPage({ params }: Props) {
         contactPerson: rawAccountant.contact_person,
         phoneNumber: rawAccountant.phone_number,
         emailAddress: rawAccountant.email_address,
+      }
+    : null
+
+  const companyDetails: CompanyDetails | null = rawCompany
+    ? {
+        id: rawCompany.id,
+        clientId: rawCompany.client_id,
+        companyName: rawCompany.company_name,
+        acnNumber: rawCompany.acn_number,
+        abnNumber: rawCompany.abn_number,
+        trustName: rawCompany.trust_name,
+        phoneNumber: rawCompany.phone_number,
+        emailAddress: rawCompany.email_address,
       }
     : null
 
@@ -100,6 +119,45 @@ export default async function ClientDetailPage({ params }: Props) {
           <p>{formatDate(client.updated_at)}</p>
         </div>
       </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Landmark className="h-4 w-4 text-foreground/50" />
+            <CardTitle>Company / Trust Details</CardTitle>
+          </div>
+        </CardHeader>
+        {companyDetails ? (
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <p className="text-foreground/30 mb-0.5">Company Name</p>
+              <p className="text-foreground/70">{companyDetails.companyName || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">ACN Number</p>
+              <p className="text-foreground/70">{companyDetails.acnNumber || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">ABN Number</p>
+              <p className="text-foreground/70">{companyDetails.abnNumber || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">Trust Name</p>
+              <p className="text-foreground/70">{companyDetails.trustName || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">Phone</p>
+              <p className="text-foreground/70">{companyDetails.phoneNumber || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">Email</p>
+              <p className="text-foreground/70">{companyDetails.emailAddress || '—'}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-foreground/30 italic">Not yet provided by client</p>
+        )}
+      </Card>
 
       <Card className="mb-6">
         <CardHeader>

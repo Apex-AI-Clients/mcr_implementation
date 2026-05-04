@@ -40,7 +40,7 @@ interface WizardStep extends StepDescriptor {
 export default function PortalPage() {
   const router = useRouter()
   const [state, setState] = useState<State>({ phase: 'loading' })
-  const [activeStepId, setActiveStepId] = useState<string>('accountant')
+  const [activeStepId, setActiveStepId] = useState<string>('company')
 
   const load = useCallback(async () => {
     try {
@@ -85,16 +85,25 @@ export default function PortalPage() {
 
     const uploadedCategories = new Set(state.documents.map((d) => d.docCategory))
 
+    // Split checklist so Accountant Details sits between Trust Deed and Company Licences
+    const trustDeedIdx = CHECKLIST_ORDER.indexOf('trust_deed')
+    const beforeAccountant = CHECKLIST_ORDER.slice(0, trustDeedIdx + 1) // up to & including trust_deed
+    const afterAccountant = CHECKLIST_ORDER.slice(trustDeedIdx + 1)     // company_licences onward
+
+    const docStep = (category: DocCategory): WizardStep => {
+      const meta = CATEGORY_META[category]
+      return {
+        id: `doc-${category}`,
+        title: meta.label,
+        subtitle: meta.formatLabel,
+        isOptional: meta.isOptional,
+        isComplete: uploadedCategories.has(category),
+        kind: { kind: 'document', category },
+      }
+    }
+
     return [
-      // 1. Accountant Details
-      {
-        id: 'accountant',
-        title: 'Accountant Details',
-        subtitle: 'Your current accountant',
-        isComplete: !!state.accountantDetails,
-        kind: { kind: 'accountant' },
-      },
-      // 2. Company or Trust Details
+      // 1. Company or Trust Details
       {
         id: 'company',
         title: 'Company or Trust Details',
@@ -102,18 +111,18 @@ export default function PortalPage() {
         isComplete: !!state.companyDetails,
         kind: { kind: 'company' },
       },
-      // 3-8. Document categories
-      ...CHECKLIST_ORDER.map<WizardStep>((category) => {
-        const meta = CATEGORY_META[category]
-        return {
-          id: `doc-${category}`,
-          title: meta.label,
-          subtitle: meta.formatLabel,
-          isOptional: meta.isOptional,
-          isComplete: uploadedCategories.has(category),
-          kind: { kind: 'document', category },
-        }
-      }),
+      // 2-6. Document categories up to Trust Deed
+      ...beforeAccountant.map(docStep),
+      // 7. Accountant Details (after Trust Deed)
+      {
+        id: 'accountant',
+        title: 'Accountant Details',
+        subtitle: 'Your current accountant',
+        isComplete: !!state.accountantDetails,
+        kind: { kind: 'accountant' },
+      },
+      // 8. Remaining document categories
+      ...afterAccountant.map(docStep),
       // 9. Review & Submit
       {
         id: 'review',

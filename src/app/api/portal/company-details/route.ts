@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('[POST /api/portal/company-details] update', error)
-      return NextResponse.json({ error: 'Failed to update' }, { status: 500 })
+      return NextResponse.json({ error: `Failed to update: ${error.message}` }, { status: 500 })
     }
   } else {
     const { error } = await supabase.from('company_details').insert({
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('[POST /api/portal/company-details] insert', error)
-      return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
+      return NextResponse.json({ error: `Failed to save: ${error.message}` }, { status: 500 })
     }
   }
 

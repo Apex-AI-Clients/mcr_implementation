@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, CheckCircle, FileText, ExternalLink, AlertCircle, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { CATEGORY_META, getCurrentFinancialPeriod } from '@/lib/constants'
+import { CATEGORY_META, getCurrentFinancialPeriod, getHistoricalFinancialPeriod } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { cn } from '@/lib/utils'
@@ -132,9 +132,14 @@ export function CategoryUploadSection({
             <p className="text-sm font-semibold text-foreground leading-relaxed">
               <StyledDescription text={meta.description} />
             </p>
-            {(category === 'current_financials' || category === 'historical_financials') && (
-              <p className="text-xs text-accent font-medium mt-2">
-                Period: {getCurrentFinancialPeriod()}
+            {category === 'current_financials' && (
+              <p className="mt-3 text-base font-bold text-destructive">
+                {getCurrentFinancialPeriod()}
+              </p>
+            )}
+            {category === 'historical_financials' && (
+              <p className="mt-3 text-base font-bold text-destructive">
+                {getHistoricalFinancialPeriod()}
               </p>
             )}
           </div>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, ExternalLink } from 'lucide-react'
 
 export interface CompanyDetails {
   id?: string
@@ -82,18 +82,38 @@ export function CompanyDetailsForm({ initial, onComplete }: CompanyDetailsFormPr
           value={companyName}
           onChange={(e) => { setCompanyName(e.target.value); markDirty() }}
         />
-        <Input
-          id="acn-number"
-          label="ACN Number"
-          value={acnNumber}
-          onChange={(e) => { setAcnNumber(e.target.value); markDirty() }}
-        />
-        <Input
-          id="abn-number"
-          label="ABN Number"
-          value={abnNumber}
-          onChange={(e) => { setAbnNumber(e.target.value); markDirty() }}
-        />
+        <div>
+          <Input
+            id="acn-number"
+            label="ACN Number"
+            value={acnNumber}
+            onChange={(e) => { setAcnNumber(e.target.value); markDirty() }}
+          />
+          <a
+            href="https://connectonline.asic.gov.au/RegistrySearch/faces/landing/SearchRegisters.jspx"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-1.5 text-xs text-accent hover:text-accent/80 transition-colors"
+          >
+            Look up your ACN number <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+        <div>
+          <Input
+            id="abn-number"
+            label="ABN Number"
+            value={abnNumber}
+            onChange={(e) => { setAbnNumber(e.target.value); markDirty() }}
+          />
+          <a
+            href="https://abr.business.gov.au"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-1.5 text-xs text-accent hover:text-accent/80 transition-colors"
+          >
+            Look up your ABN number <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
         <Input
           id="trust-name"
           label="Name of Trust"

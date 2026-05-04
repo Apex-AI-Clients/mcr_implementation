@@ -21,14 +21,34 @@ const MIME_PDF = 'application/pdf'
 const MIME_CSV = 'text/csv'
 
 /**
- * Returns the current financial year date range string.
- * e.g. "1 July 25 until now" — adjusts annually on 1 July.
+ * Returns the start year of the current Australian Financial Year.
+ * AU FY runs 1 July → 30 June. On/after 1 July the FY start year is
+ * the current calendar year; before 1 July it's the previous year.
+ */
+export function getCurrentFYStartYear(): number {
+  const now = new Date()
+  return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+}
+
+/**
+ * Current Period label — e.g. "1 July 2025 until now".
+ * Rolls forward automatically every 1 July.
  */
 export function getCurrentFinancialPeriod(): string {
-  const now = new Date()
-  const year = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
-  const shortYear = String(year).slice(-2)
-  return `1 July ${shortYear} until now`
+  return `1 July ${getCurrentFYStartYear()} until now`
+}
+
+/**
+ * Historical (last 4 FYs) label — e.g. "FY2022, FY2023, FY2024 & Draft FY2025".
+ * The most recent completed FY is prefixed with "Draft" because the
+ * accountant may not have finalised it yet.
+ */
+export function getHistoricalFinancialPeriod(): string {
+  const fyStart = getCurrentFYStartYear()
+  // Previous 4 complete FYs by their ending year (= the FY name in AU convention)
+  const years = [fyStart - 3, fyStart - 2, fyStart - 1, fyStart]
+  const labels = years.map((y, i) => (i === years.length - 1 ? `Draft FY${y}` : `FY${y}`))
+  return `${labels.slice(0, -1).join(', ')} & ${labels[labels.length - 1]}`
 }
 
 export interface CategoryMeta {
@@ -54,7 +74,7 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   historical_financials: {
     label: 'Last 4 Years Profit and Loss & Balance Sheet',
     description:
-      "Copy of the Last 4 years Company's Profit and Loss Statement & Balance Sheet (2022, 2023, 2024 & Draft 2025) (accountant prepared)",
+      "Copy of the Last 4 years Company's Profit and Loss Statement & Balance Sheet (accountant prepared)",
     acceptedFormats: [MIME_PDF],
     formatLabel: 'PDF only',
     isOptional: false,
