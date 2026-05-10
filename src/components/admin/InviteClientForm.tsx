@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { UserPlus, Paperclip, X } from 'lucide-react'
+import { UserPlus, Paperclip, X, Mail } from 'lucide-react'
 
 const DEFAULT_MESSAGE = `Thank you for choosing MCR Partners. We have set up a secure portal for you to upload the financial documents required for your preassessment.
 
@@ -21,6 +21,11 @@ interface InviteClientFormProps {
   onSuccess?: () => void
 }
 
+interface ExistingClientHint {
+  id: string
+  email: string
+}
+
 export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -28,9 +33,59 @@ export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
   const [attachments, setAttachments] = useState<File[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [existingClient, setExistingClient] = useState<ExistingClientHint | null>(null)
+  const [reinviting, setReinviting] = useState(false)
+  const [reinviteSent, setReinviteSent] = useState(false)
   const [success, setSuccess] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleReinvite() {
+    if (!existingClient) return
+    setReinviting(true)
+    setError(null)
+    try {
+      // Convert attachments for the reinvite payload too — admins often want
+      // to resend the original attachments.
+      const attachmentData = await Promise.all(
+        attachments.map(async (file) => {
+          const buffer = await file.arrayBuffer()
+          const base64 = btoa(
+            new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''),
+          )
+          return { filename: file.name, content: base64 }
+        }),
+      )
+
+      const res = await fetch(`/api/admin/clients/${existingClient.id}/reinvite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: message.trim() || undefined,
+          attachments: attachmentData.length ? attachmentData : undefined,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to resend invite')
+      }
+      setReinviteSent(true)
+      setTimeout(() => {
+        setReinviteSent(false)
+        setExistingClient(null)
+        setName('')
+        setEmail('')
+        setMessage(DEFAULT_MESSAGE)
+        setAttachments([])
+        setExpanded(false)
+        onSuccess?.()
+      }, 1500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setReinviting(false)
+    }
+  }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -46,6 +101,7 @@ export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setExistingClient(null)
     setLoading(true)
 
     try {
@@ -60,16 +116,34 @@ export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
         }),
       )
 
+      const trimmedEmail = email.trim().toLowerCase()
       const res = await fetch('/api/admin/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          email: email.trim().toLowerCase(),
+          email: trimmedEmail,
           message: message.trim(),
           attachments: attachmentData,
         }),
       })
+
+      if (res.status === 409) {
+        // Look up the existing client so the admin can reinvite inline.
+        try {
+          const list = await fetch('/api/admin/clients').then((r) => r.json())
+          const match = Array.isArray(list)
+            ? list.find((c: { email: string }) => c.email?.toLowerCase() === trimmedEmail)
+            : null
+          if (match) {
+            setExistingClient({ id: match.id, email: match.email })
+          }
+        } catch {
+          // Lookup failed — fall back to the plain error message below.
+        }
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'A client with this email already exists')
+      }
 
       if (!res.ok) {
         const data = await res.json()
@@ -110,7 +184,7 @@ export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
           onChange={(e) => setEmail(e.target.value)}
           required
           className="sm:w-64"
-          error={error ?? undefined}
+          error={existingClient ? undefined : error ?? undefined}
         />
         <div className="flex gap-2">
           <Button
@@ -128,6 +202,49 @@ export function InviteClientForm({ onSuccess }: InviteClientFormProps) {
           </Button>
         </div>
       </div>
+
+      {existingClient && (
+        <div className="rounded-xl border border-warning/30 bg-warning/5 p-4">
+          <p className="text-sm text-foreground">
+            A client with <span className="font-medium">{existingClient.email}</span> already exists.
+          </p>
+          <p className="mt-1 text-xs text-foreground/60">
+            You can resend the invite (uses the customised message and attachments below) or open
+            the existing client to make changes.
+          </p>
+          {error && reinviteSent === false && reinviting === false && (
+            <p className="mt-2 text-xs text-destructive">{error}</p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleReinvite}
+              loading={reinviting}
+            >
+              <Mail className="h-3.5 w-3.5" />
+              {reinviteSent ? 'Invite Resent!' : 'Resend invite'}
+            </Button>
+            <a
+              href={`/admin/clients/${existingClient.id}`}
+              className="inline-flex items-center h-8 px-3 text-xs font-medium rounded-lg bg-surface text-muted border border-border hover:text-foreground transition-colors"
+            >
+              View existing client →
+            </a>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setExistingClient(null)
+                setError(null)
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
 
       {expanded && (
         <div className="rounded-xl border border-border bg-surface/30 p-4 space-y-3">

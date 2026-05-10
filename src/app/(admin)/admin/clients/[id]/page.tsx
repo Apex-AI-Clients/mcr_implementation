@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
+import { ClientActions } from '@/components/admin/ClientActions'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -103,6 +104,10 @@ export default async function ClientDetailPage({ params }: Props) {
           <p className="mt-0.5 text-sm text-foreground/50">{client.email}</p>
         </div>
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+      </div>
+
+      <div className="mb-6">
+        <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
       </div>
 
       <Card className="mb-4">
