@@ -3,10 +3,12 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
+import { LodgementAnalysisCard } from '@/components/admin/LodgementAnalysisCard'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
+import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import Link from 'next/link'
 import { ArrowLeft, Building, Landmark } from 'lucide-react'
 
@@ -23,23 +25,27 @@ export default async function ClientDetailPage({ params }: Props) {
   const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
   if (!client) notFound()
 
-  const { data: rawDocs } = await supabase
-    .from('documents')
-    .select('*')
-    .eq('client_id', id)
-    .order('uploaded_at', { ascending: false })
-
-  const { data: rawAccountant } = await supabase
-    .from('accountant_details')
-    .select('*')
-    .eq('client_id', id)
-    .maybeSingle()
-
-  const { data: rawCompany } = await supabase
-    .from('company_details')
-    .select('*')
-    .eq('client_id', id)
-    .maybeSingle()
+  const [
+    { data: rawDocs },
+    { data: rawAccountant },
+    { data: rawCompany },
+    { data: rawAnalysis },
+  ] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('*')
+      .eq('client_id', id)
+      .order('uploaded_at', { ascending: false }),
+    supabase.from('accountant_details').select('*').eq('client_id', id).maybeSingle(),
+    supabase.from('company_details').select('*').eq('client_id', id).maybeSingle(),
+    supabase
+      .from('lodgement_analyses')
+      .select('*')
+      .eq('client_id', id)
+      .order('analysed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
@@ -52,6 +58,32 @@ export default async function ClientDetailPage({ params }: Props) {
     status: d.status,
     uploadedAt: d.uploaded_at,
   }))
+
+  const hasActivityStatementCsv = documents.some(
+    (d) =>
+      d.docCategory === 'integrated_client_account' &&
+      d.originalFilename.toLowerCase().includes('activity statement') &&
+      d.originalFilename.toLowerCase().endsWith('.csv'),
+  )
+
+  const initialAnalysis: LodgementAnalysisPayload | null = rawAnalysis
+    ? {
+        id: rawAnalysis.id,
+        clientId: rawAnalysis.client_id,
+        documentId: rawAnalysis.document_id,
+        sourceFilename: rawAnalysis.source_filename,
+        statementLabel: rawAnalysis.statement_label,
+        companyNameInCsv: rawAnalysis.company_name_in_csv,
+        rowCount: rawAnalysis.row_count,
+        summary: {
+          numberOfLateLodgements: rawAnalysis.number_of_late_lodgements,
+          cumulativeDaysLate: rawAnalysis.cumulative_days_late,
+        },
+        rows: rawAnalysis.rows as LodgementAnalysisPayload['rows'],
+        warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
+        analysedAt: rawAnalysis.analysed_at,
+      }
+    : null
 
   const accountantDetails: AccountantDetails | null = rawAccountant
     ? {
@@ -108,6 +140,14 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="mb-6">
         <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
+      </div>
+
+       <div className="mb-6">
+        <LodgementAnalysisCard
+          clientId={id}
+          initialAnalysis={initialAnalysis}
+          hasActivityStatementCsv={hasActivityStatementCsv}
+        />
       </div>
 
       <Card className="mb-4">
@@ -199,6 +239,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
         <DocumentStatusGrid documents={documents} clientId={id} />
       </div>
+      
     </div>
   )
 }

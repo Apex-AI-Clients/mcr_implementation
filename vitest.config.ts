@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    pool: 'vmThreads',
     coverage: {
       reporter: ['text', 'lcov'],
       include: ['src/lib/**', 'src/components/**'],
