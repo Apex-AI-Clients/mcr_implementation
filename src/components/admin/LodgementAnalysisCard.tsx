@@ -217,61 +217,52 @@ function SummaryPanel({
   onClose: () => void
 }) {
   const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
-  const totalLodgements = analysis.rows.filter(
-    (r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended',
-  ).length
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4 text-xs space-y-4">
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm font-semibold text-foreground">How this analysis works</h4>
-        <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors shrink-0">
+    <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-foreground">How the numbers are calculated</h4>
+        <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div className="space-y-1">
-        <p className="text-foreground/50 leading-relaxed">
-          The ATO Activity Statement ledger contains two key dates per lodgement row:
-        </p>
-        <ul className="list-disc list-inside space-y-0.5 text-foreground/50 leading-relaxed pl-1">
-          <li><span className="text-foreground/70 font-medium">Processed date</span> — when the ATO actually received and processed the lodgement.</li>
-          <li><span className="text-foreground/70 font-medium">Effective date</span> — the statutory due date the lodgement was supposed to be filed by.</li>
-        </ul>
+      {/* Formulas */}
+      <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
+        <span className="text-accent">Number of Late Lodgements</span> = Count of rows where{' '}
+        <span className="text-warning">Processed Date &gt; Effective Date</span>
+      </div>
+      <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
+        <span className="text-accent">Cumulative Days Late</span> ={' '}
+        <span className="text-warning">Sum of</span> (Processed Date − Effective Date) per late row
       </div>
 
-      <div className="space-y-1">
-        <p className="text-foreground/60 font-medium">What counts as a late lodgement?</p>
-        <p className="text-foreground/50 leading-relaxed">
-          Only <span className="text-foreground/70">Original</span> and <span className="text-foreground/70">Client-initiated Amended</span> activity statements are assessed — ATO-initiated amendments and sub-lines (GST, PAYG, etc.) are excluded. A lodgement is late when the Processed date falls after the Effective date, i.e. the difference is positive.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-border bg-primary/30 p-3 space-y-1">
-          <p className="font-semibold text-foreground">
-            Number of Late Lodgements
-            <span className="ml-2 text-warning">{numberOfLateLodgements}</span>
-          </p>
-          <p className="text-foreground/50 leading-relaxed">
-            Out of <span className="text-foreground/70">{totalLodgements}</span> total lodgement rows assessed, <span className="text-foreground/70">{numberOfLateLodgements}</span> had a positive days-late value (i.e. the ATO processed them after the due date).
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-border bg-primary/30 p-3 space-y-1">
-          <p className="font-semibold text-foreground">
-            Cumulative Days Late
-            <span className="ml-2 text-warning">{cumulativeDaysLate}</span>
-          </p>
-          <p className="text-foreground/50 leading-relaxed">
-            The sum of calendar days late across all {numberOfLateLodgements} late lodgements. Early lodgements do not offset this total — negative values are zeroed before summing. This figure feeds the downstream SBR risk model.
-          </p>
-        </div>
-      </div>
-
-      <p className="text-foreground/30 leading-relaxed border-t border-border pt-3">
-        Lateness is measured in <span className="text-foreground/50">calendar days</span>, not business days. The ATO sets the Effective date accounting for weekends and public holidays, so no further adjustment is needed.
+      {/* Explanation */}
+      <p className="text-xs text-foreground/55 leading-relaxed">
+        Each lodgement&apos;s delay is calculated as the gap between when the ATO received it and when it was due.
+        Early lodgements count as zero — they don&apos;t offset other late rows.
+        Both totals below are based on Original and Client-Amended statements only.
       </p>
+
+      {/* Two description tiles */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-foreground/80">Number of Late Lodgements</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">How many lodgements were received after their due date.</p>
+        </div>
+        <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-foreground/80">Cumulative Days Late</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">All late days added up — the total delay across their entire lodgement history.</p>
+        </div>
+      </div>
+
+      {/* What it means */}
+      <div className="rounded-md border border-warning/30 bg-warning/5 px-4 py-3 space-y-1">
+        <p className="text-sm font-bold text-foreground">What this means for the client</p>
+        <p className="text-sm font-semibold text-warning leading-snug">
+          {numberOfLateLodgements} lodgements were filed late, totalling {cumulativeDaysLate} days of delay.
+        </p>
+      </div>
     </div>
   )
 }
