@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { computeLateLodgement } from '../computeLateLodgement'
-import { parseActivityStatementCsv } from '../parseActivityStatement'
+import { parseActivityStatementCsv, extractPeriodEnding } from '../parseActivityStatement'
+import { classifyLodgement } from '../classifyLodgement'
 import type { ParsedCsv, ParsedRow } from '../types'
 
 // Helper: build a minimal ParsedRow for a lodgement-type entry
@@ -22,6 +23,7 @@ function makeRow(
     debit: null,
     credit: null,
     balance: null,
+    periodEnding: null,
   }
 }
 
@@ -202,7 +204,7 @@ describe('computeLateLodgement — summary statistics', () => {
   })
 })
 
-describe('computeLateLodgement — integration with fixture CSV', () => {
+describe('computeLateLodgement — integration with sample fixture CSV', () => {
   it('produces correct summary from the sample fixture', () => {
     const csvText = readFileSync(
       join(__dirname, 'fixtures', 'activity_statement_sample.csv'),
@@ -218,5 +220,157 @@ describe('computeLateLodgement — integration with fixture CSV', () => {
     // ClientAmended 30 Sep 18: 471 days
     expect(result.summary.numberOfLateLodgements).toBe(4)
     expect(result.summary.cumulativeDaysLate).toBe(474 + 84 + 24 + 471)
+
+    // DPN: Original/ClientAmended rows with lateLodgementDays > 90 (debit or credit)
+    // ClientAmended 30 Jun 23 (474d): debit $2000 → DPN debit
+    // ClientAmended 30 Sep 18 (471d): debit $1100 → DPN debit
+    // No credit rows qualify → totalReversed = 0
+    expect(result.dpnRisk.contributingRows).toHaveLength(2)
+    expect(result.dpnRisk.totalGrossLate).toBe(3100)
+    expect(result.dpnRisk.totalReversed).toBe(0)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
+
+    // Debt breakdown (new field names)
+    // principalDebits = $1234.56 + $987 + $2000 + $500 + $750 + $1100 = $6571.56
+    // principalCredits = 0 (no credit lodgements in sample)
+    // interestDebits = $45, interestCredits = 0
+    // paymentsReceived = $3500
+    expect(result.debtBreakdown.principalDebits).toBeCloseTo(6571.56, 1)
+    expect(result.debtBreakdown.principalCredits).toBe(0)
+    expect(result.debtBreakdown.interestDebits).toBeCloseTo(45, 1)
+    expect(result.debtBreakdown.interestCredits).toBe(0)
+    expect(result.debtBreakdown.penaltyDebits).toBe(0)
+    expect(result.debtBreakdown.paymentsReceived).toBe(3500)
+    expect(result.debtBreakdown.totalAtoDebt).toBeCloseTo(6571.56 + 45, 1)
+    expect(result.debtBreakdown.currentBalance).toBeCloseTo(6571.56 + 45 - 3500, 1)
+  })
+})
+
+describe('computeLateLodgement — integration with PARKCON fixture CSV', () => {
+  it('produces the exact PARKCON reference figures', () => {
+    const csvText = readFileSync(
+      join(__dirname, 'fixtures', 'parkcon_activity_statement.csv'),
+      'utf-8',
+    )
+    const parsed = parseActivityStatementCsv(csvText)
+    const result = computeLateLodgement(parsed)
+
+    // 6 late lodgements: 178 + 471 + 24 + 84 + 89 + 474 = 1320 days
+    expect(result.summary.numberOfLateLodgements).toBe(6)
+    expect(result.summary.cumulativeDaysLate).toBe(1320)
+
+    // DPN: 3 qualifying rows (>90 days, Original or ClientAmended)
+    // Row 0: Original, 178d, debit $9,408
+    // Row 3: ClientAmended, 471d, credit $4,144
+    // Row 10: ClientAmended, 474d, credit $4,390
+    expect(result.dpnRisk.contributingRows).toHaveLength(3)
+    expect(result.dpnRisk.totalGrossLate).toBe(9408)
+    expect(result.dpnRisk.totalReversed).toBe(8534)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(874)
+
+    // Period spans full CSV range
+    expect(result.dpnRisk.periodStart).not.toBeNull()
+    expect(result.dpnRisk.periodEnd).not.toBeNull()
+    expect(new Date(result.dpnRisk.periodStart!).getFullYear()).toBe(2019)
+    expect(new Date(result.dpnRisk.periodEnd!).getFullYear()).toBe(2026)
+
+    // Debt breakdown
+    // principalDebits: $9408 + $200000 + $184412 + $7500 + $6200 + $8900 = $416,420
+    // principalCredits: $15862 + $4144 + $4390 = $24,396
+    // interestDebits: $30000 + $37494 = $67,494
+    // interestCredits: $3047 (remission)
+    // paymentsReceived: $200000 + $162335 = $362,335
+    // otherCredits: $32999 (credit transfer)
+    expect(result.debtBreakdown.principalDebits).toBe(416420)
+    expect(result.debtBreakdown.principalCredits).toBe(24396)
+    expect(result.debtBreakdown.principalNet).toBe(392024)
+    expect(result.debtBreakdown.interestDebits).toBe(67494)
+    expect(result.debtBreakdown.interestCredits).toBe(3047)
+    expect(result.debtBreakdown.interestNet).toBe(64447)
+    expect(result.debtBreakdown.paymentsReceived).toBe(362335)
+    expect(result.debtBreakdown.governmentCredits).toBe(0)
+    expect(result.debtBreakdown.otherCredits).toBe(32999)
+    expect(result.debtBreakdown.totalAtoDebt).toBe(392024 + 64447)
+    expect(result.debtBreakdown.currentBalance).toBe(392024 + 64447 - 362335 - 32999)
+  })
+})
+
+describe('extractPeriodEnding', () => {
+  it('extracts 2-digit year from Original statement', () => {
+    expect(extractPeriodEnding('Original Activity Statement for the period ending 31 Dec 25'))
+      .toEqual(new Date('2025-12-31'))
+  })
+
+  it('extracts 2-digit year from ClientAmended statement', () => {
+    expect(extractPeriodEnding('Client initiated amended Activity Statement for the period ending 30 Jun 23'))
+      .toEqual(new Date('2023-06-30'))
+  })
+
+  it('returns null for Payment received', () => {
+    expect(extractPeriodEnding('Payment received')).toBeNull()
+  })
+
+  it('returns null for GIC description', () => {
+    expect(extractPeriodEnding('General interest charge calculated from 01 Aug 25 to 31 Aug 25')).toBeNull()
+  })
+})
+
+describe('classifyLodgement — new types', () => {
+  it('classifies failure to lodge penalty', () => {
+    expect(classifyLodgement('Failure to lodge penalty')).toBe('FTLPenalty')
+  })
+
+  it('classifies general penalty', () => {
+    expect(classifyLodgement('General penalty for late lodgement')).toBe('GeneralPenalty')
+  })
+
+  it('classifies administrative penalty', () => {
+    expect(classifyLodgement('Administrative penalty assessment')).toBe('GeneralPenalty')
+  })
+
+  it('classifies credit transfer', () => {
+    expect(classifyLodgement('Credit transfer from Income Tax Account')).toBe('CreditTransfer')
+  })
+
+  it('classifies debit transfer as CreditTransfer', () => {
+    expect(classifyLodgement('Debit transfer to Income Tax Account')).toBe('CreditTransfer')
+  })
+
+  it('existing classifier behaviour unchanged — Original', () => {
+    expect(classifyLodgement('Original Activity Statement for the period ending 31 Dec 25')).toBe('Original')
+  })
+
+  it('existing classifier behaviour unchanged — SubLine', () => {
+    expect(classifyLodgement('- GST')).toBe('SubLine')
+  })
+
+  // Bug 1: bare "Payment" rows
+  it('classifies bare Payment (exact match)', () => {
+    expect(classifyLodgement('Payment')).toBe('Payment')
+  })
+
+  it('classifies bare Payment with apostrophe prefix', () => {
+    expect(classifyLodgement("'Payment")).toBe('Payment')
+  })
+
+  it('classifies Payment received', () => {
+    expect(classifyLodgement('Payment received')).toBe('Payment')
+  })
+
+  it('classifies bare payment (lower case)', () => {
+    expect(classifyLodgement('payment')).toBe('Payment')
+  })
+
+  // Bug 2: GovernmentCredit rows
+  it('classifies Cash Flow Boost as GovernmentCredit', () => {
+    expect(classifyLodgement('Original Cash Flow Boost 1 Payment for the period ending 31 Mar 20')).toBe('GovernmentCredit')
+  })
+
+  it('classifies JobKeeper as GovernmentCredit', () => {
+    expect(classifyLodgement('JobKeeper top-up payment')).toBe('GovernmentCredit')
+  })
+
+  it('does NOT classify Original Activity Statement as GovernmentCredit', () => {
+    expect(classifyLodgement('Original Activity Statement for the period ending 30 Jun 20')).toBe('Original')
   })
 })

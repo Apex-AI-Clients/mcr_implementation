@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
 import { computeLateLodgement } from '@/lib/analysis/computeLateLodgement'
+import { generateLodgementAiSummary } from '@/lib/ai/lodgementSummary'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -72,6 +73,24 @@ export async function POST(_req: NextRequest, { params }: Params) {
     const parsed = parseActivityStatementCsv(csvText)
     const result = computeLateLodgement(parsed)
 
+    // Generate AI summary — skip if no DPN exposure
+    let aiText: string | null = null
+    let aiModel: string | null = null
+
+    if (result.dpnRisk.totalGrossLate > 0 || result.summary.numberOfLateLodgements > 0) {
+      try {
+        const aiResult = await generateLodgementAiSummary({
+          dpnRisk: result.dpnRisk,
+          debtBreakdown: result.debtBreakdown,
+          summary: result.summary,
+        })
+        aiText = aiResult.text
+        aiModel = aiResult.model
+      } catch (err) {
+        console.error('[POST /api/admin/clients/[id]/analyse-lodgements] AI summary failed', err)
+      }
+    }
+
     const now = new Date().toISOString()
 
     // Upsert into lodgement_analyses keyed by document_id
@@ -89,6 +108,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
           cumulative_days_late: result.summary.cumulativeDaysLate,
           rows: result.rows as unknown as Record<string, unknown>[],
           warnings: result.warnings as unknown as Record<string, unknown>[],
+          dpn_risk: result.dpnRisk as unknown as Record<string, unknown>,
+          debt_breakdown: result.debtBreakdown as unknown as Record<string, unknown>,
+          ai_summary: aiText ?? null,
+          ai_summary_generated_at: aiText ? now : null,
+          ai_summary_model: aiModel ?? null,
           analysed_at: now,
         },
         { onConflict: 'document_id' },
@@ -97,7 +121,13 @@ export async function POST(_req: NextRequest, { params }: Params) {
       .single()
 
     if (upsertError) {
-      console.error('[POST /api/admin/clients/[id]/analyse-lodgements] upsert error', upsertError)
+      console.error(
+        '[POST /api/admin/clients/[id]/analyse-lodgements] upsert error',
+        upsertError.message,
+        upsertError.details,
+        upsertError.hint,
+        upsertError.code,
+      )
       return NextResponse.json({ error: 'Failed to persist analysis.' }, { status: 500 })
     }
 
@@ -113,6 +143,10 @@ export async function POST(_req: NextRequest, { params }: Params) {
         numberOfLateLodgements: upserted.number_of_late_lodgements,
         cumulativeDaysLate: upserted.cumulative_days_late,
       },
+      dpnRisk: result.dpnRisk,
+      debtBreakdown: result.debtBreakdown,
+      aiSummary: aiText,
+      aiSummaryGeneratedAt: aiText ? now : null,
       rows: result.rows,
       warnings: result.warnings,
       analysedAt: upserted.analysed_at,

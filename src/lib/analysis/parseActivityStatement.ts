@@ -47,6 +47,39 @@ function parseCurrency(raw: string, isSigned = false): number | null {
   return numeric * multiplier
 }
 
+const MONTH_MAP: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+}
+
+/**
+ * Extract the "period ending" date from a lodgement description.
+ * Returns null if no period is found or it cannot be parsed.
+ * Matches "for the period ending 30 Jun 23" / "for the period ending 31 Dec 2025" etc.
+ * Returns a UTC midnight date so comparisons are timezone-safe.
+ */
+export function extractPeriodEnding(description: string): Date | null {
+  const match = description.match(/period ending (\d{1,2}\s+\w{3}\s+(?:\d{2}|\d{4}))/i)
+  if (!match) return null
+
+  const parts = match[1].trim().split(/\s+/)
+  if (parts.length !== 3) return null
+
+  const day = parseInt(parts[0], 10)
+  const month = MONTH_MAP[parts[1].toLowerCase().slice(0, 3)]
+  const rawYear = parseInt(parts[2], 10)
+  // Expand 2-digit year to 4-digit (assume century 2000)
+  const year = parts[2].length === 2 ? 2000 + rawYear : rawYear
+
+  if (isNaN(day) || month === undefined || isNaN(year)) return null
+
+  // Use UTC to avoid timezone offset affecting the date value
+  const d = new Date(Date.UTC(year, month, day))
+  // Validate the constructed date (e.g. 31 Feb would roll over)
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month || d.getUTCDate() !== day) return null
+  return d
+}
+
 /**
  * Parse an ATO Activity Statement CSV into typed rows.
  *
@@ -115,6 +148,7 @@ export function parseActivityStatementCsv(csvText: string): ParsedCsv {
       debit: parseCurrency(rawDebit),
       credit: parseCurrency(rawCredit),
       balance: parseCurrency(rawBalance, true),
+      periodEnding: extractPeriodEnding(description),
     }
   })
 

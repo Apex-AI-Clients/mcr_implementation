@@ -273,11 +273,16 @@ export type Database = {
       }
       lodgement_analyses: {
         Row: {
+          ai_summary: string | null
+          ai_summary_generated_at: string | null
+          ai_summary_model: string | null
           analysed_at: string
           client_id: string
           company_name_in_csv: string | null
           cumulative_days_late: number
+          debt_breakdown: Json | null
           document_id: string
+          dpn_risk: Json | null
           id: string
           number_of_late_lodgements: number
           row_count: number
@@ -287,11 +292,16 @@ export type Database = {
           warnings: Json
         }
         Insert: {
+          ai_summary?: string | null
+          ai_summary_generated_at?: string | null
+          ai_summary_model?: string | null
           analysed_at?: string
           client_id: string
           company_name_in_csv?: string | null
           cumulative_days_late: number
+          debt_breakdown?: Json | null
           document_id: string
+          dpn_risk?: Json | null
           id?: string
           number_of_late_lodgements: number
           row_count: number
@@ -301,11 +311,16 @@ export type Database = {
           warnings?: Json
         }
         Update: {
+          ai_summary?: string | null
+          ai_summary_generated_at?: string | null
+          ai_summary_model?: string | null
           analysed_at?: string
           client_id?: string
           company_name_in_csv?: string | null
           cumulative_days_late?: number
+          debt_breakdown?: Json | null
           document_id?: string
+          dpn_risk?: Json | null
           id?: string
           number_of_late_lodgements?: number
           row_count?: number

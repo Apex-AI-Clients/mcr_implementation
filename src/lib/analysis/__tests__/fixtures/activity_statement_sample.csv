@@ -1,0 +1,18 @@
+"Activity statement 002"
+"PARKCON PTY LTD"
+Processed date,Effective date,Description,Debit (DR),Credit (CR),Balance
+26 Feb 2026,03 Mar 2026,"'Original Activity Statement for the period ending 31 Dec 25",$1234.56,,$1234.56 DR
+26 Feb 2026,03 Mar 2026,"'- GST",$1234.56,,$1234.56 DR
+26 Feb 2026,03 Mar 2026,"'- PAYG Withholding",,$500.00,$734.56 DR
+21 Aug 2025,25 Aug 2025,"'Original Activity Statement for the period ending 30 Jun 25",$987.00,,$987.00 DR
+21 Aug 2025,25 Aug 2025,"'- GST",$987.00,,$987.00 DR
+11 Dec 2024,25 Aug 2023,"'Client initiated amended Activity Statement for the period ending 30 Jun 23",$2000.00,,$2000.00 DR
+11 Dec 2024,25 Aug 2023,"'- GST",$2000.00,,$2000.00 DR
+17 Nov 2022,25 Aug 2022,"'Client initiated amended Activity Statement for the period ending 30 Jun 22",$500.00,,$500.00 DR
+17 Nov 2022,25 Aug 2022,"'- PAYG Instalments",$300.00,,$300.00 DR
+26 Mar 2021,02 Mar 2021,"'Original Activity Statement for the period ending 31 Dec 20",$750.00,,$750.00 DR
+26 Mar 2021,02 Mar 2021,"'- GST",$750.00,,$750.00 DR
+11 Mar 2020,26 Nov 2018,"'Client initiated amended Activity Statement for the period ending 30 Sep 18",$1100.00,,$1100.00 DR
+11 Mar 2020,26 Nov 2018,"'- PAYG Instalments",$600.00,,$600.00 DR
+15 Jan 2024,01 Jan 2024,"'General interest charge calculated from 01 Aug 25 to 31 Aug 25",$45.00,,$45.00 DR
+10 Jun 2023,10 Jun 2023,"'Payment received",,$3500.00,$2500.00 CR

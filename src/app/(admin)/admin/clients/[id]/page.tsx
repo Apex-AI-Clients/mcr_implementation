@@ -79,6 +79,20 @@ export default async function ClientDetailPage({ params }: Props) {
           numberOfLateLodgements: rawAnalysis.number_of_late_lodgements,
           cumulativeDaysLate: rawAnalysis.cumulative_days_late,
         },
+        dpnRisk: (() => {
+          const raw = rawAnalysis.dpn_risk as Record<string, unknown> | null
+          // Validate new shape — old records have 'lateLodgements', new have 'contributingRows'
+          if (!raw || !Array.isArray(raw['contributingRows'])) return null
+          return raw as unknown as LodgementAnalysisPayload['dpnRisk']
+        })(),
+        debtBreakdown: (() => {
+          const raw = rawAnalysis.debt_breakdown as Record<string, unknown> | null
+          // Validate new shape — old records use 'principalTotal', new use 'principalDebits'
+          if (!raw || typeof raw['principalDebits'] !== 'number') return null
+          return raw as unknown as LodgementAnalysisPayload['debtBreakdown']
+        })(),
+        aiSummary: rawAnalysis.ai_summary ?? null,
+        aiSummaryGeneratedAt: rawAnalysis.ai_summary_generated_at ?? null,
         rows: rawAnalysis.rows as LodgementAnalysisPayload['rows'],
         warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
         analysedAt: rawAnalysis.analysed_at,
@@ -143,6 +157,11 @@ export default async function ClientDetailPage({ params }: Props) {
       </div>
 
        <div className="mb-6">
+        {rawAnalysis && !initialAnalysis?.dpnRisk && (
+          <div className="mb-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-warning">
+            This analysis was generated with an outdated method. Click <strong>Re-analyse</strong> to refresh it.
+          </div>
+        )}
         <LodgementAnalysisCard
           clientId={id}
           initialAnalysis={initialAnalysis}

@@ -6,6 +6,8 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { DpnRiskPanel } from '@/components/admin/lodgement/DpnRiskPanel'
+import { DebtCompositionPanel } from '@/components/admin/lodgement/DebtCompositionPanel'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 
 interface Props {
@@ -18,7 +20,6 @@ interface Props {
 
 function csvCell(value: string | number | null | undefined): string {
   const s = value === null || value === undefined ? '' : String(value)
-  // Quote if contains comma, double-quote, or newline
   if (s.includes(',') || s.includes('"') || s.includes('\n')) {
     return `"${s.replace(/"/g, '""')}"`
   }
@@ -29,8 +30,8 @@ function csvRow(...cells: (string | number | null | undefined)[]): string {
   return cells.map(csvCell).join(',')
 }
 
-function formatCurrencyExport(value: number | null): string {
-  if (value === null) return ''
+function formatCurrencyExport(value: number | null | undefined): string {
+  if (value === null || value === undefined) return ''
   return `$${Math.abs(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`
 }
 
@@ -47,6 +48,15 @@ function formatDateExport(d: Date | string | null | undefined): string {
   return date.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')
 }
 
+function formatIsoExport(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-AU', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
 function buildExportCsv(analysis: LodgementAnalysisPayload): string {
   const lines: string[] = []
 
@@ -55,11 +65,55 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
   const numLate = analysis.summary.numberOfLateLodgements
   const cumDays = analysis.summary.cumulativeDaysLate
 
-  // Preamble rows — summary stats placed in cols G & H (cols 7 & 8)
+  // Preamble rows — summary stats
   lines.push(csvRow(label, '', '', '', '', '', 'Number Late Lodgements', numLate))
   lines.push(csvRow('', '', '', '', '', '', 'Cumulative Days Late', cumDays))
   lines.push(csvRow(company))
   lines.push('')
+
+  // DPN Risk Summary block
+  if (analysis.dpnRisk) {
+    const dpn = analysis.dpnRisk
+    lines.push(csvRow('DPN Risk Summary'))
+    lines.push(csvRow('Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
+    lines.push(csvRow('Amount reversed/credited', formatCurrencyExport(dpn.totalReversed)))
+    lines.push(csvRow('Net amount at risk', formatCurrencyExport(dpn.totalNetAtRisk)))
+    lines.push(
+      csvRow(
+        'Period covered',
+        dpn.periodStart && dpn.periodEnd
+          ? `${formatIsoExport(dpn.periodStart)} to ${formatIsoExport(dpn.periodEnd)}`
+          : '—',
+      ),
+    )
+    lines.push('')
+  }
+
+  // Debt Composition block
+  if (analysis.debtBreakdown) {
+    const db = analysis.debtBreakdown
+    lines.push(csvRow('Debt Composition'))
+    lines.push(csvRow('Principal (gross debits)', formatCurrencyExport(db.principalDebits)))
+    lines.push(csvRow('Less: amendment credits', formatCurrencyExport(db.principalCredits)))
+    lines.push(csvRow('Principal (net)', formatCurrencyExport(db.principalNet)))
+    lines.push(csvRow('Interest / GIC (gross)', formatCurrencyExport(db.interestDebits)))
+    lines.push(csvRow('Less: GIC remissions', formatCurrencyExport(db.interestCredits)))
+    lines.push(csvRow('Interest (net)', formatCurrencyExport(db.interestNet)))
+    lines.push(csvRow('Penalties (net)', formatCurrencyExport(db.penaltyNet)))
+    lines.push(csvRow('Total ATO debt accrued', formatCurrencyExport(db.totalAtoDebt)))
+    lines.push(csvRow('Payments received', formatCurrencyExport(db.paymentsReceived)))
+    lines.push(csvRow('Government credits (Cash Flow Boost etc)', formatCurrencyExport(db.governmentCredits)))
+    lines.push(csvRow('Other credits', formatCurrencyExport(db.otherCredits)))
+    lines.push(csvRow('Current balance owing', formatCurrencyExport(db.currentBalance)))
+    lines.push('')
+  }
+
+  // AI Summary block
+  if (analysis.aiSummary) {
+    lines.push(csvRow('AI Summary'))
+    lines.push(csvCell(analysis.aiSummary))
+    lines.push('')
+  }
 
   // Column headers
   lines.push(csvRow(
@@ -77,8 +131,6 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
   for (const row of analysis.rows) {
     const processedDate = row.processedDate ? new Date(row.processedDate as unknown as string) : null
     const effectiveDate = row.effectiveDate ? new Date(row.effectiveDate as unknown as string) : null
-
-    // Prefix description with apostrophe for Excel safety (matches original ATO format)
     const description = row.description ? `'${row.description}` : ''
 
     lines.push(csvRow(
@@ -256,13 +308,59 @@ function SummaryPanel({
         </div>
       </div>
 
-      {/* What it means */}
-      <div className="rounded-md border border-warning/30 bg-warning/5 px-4 py-3 space-y-1">
-        <p className="text-sm font-bold text-foreground">What this means for the client</p>
-        <p className="text-sm font-semibold text-warning leading-snug">
-          {numberOfLateLodgements} lodgements were filed late, totalling {cumulativeDaysLate} days of delay.
+      {/* DPN Risk explainer */}
+      <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+        <p className="text-xs font-semibold text-foreground/80">DPN Risk (&gt;90 days late)</p>
+        <p className="text-xs text-foreground/45 leading-relaxed">
+          Every Original or Client-Amended lodgement filed more than 90 calendar days past
+          its statutory due date is included. Debits add to the gross figure; credits subtract
+          from it. Credits are pooled across all qualifying rows — they are NOT matched to
+          specific BAS periods, so an amendment-credit on one late-filed period offsets a
+          debit on any other.
+        </p>
+        <p className="text-xs text-foreground/45 leading-relaxed">
+          Why 90 days matters: once a BAS is more than 90 days overdue, the ATO can pursue
+          the director personally via a Director Penalty Notice (DPN). The &quot;Net at Risk&quot;
+          figure is the maximum personal liability exposure after known reversals.
         </p>
       </div>
+
+      {/* Debt Composition explainer */}
+      <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+        <p className="text-xs font-semibold text-foreground/80">Debt Composition</p>
+        <p className="text-xs text-foreground/45 leading-relaxed">
+          Splits the ATO ledger into principal (Original + Client-Amended amounts), interest (General
+          Interest Charge and remissions), and penalties. Sub-line rows and ATO-initiated amendments
+          are excluded to avoid double-counting. Useful for understanding whether the balance is
+          mostly real liability or accumulated charges and interest.
+        </p>
+      </div>
+
+      {/* What it means */}
+      {(() => {
+        const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
+        const dpn = analysis.dpnRisk
+        const fmt = (n: number) => n.toLocaleString('en-AU', { maximumFractionDigits: 0 })
+
+        return (
+          <div className="rounded-md border border-warning/30 bg-warning/5 px-4 py-3 space-y-1.5">
+            <p className="text-sm font-bold text-foreground">What this means for the client</p>
+            <p className="text-sm text-foreground/85 leading-snug">
+              {numberOfLateLodgements} {numberOfLateLodgements === 1 ? 'lodgement was' : 'lodgements were'} filed late,
+              totalling {cumulativeDaysLate} days of delay.
+              {dpn && dpn.totalGrossLate > 0 && (
+                <>
+                  {' '}Of that, ${fmt(dpn.totalGrossLate)} was lodged more than 90 days past due, with
+                  ${fmt(dpn.totalReversed)} subsequently reversed — leaving{' '}
+                  <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
+                    ${fmt(dpn.totalNetAtRisk)} of personal-liability exposure
+                  </span> under the DPN regime.
+                </>
+              )}
+            </p>
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -303,7 +401,14 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
     downloadCsv(csv, `${name} — Late Lodgements.csv`)
   }
 
-  const severity = analysis ? getSeverity(analysis.summary.numberOfLateLodgements) : 'ok'
+  function getDaysSeverity(days: number): 'ok' | 'warning' | 'danger' {
+    if (days === 0) return 'ok'
+    if (days > 1000) return 'danger'
+    return 'warning'
+  }
+
+  const countSeverity = analysis ? getSeverity(analysis.summary.numberOfLateLodgements) : 'ok'
+  const daysSeverity = analysis ? getDaysSeverity(analysis.summary.cumulativeDaysLate) : 'ok'
   const lateRows = analysis ? analysis.rows.filter((r) => r.lateLodgeDaysCleaned > 0) : []
 
   return (
@@ -358,16 +463,17 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
 
       {analysis && (
         <div className="space-y-4">
+          {/* SBR Compliance */}
           <div className="grid grid-cols-2 gap-3">
             <StatTile
               value={analysis.summary.numberOfLateLodgements}
               label="Number of Late Lodgements"
-              severity={severity}
+              severity={countSeverity}
             />
             <StatTile
               value={analysis.summary.cumulativeDaysLate}
               label="Cumulative Days Late"
-              severity={severity}
+              severity={daysSeverity}
             />
           </div>
 
@@ -375,12 +481,27 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
             <SummaryPanel analysis={analysis} onClose={() => setShowSummary(false)} />
           )}
 
-          <p className="text-xs text-foreground/30">
-            Analysed {formatDateRelative(analysis.analysedAt)} · Source: {analysis.sourceFilename}
-          </p>
+          {/* DPN Risk (includes AI summary) */}
+          {analysis.dpnRisk && (
+            <div className="border-t border-border/40 pt-4">
+              <DpnRiskPanel
+                dpnRisk={analysis.dpnRisk}
+                aiSummary={analysis.aiSummary}
+                aiSummaryGeneratedAt={analysis.aiSummaryGeneratedAt}
+              />
+            </div>
+          )}
 
-          {/* {lateRows.length > 0 && (
-            <div>
+          {/* Debt Composition */}
+          {analysis.debtBreakdown && (
+            <div className="border-t border-border/40 pt-4">
+              <DebtCompositionPanel debtBreakdown={analysis.debtBreakdown} />
+            </div>
+          )}
+
+          {/* Contributing lodgements table (all late rows) */}
+          {lateRows.length > 0 && (
+            <div className="border-t border-border/40 pt-4">
               <button
                 onClick={() => setShowTable((v) => !v)}
                 className="flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
@@ -398,7 +519,11 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
                 </div>
               )}
             </div>
-          )} */}
+          )}
+
+          <p className="text-xs text-foreground/30">
+            Analysed {formatDateRelative(analysis.analysedAt)} · Source: {analysis.sourceFilename}
+          </p>
 
           {analysis.warnings.length > 0 && <WarningsList warnings={analysis.warnings} />}
 

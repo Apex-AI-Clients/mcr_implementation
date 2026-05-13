@@ -1,0 +1,18 @@
+"Activity statement 007"
+"PARKCON PTY LTD"
+Processed date,Effective date,Description,Debit (DR),Credit (CR),Balance
+21 Feb 2019,27 Aug 2018,"'Original Activity Statement for the period ending 30 Jun 18",$9408.00,,$9408.00 DR
+15 Aug 2019,26 Aug 2019,"'Original Activity Statement for the period ending 30 Jun 19",$200000.00,,$209408.00 DR
+15 Aug 2019,26 Aug 2019,"'Client initiated amended Activity Statement for the period ending 30 Jun 19",,$15862.00,$193546.00 DR
+11 Mar 2020,26 Nov 2018,"'Client initiated amended Activity Statement for the period ending 30 Sep 18",,$4144.00,$189402.00 DR
+10 Aug 2020,24 Aug 2020,"'Original Activity Statement for the period ending 30 Jun 20",$184412.00,,$373814.00 DR
+26 Mar 2021,02 Mar 2021,"'Original Activity Statement for the period ending 31 Dec 20",$7500.00,,$381314.00 DR
+17 Nov 2022,25 Aug 2022,"'Client initiated amended Activity Statement for the period ending 30 Jun 22",$6200.00,,$387514.00 DR
+21 May 2023,21 Feb 2023,"'Original Activity Statement for the period ending 31 Dec 22",$8900.00,,$396414.00 DR
+01 Jun 2023,01 Jun 2023,"'Payment received",,$200000.00,$196414.00 DR
+15 Jan 2024,15 Jan 2024,"'General interest charge calculated from 01 Jan 23 to 31 Dec 23",$30000.00,,$226414.00 DR
+11 Dec 2024,25 Aug 2023,"'Client initiated amended Activity Statement for the period ending 30 Jun 23",,$4390.00,$222024.00 DR
+15 Jan 2025,15 Jan 2025,"'General interest charge calculated from 01 Jan 24 to 31 Dec 24",$37494.00,,$259518.00 DR
+20 Feb 2025,20 Feb 2025,"'Remission of general interest charge",,$3047.00,$256471.00 DR
+01 Mar 2025,01 Mar 2025,"'Payment received",,$162335.00,$94136.00 DR
+15 Apr 2026,15 Apr 2026,"'Credit transfer from income tax account",,$32999.00,$61137.00 DR

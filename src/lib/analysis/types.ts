@@ -5,6 +5,10 @@ export type LodgementType =
   | 'SubLine'
   | 'GIC'
   | 'Payment'
+  | 'FTLPenalty'
+  | 'GeneralPenalty'
+  | 'CreditTransfer'
+  | 'GovernmentCredit'
   | 'Other'
 
 export interface ParsedRow {
@@ -17,6 +21,7 @@ export interface ParsedRow {
   debit: number | null
   credit: number | null
   balance: number | null
+  periodEnding: Date | null
 }
 
 export interface ParsedCsv {
@@ -39,11 +44,58 @@ export interface AnalysisWarning {
   description: string
 }
 
+/**
+ * A single row that qualifies for DPN risk: Original or ClientAmended,
+ * filed more than 90 calendar days past the effective date.
+ * Both debit rows (gross liability) and credit rows (reversals) are included.
+ */
+export interface DpnContributingRow {
+  rowIndex: number
+  processedDate: string
+  effectiveDate: string
+  periodEnding: string | null
+  description: string
+  daysLate: number
+  debit: number
+  credit: number
+}
+
+export interface DpnRiskBreakdown {
+  thresholdDays: 90
+  contributingRows: DpnContributingRow[]
+  totalGrossLate: number
+  totalReversed: number
+  totalNetAtRisk: number
+  /** Earliest processedDate across ALL CSV rows (not just contributing rows) */
+  periodStart: string | null
+  /** Latest processedDate across ALL CSV rows (not just contributing rows) */
+  periodEnd: string | null
+}
+
+export interface DebtBreakdown {
+  principalDebits: number
+  principalCredits: number
+  principalNet: number
+  interestDebits: number
+  interestCredits: number
+  interestNet: number
+  penaltyDebits: number
+  penaltyCredits: number
+  penaltyNet: number
+  paymentsReceived: number
+  governmentCredits: number
+  otherCredits: number
+  totalAtoDebt: number
+  currentBalance: number
+}
+
 export interface LodgementAnalysisResult {
   summary: {
     numberOfLateLodgements: number
     cumulativeDaysLate: number
   }
+  dpnRisk: DpnRiskBreakdown
+  debtBreakdown: DebtBreakdown
   rows: EnrichedRow[]
   warnings: AnalysisWarning[]
 }
@@ -61,6 +113,10 @@ export interface LodgementAnalysisPayload {
     numberOfLateLodgements: number
     cumulativeDaysLate: number
   }
+  dpnRisk: DpnRiskBreakdown | null
+  debtBreakdown: DebtBreakdown | null
+  aiSummary: string | null
+  aiSummaryGeneratedAt: string | null
   rows: EnrichedRow[]
   warnings: AnalysisWarning[]
   analysedAt: string
