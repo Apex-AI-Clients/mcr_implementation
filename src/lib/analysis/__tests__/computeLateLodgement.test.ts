@@ -221,14 +221,15 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     expect(result.summary.numberOfLateLodgements).toBe(4)
     expect(result.summary.cumulativeDaysLate).toBe(474 + 84 + 24 + 471)
 
-    // DPN: Original/ClientAmended rows with lateLodgementDays > 90 (debit or credit)
-    // ClientAmended 30 Jun 23 (474d): debit $2000 → DPN debit
-    // ClientAmended 30 Sep 18 (471d): debit $1100 → DPN debit
-    // No credit rows qualify → totalReversed = 0
-    expect(result.dpnRisk.contributingRows).toHaveLength(2)
+    // DPN: Original/ClientAmended rows with lateLodgementDays > 90 AND debit > 0
+    // ClientAmended 30 Jun 23 (474d, processedDate 11 Dec 2024): debit $2000
+    //   → payments since 11 Dec 2024: none (only payment is 10 Jun 2023) → net $2000
+    // ClientAmended 30 Sep 18 (471d, processedDate 11 Mar 2020): debit $1100
+    //   → payments since 11 Mar 2020: $3500 (10 Jun 2023), capped at $1100 → net $0
+    expect(result.dpnRisk.contributingDebits).toHaveLength(2)
     expect(result.dpnRisk.totalGrossLate).toBe(3100)
-    expect(result.dpnRisk.totalReversed).toBe(0)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
+    expect(result.dpnRisk.totalPaidSince).toBe(1100)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(2000)
 
     // Debt breakdown (new field names)
     // principalDebits = $1234.56 + $987 + $2000 + $500 + $750 + $1100 = $6571.56
@@ -259,14 +260,23 @@ describe('computeLateLodgement — integration with PARKCON fixture CSV', () => 
     expect(result.summary.numberOfLateLodgements).toBe(6)
     expect(result.summary.cumulativeDaysLate).toBe(1320)
 
-    // DPN: 3 qualifying rows (>90 days, Original or ClientAmended)
-    // Row 0: Original, 178d, debit $9,408
-    // Row 3: ClientAmended, 471d, credit $4,144
-    // Row 10: ClientAmended, 474d, credit $4,390
-    expect(result.dpnRisk.contributingRows).toHaveLength(3)
+    // DPN methodology corrected (15 May 2026): per-row netting of cash payments only.
+    // Row 0: Original, 178d, debit $9,408 → only qualifying contributing debit
+    // Row 3: ClientAmended, 471d, credit $4,144 → credit-only, NOT a contributing debit
+    // Row 10: ClientAmended, 474d, credit $4,390 → credit-only, NOT a contributing debit
+    // Payments since 21 Feb 2019: $200,000 (01 Jun 2023) + $162,335 (01 Mar 2025) = $362,335
+    // Capped at $9,408 → totalPaidSince = $9,408, totalNetAtRisk = $0
+    expect(result.dpnRisk.contributingDebits).toHaveLength(1)
     expect(result.dpnRisk.totalGrossLate).toBe(9408)
-    expect(result.dpnRisk.totalReversed).toBe(8534)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(874)
+    expect(result.dpnRisk.totalPaidSince).toBe(9408)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(0)
+
+    // The single contributing debit is the 21 Feb 2019 lodgement
+    const debit = result.dpnRisk.contributingDebits[0]
+    expect(debit.debit).toBe(9408)
+    expect(debit.daysLate).toBe(178)
+    expect(debit.paymentsSinceLodged).toBe(9408)
+    expect(debit.netAtRisk).toBe(0)
 
     // Period spans full CSV range
     expect(result.dpnRisk.periodStart).not.toBeNull()

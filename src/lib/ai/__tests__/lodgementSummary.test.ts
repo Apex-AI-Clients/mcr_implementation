@@ -18,10 +18,10 @@ const { generateLodgementAiSummary } = await import('../lodgementSummary')
 function makeDpnRisk(overrides: Partial<DpnRiskBreakdown> = {}): DpnRiskBreakdown {
   return {
     thresholdDays: 90,
-    contributingRows: [],
+    contributingDebits: [],
     totalGrossLate: 9408,
-    totalReversed: 8534,
-    totalNetAtRisk: 874,
+    totalPaidSince: 9408,
+    totalNetAtRisk: 0,
     periodStart: '2019-02-21T00:00:00.000Z',
     periodEnd: '2026-04-15T00:00:00.000Z',
     ...overrides,
@@ -133,7 +133,7 @@ describe('generateLodgementAiSummary', () => {
     })
 
     await generateLodgementAiSummary({
-      dpnRisk: makeDpnRisk({ totalGrossLate: 12345, totalNetAtRisk: 874 }),
+      dpnRisk: makeDpnRisk({ totalGrossLate: 12345, totalNetAtRisk: 0 }),
       debtBreakdown: makeDebtBreakdown({ principalNet: 10000 }),
       summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
     })

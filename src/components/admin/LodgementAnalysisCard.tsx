@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Activity, ChevronDown, ChevronUp, Download, Info, X } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -76,7 +76,7 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
     const dpn = analysis.dpnRisk
     lines.push(csvRow('DPN Risk Summary'))
     lines.push(csvRow('Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
-    lines.push(csvRow('Amount reversed/credited', formatCurrencyExport(dpn.totalReversed)))
+    lines.push(csvRow('Paid since lodged', formatCurrencyExport(dpn.totalPaidSince)))
     lines.push(csvRow('Net amount at risk', formatCurrencyExport(dpn.totalNetAtRisk)))
     lines.push(
       csvRow(
@@ -263,21 +263,15 @@ function WarningsList({ warnings }: { warnings: AnalysisWarning[] }) {
 
 function SummaryPanel({
   analysis,
-  onClose,
 }: {
   analysis: LodgementAnalysisPayload
-  onClose: () => void
+  onClose?: () => void
 }) {
   const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-foreground">How the numbers are calculated</h4>
-        <button onClick={onClose} className="text-foreground/40 hover:text-foreground transition-colors">
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+    <div className="p-5 space-y-3">
+      <h4 className="text-sm font-semibold text-foreground pr-8">How the numbers are calculated</h4>
 
       {/* Formulas */}
       <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
@@ -288,6 +282,19 @@ function SummaryPanel({
         <span className="text-accent">Cumulative Days Late</span> ={' '}
         <span className="text-warning">Sum of</span> (Processed Date − Effective Date) per late row
       </div>
+      <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
+        <span className="text-accent">Gross debt &gt;90 days late</span> ={' '}
+        <span className="text-warning">Sum of </span> Debit per Original / Client-Amended row where
+        (Processed Date − Statutory Due Date) &gt; 90 days
+      </div>
+      <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
+        <span className="text-accent">Paid since lodged</span> ={' '}
+        <span className="text-warning">Sum of </span> min(Cash Payments processed on/after that row&apos;s Processed Date, Debit) per qualifying row
+      </div>
+      <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
+        <span className="text-accent">Net at Risk</span> ={' '}
+        <span className="text-warning">Sum of </span> max(Debit − Capped Payments Since, 0) per row &gt;90 days late
+      </div>
 
       {/* Explanation */}
       <p className="text-xs text-foreground/55 leading-relaxed">
@@ -296,15 +303,27 @@ function SummaryPanel({
         Both totals below are based on Original and Client-Amended statements only.
       </p>
 
-      {/* Two description tiles */}
+      {/* Per-metric description tiles */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
           <p className="text-xs font-semibold text-foreground/80">Number of Late Lodgements</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">How many lodgements were received after their due date.</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">How many lodgements were received after their due date. To verify: count rows in the CSV where Processed Date is after Effective Date.</p>
         </div>
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
           <p className="text-xs font-semibold text-foreground/80">Cumulative Days Late</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">All late days added up — the total delay across their entire lodgement history.</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">All late days added up — the total delay across their entire lodgement history. To verify: for each late row, subtract Effective Date from Processed Date and sum the positive values.</p>
+        </div>
+        <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-foreground/80">Gross debt &gt;90 days late</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">Total debit raised by Original / Client-Amended lodgements that were filed more than 90 days past their statutory due date. To verify: filter the CSV to those rows and sum the Debit column.</p>
+        </div>
+        <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-foreground/80">Paid since lodged</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">Cash payments processed on or after each qualifying row&apos;s lodgement date, capped at that row&apos;s debit so over-payments don&apos;t inflate the figure.</p>
+        </div>
+        <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1 col-span-2">
+          <p className="text-xs font-semibold text-foreground/80">Net at Risk</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">Gross debt &gt;90 days late minus Paid since lodged (floored at zero per row). This is the maximum personal-liability exposure under the DPN regime after known reversals.</p>
         </div>
       </div>
 
@@ -351,7 +370,7 @@ function SummaryPanel({
               {dpn && dpn.totalGrossLate > 0 && (
                 <>
                   {' '}Of that, ${fmt(dpn.totalGrossLate)} was lodged more than 90 days past due, with
-                  ${fmt(dpn.totalReversed)} subsequently reversed — leaving{' '}
+                  ${fmt(dpn.totalPaidSince)} paid since lodgement — leaving{' '}
                   <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
                     ${fmt(dpn.totalNetAtRisk)} of personal-liability exposure
                   </span> under the DPN regime.
@@ -361,6 +380,54 @@ function SummaryPanel({
           </div>
         )
       })()}
+    </div>
+  )
+}
+
+// ─── Summary modal wrapper ────────────────────────────────────────────────────
+
+function SummaryModal({
+  analysis,
+  onClose,
+}: {
+  analysis: LodgementAnalysisPayload
+  onClose: () => void
+}) {
+  // Close on Escape and lock body scroll while open
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [onClose])
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-surface shadow-2xl"
+      >
+        {/* Sticky close button */}
+        <button
+          onClick={onClose}
+          aria-label="Close summary"
+          className="absolute top-3 right-3 z-10 rounded-md p-1.5 text-foreground/50 hover:bg-primary/40 hover:text-foreground transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <SummaryPanel analysis={analysis} onClose={onClose} />
+      </div>
     </div>
   )
 }
@@ -478,16 +545,15 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
           </div>
 
           {showSummary && (
-            <SummaryPanel analysis={analysis} onClose={() => setShowSummary(false)} />
+            <SummaryModal analysis={analysis} onClose={() => setShowSummary(false)} />
           )}
 
-          {/* DPN Risk (includes AI summary) */}
+          {/* DPN Risk */}
           {analysis.dpnRisk && (
             <div className="border-t border-border/40 pt-4">
               <DpnRiskPanel
                 dpnRisk={analysis.dpnRisk}
-                aiSummary={analysis.aiSummary}
-                aiSummaryGeneratedAt={analysis.aiSummaryGeneratedAt}
+                paymentRows={analysis.rows}
               />
             </div>
           )}

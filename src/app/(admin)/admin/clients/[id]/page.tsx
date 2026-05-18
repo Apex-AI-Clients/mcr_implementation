@@ -81,8 +81,9 @@ export default async function ClientDetailPage({ params }: Props) {
         },
         dpnRisk: (() => {
           const raw = rawAnalysis.dpn_risk as Record<string, unknown> | null
-          // Validate new shape — old records have 'lateLodgements', new have 'contributingRows'
-          if (!raw || !Array.isArray(raw['contributingRows'])) return null
+          // New shape uses 'contributingDebits' (was 'contributingRows' pre-15-May-2026).
+          // Old payloads return null so the page banner prompts a re-analyse.
+          if (!raw || !Array.isArray(raw['contributingDebits'])) return null
           return raw as unknown as LodgementAnalysisPayload['dpnRisk']
         })(),
         debtBreakdown: (() => {

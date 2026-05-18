@@ -30,7 +30,7 @@ export async function generateLodgementAiSummary(input: {
     .replaceAll('{numberOfLateLodgements}', String(summary.numberOfLateLodgements))
     .replaceAll('{cumulativeDaysLate}', String(summary.cumulativeDaysLate))
     .replaceAll('{totalGrossLate}', formatNum(dpnRisk.totalGrossLate))
-    .replaceAll('{totalReversed}', formatNum(dpnRisk.totalReversed))
+    .replaceAll('{totalReversed}', formatNum(dpnRisk.totalPaidSince))
     .replaceAll('{totalNetAtRisk}', formatNum(dpnRisk.totalNetAtRisk))
     .replaceAll('{principalNet}', formatNum(debtBreakdown.principalNet))
     .replaceAll('{interestNet}', formatNum(debtBreakdown.interestNet))

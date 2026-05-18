@@ -45,30 +45,38 @@ export interface AnalysisWarning {
 }
 
 /**
- * A single row that qualifies for DPN risk: Original or ClientAmended,
- * filed more than 90 calendar days past the effective date.
- * Both debit rows (gross liability) and credit rows (reversals) are included.
+ * A single lodgement row that contributes to DPN risk: Original or ClientAmended,
+ * filed more than 90 calendar days past its statutory due date, with a positive
+ * debit (the lodgement actually added to ATO debt).
+ *
+ * Credit-only amendments (e.g. ClientAmended with credit > 0 and no debit) are
+ * NOT contributing debits — they aren't a personal-liability event.
  */
-export interface DpnContributingRow {
+export interface DpnContributingDebit {
   rowIndex: number
-  processedDate: string
-  effectiveDate: string
-  periodEnding: string | null
+  processedDate: string          // ISO
+  effectiveDate: string          // ISO
+  periodEnding: string | null    // ISO — display only
   description: string
   daysLate: number
-  debit: number
-  credit: number
+  debit: number                  // gross amount that landed on the ATO ledger
+  paymentsSinceLodged: number    // sum of cash payments processed on/after processedDate, CAPPED at debit
+  netAtRisk: number              // max(debit - paymentsSinceLodged, 0)
 }
 
 export interface DpnRiskBreakdown {
   thresholdDays: 90
-  contributingRows: DpnContributingRow[]
+  /** Lodgements that added to ATO debt and were filed more than 90 days late. */
+  contributingDebits: DpnContributingDebit[]
+  /** Sum of `debit` across all contributingDebits. */
   totalGrossLate: number
-  totalReversed: number
+  /** Sum of `paymentsSinceLodged` across all contributingDebits. */
+  totalPaidSince: number
+  /** Sum of `netAtRisk` across all contributingDebits. */
   totalNetAtRisk: number
-  /** Earliest processedDate across ALL CSV rows (not just contributing rows) */
+  /** Earliest processedDate across ALL CSV rows (display only). */
   periodStart: string | null
-  /** Latest processedDate across ALL CSV rows (not just contributing rows) */
+  /** Latest processedDate across ALL CSV rows (display only). */
   periodEnd: string | null
 }
 
