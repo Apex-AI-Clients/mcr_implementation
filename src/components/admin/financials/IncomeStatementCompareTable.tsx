@@ -106,7 +106,6 @@ function TableHeader({ years }: { years: number[] }) {
             </div>
           </th>
         ))}
-        <th className="py-2 pr-3 font-medium text-right">Change (oldest → latest)</th>
       </tr>
     </thead>
   )
@@ -117,7 +116,7 @@ function SectionRows({ section, years }: { section: { category: string; rows: im
   return (
     <>
       <tr className="bg-primary/20">
-        <td colSpan={years.length + 2} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
+        <td colSpan={years.length + 1} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
           {section.category}
         </td>
       </tr>
@@ -132,7 +131,7 @@ function TotalsRows({ section, years }: { section: DiffTableSection; years: numb
   return (
     <>
       <tr className="bg-primary/30">
-        <td colSpan={years.length + 2} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
+        <td colSpan={years.length + 1} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
           Totals
         </td>
       </tr>
@@ -177,9 +176,6 @@ function DiffRowEl({
           </td>
         )
       })}
-      <td className={cn('py-1.5 pr-3 text-right tabular-nums text-foreground/70', { 'font-semibold': bold })}>
-        {formatAud(row.absoluteChangeOldestToLatest)}
-      </td>
     </tr>
   )
 }

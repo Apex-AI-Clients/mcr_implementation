@@ -14,9 +14,10 @@ interface Props {
 export function YoYBadge({ percent, invertSentiment = false, size = 'sm', className }: Props) {
   if (percent === null) return null
 
-  const absRound = Math.abs(percent) < 0.1 ? 0 : Math.round(percent * 10) / 10
-  const isFlat = absRound === 0
-  const isUp = percent > 0
+  const rounded = Math.round(percent)
+  const absRound = Math.abs(rounded)
+  const isFlat = rounded === 0
+  const isUp = rounded > 0
 
   // Sentiment: up=good unless inverted (e.g. ATO debt up = bad)
   const sentiment: 'good' | 'bad' | 'flat' = isFlat

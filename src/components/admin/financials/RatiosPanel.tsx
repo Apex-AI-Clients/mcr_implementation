@@ -21,7 +21,7 @@ interface RatioConfig {
   invertSentiment: boolean
 }
 
-const FMT_PCT = (v: number) => `${v.toFixed(1)}%`
+const FMT_PCT = (v: number) => `${Math.round(v)}%`
 const FMT_NUM = (v: number) => v.toFixed(2)
 const FMT_DAYS = (v: number) => `${Math.round(v)} days`
 

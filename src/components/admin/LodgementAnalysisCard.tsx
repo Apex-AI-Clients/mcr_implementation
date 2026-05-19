@@ -289,11 +289,11 @@ function SummaryPanel({
       </div>
       <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
         <span className="text-accent">Paid since lodged</span> ={' '}
-        <span className="text-warning">Sum of </span> min(Cash Payments processed on/after that row&apos;s Processed Date, Debit) per qualifying row
+        <span className="text-warning">Sum of </span> credits on Original / Client-Amended rows lodged &gt;90 days late (cash Payments are excluded)
       </div>
       <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
         <span className="text-accent">Net at Risk</span> ={' '}
-        <span className="text-warning">Sum of </span> max(Debit − Capped Payments Since, 0) per row &gt;90 days late
+        <span className="text-warning">max(0, </span> Gross debt &gt;90 days late − Paid since lodged<span className="text-warning">)</span>
       </div>
 
       {/* Explanation */}
@@ -319,11 +319,11 @@ function SummaryPanel({
         </div>
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
           <p className="text-xs font-semibold text-foreground/80">Paid since lodged</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">Cash payments processed on or after each qualifying row&apos;s lodgement date, capped at that row&apos;s debit so over-payments don&apos;t inflate the figure.</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">Sum of credit amounts on Original / Client-Amended rows lodged &gt;90 days late — these are reversals of late-lodged liability (e.g. a client-initiated amendment that reduces a prior period). Cash Payments are NOT counted: the ATO applies them to the oldest debt first, so they may have settled an older non-DPN debit instead of the late lodgement.</p>
         </div>
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1 col-span-2">
           <p className="text-xs font-semibold text-foreground/80">Net at Risk</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">Gross debt &gt;90 days late minus Paid since lodged (floored at zero per row). This is the maximum personal-liability exposure under the DPN regime after known reversals.</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">Gross debt &gt;90 days late minus the pooled late-credit reversals (floored at zero). This is the conservative ceiling on personal DPN liability — no cash payment has been credited against it because we can&apos;t prove the ATO allocated it to this specific period.</p>
         </div>
       </div>
 
@@ -332,15 +332,21 @@ function SummaryPanel({
         <p className="text-xs font-semibold text-foreground/80">DPN Risk (&gt;90 days late)</p>
         <p className="text-xs text-foreground/45 leading-relaxed">
           Every Original or Client-Amended lodgement filed more than 90 calendar days past
-          its statutory due date is included. Debits add to the gross figure; credits subtract
-          from it. Credits are pooled across all qualifying rows — they are NOT matched to
-          specific BAS periods, so an amendment-credit on one late-filed period offsets a
-          debit on any other.
+          its statutory due date is examined. Debits in this bucket add to the gross late
+          figure; credits in the same bucket (e.g. late-filed client amendments that reduce
+          a prior period&apos;s liability) form a pool that offsets the gross.
+        </p>
+        <p className="text-xs text-foreground/45 leading-relaxed">
+          Cash Payments are deliberately excluded. The ATO applies payments to the oldest
+          outstanding debt first, so a $10k payment can be entirely consumed by an older,
+          non-DPN debit (prior on-time lodgement, accrued GIC, etc.) without de-risking a
+          newer late lodgement at all. Since we can&apos;t prove where any particular payment
+          landed, the conservative position is to credit none of them.
         </p>
         <p className="text-xs text-foreground/45 leading-relaxed">
           Why 90 days matters: once a BAS is more than 90 days overdue, the ATO can pursue
           the director personally via a Director Penalty Notice (DPN). The &quot;Net at Risk&quot;
-          figure is the maximum personal liability exposure after known reversals.
+          figure is the maximum personal-liability ceiling after late-credit reversals.
         </p>
       </div>
 

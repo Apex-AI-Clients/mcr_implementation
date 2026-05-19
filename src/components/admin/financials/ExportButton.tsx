@@ -68,7 +68,7 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
 
   // Income statement
   lines.push(csvRow('INCOME STATEMENT'))
-  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`), 'Change (oldest → latest)'))
+  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`)))
   for (const section of comparison.incomeStatementDiffs) {
     lines.push(csvRow(`[${section.category}]`))
     for (const row of section.rows) {
@@ -76,7 +76,6 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
         csvRow(
           row.label,
           ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
-          fmtCurrency(row.absoluteChangeOldestToLatest),
         ),
       )
     }
@@ -85,7 +84,7 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
 
   // Balance sheet
   lines.push(csvRow('BALANCE SHEET'))
-  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`), 'Change (oldest → latest)'))
+  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`)))
   for (const section of comparison.balanceSheetDiffs) {
     lines.push(csvRow(`[${section.category}]`))
     for (const row of section.rows) {
@@ -93,7 +92,6 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
         csvRow(
           row.label,
           ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
-          fmtCurrency(row.absoluteChangeOldestToLatest),
         ),
       )
     }

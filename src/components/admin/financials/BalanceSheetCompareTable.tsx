@@ -107,7 +107,7 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
               <>
                 <tr className="bg-primary/30">
                   <td
-                    colSpan={years.length + 2}
+                    colSpan={years.length + 1}
                     className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55"
                   >
                     Totals
@@ -139,7 +139,6 @@ function TableHeader({ years }: { years: number[] }) {
             </div>
           </th>
         ))}
-        <th className="py-2 pr-3 font-medium text-right">Change (oldest → latest)</th>
       </tr>
     </thead>
   )
@@ -151,7 +150,7 @@ function SectionRows({ section, years }: { section: DiffTableSection; years: num
     <>
       <tr className="bg-primary/20">
         <td
-          colSpan={years.length + 2}
+          colSpan={years.length + 1}
           className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55"
         >
           {section.category}
@@ -199,9 +198,6 @@ function DiffRowEl({
           </td>
         )
       })}
-      <td className={cn('py-1.5 pr-3 text-right tabular-nums text-foreground/70', { 'font-semibold': bold })}>
-        {formatAud(row.absoluteChangeOldestToLatest)}
-      </td>
     </tr>
   )
 }
@@ -230,9 +226,6 @@ function NetAssetsRow({ row, years }: { row: DiffRow; years: number[] }) {
           </td>
         )
       })}
-      <td className="py-2.5 pr-3 text-right text-sm font-bold tabular-nums text-foreground/80">
-        {formatAud(row.absoluteChangeOldestToLatest)}
-      </td>
     </tr>
   )
 }
