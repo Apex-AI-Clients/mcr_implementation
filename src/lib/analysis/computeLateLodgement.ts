@@ -23,56 +23,67 @@ import type {
  */
 
 /**
- * DPN (Director Penalty Notice) risk — corrected methodology, confirmed by client
- * (Gabby, MCR Partners) on 15 May 2026.
+ * DPN (Director Penalty Notice) risk — pooled-credit netting methodology.
  *
- * For each Original/ClientAmended lodgement filed more than 90 days late AND with
- * a positive debit, sum cash payments (type === 'Payment') processed on or after
- * that lodgement's processedDate. Cap the per-row payment total at the row's debit
- * amount — a payment cannot reduce a single debt below zero.
+ * Updated 19 May 2026 after MCR feedback (PARKCON reference dataset):
+ *   gross late debt   = $9,408
+ *   paid since lodged = $8,534  (sum of late credit-only ClientAmended rows)
+ *   net at risk       = $874
  *
- * RULES (do not change without re-confirmation with the client):
- *   1. Per-row, not aggregate. Each contributing debit is independently netted
- *      against payments after its own date.
- *   2. Cash payments only. Government stimulus credits (Cash Flow Boost, JobKeeper)
- *      and credit transfers from other ATO accounts are EXCLUDED — they reduce the
- *      balance but are "the ATO's own money" and do not relieve personal DPN
- *      liability.
- *   3. GIC remissions are EXCLUDED. They are paper adjustments, not payments.
- *   4. Credit-only late amendments are NOT contributing debits. They don't
- *      represent a personal-liability event.
+ * Rationale (per MCR): the ATO applies cash payments to the oldest outstanding
+ * debt first, so a cash payment can be consumed by an older non-DPN debit
+ * (GIC, prior on-time lodgement, etc.) without de-risking the DPN-qualifying
+ * late lodgement at all. We can't know for any given payment what it actually
+ * paid down. The conservative position is therefore to NOT credit any cash
+ * payments toward DPN relief.
  *
- * VALIDATION:
- *   For the PARKCON PTY LTD reference dataset, this produces:
- *     totalGrossLate  = $9,408   (one contributing debit)
- *     totalPaidSince  = $9,408   (capped — actual payments since were $362,335)
- *     totalNetAtRisk  = $0
- *   These figures are regression-tested.
+ * Late credit-only ClientAmended rows ARE counted as relief, because an
+ * amendment that reduces a prior-period liability is directly tied to that
+ * period's lodgement debt and is a real reversal of personal liability — even
+ * though it was filed late.
+ *
+ * METHOD:
+ *   1. Identify all Original/ClientAmended rows filed >90 days late.
+ *   2. Split into debit rows (debit > 0) and credit rows (credit > 0).
+ *      Total Gross Late   = sum of debits.
+ *      Total Credit Pool  = sum of credits.
+ *   3. Apply the credit pool oldest-debit-first to allocate per-row
+ *      paymentsSinceLodged and netAtRisk for display. Total paid = min(pool,
+ *      gross); total net = max(0, gross - pool).
+ *
+ * EXCLUSIONS:
+ *   - Cash Payment rows: ignored.
+ *   - Government stimulus (Cash Flow Boost, JobKeeper), credit transfers,
+ *     GIC remissions, ATO-initiated amendments: ignored.
+ *   - Credit-only late amendments themselves are NOT contributing debits
+ *     (debit = 0), but their credit amount IS added to the credit pool.
  */
 export function computeDpnRisk(rows: EnrichedRow[]): DpnRiskBreakdown {
-  // Filter to qualifying late debit lodgements
-  const lateDebits = rows.filter(
+  const lateOriginalAmend = rows.filter(
     (r) =>
       (r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended') &&
-      r.lateLodgementDays > 90 &&
-      (r.debit ?? 0) > 0,
+      r.lateLodgementDays > 90,
   )
 
-  // Cash payments only — explicitly NOT GovernmentCredit, NOT CreditTransfer, NOT GIC remissions.
-  const paymentRows = rows.filter((r) => r.lodgementType === 'Payment' && r.processedDate !== null)
+  const lateDebitRows = lateOriginalAmend
+    .filter((r) => (r.debit ?? 0) > 0)
+    .slice()
+    .sort((a, b) => {
+      const ta = a.processedDate ? (a.processedDate as Date).getTime() : 0
+      const tb = b.processedDate ? (b.processedDate as Date).getTime() : 0
+      if (ta !== tb) return ta - tb
+      return a.rowIndex - b.rowIndex
+    })
 
-  const contributingDebits: DpnContributingDebit[] = lateDebits.map((row) => {
+  const totalGrossLate = lateDebitRows.reduce((s, r) => s + (r.debit ?? 0), 0)
+  const totalCreditPool = lateOriginalAmend.reduce((s, r) => s + (r.credit ?? 0), 0)
+
+  // Allocate the pooled credit oldest-debit-first for per-row display values.
+  let creditRemaining = totalCreditPool
+  const contributingDebits: DpnContributingDebit[] = lateDebitRows.map((row) => {
     const debit = row.debit ?? 0
-    const lodgedAt = row.processedDate as Date // non-null because lateLodgementDays > 0 requires both dates
-
-    // Sum payments processed on or after the lodgement date
-    const paymentsSince = paymentRows
-      .filter((p) => (p.processedDate as Date) >= lodgedAt)
-      .reduce((sum, p) => sum + (p.credit ?? 0), 0)
-
-    const paymentsSinceLodged = Math.min(paymentsSince, debit) // cap at debit
-    const netAtRisk = Math.max(debit - paymentsSinceLodged, 0)
-
+    const applied = Math.min(creditRemaining, debit)
+    creditRemaining -= applied
     return {
       rowIndex: row.rowIndex,
       processedDate: row.processedDate?.toISOString() ?? '',
@@ -81,14 +92,13 @@ export function computeDpnRisk(rows: EnrichedRow[]): DpnRiskBreakdown {
       description: row.description,
       daysLate: row.lateLodgementDays,
       debit,
-      paymentsSinceLodged,
-      netAtRisk,
+      paymentsSinceLodged: applied,
+      netAtRisk: Math.max(debit - applied, 0),
     }
   })
 
-  const totalGrossLate = contributingDebits.reduce((s, r) => s + r.debit, 0)
-  const totalPaidSince = contributingDebits.reduce((s, r) => s + r.paymentsSinceLodged, 0)
-  const totalNetAtRisk = contributingDebits.reduce((s, r) => s + r.netAtRisk, 0)
+  const totalPaidSince = Math.min(totalCreditPool, totalGrossLate)
+  const totalNetAtRisk = Math.max(0, totalGrossLate - totalCreditPool)
 
   // periodStart/periodEnd reflect the full range of all processedDates in the CSV
   const allProcessedTimes = rows

@@ -221,15 +221,17 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     expect(result.summary.numberOfLateLodgements).toBe(4)
     expect(result.summary.cumulativeDaysLate).toBe(474 + 84 + 24 + 471)
 
-    // DPN: Original/ClientAmended rows with lateLodgementDays > 90 AND debit > 0
-    // ClientAmended 30 Jun 23 (474d, processedDate 11 Dec 2024): debit $2000
-    //   → payments since 11 Dec 2024: none (only payment is 10 Jun 2023) → net $2000
-    // ClientAmended 30 Sep 18 (471d, processedDate 11 Mar 2020): debit $1100
-    //   → payments since 11 Mar 2020: $3500 (10 Jun 2023), capped at $1100 → net $0
+    // DPN: pooled-credit netting (19 May 2026 methodology).
+    //   gross = sum of debits among late Original/ClientAmended rows
+    //   paid  = sum of credits among the same rows (cash Payments are NOT counted)
+    //   net   = max(0, gross - paid)
+    // Late debits: ClientAmended 30 Jun 23 ($2000) + ClientAmended 30 Sep 18 ($1100) = $3100
+    // Late credits in fixture: none (no credit-only ClientAmended >90 days)
+    // The 10 Jun 2023 $3500 is a Payment row → ignored.
     expect(result.dpnRisk.contributingDebits).toHaveLength(2)
     expect(result.dpnRisk.totalGrossLate).toBe(3100)
-    expect(result.dpnRisk.totalPaidSince).toBe(1100)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(2000)
+    expect(result.dpnRisk.totalPaidSince).toBe(0)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
 
     // Debt breakdown (new field names)
     // principalDebits = $1234.56 + $987 + $2000 + $500 + $750 + $1100 = $6571.56
@@ -260,23 +262,24 @@ describe('computeLateLodgement — integration with PARKCON fixture CSV', () => 
     expect(result.summary.numberOfLateLodgements).toBe(6)
     expect(result.summary.cumulativeDaysLate).toBe(1320)
 
-    // DPN methodology corrected (15 May 2026): per-row netting of cash payments only.
-    // Row 0: Original, 178d, debit $9,408 → only qualifying contributing debit
-    // Row 3: ClientAmended, 471d, credit $4,144 → credit-only, NOT a contributing debit
-    // Row 10: ClientAmended, 474d, credit $4,390 → credit-only, NOT a contributing debit
-    // Payments since 21 Feb 2019: $200,000 (01 Jun 2023) + $162,335 (01 Mar 2025) = $362,335
-    // Capped at $9,408 → totalPaidSince = $9,408, totalNetAtRisk = $0
+    // DPN methodology (19 May 2026): pooled-credit netting.
+    //   Late debits:  Row 0 Original 178d $9,408 → only contributing debit
+    //   Late credits: Row 3 ClientAmended 471d credit $4,144
+    //                 Row 10 ClientAmended 474d credit $4,390
+    //                 Pool total = $8,534
+    //   Cash payments $200,000 + $162,335 are ignored — the ATO applies
+    //   payments to the oldest debt first and we can't prove they hit the
+    //   DPN-qualifying row, so the conservative position is not to credit them.
     expect(result.dpnRisk.contributingDebits).toHaveLength(1)
     expect(result.dpnRisk.totalGrossLate).toBe(9408)
-    expect(result.dpnRisk.totalPaidSince).toBe(9408)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(0)
+    expect(result.dpnRisk.totalPaidSince).toBe(8534)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(874)
 
-    // The single contributing debit is the 21 Feb 2019 lodgement
     const debit = result.dpnRisk.contributingDebits[0]
     expect(debit.debit).toBe(9408)
     expect(debit.daysLate).toBe(178)
-    expect(debit.paymentsSinceLodged).toBe(9408)
-    expect(debit.netAtRisk).toBe(0)
+    expect(debit.paymentsSinceLodged).toBe(8534)
+    expect(debit.netAtRisk).toBe(874)
 
     // Period spans full CSV range
     expect(result.dpnRisk.periodStart).not.toBeNull()

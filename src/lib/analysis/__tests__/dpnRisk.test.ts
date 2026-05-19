@@ -63,11 +63,22 @@ describe('computeDpnRisk — threshold boundary', () => {
   })
 })
 
-// 4. Credit-only late amendment is NOT a contributing debit
-describe('computeDpnRisk — credit-only late amendment excluded', () => {
-  it('ClientAmended with credit only (debit=0) does not qualify', () => {
+// 4. Credit-only late amendment is NOT a contributing debit, but its credit
+//    DOES count toward the offset pool when combined with a late debit.
+describe('computeDpnRisk — credit-only late amendment behaviour', () => {
+  it('ClientAmended with credit only (debit=0) is not itself a contributing debit', () => {
     const creditOnly = buildRow({ processedDate: '2020-01-01', daysLate: 200, credit: 500, type: 'ClientAmended' })
     expect(computeDpnRisk([creditOnly]).contributingDebits).toHaveLength(0)
+  })
+
+  it('late credit-only ClientAmended offsets a late debit', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 5000, type: 'ClientAmended' }),
+      buildRow({ processedDate: '2021-01-01', daysLate: 300, credit: 1500, type: 'ClientAmended' }),
+    ])
+    expect(r.totalGrossLate).toBe(5000)
+    expect(r.totalPaidSince).toBe(1500)
+    expect(r.totalNetAtRisk).toBe(3500)
   })
 })
 
@@ -83,21 +94,21 @@ describe('computeDpnRisk — single late debit, no subsequent payments', () => {
   })
 })
 
-// 6. Single late debit, payments AFTER fully cover it → net = 0
-describe('computeDpnRisk — payments after lodgement fully cover the debit', () => {
-  it('totalPaidSince is capped at debit amount; net = 0', () => {
+// 6. Cash Payments are NOT counted toward DPN relief (could have gone to older debt)
+describe('computeDpnRisk — cash Payments do not reduce DPN net', () => {
+  it('a Payment row after the late debit is ignored — only late-credit ClientAmended rows offset', () => {
     const r6 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 5000, type: 'ClientAmended' }),
       buildRow({ processedDate: '2020-06-01', credit: 10000, type: 'Payment' }),
     ])
     expect(r6.totalGrossLate).toBe(5000)
-    expect(r6.totalPaidSince).toBe(5000) // CAPPED at debit
-    expect(r6.totalNetAtRisk).toBe(0)
+    expect(r6.totalPaidSince).toBe(0)
+    expect(r6.totalNetAtRisk).toBe(5000)
   })
 })
 
-// 7. Payment BEFORE the lodgement does NOT count
-describe('computeDpnRisk — payment before lodgement date is excluded', () => {
+// 7. Payment BEFORE the lodgement also doesn't count (same rationale)
+describe('computeDpnRisk — payment date is irrelevant; payments never count', () => {
   it('payment on an earlier date does not reduce net', () => {
     const r7 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', credit: 10000, type: 'Payment' }),
@@ -149,33 +160,46 @@ describe('computeDpnRisk — GIC remission excluded', () => {
   })
 })
 
-// 11. Multiple late debits — each measured against payments after ITS OWN date
-describe('computeDpnRisk — multiple late debits with per-row netting', () => {
-  it('each debit is independently netted against payments after its own date', () => {
+// 11. Multiple late debits — cash payments don't count; pool excludes Payment rows.
+describe('computeDpnRisk — cash payments never reduce DPN', () => {
+  it('Payment rows are ignored regardless of when they processed', () => {
     const r11 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 3000, type: 'ClientAmended' }),
       buildRow({ processedDate: '2021-01-01', daysLate: 200, debit: 2000, type: 'ClientAmended' }),
-      // Payment between the two — counts for the first, not the second
       buildRow({ processedDate: '2020-06-01', credit: 1500, type: 'Payment' }),
-      // Payment after both — counts for both
       buildRow({ processedDate: '2021-06-01', credit: 2000, type: 'Payment' }),
     ])
-    // First debit (3000): payments since 2020-01-01 = 1500 + 2000 = 3500, capped at 3000
-    // Second debit (2000): payments since 2021-01-01 = 2000, capped at 2000
     expect(r11.totalGrossLate).toBe(5000)
-    expect(r11.totalPaidSince).toBe(5000)
-    expect(r11.totalNetAtRisk).toBe(0)
+    expect(r11.totalPaidSince).toBe(0)
+    expect(r11.totalNetAtRisk).toBe(5000)
   })
 })
 
-// 12. Cap is per-row, not pooled
-describe('computeDpnRisk — cap is per-row', () => {
-  it('a massive payment only reduces the debit to zero, not the whole pool', () => {
+// 12. Pooled credit allocation: late credits apply oldest-debit-first, capped at total gross.
+describe('computeDpnRisk — pooled late-credit allocation', () => {
+  it('a late credit-only ClientAmended pool larger than gross caps at total gross', () => {
     const r12 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 1000, type: 'Original' }),
-      buildRow({ processedDate: '2020-06-01', credit: 100000, type: 'Payment' }),
+      buildRow({ processedDate: '2021-01-01', daysLate: 200, credit: 100000, type: 'ClientAmended' }),
     ])
-    expect(r12.contributingDebits[0].paymentsSinceLodged).toBe(1000) // capped
-    expect(r12.totalPaidSince).toBe(1000) // not 100000
+    expect(r12.contributingDebits[0].paymentsSinceLodged).toBe(1000)
+    expect(r12.totalPaidSince).toBe(1000)
+    expect(r12.totalNetAtRisk).toBe(0)
+  })
+
+  it('credits apply to oldest debit first across multiple contributing debits', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 3000, type: 'ClientAmended' }),
+      buildRow({ processedDate: '2021-01-01', daysLate: 200, debit: 2000, type: 'ClientAmended' }),
+      buildRow({ processedDate: '2022-01-01', daysLate: 300, credit: 3500, type: 'ClientAmended' }),
+    ])
+    expect(r.totalGrossLate).toBe(5000)
+    expect(r.totalPaidSince).toBe(3500)
+    expect(r.totalNetAtRisk).toBe(1500)
+    // Oldest debit ($3000) gets first $3000 of pool; newer debit gets remaining $500
+    expect(r.contributingDebits[0].paymentsSinceLodged).toBe(3000)
+    expect(r.contributingDebits[0].netAtRisk).toBe(0)
+    expect(r.contributingDebits[1].paymentsSinceLodged).toBe(500)
+    expect(r.contributingDebits[1].netAtRisk).toBe(1500)
   })
 })

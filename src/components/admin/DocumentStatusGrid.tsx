@@ -6,6 +6,8 @@ import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { CheckCircle2, XCircle, Download, Trash2, X } from 'lucide-react'
 import { ReuploadRequestButton } from '@/components/admin/ReuploadRequestButton'
+import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
+import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
 import { formatBytes } from '@/lib/utils'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -67,6 +69,15 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
 
             {!received && (
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
+            )}
+
+            {/* 2-file minimum: comparison view requires at least two years of statements. */}
+            {category === 'historical_financials' && clientId && (
+              <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
+            )}
+
+            {category === 'integrated_client_account' && clientId && (
+              <LodgementAnalysisButton clientId={clientId} />
             )}
           </div>
         )

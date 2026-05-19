@@ -3,12 +3,10 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
-import { LodgementAnalysisCard } from '@/components/admin/LodgementAnalysisCard'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
-import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import Link from 'next/link'
 import { ArrowLeft, Building, Landmark } from 'lucide-react'
 
@@ -29,7 +27,6 @@ export default async function ClientDetailPage({ params }: Props) {
     { data: rawDocs },
     { data: rawAccountant },
     { data: rawCompany },
-    { data: rawAnalysis },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -38,13 +35,6 @@ export default async function ClientDetailPage({ params }: Props) {
       .order('uploaded_at', { ascending: false }),
     supabase.from('accountant_details').select('*').eq('client_id', id).maybeSingle(),
     supabase.from('company_details').select('*').eq('client_id', id).maybeSingle(),
-    supabase
-      .from('lodgement_analyses')
-      .select('*')
-      .eq('client_id', id)
-      .order('analysed_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ])
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
@@ -58,47 +48,6 @@ export default async function ClientDetailPage({ params }: Props) {
     status: d.status,
     uploadedAt: d.uploaded_at,
   }))
-
-  const hasActivityStatementCsv = documents.some(
-    (d) =>
-      d.docCategory === 'integrated_client_account' &&
-      d.originalFilename.toLowerCase().includes('activity statement') &&
-      d.originalFilename.toLowerCase().endsWith('.csv'),
-  )
-
-  const initialAnalysis: LodgementAnalysisPayload | null = rawAnalysis
-    ? {
-        id: rawAnalysis.id,
-        clientId: rawAnalysis.client_id,
-        documentId: rawAnalysis.document_id,
-        sourceFilename: rawAnalysis.source_filename,
-        statementLabel: rawAnalysis.statement_label,
-        companyNameInCsv: rawAnalysis.company_name_in_csv,
-        rowCount: rawAnalysis.row_count,
-        summary: {
-          numberOfLateLodgements: rawAnalysis.number_of_late_lodgements,
-          cumulativeDaysLate: rawAnalysis.cumulative_days_late,
-        },
-        dpnRisk: (() => {
-          const raw = rawAnalysis.dpn_risk as Record<string, unknown> | null
-          // New shape uses 'contributingDebits' (was 'contributingRows' pre-15-May-2026).
-          // Old payloads return null so the page banner prompts a re-analyse.
-          if (!raw || !Array.isArray(raw['contributingDebits'])) return null
-          return raw as unknown as LodgementAnalysisPayload['dpnRisk']
-        })(),
-        debtBreakdown: (() => {
-          const raw = rawAnalysis.debt_breakdown as Record<string, unknown> | null
-          // Validate new shape — old records use 'principalTotal', new use 'principalDebits'
-          if (!raw || typeof raw['principalDebits'] !== 'number') return null
-          return raw as unknown as LodgementAnalysisPayload['debtBreakdown']
-        })(),
-        aiSummary: rawAnalysis.ai_summary ?? null,
-        aiSummaryGeneratedAt: rawAnalysis.ai_summary_generated_at ?? null,
-        rows: rawAnalysis.rows as LodgementAnalysisPayload['rows'],
-        warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
-        analysedAt: rawAnalysis.analysed_at,
-      }
-    : null
 
   const accountantDetails: AccountantDetails | null = rawAccountant
     ? {
@@ -155,19 +104,6 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="mb-6">
         <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
-      </div>
-
-       <div className="mb-6">
-        {rawAnalysis && !initialAnalysis?.dpnRisk && (
-          <div className="mb-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-warning">
-            This analysis was generated with an outdated method. Click <strong>Re-analyse</strong> to refresh it.
-          </div>
-        )}
-        <LodgementAnalysisCard
-          clientId={id}
-          initialAnalysis={initialAnalysis}
-          hasActivityStatementCsv={hasActivityStatementCsv}
-        />
       </div>
 
       <Card className="mb-4">
