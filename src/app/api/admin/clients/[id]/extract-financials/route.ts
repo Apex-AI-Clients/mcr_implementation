@@ -31,14 +31,13 @@ import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/s
 import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
 import type { ExtractedFinancialStatement } from '@/lib/financials/types'
 
-// Vercel serverless functions default to 10s. We need enough headroom for:
-//   - Up to 4 sequential PDF extractions @ ~60s each = 240s
-//   - 3 inter-document delays @ 65s = 195s (to stay under Anthropic's
-//     10K tokens/min Tier 1 rate limit)
-//   - Some headroom for downloads + DB writes
-// Total: ~600s. Note: Vercel Pro caps at 300s; Enterprise allows 900s.
+// Vercel plan caps: Hobby = 300s, Pro = 800s, Enterprise = 900s.
+// We set 300s as the floor that works on every plan. Worst-case batch
+// (4 PDFs × ~60s + 3 × 65s inter-doc delays ≈ 435s) won't fit — clients
+// with that many historical PDFs need to be processed in two requests, or
+// the deployment needs to move to a Pro/Enterprise plan and raise this back.
 // Local dev (Next.js) does not enforce maxDuration.
-export const maxDuration = 600
+export const maxDuration = 300
 
 interface Params {
   params: Promise<{ id: string }>
