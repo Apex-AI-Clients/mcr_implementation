@@ -1,10 +1,10 @@
 /**
- * Server-only. Calls the Claude API to write a 3-5 sentence plain-language
- * summary covering compliance, DPN risk, and debt composition.
+ * Server-only. Calls Gemini 2.5 Flash via OpenRouter to write a 3-5 sentence
+ * plain-language summary covering compliance, DPN risk, and debt composition.
  * Must only be imported from API routes.
  */
-import Anthropic from '@anthropic-ai/sdk'
-import { CLAUDE_MODEL, LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from './prompts'
+import { OPENROUTER_NARRATIVE_MODEL, LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from './prompts'
+import { getOpenRouterClient } from './openrouterClient'
 import type { DpnRiskBreakdown, DebtBreakdown } from '@/lib/analysis/types'
 
 function formatNum(value: number): string {
@@ -37,19 +37,24 @@ export async function generateLodgementAiSummary(input: {
     .replaceAll('{penaltyNet}', formatNum(debtBreakdown.penaltyNet))
     .replaceAll('{paymentsReceived}', formatNum(debtBreakdown.paymentsReceived))
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  // Narrative generation is short — drop the SDK timeout to 60s.
+  const client = getOpenRouterClient({ timeoutMs: 60_000 })
 
-  const message = await client.messages.create({
-    model: CLAUDE_MODEL,
+  const response = await client.chat.completions.create({
+    model: OPENROUTER_NARRATIVE_MODEL,
     max_tokens: 250,
     messages: [{ role: 'user', content: prompt }],
+    // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
+    provider: {
+      order: ['google-ai-studio', 'google-vertex'],
+      allow_fallbacks: false,
+    },
   })
 
-  const text = message.content
-    .filter((block) => block.type === 'text')
-    .map((block) => (block as { type: 'text'; text: string }).text)
-    .join('')
-    .trim()
+  const text = response.choices[0]?.message?.content?.trim() ?? ''
+  if (!text) {
+    throw new Error('generateLodgementAiSummary: OpenRouter returned empty content.')
+  }
 
-  return { text, model: message.model }
+  return { text, model: response.model }
 }

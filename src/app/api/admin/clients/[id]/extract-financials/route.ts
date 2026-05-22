@@ -1,22 +1,22 @@
 /**
  * POST /api/admin/clients/[id]/extract-financials
  *
- * Admin-only. Runs the Claude-based PDF extractor over uploaded
- * historical-financials documents and persists the canonical line-item
- * data into financial_statements.
+ * Admin-only. Runs the OpenRouter + Gemini 2.5 Flash PDF extractor over
+ * uploaded historical-financials documents and persists the canonical
+ * line-item data into financial_statements.
  *
  * Performance:
- *   - Documents are extracted SEQUENTIALLY with a 65s delay between PDFs.
- *     This keeps each request inside a fresh per-minute rate window (Tier 1
- *     accounts are capped at 10K input tokens/min — a single signed PDF can
- *     use 7-15K of that budget). Concurrent or rapid-fire requests trip
- *     Anthropic's 429 / silent-backoff behaviour.
- *   - Each per-document extraction has a 320s safety cap. The Anthropic SDK
- *     itself uses 300s per attempt with 2 retries, so the SDK handles
- *     transient errors automatically; the outer 320s timeout is a final
- *     escape if even the SDK retries don't resolve.
- *   - Total worst-case elapsed: 4 PDFs × ~60s + 3 delays × 65s ≈ 435s.
- *     maxDuration is set to 600s to give comfortable headroom.
+ *   - Documents are extracted SEQUENTIALLY with a 10s delay between PDFs.
+ *     Sequential processing keeps server-side logs and error attribution
+ *     simple. The 10s buffer is well under Gemini's per-minute rate limits
+ *     on the paid tier; the previous 65s delay was sized for Anthropic
+ *     Tier 1 and is no longer necessary.
+ *   - Each per-document extraction has a 180s safety cap. The OpenAI SDK
+ *     itself uses 300s per attempt with 2 retries, so the outer 180s timeout
+ *     is a final escape if even the SDK retries don't resolve. Gemini
+ *     typically completes a PARKCON-sized PDF in 15-40 seconds.
+ *   - Total worst-case elapsed: 4 PDFs × ~60s + 3 delays × 10s ≈ 270s.
+ *     maxDuration=300 still gives headroom.
  *   - Per-document progress is logged so a stuck route is visible in the
  *     server terminal.
  *
@@ -31,11 +31,11 @@ import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/s
 import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
 import type { ExtractedFinancialStatement } from '@/lib/financials/types'
 
-// Vercel plan caps: Hobby = 300s, Pro = 800s, Enterprise = 900s.
-// We set 300s as the floor that works on every plan. Worst-case batch
-// (4 PDFs × ~60s + 3 × 65s inter-doc delays ≈ 435s) won't fit — clients
-// with that many historical PDFs need to be processed in two requests, or
-// the deployment needs to move to a Pro/Enterprise plan and raise this back.
+// Vercel serverless functions default to 10s. We need enough headroom for:
+//   - Up to 4 sequential PDF extractions @ ~60s each = 240s
+//   - 3 inter-document delays @ 10s = 30s
+//   - Some headroom for downloads + DB writes
+// Total: ~270s. 300s gives modest headroom and fits within Vercel Pro's cap.
 // Local dev (Next.js) does not enforce maxDuration.
 export const maxDuration = 300
 
@@ -43,8 +43,8 @@ interface Params {
   params: Promise<{ id: string }>
 }
 
-const PER_DOCUMENT_TIMEOUT_MS = 320_000 // 5.3 min — slightly above SDK's 300s timeout
-const INTER_DOCUMENT_DELAY_MS = 65_000 // 65s between PDFs to clear Anthropic's per-minute rate window
+const PER_DOCUMENT_TIMEOUT_MS = 180_000 // 3 min — Gemini through OpenRouter is faster than Anthropic was
+const INTER_DOCUMENT_DELAY_MS = 10_000 // 10s between PDFs — sequential pacing for log clarity
 
 async function requireAdmin() {
   const authClient = await getSupabaseAuthClient()
@@ -127,17 +127,18 @@ export async function POST(req: NextRequest, { params }: Params) {
     let skipped = 0
     const errors: ExtractError[] = []
 
-    // Sequential processing — Anthropic rate-limits parallel PDF requests
-    // and concurrent calls have been observed to hang.
+    // Sequential processing keeps server-side logs and error attribution
+    // simple; parallel calls would interleave per-document log lines.
     for (let i = 0; i < documents.length; i++) {
       const doc = documents[i] as DocumentRow
 
-      // Inter-document delay (skip before the first PDF). Stays under
-      // Anthropic's 10K input-tokens-per-minute rate cap on Tier 1.
+      // Inter-document delay (skip before the first PDF) to pace sequential
+      // PDF processing — keeps logs readable and gives the operator a clear
+      // per-document boundary.
       if (i > 0) {
         const delaySec = Math.round(INTER_DOCUMENT_DELAY_MS / 1000)
         console.log(
-          `[extract-financials] waiting ${delaySec}s before next PDF to clear Anthropic per-minute rate window`,
+          `[extract-financials] waiting ${delaySec}s before next PDF to pace sequential processing`,
         )
         await new Promise((resolve) => setTimeout(resolve, INTER_DOCUMENT_DELAY_MS))
       }
@@ -209,7 +210,7 @@ async function processDocument(
     const arrayBuffer = await blob.arrayBuffer()
     const pdfBytes = new Uint8Array(arrayBuffer)
     const sizeMb = (pdfBytes.length / (1024 * 1024)).toFixed(2)
-    console.log(`${tag} downloaded ${sizeMb}MB, calling Anthropic`)
+    console.log(`${tag} downloaded ${sizeMb}MB, calling OpenRouter`)
 
     const result = await withTimeout(
       extractFinancialStatementFromPdf({
@@ -300,7 +301,7 @@ async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'ski
   }
 
   // Rule 2: never overwrite a row that has real data with one that doesn't.
-  // Claude has occasionally returned empty-but-correctly-shaped payloads
+  // The model has occasionally returned empty-but-correctly-shaped payloads
   // (all values null). Without this guard, a later empty extraction can
   // destroy good data via UNIQUE(client_id, financial_year) upsert.
   if (existing && hasMeaningfulData(existing.income_statement, existing.balance_sheet)) {
