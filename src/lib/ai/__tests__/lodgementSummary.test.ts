@@ -1,16 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE, CLAUDE_MODEL } from '../prompts'
+import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE, OPENROUTER_NARRATIVE_MODEL } from '../prompts'
 import type { DpnRiskBreakdown, DebtBreakdown } from '@/lib/analysis/types'
 
 // Track the mock create function so we can configure it per test
 const mockCreate = vi.fn()
 
-vi.mock('@anthropic-ai/sdk', () => {
-  function MockAnthropic() {
-    return { messages: { create: mockCreate } }
-  }
-  return { default: MockAnthropic }
-})
+vi.mock('../openrouterClient', () => ({
+  getOpenRouterClient: () => ({
+    chat: { completions: { create: mockCreate } },
+  }),
+}))
 
 // Import AFTER mock registration
 const { generateLodgementAiSummary } = await import('../lodgementSummary')
@@ -76,8 +75,8 @@ describe('generateLodgementAiSummary', () => {
 
   it('returns { text, model } on success', async () => {
     mockCreate.mockResolvedValueOnce({
-      content: [{ type: 'text', text: 'This is the AI summary.' }],
-      model: CLAUDE_MODEL,
+      choices: [{ message: { content: 'This is the AI summary.' } }],
+      model: OPENROUTER_NARRATIVE_MODEL,
     })
 
     const result = await generateLodgementAiSummary({
@@ -87,7 +86,7 @@ describe('generateLodgementAiSummary', () => {
     })
 
     expect(result.text).toBe('This is the AI summary.')
-    expect(result.model).toBe(CLAUDE_MODEL)
+    expect(result.model).toBe(OPENROUTER_NARRATIVE_MODEL)
   })
 
   it('throws on API error so caller can handle it', async () => {
@@ -104,13 +103,15 @@ describe('generateLodgementAiSummary', () => {
 
   it('prompt substitution replaces all placeholders — no {var} strings leak through', async () => {
     let capturedPrompt = ''
-    mockCreate.mockImplementationOnce(async ({ messages }: { messages: Array<{ content: string }> }) => {
-      capturedPrompt = messages[0].content
-      return {
-        content: [{ type: 'text', text: 'ok' }],
-        model: CLAUDE_MODEL,
-      }
-    })
+    mockCreate.mockImplementationOnce(
+      async ({ messages }: { messages: Array<{ content: string }> }) => {
+        capturedPrompt = messages[0].content
+        return {
+          choices: [{ message: { content: 'ok' } }],
+          model: OPENROUTER_NARRATIVE_MODEL,
+        }
+      },
+    )
 
     await generateLodgementAiSummary({
       dpnRisk: makeDpnRisk(),
@@ -124,13 +125,15 @@ describe('generateLodgementAiSummary', () => {
 
   it('currency values in prompt use comma-formatted integers (no decimals)', async () => {
     let capturedPrompt = ''
-    mockCreate.mockImplementationOnce(async ({ messages }: { messages: Array<{ content: string }> }) => {
-      capturedPrompt = messages[0].content
-      return {
-        content: [{ type: 'text', text: 'ok' }],
-        model: CLAUDE_MODEL,
-      }
-    })
+    mockCreate.mockImplementationOnce(
+      async ({ messages }: { messages: Array<{ content: string }> }) => {
+        capturedPrompt = messages[0].content
+        return {
+          choices: [{ message: { content: 'ok' } }],
+          model: OPENROUTER_NARRATIVE_MODEL,
+        }
+      },
+    )
 
     await generateLodgementAiSummary({
       dpnRisk: makeDpnRisk({ totalGrossLate: 12345, totalNetAtRisk: 0 }),

@@ -1,4 +1,11 @@
-export const CLAUDE_MODEL = 'claude-sonnet-4-6'
+/** OpenRouter model string for native PDF extraction. The leading "google/"
+ *  is the OpenRouter prefix — required, not optional. */
+export const OPENROUTER_EXTRACTION_MODEL = 'google/gemini-2.5-flash'
+
+/** OpenRouter model string for narrative summaries. Same model — Gemini 2.5
+ *  Flash handles both PDF + structured output and short prose generation
+ *  well, no need to split tiers. */
+export const OPENROUTER_NARRATIVE_MODEL = 'google/gemini-2.5-flash'
 
 export const FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE = `
 You are summarising a multi-year financial comparison for an Australian Small Business Restructure (SBR) practitioner. Write a clear, factual narrative that a non-technical staff member can scan in 30 seconds.

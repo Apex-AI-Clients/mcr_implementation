@@ -1,11 +1,15 @@
 /**
- * Server-only. Calls the Claude API to write a 4-6 sentence narrative summary
- * of the multi-year financial comparison. Mirrors lodgementSummary.ts.
+ * Server-only. Calls Gemini 2.5 Flash via OpenRouter to write a 4-6 sentence
+ * narrative summary of the multi-year financial comparison. Mirrors
+ * lodgementSummary.ts.
  *
  * Must only be imported from API routes.
  */
-import Anthropic from '@anthropic-ai/sdk'
-import { CLAUDE_MODEL, FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE } from './prompts'
+import {
+  OPENROUTER_NARRATIVE_MODEL,
+  FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE,
+} from './prompts'
+import { getOpenRouterClient } from './openrouterClient'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 function formatNum(value: number | null | undefined): string {
@@ -77,22 +81,23 @@ export async function generateFinancialsComparisonSummary(input: {
       formatNum(comparison.cumulativeProfitBeforeTax),
     )
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set.')
+  const client = getOpenRouterClient({ timeoutMs: 60_000 })
 
-  const client = new Anthropic({ apiKey })
-
-  const message = await client.messages.create({
-    model: CLAUDE_MODEL,
+  const response = await client.chat.completions.create({
+    model: OPENROUTER_NARRATIVE_MODEL,
     max_tokens: 350,
     messages: [{ role: 'user', content: prompt }],
+    // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
+    provider: {
+      order: ['google-ai-studio', 'google-vertex'],
+      allow_fallbacks: false,
+    },
   })
 
-  const text = message.content
-    .filter((block) => block.type === 'text')
-    .map((block) => (block as { type: 'text'; text: string }).text)
-    .join('')
-    .trim()
+  const text = response.choices[0]?.message?.content?.trim() ?? ''
+  if (!text) {
+    throw new Error('generateFinancialsComparisonSummary: OpenRouter returned empty content.')
+  }
 
-  return { text, model: message.model }
+  return { text, model: response.model }
 }

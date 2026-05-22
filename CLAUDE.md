@@ -133,7 +133,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= # anon/public key (browser-safe)
 SUPABASE_SERVICE_ROLE_KEY=           # service_role key — SERVER ONLY
 
 # AI
-ANTHROPIC_API_KEY=                   # sk-ant-... SERVER ONLY, only in /api/classify-document
+OPENROUTER_API_KEY=                  # sk-or-v1-... SERVER ONLY, only in src/lib/ai/openrouterClient.ts
 
 # App
 NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no trailing slash)
@@ -141,7 +141,7 @@ NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no traili
 
 **Non-negotiable security rules:**
 - `SUPABASE_SERVICE_ROLE_KEY` must never appear in `src/components/` or `src/app/(portal)/`.
-- `ANTHROPIC_API_KEY` must only appear in `src/app/api/classify-document/route.ts`.
+- `OPENROUTER_API_KEY` must only appear in `src/lib/ai/openrouterClient.ts`.
 - All file downloads use `createSignedUrl()` with ≤ 300s expiry — never `getPublicUrl()`.
 - Client sessions are enforced server-side via `getPortalClient()` (see `src/lib/auth/portal.ts`). Never trust a `client_id` that comes from the request body.
 - Admins must never reach client routes and vice-versa — enforced by `proxy.ts` using `app_metadata.role`.
@@ -210,7 +210,7 @@ Source of truth: `src/lib/constants.ts` (`DOCUMENT_CATEGORIES` / `CATEGORY_META`
 
 ### Security
 1. `SUPABASE_SERVICE_ROLE_KEY` — server-only. Zero tolerance elsewhere.
-2. `ANTHROPIC_API_KEY` — only in `/api/classify-document/route.ts`.
+2. `OPENROUTER_API_KEY` — only in `src/lib/ai/openrouterClient.ts`. All AI helpers import `getOpenRouterClient()` from that module.
 3. File downloads: always `createSignedUrl()`, expiry ≤ 300s. Never `getPublicUrl()`.
 4. Portal API routes resolve the client via `getPortalClient()` — they never accept a `client_id` from the request.
 5. RLS enabled on every table.

@@ -1,6 +1,7 @@
 /**
  * Server-only. Extracts canonical financial data from a single annual
- * financial statement PDF using Claude's PDF input + tool-use mode.
+ * financial statement PDF using Gemini 2.5 Flash (via OpenRouter) with
+ * native PDF input + forced tool calling.
  *
  * Why tool use instead of asking for JSON in the response text:
  *   - The API enforces JSON parsing on our behalf — invalid JSON is impossible.
@@ -12,7 +13,8 @@
  * detected — so 0, 1, or 2 ExtractedFinancialStatement values.
  *
  * Throws when:
- *   - the model returns no tool_use block (shouldn't happen with forced tool_choice)
+ *   - the model returns no tool call (shouldn't happen with forced tool_choice)
+ *   - the tool arguments aren't valid JSON
  *   - no financial year can be determined for a returned column
  *
  * Does NOT throw (logs warnings instead) when:
@@ -21,20 +23,21 @@
  *
  * Must only be imported from API routes — never from a component.
  */
-import Anthropic from '@anthropic-ai/sdk'
 import { PDFDocument } from 'pdf-lib'
-import { CLAUDE_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
+import { OPENROUTER_EXTRACTION_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
 import type {
   ExtractedFinancialStatement,
   ExtractionWarning,
   FinancialStatementSourceColumn,
 } from './types'
 
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
+
 const RECONCILIATION_TOLERANCE_AUD = 50
 
 const EXTRACTION_TOOL_NAME = 'submit_extracted_financials'
 
-/** Maximum number of pages to send to Claude. The Income Statement and
+/** Maximum number of pages to send to the model. The Income Statement and
  *  Balance Sheet always live within the first 8 pages of these PDFs (the
  *  rest is notes, declarations, depreciation schedule, and an optional
  *  appended Company Tax Return). Trimming dramatically reduces both upload
@@ -57,12 +60,9 @@ export async function extractFinancialStatementFromPdf(
 ): Promise<ExtractFromPdfResult> {
   const { pdfBytes, sourceFilename } = input
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set.')
-
   // Trim to the first MAX_PAGES_FOR_EXTRACTION pages. PDFs in this dataset
-  // bundle a Company Tax Return after the financials; sending it to Claude
-  // wastes tokens and triggers timeouts.
+  // bundle a Company Tax Return after the financials; sending it to the
+  // model wastes tokens and slows extraction.
   const trimmedBytes = await trimPdfToFirstPages(pdfBytes, MAX_PAGES_FOR_EXTRACTION)
   const trimmedKb = Math.round(trimmedBytes.length / 1024)
   const originalKb = Math.round(pdfBytes.length / 1024)
@@ -75,93 +75,150 @@ export async function extractFinancialStatementFromPdf(
   )
   const base64Pdf = Buffer.from(trimmedBytes).toString('base64')
 
-  // SDK config tuned for Anthropic's rate-limit backoff behaviour:
-  //   - timeout: 300_000ms gives the SDK room to absorb a server-side 429
-  //     backoff (Anthropic has been observed to hold a request open for
-  //     ~5min when nearing the per-minute token cap).
-  //   - maxRetries: 2 lets the SDK retry transient errors automatically
-  //     with exponential backoff.
-  // Pair this with an inter-document delay in the route loop to stay under
-  // the per-minute token cap in the first place.
-  const client = new Anthropic({
-    apiKey,
-    timeout: 300_000,
-    maxRetries: 2,
-  })
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set.')
 
-  const callStart = Date.now()
-  console.log(`[extractFinancialStatementFromPdf] ${sourceFilename}: calling Anthropic`)
-
-  const message = await client.messages.create({
-    model: CLAUDE_MODEL,
+  // Direct fetch instead of the openai SDK. The openai SDK's typed request
+  // shape strips fields it doesn't recognise on serialisation (notably
+  // OpenRouter's `plugins` and `provider` extensions, which are what turn on
+  // native PDF pass-through for Gemini). Bypassing the SDK guarantees the
+  // wire body matches OpenRouter's documented shape exactly. See
+  // https://openrouter.ai/docs/features/multimodal/pdfs
+  const requestBody = {
+    model: OPENROUTER_EXTRACTION_MODEL,
     max_tokens: 16000,
     tools: [buildExtractionTool()],
-    tool_choice: { type: 'tool', name: EXTRACTION_TOOL_NAME },
+    // Force the single extraction tool — equivalent to Anthropic's
+    // tool_choice: { type: 'tool', name: EXTRACTION_TOOL_NAME }.
+    tool_choice: {
+      type: 'function',
+      function: { name: EXTRACTION_TOOL_NAME },
+    },
     messages: [
       {
         role: 'user',
         content: [
           {
-            type: 'document',
-            source: {
-              type: 'base64',
-              media_type: 'application/pdf',
-              data: base64Pdf,
-            },
-          },
-          {
             type: 'text',
             text: buildExtractionPromptWithHint(sourceFilename, filenameYear),
+          },
+          // OpenRouter PDF input via the `file` content type. The data: URL
+          // embeds the base64-encoded PDF. The plugins array (below) tells
+          // OpenRouter to forward this file natively to Gemini rather than
+          // running its own intermediate parser.
+          {
+            type: 'file',
+            file: {
+              filename: sourceFilename,
+              file_data: `data:application/pdf;base64,${base64Pdf}`,
+            },
           },
         ],
       },
     ],
-  })
+    // OpenRouter extension — tells the file-parser plugin to forward the PDF
+    // unchanged to the underlying model (Gemini supports native PDF input).
+    // Without this, OpenRouter defaults to its own OCR layer for some models.
+    // We always want native pass-through for Gemini 2.5 Flash.
+    plugins: [
+      {
+        id: 'file-parser',
+        pdf: { engine: 'native' },
+      },
+    ],
+    // OpenRouter extension — pin to Google's own infrastructure for Gemini
+    // requests, no fallback to other providers if Google is unavailable.
+    // Keeps the data path predictable for client compliance.
+    provider: {
+      order: ['google-ai-studio', 'google-vertex'],
+      allow_fallbacks: false,
+    },
+  }
 
-  const callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
+  const callStart = Date.now()
   console.log(
-    `[extractFinancialStatementFromPdf] ${sourceFilename}: Anthropic responded in ${callElapsed}s, stop_reason=${message.stop_reason}, blocks=${message.content.map((b) => b.type).join(',')}`,
+    `[extractFinancialStatementFromPdf] ${sourceFilename}: calling OpenRouter (Gemini 2.5 Flash)`,
   )
 
-  // Diagnostics — if anything goes wrong downstream, this is what we'll need
-  // to figure out why.
-  if (message.stop_reason === 'max_tokens') {
+  // 5-minute timeout via AbortController. Matches the previous SDK timeout.
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), 300_000)
+
+  let httpResponse: Response
+  try {
+    httpResponse = await fetch(OPENROUTER_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.PUBLIC_APP_URL ?? 'https://mcr-partners.local',
+        'X-Title': 'MCR Partners SBR Portal',
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+
+  if (!httpResponse.ok) {
+    const errorText = await httpResponse.text().catch(() => '')
+    throw new Error(
+      `extractFinancialStatementFromPdf: OpenRouter HTTP ${httpResponse.status} for ${sourceFilename}: ${errorText.slice(0, 500)}`,
+    )
+  }
+
+  const response = (await httpResponse.json()) as OpenRouterChatResponse
+  const callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
+  const choice = response.choices?.[0]
+  const finishReason = choice?.finish_reason ?? 'unknown'
+  const toolCalls = choice?.message?.tool_calls ?? []
+  const modelUsed = response.model ?? OPENROUTER_EXTRACTION_MODEL
+  console.log(
+    `[extractFinancialStatementFromPdf] ${sourceFilename}: OpenRouter responded in ${callElapsed}s, model=${modelUsed}, finish_reason=${finishReason}, tool_calls=${toolCalls.length}`,
+  )
+
+  // Truncation guard. OpenAI-shape finish_reason is "length" when the model
+  // hit max_tokens. Mirrors the previous Anthropic max_tokens guard.
+  if (finishReason === 'length') {
     console.error(
-      `[extractFinancialStatementFromPdf] ${sourceFilename}: response hit max_tokens. ` +
-        `stop_reason=${message.stop_reason}, content_blocks=${message.content
-          .map((b) => b.type)
-          .join(',')}`,
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: response truncated at max_tokens.`,
     )
     throw new Error(
       `extractFinancialStatementFromPdf: response truncated at max_tokens for ${sourceFilename}.`,
     )
   }
 
-  const toolUse = message.content.find(
-    (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+  const toolCall = toolCalls.find(
+    (tc) => tc.type === 'function' && tc.function?.name === EXTRACTION_TOOL_NAME,
   )
-
-  if (!toolUse) {
+  if (!toolCall || !toolCall.function) {
+    const textHint =
+      typeof choice?.message?.content === 'string' ? choice.message.content.slice(0, 300) : ''
     console.error(
-      `[extractFinancialStatementFromPdf] ${sourceFilename}: no tool_use block in response. ` +
-        `stop_reason=${message.stop_reason}, blocks=${message.content
-          .map((b) => b.type)
-          .join(',')}`,
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: model did not call the extraction tool. finish_reason=${finishReason}, model_text="${textHint}"`,
     )
-    // Surface any text the model emitted as a hint for the operator.
-    const textHint = message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join(' ')
-      .slice(0, 300)
     throw new Error(
-      `extractFinancialStatementFromPdf: model did not call the extraction tool for ${sourceFilename}. ${
-        textHint ? `Model said: ${textHint}` : ''
+      `extractFinancialStatementFromPdf: model did not call the extraction tool for ${sourceFilename}.${
+        textHint ? ` Model said: ${textHint}` : ''
       }`,
     )
   }
 
-  const parsed = toolUse.input as RawToolInput
+  // OpenAI-shape tool calls return arguments as a JSON string (unlike
+  // Anthropic's already-parsed `input` object). Parse defensively.
+  let parsed: RawToolInput
+  try {
+    parsed = JSON.parse(toolCall.function.arguments) as RawToolInput
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: failed to parse tool arguments as JSON: ${msg}. Raw arguments (first 500 chars): ${toolCall.function.arguments.slice(0, 500)}`,
+    )
+    throw new Error(
+      `extractFinancialStatementFromPdf: malformed JSON in tool arguments for ${sourceFilename}: ${msg}`,
+    )
+  }
 
   if (!Array.isArray(parsed.statements) || parsed.statements.length === 0) {
     throw new Error(
@@ -171,10 +228,24 @@ export async function extractFinancialStatementFromPdf(
 
   const statements: ExtractedFinancialStatement[] = []
   for (const raw of parsed.statements) {
-    statements.push(normaliseAndValidate(raw, sourceFilename, message.model))
+    statements.push(normaliseAndValidate(raw, sourceFilename, modelUsed))
   }
 
-  return { statements, rawResponse: parsed, model: message.model }
+  return { statements, rawResponse: parsed, model: modelUsed }
+}
+
+interface OpenRouterChatResponse {
+  model?: string
+  choices?: Array<{
+    finish_reason?: string
+    message?: {
+      content?: string | null
+      tool_calls?: Array<{
+        type?: string
+        function?: { name?: string; arguments: string }
+      }>
+    }
+  }>
 }
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
@@ -193,131 +264,208 @@ interface RawStatement {
   warnings?: unknown[]
 }
 
-function buildExtractionTool(): Anthropic.Tool {
-  return {
-    name: EXTRACTION_TOOL_NAME,
+/** Build a section subschema with named canonical keys (all optional,
+ *  nullable numbers) plus an open `other` object for unmapped lines.
+ *  Gemini reliably fills named properties; pure `additionalProperties` is
+ *  ignored, which is why every canonical key appears here explicitly. */
+function sectionSchema(canonicalKeys: readonly string[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {}
+  for (const key of canonicalKeys) {
+    properties[key] = { type: ['number', 'null'] }
+  }
+  properties.other = {
+    type: 'object',
     description:
-      'Submit the canonical structured extraction of an Australian SME annual financial statement. Call this exactly once with one entry per detected column (primary + optional comparative).',
-    input_schema: {
-      type: 'object',
-      properties: {
-        statements: {
-          type: 'array',
-          description:
-            'One entry per detected column in the PDF. Use sourceColumn "primary" for the year named in the heading, "comparative" for the prior-year column.',
-          items: {
-            type: 'object',
-            properties: {
-              sourceColumn: {
-                type: 'string',
-                enum: ['primary', 'comparative'],
-              },
-              financialYear: {
-                type: 'integer',
-                description: 'e.g. 2025 for the year ended 30 June 2025',
-              },
-              periodEndDate: {
-                type: 'string',
-                description: 'ISO date, e.g. 2025-06-30',
-              },
-              incomeStatement: {
-                type: 'object',
-                properties: {
-                  income: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
-                  cogs: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
-                  expenses: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
-                  totals: { type: 'object', additionalProperties: { type: ['number', 'null'] } },
+      'Free-form bucket for line items that do not fit any canonical key above. Use the verbatim PDF label as the key.',
+    additionalProperties: { type: ['number', 'null'] },
+  }
+  return { type: 'object', properties }
+}
+
+const INCOME_KEYS = ['sales', 'interestIncome', 'otherRevenue'] as const
+const COGS_KEYS = ['purchases', 'directCosts'] as const
+const EXPENSES_KEYS = [
+  'depreciation',
+  'motorVehicle',
+  'travelAndAccommodation',
+  'advertising',
+  'bankFees',
+  'consultingAndAccounting',
+  'entertainment',
+  'freightAndCourier',
+  'generalExpenses',
+  'hireOfPlantAndEquipment',
+  'insurance',
+  'interestExpense',
+  'lightPowerHeating',
+  'officeExpenses',
+  'printingAndStationery',
+  'protectiveClothing',
+  'rent',
+  'repairsAndMaintenance',
+  'subcontractors',
+  'subscriptions',
+  'superannuation',
+  'telephoneAndInternet',
+  'tolls',
+  'tools',
+  'wagesAndSalaries',
+  'donations',
+  'directorFees',
+  'finesNonDeductible',
+  'trainingAndDevelopment',
+] as const
+const IS_TOTALS_KEYS = [
+  'totalIncome',
+  'totalCogs',
+  'grossProfit',
+  'totalExpenses',
+  'profitBeforeTax',
+  'netProfitAfterTax',
+] as const
+const CURRENT_ASSETS_KEYS = ['bankAccounts', 'accountsReceivable'] as const
+const NON_CURRENT_ASSETS_KEYS = ['propertyPlantEquipment', 'directorRelatedLoansReceivable'] as const
+const CURRENT_LIAB_KEYS = [
+  'bankOverdraft',
+  'gstPayable',
+  'paygWithholdingPayable',
+  'superannuationPayable',
+  'atoLiability',
+  'incomeTaxPayable',
+  'taxation',
+] as const
+const NON_CURRENT_LIAB_KEYS = [
+  'chattelMortgages',
+  'loansAndFinance',
+  'directorRelatedLoansPayable',
+  'ownerDrawings',
+] as const
+const EQUITY_KEYS = ['retainedEarnings', 'shareCapital'] as const
+const BS_TOTALS_KEYS = [
+  'totalCurrentAssets',
+  'totalNonCurrentAssets',
+  'totalAssets',
+  'totalCurrentLiabilities',
+  'totalNonCurrentLiabilities',
+  'totalLiabilities',
+  'netAssets',
+  'totalEquity',
+] as const
+
+function buildExtractionTool(): Record<string, unknown> {
+  return {
+    type: 'function',
+    function: {
+      name: EXTRACTION_TOOL_NAME,
+      description:
+        'Submit the canonical structured extraction of an Australian SME annual financial statement. Call this exactly once with one entry per detected column (primary + optional comparative). Populate values directly under the named canonical keys in incomeStatement and balanceSheet — DO NOT put values in rawExtraction (rawExtraction is only for unmapped/Quarantined/director-loan audit entries).',
+      parameters: {
+        type: 'object',
+        properties: {
+          statements: {
+            type: 'array',
+            description:
+              'One entry per detected column in the PDF. Use sourceColumn "primary" for the year named in the heading, "comparative" for the prior-year column.',
+            items: {
+              type: 'object',
+              properties: {
+                sourceColumn: {
+                  type: 'string',
+                  enum: ['primary', 'comparative'],
                 },
-                required: ['income', 'cogs', 'expenses', 'totals'],
-              },
-              balanceSheet: {
-                type: 'object',
-                properties: {
-                  currentAssets: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
-                  nonCurrentAssets: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
-                  currentLiabilities: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
-                  nonCurrentLiabilities: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
-                  equity: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
-                  totals: {
-                    type: 'object',
-                    additionalProperties: { type: ['number', 'null'] },
-                  },
+                financialYear: {
+                  type: 'integer',
+                  description: 'e.g. 2025 for the year ended 30 June 2025',
                 },
-                required: [
-                  'currentAssets',
-                  'nonCurrentAssets',
-                  'currentLiabilities',
-                  'nonCurrentLiabilities',
-                  'equity',
-                  'totals',
-                ],
-              },
-              rawExtraction: {
-                type: 'array',
-                description:
-                  'Audit trail entries for unmapped, Quarantined, or director-loan lines. Keep short — see prompt for scope.',
-                items: {
+                periodEndDate: {
+                  type: 'string',
+                  description: 'ISO date, e.g. 2025-06-30',
+                },
+                incomeStatement: {
                   type: 'object',
+                  description:
+                    'Populate values directly under the named canonical keys below. Each section has an `other` object for unmapped lines.',
                   properties: {
-                    section: { type: 'string' },
-                    rawLabel: { type: 'string' },
-                    rawValue: { type: 'string' },
-                    canonicalKey: { type: ['string', 'null'] },
+                    income: sectionSchema(INCOME_KEYS),
+                    cogs: sectionSchema(COGS_KEYS),
+                    expenses: sectionSchema(EXPENSES_KEYS),
+                    totals: sectionSchema(IS_TOTALS_KEYS),
                   },
-                  required: ['section', 'rawLabel', 'rawValue'],
+                  required: ['income', 'cogs', 'expenses', 'totals'],
                 },
-              },
-              warnings: {
-                type: 'array',
-                items: {
+                balanceSheet: {
                   type: 'object',
+                  description:
+                    'Populate values directly under the named canonical keys below. Each section has an `other` object for unmapped lines.',
                   properties: {
-                    kind: {
-                      type: 'string',
-                      enum: [
-                        'unmapped_line_item',
-                        'totals_reconciliation',
-                        'unparseable_value',
-                        'missing_total',
-                      ],
+                    currentAssets: sectionSchema(CURRENT_ASSETS_KEYS),
+                    nonCurrentAssets: sectionSchema(NON_CURRENT_ASSETS_KEYS),
+                    currentLiabilities: sectionSchema(CURRENT_LIAB_KEYS),
+                    nonCurrentLiabilities: sectionSchema(NON_CURRENT_LIAB_KEYS),
+                    equity: sectionSchema(EQUITY_KEYS),
+                    totals: sectionSchema(BS_TOTALS_KEYS),
+                  },
+                  required: [
+                    'currentAssets',
+                    'nonCurrentAssets',
+                    'currentLiabilities',
+                    'nonCurrentLiabilities',
+                    'equity',
+                    'totals',
+                  ],
+                },
+                rawExtraction: {
+                  type: 'array',
+                  description:
+                    'Audit trail entries for unmapped, Quarantined, or director-loan lines. Keep short — see prompt for scope.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      section: { type: 'string' },
+                      rawLabel: { type: 'string' },
+                      rawValue: { type: 'string' },
+                      canonicalKey: { type: ['string', 'null'] },
                     },
-                    message: { type: 'string' },
-                    rawLabel: { type: 'string' },
-                    rawValue: { type: 'string' },
-                    section: { type: 'string' },
+                    required: ['section', 'rawLabel', 'rawValue'],
                   },
-                  required: ['kind', 'message'],
+                },
+                warnings: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      kind: {
+                        type: 'string',
+                        enum: [
+                          'unmapped_line_item',
+                          'totals_reconciliation',
+                          'unparseable_value',
+                          'missing_total',
+                        ],
+                      },
+                      message: { type: 'string' },
+                      rawLabel: { type: 'string' },
+                      rawValue: { type: 'string' },
+                      section: { type: 'string' },
+                    },
+                    required: ['kind', 'message'],
+                  },
                 },
               },
+              required: [
+                'sourceColumn',
+                'financialYear',
+                'periodEndDate',
+                'incomeStatement',
+                'balanceSheet',
+              ],
             },
-            required: [
-              'sourceColumn',
-              'financialYear',
-              'periodEndDate',
-              'incomeStatement',
-              'balanceSheet',
-            ],
           },
         },
+        required: ['statements'],
       },
-      required: ['statements'],
     },
-  } as Anthropic.Tool
+  }
 }
 
 // ─── Per-statement validation + reconciliation ──────────────────────────────
@@ -381,7 +529,7 @@ function normaliseAndValidate(
     }),
   )
 
-  // Reject extractions that have no meaningful data. Claude has been
+  // Reject extractions that have no meaningful data. The model has been
   // observed to return a stub (correct shape, null values everywhere) when
   // it fails to parse a column. Persisting such a row would overwrite real
   // data via the UNIQUE(client_id, financial_year) constraint.
@@ -451,14 +599,14 @@ function buildExtractionPromptWithHint(filename: string, hintYear: number | null
  *   - Encrypted/signed PDFs: returned untouched. pdf-lib can OPEN encrypted
  *     PDFs with ignoreEncryption:true, but the page-content streams remain
  *     encrypted internally — re-saving produces a structurally-valid but
- *     visually-blank PDF. We observed Claude calling the extraction tool
+ *     visually-blank PDF. We observed the model calling the extraction tool
  *     with all-null values on such PDFs. Better to send the full original
- *     and let Anthropic process it directly.
+ *     and let OpenRouter forward it to the underlying model unmodified.
  *   - Unencrypted PDFs > N pages: trimmed to the first N pages.
  *
  * Source PDFs in this product bundle an Annual Financial Statement
  * (~7-8 pages) followed by an optional Company Tax Return (~10 pages).
- * Trimming dramatically speeds up Claude's processing on unencrypted PDFs.
+ * Trimming dramatically speeds up processing on unencrypted PDFs.
  */
 async function trimPdfToFirstPages(input: Uint8Array, maxPages: number): Promise<Uint8Array> {
   let source: PDFDocument
@@ -471,7 +619,7 @@ async function trimPdfToFirstPages(input: Uint8Array, maxPages: number): Promise
     const message = err instanceof Error ? err.message : String(err)
     if (message.includes('encrypted')) {
       console.log(
-        `[extractFinancialStatementFromPdf] PDF is encrypted/signed (${Math.round(input.length / 1024)}KB) — bypassing trim, sending original to Anthropic`,
+        `[extractFinancialStatementFromPdf] PDF is encrypted/signed (${Math.round(input.length / 1024)}KB) — bypassing trim, sending original to OpenRouter`,
       )
       return input
     }
