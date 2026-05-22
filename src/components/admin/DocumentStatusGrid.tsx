@@ -7,7 +7,6 @@ import type { DocumentRecord } from '@/types/app'
 import { CheckCircle2, XCircle, Download, Trash2, X } from 'lucide-react'
 import { ReuploadRequestButton } from '@/components/admin/ReuploadRequestButton'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
-import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
 import { formatBytes } from '@/lib/utils'
 import { useState } from 'react'
@@ -74,10 +73,7 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
             {category === 'historical_financials' && clientId && (
-              <>
-                <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
-                <PredictOutcomeButton clientId={clientId} />
-              </>
+              <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
             )}
 
             {category === 'integrated_client_account' && clientId && (

@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
+import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -102,8 +103,9 @@ export default async function ClientDetailPage({ params }: Props) {
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>
 
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
+        <PredictOutcomeButton clientId={client.id} />
       </div>
 
       <Card className="mb-4">

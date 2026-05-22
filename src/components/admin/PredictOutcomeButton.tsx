@@ -15,13 +15,11 @@ interface Props {
  */
 export function PredictOutcomeButton({ clientId }: Props) {
   return (
-    <div className="mt-2 ml-6.5 flex justify-end">
-      <Link href={`/admin/clients/${clientId}/outcome-prediction`}>
-        <Button variant="accent" size="sm">
-          <TrendingUp className="h-3.5 w-3.5" />
-          Predict SBR Outcome
-        </Button>
-      </Link>
-    </div>
+    <Link href={`/admin/clients/${clientId}/outcome-prediction`}>
+      <Button variant="accent" size="sm">
+        <TrendingUp className="h-3.5 w-3.5" />
+        Predict SBR Outcome
+      </Button>
+    </Link>
   )
 }

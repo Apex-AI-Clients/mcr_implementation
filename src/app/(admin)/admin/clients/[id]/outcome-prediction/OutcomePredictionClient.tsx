@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -79,23 +79,54 @@ function roundToNearest(value: number, step: number): number {
   return Math.round(value / step) * step
 }
 
+function extractCachedInput(
+  cached: CachedSummary | null,
+): {
+  dpn: boolean
+  paymentPlanType: 'plan' | 'upfront'
+  directorLoanAtAppointment: boolean
+  directorLoanSentToAto: boolean
+} | null {
+  if (!cached) return null
+  const f = cached.inputFeatures
+  const ppt = f.paymentPlanType
+  return {
+    dpn: typeof f.dpn === 'boolean' ? f.dpn : false,
+    paymentPlanType: ppt === 'plan' ? 'plan' : 'upfront',
+    directorLoanAtAppointment:
+      typeof f.directorLoanAtAppointment === 'boolean' ? f.directorLoanAtAppointment : false,
+    directorLoanSentToAto:
+      typeof f.directorLoanSentToAto === 'boolean' ? f.directorLoanSentToAto : false,
+  }
+}
+
 export function OutcomePredictionClient({
   clientId,
   clientName,
   initialAuto,
   initialPrediction,
 }: Props) {
+  const cachedInputs = extractCachedInput(initialPrediction)
+
   const [auto] = useState<InitialAuto>(initialAuto)
-  const [dpn, setDpn] = useState(false)
-  const [paymentPlanType, setPaymentPlanType] = useState<'plan' | 'upfront'>('upfront')
-  const [directorLoanAtAppointment, setDirectorLoanAtAppointment] = useState(false)
-  const [directorLoanSentToAto, setDirectorLoanSentToAto] = useState(false)
+  const [dpn, setDpn] = useState(cachedInputs?.dpn ?? false)
+  const [paymentPlanType, setPaymentPlanType] = useState<'plan' | 'upfront'>(
+    cachedInputs?.paymentPlanType ?? 'upfront',
+  )
+  const [directorLoanAtAppointment, setDirectorLoanAtAppointment] = useState(
+    cachedInputs?.directorLoanAtAppointment ?? false,
+  )
+  const [directorLoanSentToAto, setDirectorLoanSentToAto] = useState(
+    cachedInputs?.directorLoanSentToAto ?? false,
+  )
 
   const [prediction, setPrediction] = useState<FullPrediction | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState<MissingPrereq[]>([])
-  const [inputsCollapsed, setInputsCollapsed] = useState(initialPrediction !== null)
+  // Inputs panel is always open on page load — the user often wants to tweak
+  // and re-run, so keep the form visible. They can still collapse manually.
+  const [inputsCollapsed, setInputsCollapsed] = useState(false)
 
   const lodgementReady = auto.hasLodgement
   const canRun = lodgementReady
@@ -125,13 +156,25 @@ export function OutcomePredictionClient({
         return
       }
       setPrediction(data as FullPrediction)
-      setInputsCollapsed(true)
     } catch {
       setError('Network error during prediction.')
     } finally {
       setRunning(false)
     }
   }
+
+  // On mount: if there's a cached prediction, hydrate the full payload (the DB
+  // cache only stores the summary — the comparable cases + breakdown have to
+  // be recomputed). This is fast (~10ms server-side) and idempotent.
+  const hydrated = useRef(false)
+  useEffect(() => {
+    if (hydrated.current) return
+    if (!initialPrediction) return
+    if (!lodgementReady) return
+    hydrated.current = true
+    runPrediction()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -461,7 +504,7 @@ function InputPanel(props: InputPanelProps) {
 
       <div className="mt-5 flex justify-end gap-2">
         {hasPrediction && (
-          <Button variant="ghost" size="sm" onClick={onToggleCollapsed}>
+          <Button variant="ghost" size="md" onClick={onToggleCollapsed}>
             Cancel
           </Button>
         )}
