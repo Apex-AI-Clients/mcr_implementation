@@ -121,6 +121,140 @@ describe('computeFinancialsComparison — synthetic cases', () => {
   })
 })
 
+describe('current period handling', () => {
+  // Hand-built PARKCON current-period fixture from the merged BS_DOA + PL_DOA
+  // export covering 1 July 2025 → 4 May 2026. Headline figures (revenue,
+  // gross profit, net profit, ATO-related liabilities total, director loans,
+  // net assets) are taken verbatim from the source PDF.
+  const currentPeriodMay2026: ExtractedFinancialStatement = {
+    sourceFilename: 'PARKCON_current_period_2026.pdf',
+    financialYear: 2026,
+    periodEndDate: '2026-05-04',
+    periodStartDate: '2025-07-01',
+    periodLabel: '1 July 2025 to 4 May 2026',
+    sourceColumn: 'current_period',
+    incomeStatement: {
+      income: { sales: 462858.5, interestIncome: null, otherRevenue: null },
+      cogs: { purchases: 212047.52, directCosts: null },
+      expenses: {
+        wagesAndSalaries: 180000,
+        superannuation: 20000,
+        rent: 24000,
+        generalExpenses: 18801.88,
+      },
+      totals: {
+        totalIncome: 462858.5,
+        totalCogs: 212047.52,
+        grossProfit: 250810.98,
+        totalExpenses: 242801.88,
+        profitBeforeTax: 8009.1,
+        netProfitAfterTax: 8009.1,
+      },
+    },
+    balanceSheet: {
+      currentAssets: { bankAccounts: 5000, accountsReceivable: 10000 },
+      nonCurrentAssets: {
+        propertyPlantEquipment: 60000,
+        directorRelatedLoansReceivable: 148313.15,
+      },
+      currentLiabilities: {
+        atoLiability: 178822.17,
+        gstPayable: 14002.13,
+        paygWithholdingPayable: 21974,
+        superannuationPayable: 31978.41,
+      },
+      nonCurrentLiabilities: { loansAndFinance: 70910.5 },
+      equity: { retainedEarnings: -82373.06, shareCapital: 0 },
+      totals: {
+        totalCurrentAssets: 15000,
+        totalNonCurrentAssets: 208313.15,
+        totalAssets: 223313.15,
+        totalCurrentLiabilities: 246776.71,
+        totalNonCurrentLiabilities: 70910.5,
+        totalLiabilities: 317687.21,
+        netAssets: -94374.06,
+        totalEquity: -94374.06,
+      },
+    },
+    rawExtraction: [],
+    warnings: [],
+  }
+
+  it('exposes currentPeriod separately from years', () => {
+    const result = computeFinancialsComparison([
+      PARKCON_FY22,
+      PARKCON_FY23,
+      PARKCON_FY24,
+      PARKCON_FY25,
+      currentPeriodMay2026,
+    ])
+    expect(result.years).toEqual([2022, 2023, 2024, 2025])
+    expect(result.currentPeriod?.periodLabel).toBe('1 July 2025 to 4 May 2026')
+    expect(result.currentPeriod?.financialYear).toBe(2026)
+  })
+
+  it('does not include current period in scorecard sparklines', () => {
+    const result = computeFinancialsComparison([
+      PARKCON_FY22,
+      PARKCON_FY23,
+      PARKCON_FY24,
+      PARKCON_FY25,
+      currentPeriodMay2026,
+    ])
+    expect(result.headlines.revenue.trend).toHaveLength(4)
+  })
+
+  it('does not include current period in YoY ratio calculations', () => {
+    const result = computeFinancialsComparison([
+      PARKCON_FY22,
+      PARKCON_FY23,
+      PARKCON_FY24,
+      PARKCON_FY25,
+      currentPeriodMay2026,
+    ])
+    expect(Object.keys(result.ratiosByYear).map(Number).sort()).toEqual([
+      2022, 2023, 2024, 2025,
+    ])
+  })
+
+  it('PARKCON regression: headlines (annual fields) and ratios unchanged when current period is added', () => {
+    const withCurrent = computeFinancialsComparison([
+      PARKCON_FY22,
+      PARKCON_FY23,
+      PARKCON_FY24,
+      PARKCON_FY25,
+      currentPeriodMay2026,
+    ])
+    const withoutCurrent = computeFinancialsComparison([
+      PARKCON_FY22,
+      PARKCON_FY23,
+      PARKCON_FY24,
+      PARKCON_FY25,
+    ])
+
+    // Strip the additive currentPeriodValue so the annual headline state is
+    // compared on equal terms.
+    const stripCurrent = (h: typeof withCurrent.headlines) => {
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(h)) {
+        const rest = { ...v }
+        delete (rest as { currentPeriodValue?: unknown }).currentPeriodValue
+        out[k] = rest
+      }
+      return out
+    }
+
+    expect(stripCurrent(withCurrent.headlines)).toEqual(stripCurrent(withoutCurrent.headlines))
+    expect(withCurrent.ratiosByYear).toEqual(withoutCurrent.ratiosByYear)
+  })
+
+  it('handles current period with no annual data gracefully', () => {
+    const result = computeFinancialsComparison([currentPeriodMay2026])
+    expect(result.years).toEqual([])
+    expect(result.currentPeriod?.financialYear).toBe(2026)
+  })
+})
+
 describe('computeFinancialsComparison — PARKCON regression', () => {
   // These assertions anchor against the four real PARKCON PDFs in sample pdf/.
   // If any of these fail after refactoring, the methodology is wrong — fix the

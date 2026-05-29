@@ -22,6 +22,20 @@ function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`
 }
 
+/** Optional addendum to the comparison prompt when a current-period snapshot
+ *  is present. Returns an empty string when no current-period data exists so
+ *  the placeholders are never sent unfilled. */
+function buildCurrentPeriodPromptSection(comparison: FinancialsComparison): string {
+  const cp = comparison.currentPeriod
+  if (!cp) return ''
+
+  const revenue = comparison.headlines.revenue.currentPeriodValue ?? null
+  const netProfit = comparison.headlines.netProfit.currentPeriodValue ?? null
+  const directorLoans = comparison.headlines.directorLoansReceivable.currentPeriodValue ?? null
+
+  return `\n\nA current partial period (${cp.periodLabel}) is also available for this client.\nCurrent period figures:\n - Revenue YTD: $${formatNum(revenue)}\n - Net profit YTD: $${formatNum(netProfit)}\n - ATO debt at period end: $${formatNum(cp.atoLiabilityTotal)}\n - Director loans receivable at period end: $${formatNum(directorLoans)}\n\nIf material, mention briefly how the current period is tracking vs FY${comparison.years[comparison.years.length - 1] ?? ''} — but flag explicitly that this is a partial period not a full year. Do NOT include current-period figures in your year-over-year growth statements. Keep the rest of your narrative focused on the four-year annual trajectory.`
+}
+
 function buildYearByYearTable(comparison: FinancialsComparison): string {
   const lines: string[] = []
   for (const fy of comparison.years) {
@@ -61,25 +75,26 @@ export async function generateFinancialsComparisonSummary(input: {
   const latestYear = comparison.years[comparison.years.length - 1]
   const latestRatios = comparison.ratiosByYear[latestYear]
 
-  const prompt = FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE
-    .replaceAll('{yearByYearTable}', buildYearByYearTable(comparison))
-    .replaceAll(
-      '{atoDebtPctRevenueLatest}',
-      formatPercent(latestRatios?.atoDebtAsPercentOfRevenue ?? null),
-    )
-    .replaceAll(
-      '{directorLoansPctAssetsLatest}',
-      formatPercent(latestRatios?.directorLoansAsPercentOfAssets ?? null),
-    )
-    .replaceAll(
-      '{netAssetsLatest}',
-      formatNum(comparison.headlines.netAssets.latestValue),
-    )
-    .replaceAll('{numYears}', String(comparison.years.length))
-    .replaceAll(
-      '{cumulativeProfitLoss}',
-      formatNum(comparison.cumulativeProfitBeforeTax),
-    )
+  const prompt =
+    FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE
+      .replaceAll('{yearByYearTable}', buildYearByYearTable(comparison))
+      .replaceAll(
+        '{atoDebtPctRevenueLatest}',
+        formatPercent(latestRatios?.atoDebtAsPercentOfRevenue ?? null),
+      )
+      .replaceAll(
+        '{directorLoansPctAssetsLatest}',
+        formatPercent(latestRatios?.directorLoansAsPercentOfAssets ?? null),
+      )
+      .replaceAll(
+        '{netAssetsLatest}',
+        formatNum(comparison.headlines.netAssets.latestValue),
+      )
+      .replaceAll('{numYears}', String(comparison.years.length))
+      .replaceAll(
+        '{cumulativeProfitLoss}',
+        formatNum(comparison.cumulativeProfitBeforeTax),
+      ) + buildCurrentPeriodPromptSection(comparison)
 
   const client = getOpenRouterClient({ timeoutMs: 60_000 })
 

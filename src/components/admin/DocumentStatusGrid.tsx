@@ -8,6 +8,7 @@ import { CheckCircle2, XCircle, Download, Trash2, X } from 'lucide-react'
 import { ReuploadRequestButton } from '@/components/admin/ReuploadRequestButton'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
+import { AdminUploadButton } from '@/components/admin/AdminUploadButton'
 import { formatBytes } from '@/lib/utils'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -78,6 +79,10 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
 
             {category === 'integrated_client_account' && clientId && (
               <LodgementAnalysisButton clientId={clientId} />
+            )}
+
+            {category === 'current_financials' && clientId && (
+              <AdminUploadButton clientId={clientId} docCategory="current_financials" />
             )}
           </div>
         )

@@ -68,6 +68,7 @@ interface DocumentRow {
   id: string
   file_path: string
   original_filename: string
+  doc_category: string
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -98,9 +99,9 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     let docsQuery = supabase
       .from('documents')
-      .select('id, file_path, original_filename')
+      .select('id, file_path, original_filename, doc_category')
       .eq('client_id', clientId)
-      .eq('doc_category', 'historical_financials')
+      .in('doc_category', ['historical_financials', 'current_financials'])
       .order('uploaded_at', { ascending: true })
 
     if (Array.isArray(body.documentIds) && body.documentIds.length > 0) {
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
     if (!documents || documents.length === 0) {
       return NextResponse.json(
-        { error: 'No historical-financials documents found for this client.' },
+        { error: 'No financials documents found for this client.' },
         { status: 404 },
       )
     }
@@ -131,6 +132,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     // simple; parallel calls would interleave per-document log lines.
     for (let i = 0; i < documents.length; i++) {
       const doc = documents[i] as DocumentRow
+
+      console.log(
+        `[extract-financials] processing ${doc.doc_category} document: ${doc.original_filename}`,
+      )
 
       // Inter-document delay (skip before the first PDF) to pace sequential
       // PDF processing — keeps logs readable and gives the operator a clear
@@ -281,6 +286,20 @@ interface UpsertInput {
   rawResponse: unknown
 }
 
+/**
+ * Source-column-aware upsert for financial statements.
+ *
+ * Each (client, financial_year, source_column) is its own slot.
+ *   - A primary annual statement and a current-period statement for FY2026
+ *     coexist as separate rows.
+ *   - A comparative-column extraction for FY2024 found in a FY2025 PDF will
+ *     not overwrite the primary FY2024 row (they're separate rows now).
+ *   - Re-extracting overwrites the same-source row only.
+ *
+ * The legacy "primary wins over comparative" and "real data wins over empty"
+ * guards remain in force, but they now apply WITHIN a single source_column
+ * slot — current_period rows never compete with annual rows for the same FY.
+ */
 async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'skipped'> {
   const { supabase, clientId, documentId, sourceFilename, statement, rawResponse } = input
 
@@ -289,9 +308,13 @@ async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'ski
     .select('id, source_column, income_statement, balance_sheet')
     .eq('client_id', clientId)
     .eq('financial_year', statement.financialYear)
+    .eq('source_column', statement.sourceColumn)
     .maybeSingle()
 
-  // Rule 1: never overwrite a primary with a comparative.
+  // Rule 1 (legacy, now scoped within source_column): never overwrite a
+  // primary with a comparative. With the source-column-aware lookup above
+  // this can only fire when a row was written under the wrong source_column
+  // by a previous build; preserved as a defensive guard.
   if (
     existing &&
     existing.source_column === 'primary' &&
@@ -303,7 +326,7 @@ async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'ski
   // Rule 2: never overwrite a row that has real data with one that doesn't.
   // The model has occasionally returned empty-but-correctly-shaped payloads
   // (all values null). Without this guard, a later empty extraction can
-  // destroy good data via UNIQUE(client_id, financial_year) upsert.
+  // destroy good data on re-extraction.
   if (existing && hasMeaningfulData(existing.income_statement, existing.balance_sheet)) {
     const newHasData = hasMeaningfulData(
       statement.incomeStatement as unknown as Record<string, unknown>,
@@ -320,6 +343,8 @@ async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'ski
     source_filename: sourceFilename,
     financial_year: statement.financialYear,
     period_end_date: statement.periodEndDate,
+    period_start_date: statement.periodStartDate ?? null,
+    period_label: statement.periodLabel ?? null,
     source_column: statement.sourceColumn,
     income_statement: statement.incomeStatement as unknown as Record<string, unknown>,
     balance_sheet: statement.balanceSheet as unknown as Record<string, unknown>,
@@ -331,7 +356,7 @@ async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'ski
 
   const { error } = await supabase
     .from('financial_statements')
-    .upsert(payload, { onConflict: 'client_id,financial_year' })
+    .upsert(payload, { onConflict: 'client_id,financial_year,source_column' })
 
   if (error) {
     throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)

@@ -1,9 +1,18 @@
 'use client'
 
 import { useState } from 'react'
+import { Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { YoYBadge } from './YoYBadge'
-import type { DiffTableSection, FinancialsComparison } from '@/lib/financials/types'
+import type {
+  CurrentPeriodSnapshot,
+  DiffTableSection,
+  FinancialsComparison,
+} from '@/lib/financials/types'
+import {
+  formatCurrentPeriodHeaderDate,
+  formatCurrentPeriodTooltip,
+} from './currentPeriodLabels'
 
 interface Props {
   comparison: FinancialsComparison
@@ -32,6 +41,7 @@ const BOLD_KEYS = new Set([
 export function IncomeStatementCompareTable({ comparison }: Props) {
   const [tab, setTab] = useState<'summary' | 'detail'>('summary')
   const { years } = comparison
+  const cp = comparison.currentPeriod ?? null
 
   const incomeDiffs = comparison.incomeStatementDiffs
   const totalsSection = incomeDiffs.find((s) => s.category === 'Totals')
@@ -55,13 +65,13 @@ export function IncomeStatementCompareTable({ comparison }: Props) {
 
       <div className="overflow-x-auto rounded-lg border border-border/60">
         <table className="w-full text-xs">
-          <TableHeader years={years} />
+          <TableHeader years={years} currentPeriod={cp} />
           <tbody>
             {(tab === 'summary' ? summarySections : detailSections).map((section) => (
-              <SectionRows key={section.category} section={section} years={years} />
+              <SectionRows key={section.category} section={section} years={years} currentPeriod={cp} />
             ))}
             {totalsSection && totalsSection.rows.length > 0 && (
-              <TotalsRows section={totalsSection} years={years} />
+              <TotalsRows section={totalsSection} years={years} currentPeriod={cp} />
             )}
           </tbody>
         </table>
@@ -93,7 +103,13 @@ function TabButton({
   )
 }
 
-function TableHeader({ years }: { years: number[] }) {
+function TableHeader({
+  years,
+  currentPeriod,
+}: {
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   return (
     <thead>
       <tr className="border-b border-border bg-primary/30 text-left text-foreground/45">
@@ -106,37 +122,82 @@ function TableHeader({ years }: { years: number[] }) {
             </div>
           </th>
         ))}
+        {currentPeriod && <CurrentPeriodHeaderCell currentPeriod={currentPeriod} />}
       </tr>
     </thead>
   )
 }
 
-function SectionRows({ section, years }: { section: { category: string; rows: import('@/lib/financials/types').DiffTableSection['rows'] }; years: number[] }) {
+function CurrentPeriodHeaderCell({ currentPeriod }: { currentPeriod: CurrentPeriodSnapshot }) {
+  return (
+    <th
+      className="py-2 pr-4 pl-4 font-medium text-right border-l border-border/40"
+      title={formatCurrentPeriodTooltip(currentPeriod)}
+    >
+      <div className="inline-flex flex-col items-end">
+        <span className="inline-flex items-center gap-1">
+          Current YTD
+          <Info className="h-3 w-3 text-foreground/40" aria-label="Partial period — not directly comparable" />
+        </span>
+        <span className="text-[10px] text-foreground/30">
+          to {formatCurrentPeriodHeaderDate(currentPeriod)}
+        </span>
+      </div>
+    </th>
+  )
+}
+
+function SectionRows({
+  section,
+  years,
+  currentPeriod,
+}: {
+  section: { category: string; rows: import('@/lib/financials/types').DiffTableSection['rows'] }
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   if (section.rows.length === 0) return null
+  const colSpan = years.length + 1 + (currentPeriod ? 1 : 0)
   return (
     <>
       <tr className="bg-primary/20">
-        <td colSpan={years.length + 1} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
+        <td colSpan={colSpan} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
           {section.category}
         </td>
       </tr>
       {section.rows.map((row) => (
-        <DiffRowEl key={row.canonicalKey} row={row} years={years} />
+        <DiffRowEl key={row.canonicalKey} row={row} years={years} hasCurrentPeriod={Boolean(currentPeriod)} />
       ))}
     </>
   )
 }
 
-function TotalsRows({ section, years }: { section: DiffTableSection; years: number[] }) {
+function TotalsRows({
+  section,
+  years,
+  currentPeriod,
+}: {
+  section: DiffTableSection
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
+  const colSpan = years.length + 1 + (currentPeriod ? 1 : 0)
   return (
     <>
       <tr className="bg-primary/30">
-        <td colSpan={years.length + 1} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
+        <td colSpan={colSpan} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
           Totals
         </td>
       </tr>
       {section.rows.map((row) => (
-        <DiffRowEl key={row.canonicalKey} row={row} years={years} isBold isTopBordered={row.canonicalKey === 'netProfitAfterTax'} />
+        <DiffRowEl
+          key={row.canonicalKey}
+          row={row}
+          years={years}
+          hasCurrentPeriod={Boolean(currentPeriod)}
+          isBold
+          isTopBordered={row.canonicalKey === 'netProfitAfterTax'}
+        />
       ))}
     </>
   )
@@ -145,11 +206,13 @@ function TotalsRows({ section, years }: { section: DiffTableSection; years: numb
 function DiffRowEl({
   row,
   years,
+  hasCurrentPeriod,
   isBold,
   isTopBordered,
 }: {
   row: import('@/lib/financials/types').DiffRow
   years: number[]
+  hasCurrentPeriod: boolean
   isBold?: boolean
   isTopBordered?: boolean
 }) {
@@ -176,6 +239,16 @@ function DiffRowEl({
           </td>
         )
       })}
+      {hasCurrentPeriod && (
+        <td
+          className={cn(
+            'py-1.5 pr-4 pl-4 text-right tabular-nums border-l border-border/40 text-foreground/70',
+            { 'font-semibold': bold },
+          )}
+        >
+          {formatAud(row.currentPeriodValue ?? null)}
+        </td>
+      )}
     </tr>
   )
 }

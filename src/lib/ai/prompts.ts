@@ -151,6 +151,77 @@ WARNINGS:
 - Add a warning for any unparseable currency value.
 - Do NOT fabricate. If the PDF doesn't show a particular total, set it to null and add a "missing_total" warning.
 
+== CURRENT-PERIOD PDFs (non-accountant-prepared, partial-year exports) ==
+
+Some uploaded PDFs are not accountant-prepared annual statements — they are
+exports from accounting software (Xero, MYOB, QuickBooks) covering a
+partial period (e.g. "1 July 2025 to 4 May 2026"). These have ONE column
+of values, no prior-year comparative, and use slightly different labels.
+
+DETECTION RULES — a PDF is current-period when ANY of these are true:
+ - The heading says "For the period <date> to <date>" rather than "For
+   the year ended <date>"
+ - Only ONE value column appears in the income statement / balance sheet
+ - The document has no "Notes to the Financial Statements", no
+   "Compilation Report", no "Directors Declaration", no "Appropriation
+   Statement", no "Depreciation Schedule"
+ - The balance sheet is "As at <some non-30-June date>"
+
+FOR CURRENT-PERIOD PDFs:
+ - Return EXACTLY ONE entry in \`statements\` (never two)
+ - Set \`sourceColumn\` to \`"current_period"\`
+ - Set \`periodLabel\` to the human-readable range shown in the PDF (verbatim,
+   e.g. "1 July 2025 to 4 May 2026")
+ - Set \`periodStartDate\` to the ISO start date of that range
+ - Set \`periodEndDate\` to the ISO end date of that range
+ - Set \`financialYear\` to the FY containing periodEndDate (AU FY is
+   July to June). E.g. period ending 4 May 2026 → financialYear: 2026.
+
+LABEL MAPPING (current-period software exports use different section names —
+map to canonical schema keys as follows):
+ - "Trading Income" section → maps to canonical \`income\`
+ - "Cost of Sales" section → maps to canonical \`cogs\`
+ - "Operating Expenses" section → maps to canonical \`expenses\`
+ - "Bank" + "Current Assets" sub-sections under Assets → both fold into
+   canonical \`currentAssets\` (Bank account balances go in
+   \`currentAssets.bankAccounts\`)
+ - "Fixed Assets" section (including "Plant and Equipment at cost" and
+   "Less Accumulated Depreciation") → fold the NET figure (cost minus
+   accumulated depreciation) into \`nonCurrentAssets.propertyPlantEquipment\`
+ - "Non-current Assets" section (where loans live) → maps to
+   \`nonCurrentAssets\`. Apply the same director-loan classification rule
+   already in this prompt (any line starting with "Loan" or containing
+   "Director"/"Owner Drawings" → \`directorRelatedLoansReceivable\`)
+ - "Current Year Earnings" line in equity → fold into
+   \`equity.retainedEarnings\` along with the "Retained Earnings" line
+   (sum them — Current Year Earnings has not yet been appropriated)
+ - "Rounding" line in liabilities → bucket as \`other\` in its parent
+   section, with a \`warnings\` entry noting it was a rounding adjustment
+
+TOTAL LABELS — current-period PDFs use:
+ - "Net Profit" instead of "Net Profit After Tax" → map to
+   \`totals.netProfitAfterTax\`
+ - "Net Profit" also serves as \`totals.profitBeforeTax\` for current-period
+   PDFs (no tax has been calculated yet for a partial period)
+ - "Gross Profit" → \`totals.grossProfit\`
+ - "Total Trading Income" → \`totals.totalIncome\`
+ - "Total Cost of Sales" → \`totals.totalCogs\`
+ - "Total Operating Expenses" → \`totals.totalExpenses\`
+ - "Total Assets" / "Total Liabilities" / "Net Assets" / "Total Equity"
+   work the same as for annual statements
+
+RECONCILIATION — for current-period PDFs, apply the same ±$50 reconciliation
+check (Total Income - Total COGS - Total Expenses ≈ Net Profit). Warn but
+do not throw on mismatch — software exports sometimes have rounding lines
+that explain small discrepancies.
+
+DEFENSIVE BEHAVIOUR — if the PDF appears to contain only a Profit & Loss
+section without a Balance Sheet (or vice versa), still return ONE entry
+with whatever was found, populate the missing section's totals as null,
+and add a warning \`{ kind: 'incomplete_current_period', message: 'P&L
+present but no Balance Sheet detected — combined PDF expected' }\` or
+similar. Do NOT throw.
+
 Call the submit_extracted_financials tool now with the structured extraction. Do not reply in text.
 `.trim()
 

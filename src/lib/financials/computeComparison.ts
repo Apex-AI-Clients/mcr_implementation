@@ -6,6 +6,7 @@ import {
 } from './schema'
 import type {
   AtoLiabilityAggregate,
+  CurrentPeriodSnapshot,
   DiffRow,
   DiffTableSection,
   Direction,
@@ -198,6 +199,7 @@ function buildDiffTable(
   years: number[],
   pick: (s: ExtractedFinancialStatement, key: string) => number | null,
   byYear: Record<number, ExtractedFinancialStatement>,
+  currentPeriodStatement?: ExtractedFinancialStatement,
 ): DiffTableSection {
   const rows: DiffRow[] = []
   for (const [canonicalKey, label] of Object.entries(schemaSection)) {
@@ -208,6 +210,12 @@ function buildDiffTable(
       valuesByYear[fy] = v
       if (v !== null && v !== 0) allZeroOrNull = false
     }
+
+    const currentPeriodValue = currentPeriodStatement
+      ? pick(currentPeriodStatement, canonicalKey)
+      : null
+    if (currentPeriodValue !== null && currentPeriodValue !== 0) allZeroOrNull = false
+
     if (allZeroOrNull) continue
 
     const yoyByYear: Record<number, number | null> = {}
@@ -228,6 +236,7 @@ function buildDiffTable(
       yoyPercentByYear: yoyByYear,
       absoluteChangeOldestToLatest: absoluteChange,
       direction: direction(trend),
+      ...(currentPeriodStatement ? { currentPeriodValue } : {}),
     })
   }
   return { category, rows }
@@ -265,9 +274,25 @@ function pickBalanceTotal(s: ExtractedFinancialStatement, key: string): number |
 
 // ─── Main entry point ────────────────────────────────────────────────────────
 
+/** Pick the single current-period statement to use when more than one is
+ *  present (shouldn't happen — be defensive and prefer the latest period end). */
+function pickCurrentPeriod(
+  statements: ExtractedFinancialStatement[],
+): ExtractedFinancialStatement | null {
+  if (statements.length === 0) return null
+  return [...statements].sort((a, b) => b.periodEndDate.localeCompare(a.periodEndDate))[0]
+}
+
 /**
- * Pure function. Takes 1–4 extracted annual financial statements (in any order)
- * and produces the comparison payload rendered on the financials-comparison page.
+ * Pure function. Takes 1–4 extracted annual financial statements (in any order),
+ * optionally with one current-period (partial-year) entry, and produces the
+ * comparison payload rendered on the financials-comparison page.
+ *
+ * The current-period entry is surfaced on `currentPeriod` and on per-row
+ * `currentPeriodValue` fields. It is intentionally excluded from `years`,
+ * sparkline trends, headline severities, and ratios — those remain pure
+ * 4-year annual-statement math (mixing partial-period data would distort
+ * severity classification).
  */
 export function computeFinancialsComparison(
   statements: ExtractedFinancialStatement[],
@@ -276,7 +301,21 @@ export function computeFinancialsComparison(
     throw new Error('computeFinancialsComparison: at least one statement is required.')
   }
 
-  const sorted = [...statements].sort((a, b) => a.financialYear - b.financialYear)
+  const annualStatements = statements.filter(
+    (s) => s.sourceColumn === 'primary' || s.sourceColumn === 'comparative',
+  )
+  const currentPeriodStatement = pickCurrentPeriod(
+    statements.filter((s) => s.sourceColumn === 'current_period'),
+  )
+
+  // Current-period-only input: emit a comparison with empty annual fields
+  // but the currentPeriod snapshot populated, so the UI can still render
+  // the YTD column standalone.
+  if (annualStatements.length === 0 && currentPeriodStatement) {
+    return buildCurrentPeriodOnlyComparison(currentPeriodStatement)
+  }
+
+  const sorted = [...annualStatements].sort((a, b) => a.financialYear - b.financialYear)
   const years = sorted.map((s) => s.financialYear)
   const byYear: Record<number, ExtractedFinancialStatement> = {}
   for (const s of sorted) byYear[s.financialYear] = s
@@ -308,6 +347,7 @@ export function computeFinancialsComparison(
     label: string,
     trend: Array<number | null>,
     severity: Severity,
+    currentPeriodValue: number | null,
   ): HeadlineMetric {
     const latestValue = lastPresent(trend)
     const present = trend.filter((v): v is number => v !== null)
@@ -325,6 +365,7 @@ export function computeFinancialsComparison(
       absoluteChange,
       severity,
       direction: direction(trend),
+      ...(currentPeriodStatement ? { currentPeriodValue } : {}),
     }
   }
 
@@ -338,38 +379,49 @@ export function computeFinancialsComparison(
     dirLoansTrend.length >= 2 ? dirLoansTrend[dirLoansTrend.length - 2] : null
   const latestTotalAssets = totalAssets(byYear[years[years.length - 1]])
 
+  const currentPeriodAto = currentPeriodStatement
+    ? sumAtoLiabilities(currentPeriodStatement).total
+    : null
+
   const headlines: Record<HeadlineKey, HeadlineMetric> = {
     revenue: buildHeadline(
       'revenue',
       'Revenue',
       revenueTrend,
       revenueSeverity(latestRevenue, prevRevenue),
+      currentPeriodStatement ? sales(currentPeriodStatement) : null,
     ),
     netProfit: buildHeadline(
       'netProfit',
       'Net Profit / (Loss)',
       netProfitTrend,
       netProfitSeverity(latestNetProfit),
+      currentPeriodStatement ? profitBeforeTax(currentPeriodStatement) : null,
     ),
     netAssets: buildHeadline(
       'netAssets',
       'Net Assets',
       netAssetsTrend,
       netAssetsSeverity(latestNetAssets),
+      currentPeriodStatement ? netAssets(currentPeriodStatement) : null,
     ),
     atoDebtTrajectory: buildHeadline(
       'atoDebtTrajectory',
       'ATO Debt Trajectory',
       atoTrend,
       atoTrajectorySeverity(atoTrend, revenueTrend),
+      currentPeriodAto,
     ),
     directorLoansReceivable: buildHeadline(
       'directorLoansReceivable',
       'Director Loans Receivable',
       dirLoansTrend,
       directorLoansSeverity(latestDirLoans, latestTotalAssets, prevDirLoans),
+      currentPeriodStatement ? directorLoansReceivable(currentPeriodStatement) : null,
     ),
   }
+
+  const cp = currentPeriodStatement ?? undefined
 
   // Diff tables — income statement (line items + totals)
   const incomeStatementDiffs: DiffTableSection[] = [
@@ -379,6 +431,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickIncomeLine('income', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Cost of Goods Sold',
@@ -386,6 +439,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickIncomeLine('cogs', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Expenses',
@@ -393,8 +447,9 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickIncomeLine('expenses', s, k),
       byYear,
+      cp,
     ),
-    buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear),
+    buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear, cp),
   ]
 
   // Diff tables — balance sheet
@@ -405,6 +460,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickBalanceLine('currentAssets', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Non-Current Assets',
@@ -412,6 +468,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickBalanceLine('nonCurrentAssets', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Current Liabilities',
@@ -419,6 +476,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickBalanceLine('currentLiabilities', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Non-Current Liabilities',
@@ -426,6 +484,7 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickBalanceLine('nonCurrentLiabilities', s, k),
       byYear,
+      cp,
     ),
     buildDiffTable(
       'Equity',
@@ -433,14 +492,26 @@ export function computeFinancialsComparison(
       years,
       (s, k) => pickBalanceLine('equity', s, k),
       byYear,
+      cp,
     ),
-    buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear),
+    buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear, cp),
   ]
 
   const cumulativeProfitBeforeTax = sorted.reduce(
     (sum, s) => sum + (s.incomeStatement.totals.profitBeforeTax ?? 0),
     0,
   )
+
+  const currentPeriod: CurrentPeriodSnapshot | undefined = currentPeriodStatement
+    ? {
+        periodLabel:
+          currentPeriodStatement.periodLabel ?? `Period ending ${currentPeriodStatement.periodEndDate}`,
+        periodStartDate: currentPeriodStatement.periodStartDate ?? currentPeriodStatement.periodEndDate,
+        periodEndDate: currentPeriodStatement.periodEndDate,
+        financialYear: currentPeriodStatement.financialYear,
+        atoLiabilityTotal: sumAtoLiabilities(currentPeriodStatement).total,
+      }
+    : undefined
 
   return {
     years,
@@ -454,6 +525,57 @@ export function computeFinancialsComparison(
     incomeStatementDiffs,
     balanceSheetDiffs,
     cumulativeProfitBeforeTax,
+    ...(currentPeriod ? { currentPeriod } : {}),
+  }
+}
+
+/** Standalone comparison shape for the rare case where only a current-period
+ *  PDF has been extracted (no annual statements yet). Returns an otherwise
+ *  empty comparison so the UI can still render the YTD figures. */
+function buildCurrentPeriodOnlyComparison(
+  cp: ExtractedFinancialStatement,
+): FinancialsComparison {
+  const emptyHeadline = (key: HeadlineKey, label: string, value: number | null): HeadlineMetric => ({
+    key,
+    label,
+    latestValue: null,
+    formatted: fmtAud(null),
+    trend: [],
+    yoyPercent: null,
+    absoluteChange: null,
+    severity: 'watch',
+    direction: 'flat',
+    currentPeriodValue: value,
+  })
+
+  const atoTotal = sumAtoLiabilities(cp).total
+
+  return {
+    years: [],
+    periodRange: { start: cp.periodEndDate, end: cp.periodEndDate },
+    headlines: {
+      revenue: emptyHeadline('revenue', 'Revenue', sales(cp)),
+      netProfit: emptyHeadline('netProfit', 'Net Profit / (Loss)', profitBeforeTax(cp)),
+      netAssets: emptyHeadline('netAssets', 'Net Assets', netAssets(cp)),
+      atoDebtTrajectory: emptyHeadline('atoDebtTrajectory', 'ATO Debt Trajectory', atoTotal),
+      directorLoansReceivable: emptyHeadline(
+        'directorLoansReceivable',
+        'Director Loans Receivable',
+        directorLoansReceivable(cp),
+      ),
+    },
+    ratiosByYear: {},
+    atoLiabilityByYear: {},
+    incomeStatementDiffs: [],
+    balanceSheetDiffs: [],
+    cumulativeProfitBeforeTax: 0,
+    currentPeriod: {
+      periodLabel: cp.periodLabel ?? `Period ending ${cp.periodEndDate}`,
+      periodStartDate: cp.periodStartDate ?? cp.periodEndDate,
+      periodEndDate: cp.periodEndDate,
+      financialYear: cp.financialYear,
+      atoLiabilityTotal: atoTotal,
+    },
   }
 }
 
