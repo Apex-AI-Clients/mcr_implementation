@@ -47,14 +47,28 @@ export default async function OutcomePredictionPage({ params }: Props) {
 
   const balanceSheet = (statement.data?.balance_sheet ?? null) as ExtractedBalanceSheet | null
 
+  // Auto-detect the director loan at appointment from the latest balance sheet
+  // so the manual checkbox pre-fills on first load. The operator can override.
+  const directorLoanValue =
+    Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
+  const directorLoanDetected: boolean | null = balanceSheet ? directorLoanValue > 0 : null
+  const directorLoanReasoning: string | null = !balanceSheet
+    ? null
+    : directorLoanValue > 0
+      ? `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${
+          statement.data?.financial_year ? `FY${statement.data.financial_year} balance sheet` : 'most recent balance sheet'
+        }.`
+      : 'No director loan line item found on most recent balance sheet.'
+
   const initialAuto = {
     cumulativeDaysLate: lodgement.data?.cumulative_days_late ?? null,
     numberOfLateLodgements: lodgement.data?.number_of_late_lodgements ?? null,
     daysSinceLastPayment: lodgement.data
       ? deriveDaysSinceLastPayment(lodgement.data.rows as unknown as EnrichedRow[])
       : null,
-    directorLoanReceivableAmount:
-      (Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0),
+    directorLoanReceivableAmount: directorLoanValue,
+    directorLoanDetected,
+    directorLoanReasoning,
     creditorAmount: balanceSheet
       ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
       : null,

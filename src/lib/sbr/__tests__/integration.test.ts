@@ -3,11 +3,11 @@ import { predictSbrOutcome } from '../predictOutcome'
 import type { HistoricalSbrCase, SbrPredictionInput } from '../types'
 
 /**
- * Hand-traced subset of the GABI training data — 10 cases chosen to span the
+ * Hand-traced subset of the GABI training data â€” 10 cases chosen to span the
  * spread (low cumulative-days-late through high; low and high late-lodgement
  * counts; with/without DPN; plan and upfront). The query profile below is
  * deliberately mid-range, so the 8 closest neighbours should sit in the
- * 35–50% outcome band rather than the extremes.
+ * 35â€“50% outcome band rather than the extremes.
  */
 const trainingSet: HistoricalSbrCase[] = [
   {
@@ -17,7 +17,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 7,
       numberOfLateLodgements: 1,
@@ -35,7 +34,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 52,
       numberOfLateLodgements: 4,
@@ -53,7 +51,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 145,
       numberOfLateLodgements: 6,
@@ -71,7 +68,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 748,
       numberOfLateLodgements: 20,
@@ -89,7 +85,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 606,
       numberOfLateLodgements: 13,
@@ -107,7 +102,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 1546,
       numberOfLateLodgements: 12,
@@ -125,7 +119,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 2752,
       numberOfLateLodgements: 17,
@@ -143,7 +136,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: true,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 6498,
       numberOfLateLodgements: 38,
@@ -161,7 +153,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: true,
       paymentPlanType: 'upfront',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 45866,
       numberOfLateLodgements: 114,
@@ -179,7 +170,6 @@ const trainingSet: HistoricalSbrCase[] = [
       dpn: true,
       paymentPlanType: 'upfront',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 3006,
       numberOfLateLodgements: 21,
@@ -192,13 +182,12 @@ const trainingSet: HistoricalSbrCase[] = [
   },
 ]
 
-describe('predictSbrOutcome — integration on GABI subset', () => {
+describe('predictSbrOutcome â€” integration on GABI subset', () => {
   it('returns 8 neighbours from the mid range for a mid-range query', () => {
     const query: SbrPredictionInput = {
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 800,
       numberOfLateLodgements: 14,
@@ -220,11 +209,11 @@ describe('predictSbrOutcome — integration on GABI subset', () => {
         'HTB Felicitas Pty Ltd',
       ]),
     )
-    // Globexo is the worst outlier — should NOT make the top 8 when 10 cases are available.
+    // Globexo is the worst outlier â€” should NOT make the top 8 when 10 cases are available.
     // (It will appear when training is exactly 8 cases; with 10 it should be excluded.)
     expect(names).not.toContain('Globexo Pty Ltd')
 
-    // Predicted outcome lands in the realistic 35–50% window.
+    // Predicted outcome lands in the realistic 35â€“50% window.
     expect(result.predictedOutcomePercent).toBeGreaterThan(35)
     expect(result.predictedOutcomePercent).toBeLessThan(50)
     expect(result.predictedLowPercent).toBeGreaterThanOrEqual(33)
@@ -240,7 +229,6 @@ describe('predictSbrOutcome — integration on GABI subset', () => {
       dpn: false,
       paymentPlanType: 'plan',
       directorLoanAtAppointment: false,
-      directorLoanSentToAto: false,
       directorLoanReceivableAmount: 0,
       cumulativeDaysLate: 5000,
       numberOfLateLodgements: 30,
