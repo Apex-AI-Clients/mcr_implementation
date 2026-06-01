@@ -1,12 +1,17 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { YoYBadge } from './YoYBadge'
 import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
 import type {
+  CurrentPeriodSnapshot,
   DiffRow,
   DiffTableSection,
   FinancialsComparison,
 } from '@/lib/financials/types'
+import {
+  formatCurrentPeriodHeaderDate,
+  formatCurrentPeriodTooltip,
+} from './currentPeriodLabels'
 
 interface Props {
   comparison: FinancialsComparison
@@ -36,6 +41,7 @@ const BS_BOLD_KEYS = new Set([
 
 export function BalanceSheetCompareTable({ comparison }: Props) {
   const { years, balanceSheetDiffs, atoLiabilityByYear } = comparison
+  const cp = comparison.currentPeriod ?? null
 
   const sections = balanceSheetDiffs.filter((s) => s.category !== 'Totals')
   const totalsSection = balanceSheetDiffs.find((s) => s.category === 'Totals')
@@ -59,7 +65,7 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
 
   // Build a synthetic "ATO-related liabilities" diff row showing the SUM of
   // the four ATO-related current-liability lines per year.
-  const atoDiffRow = buildAtoAggregateRow(years, atoLiabilityByYear)
+  const atoDiffRow = buildAtoAggregateRow(years, atoLiabilityByYear, cp)
 
   // Pull netAssets out of totals so it can be rendered as a bold highlighted row.
   const netAssetsRow = totalsSection?.rows.find((r) => r.canonicalKey === 'netAssets')
@@ -77,7 +83,7 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
           title="Director / Related Party Loans Receivable"
           subtitle="The ATO will scrutinise growth in related-party loans as evidence of funds being withdrawn from the business."
         >
-          <SingleRowTable row={directorLoansRow} years={years} />
+          <SingleRowTable row={directorLoansRow} years={years} currentPeriod={cp} />
         </HighlightBlock>
       )}
 
@@ -89,36 +95,36 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
           title="ATO-related Current Liabilities (combined)"
           subtitle="Sum of ATO Liability, GST, Superannuation Payable, and PAYG Withholding Payable. The strongest indicator of accumulated tax debt."
         >
-          <SingleRowTable row={atoDiffRow} years={years} />
+          <SingleRowTable row={atoDiffRow} years={years} currentPeriod={cp} />
         </HighlightBlock>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-border/60">
         <table className="w-full text-xs">
-          <TableHeader years={years} />
+          <TableHeader years={years} currentPeriod={cp} />
           <tbody>
             {nonCurrentAssetsWithoutDirectorLoans && (
-              <SectionRows section={nonCurrentAssetsWithoutDirectorLoans} years={years} />
+              <SectionRows section={nonCurrentAssetsWithoutDirectorLoans} years={years} currentPeriod={cp} />
             )}
             {sectionsWithoutNCA.map((section) => (
-              <SectionRows key={section.category} section={section} years={years} />
+              <SectionRows key={section.category} section={section} years={years} currentPeriod={cp} />
             ))}
             {otherTotalsRows.length > 0 && (
               <>
                 <tr className="bg-primary/30">
                   <td
-                    colSpan={years.length + 1}
+                    colSpan={years.length + 1 + (cp ? 1 : 0)}
                     className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55"
                   >
                     Totals
                   </td>
                 </tr>
                 {otherTotalsRows.map((row) => (
-                  <DiffRowEl key={row.canonicalKey} row={row} years={years} isBold />
+                  <DiffRowEl key={row.canonicalKey} row={row} years={years} hasCurrentPeriod={Boolean(cp)} isBold />
                 ))}
               </>
             )}
-            {netAssetsRow && <NetAssetsRow row={netAssetsRow} years={years} />}
+            {netAssetsRow && <NetAssetsRow row={netAssetsRow} years={years} currentPeriod={cp} />}
           </tbody>
         </table>
       </div>
@@ -126,7 +132,13 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
   )
 }
 
-function TableHeader({ years }: { years: number[] }) {
+function TableHeader({
+  years,
+  currentPeriod,
+}: {
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   return (
     <thead>
       <tr className="border-b border-border bg-primary/30 text-left text-foreground/45">
@@ -139,25 +151,53 @@ function TableHeader({ years }: { years: number[] }) {
             </div>
           </th>
         ))}
+        {currentPeriod && (
+          <th
+            className="py-2 pr-4 pl-4 font-medium text-right border-l border-border/40"
+            title={formatCurrentPeriodTooltip(currentPeriod)}
+          >
+            <div className="inline-flex flex-col items-end">
+              <span className="inline-flex items-center gap-1">
+                Current YTD
+                <Info
+                  className="h-3 w-3 text-foreground/40"
+                  aria-label="Partial period — not directly comparable"
+                />
+              </span>
+              <span className="text-[10px] text-foreground/30">
+                to {formatCurrentPeriodHeaderDate(currentPeriod)}
+              </span>
+            </div>
+          </th>
+        )}
       </tr>
     </thead>
   )
 }
 
-function SectionRows({ section, years }: { section: DiffTableSection; years: number[] }) {
+function SectionRows({
+  section,
+  years,
+  currentPeriod,
+}: {
+  section: DiffTableSection
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   if (section.rows.length === 0) return null
+  const colSpan = years.length + 1 + (currentPeriod ? 1 : 0)
   return (
     <>
       <tr className="bg-primary/20">
         <td
-          colSpan={years.length + 1}
+          colSpan={colSpan}
           className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55"
         >
           {section.category}
         </td>
       </tr>
       {section.rows.map((row) => (
-        <DiffRowEl key={row.canonicalKey} row={row} years={years} />
+        <DiffRowEl key={row.canonicalKey} row={row} years={years} hasCurrentPeriod={Boolean(currentPeriod)} />
       ))}
     </>
   )
@@ -166,10 +206,12 @@ function SectionRows({ section, years }: { section: DiffTableSection; years: num
 function DiffRowEl({
   row,
   years,
+  hasCurrentPeriod,
   isBold,
 }: {
   row: DiffRow
   years: number[]
+  hasCurrentPeriod: boolean
   isBold?: boolean
 }) {
   const bold = isBold || BS_BOLD_KEYS.has(row.canonicalKey)
@@ -198,11 +240,29 @@ function DiffRowEl({
           </td>
         )
       })}
+      {hasCurrentPeriod && (
+        <td
+          className={cn(
+            'py-1.5 pr-4 pl-4 text-right tabular-nums border-l border-border/40 text-foreground/70',
+            { 'font-semibold': bold },
+          )}
+        >
+          {formatAud(row.currentPeriodValue ?? null)}
+        </td>
+      )}
     </tr>
   )
 }
 
-function NetAssetsRow({ row, years }: { row: DiffRow; years: number[] }) {
+function NetAssetsRow({
+  row,
+  years,
+  currentPeriod,
+}: {
+  row: DiffRow
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   const latest = row.valuesByYear[years[years.length - 1]]
   const tone: 'good' | 'bad' = (latest ?? 0) >= 0 ? 'good' : 'bad'
   return (
@@ -226,17 +286,30 @@ function NetAssetsRow({ row, years }: { row: DiffRow; years: number[] }) {
           </td>
         )
       })}
+      {currentPeriod && (
+        <td className="py-2.5 pr-4 pl-4 text-right text-sm font-bold tabular-nums border-l border-border/40 text-foreground/70">
+          {formatAud(row.currentPeriodValue ?? null)}
+        </td>
+      )}
     </tr>
   )
 }
 
-function SingleRowTable({ row, years }: { row: DiffRow; years: number[] }) {
+function SingleRowTable({
+  row,
+  years,
+  currentPeriod,
+}: {
+  row: DiffRow
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border/40 bg-primary/10">
       <table className="w-full text-xs">
-        <TableHeader years={years} />
+        <TableHeader years={years} currentPeriod={currentPeriod} />
         <tbody>
-          <DiffRowEl row={row} years={years} isBold />
+          <DiffRowEl row={row} years={years} hasCurrentPeriod={Boolean(currentPeriod)} isBold />
         </tbody>
       </table>
     </div>
@@ -275,6 +348,7 @@ function HighlightBlock({ tone, icon, title, subtitle, children }: HighlightBloc
 function buildAtoAggregateRow(
   years: number[],
   atoByYear: FinancialsComparison['atoLiabilityByYear'],
+  currentPeriod: CurrentPeriodSnapshot | null,
 ): DiffRow | null {
   const valuesByYear: Record<number, number | null> = {}
   let hasAny = false
@@ -312,6 +386,7 @@ function buildAtoAggregateRow(
     yoyPercentByYear: yoyByYear,
     absoluteChangeOldestToLatest: absoluteChange,
     direction: last !== null && first !== null && last > first ? 'up' : last !== null && first !== null && last < first ? 'down' : 'flat',
+    ...(currentPeriod ? { currentPeriodValue: currentPeriod.atoLiabilityTotal } : {}),
   }
 }
 

@@ -34,6 +34,11 @@ import type {
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 const RECONCILIATION_TOLERANCE_AUD = 50
+// Current-period (partial-year software exports) tend to have small rounding
+// lines, suspense accounts, and Wages-Payable-Payroll style negatives that
+// open up minor reconciliation gaps. Loosen the balance-sheet tolerance
+// without touching the annual-statement check.
+const CURRENT_PERIOD_BALANCE_TOLERANCE_AUD = 200
 
 const EXTRACTION_TOOL_NAME = 'submit_extracted_financials'
 
@@ -258,6 +263,8 @@ interface RawStatement {
   sourceColumn?: string
   financialYear?: number
   periodEndDate?: string
+  periodStartDate?: string | null
+  periodLabel?: string | null
   incomeStatement?: Record<string, unknown>
   balanceSheet?: Record<string, unknown>
   rawExtraction?: unknown[]
@@ -365,13 +372,13 @@ function buildExtractionTool(): Record<string, unknown> {
           statements: {
             type: 'array',
             description:
-              'One entry per detected column in the PDF. Use sourceColumn "primary" for the year named in the heading, "comparative" for the prior-year column.',
+              'One entry per detected column in the PDF. For annual statements: sourceColumn "primary" for the year named in the heading, "comparative" for the prior-year column. For partial-period software exports (Xero/MYOB/QuickBooks): exactly one entry with sourceColumn "current_period" (see the CURRENT-PERIOD PDFs section of the prompt).',
             items: {
               type: 'object',
               properties: {
                 sourceColumn: {
                   type: 'string',
-                  enum: ['primary', 'comparative'],
+                  enum: ['primary', 'comparative', 'current_period'],
                 },
                 financialYear: {
                   type: 'integer',
@@ -380,6 +387,16 @@ function buildExtractionTool(): Record<string, unknown> {
                 periodEndDate: {
                   type: 'string',
                   description: 'ISO date, e.g. 2025-06-30',
+                },
+                periodLabel: {
+                  type: ['string', 'null'],
+                  description:
+                    'Current-period rows only: verbatim human-readable date range, e.g. "1 July 2025 to 4 May 2026". Null for annual statements.',
+                },
+                periodStartDate: {
+                  type: ['string', 'null'],
+                  description:
+                    'Current-period rows only: ISO start date of the partial period. Null for annual statements.',
                 },
                 incomeStatement: {
                   type: 'object',
@@ -441,6 +458,7 @@ function buildExtractionTool(): Record<string, unknown> {
                           'totals_reconciliation',
                           'unparseable_value',
                           'missing_total',
+                          'incomplete_current_period',
                         ],
                       },
                       message: { type: 'string' },
@@ -529,6 +547,9 @@ function normaliseAndValidate(
     }),
   )
 
+  const periodLabel = normalisePeriodField(raw.periodLabel)
+  const periodStartDate = normalisePeriodField(raw.periodStartDate)
+
   // Reject extractions that have no meaningful data. The model has been
   // observed to return a stub (correct shape, null values everywhere) when
   // it fails to parse a column. Persisting such a row would overwrite real
@@ -563,6 +584,8 @@ function normaliseAndValidate(
       : [],
     warnings,
     extractionModel: model,
+    ...(periodLabel !== undefined ? { periodLabel } : {}),
+    ...(periodStartDate !== undefined ? { periodStartDate } : {}),
   }
 }
 
@@ -639,8 +662,14 @@ async function trimPdfToFirstPages(input: Uint8Array, maxPages: number): Promise
 }
 
 function normaliseSourceColumn(value: unknown): FinancialStatementSourceColumn | null {
-  if (value === 'primary' || value === 'comparative') return value
+  if (value === 'primary' || value === 'comparative' || value === 'current_period') return value
   return null
+}
+
+function normalisePeriodField(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 interface ReconcileInput {
@@ -652,7 +681,17 @@ interface ReconcileInput {
 
 function reconcile(input: ReconcileInput): ExtractionWarning[] {
   const warnings: ExtractionWarning[] = []
-  const { incomeStatement: is, balanceSheet: bs } = input
+  const { incomeStatement: is, balanceSheet: bs, sourceColumn } = input
+
+  // Current-period PDFs have one column only, so any "comparative" cross-check
+  // doesn't apply. The income-statement reconciliation still runs at the
+  // standard tolerance; balance-sheet reconciliation loosens to ±$200 to
+  // accommodate interim software exports that carry small rounding lines,
+  // suspense accounts, and Wages-Payable-Payroll negative entries.
+  const balanceTolerance =
+    sourceColumn === 'current_period'
+      ? CURRENT_PERIOD_BALANCE_TOLERANCE_AUD
+      : RECONCILIATION_TOLERANCE_AUD
 
   const totalIncome = is.totals.totalIncome
   const totalCogs = is.totals.totalCogs
@@ -689,7 +728,7 @@ function reconcile(input: ReconcileInput): ExtractionWarning[] {
     typeof netAssets === 'number'
   ) {
     const calc = totalAssets - totalLiabilities
-    if (Math.abs(calc - netAssets) > RECONCILIATION_TOLERANCE_AUD) {
+    if (Math.abs(calc - netAssets) > balanceTolerance) {
       warnings.push({
         kind: 'totals_reconciliation',
         message: `Net assets does not reconcile: totalAssets (${totalAssets}) - totalLiabilities (${totalLiabilities}) = ${calc.toFixed(2)}, but netAssets = ${netAssets}.`,
@@ -704,7 +743,7 @@ function reconcile(input: ReconcileInput): ExtractionWarning[] {
     typeof totalAssets === 'number'
   ) {
     const calc = totalCurrentAssets + totalNonCurrentAssets
-    if (Math.abs(calc - totalAssets) > RECONCILIATION_TOLERANCE_AUD) {
+    if (Math.abs(calc - totalAssets) > balanceTolerance) {
       warnings.push({
         kind: 'totals_reconciliation',
         message: `Total assets does not reconcile: ${totalCurrentAssets} + ${totalNonCurrentAssets} = ${calc.toFixed(2)}, but totalAssets = ${totalAssets}.`,
@@ -719,7 +758,7 @@ function reconcile(input: ReconcileInput): ExtractionWarning[] {
     typeof totalLiabilities === 'number'
   ) {
     const calc = totalCurrentLiabilities + totalNonCurrentLiabilities
-    if (Math.abs(calc - totalLiabilities) > RECONCILIATION_TOLERANCE_AUD) {
+    if (Math.abs(calc - totalLiabilities) > balanceTolerance) {
       warnings.push({
         kind: 'totals_reconciliation',
         message: `Total liabilities does not reconcile: ${totalCurrentLiabilities} + ${totalNonCurrentLiabilities} = ${calc.toFixed(2)}, but totalLiabilities = ${totalLiabilities}.`,

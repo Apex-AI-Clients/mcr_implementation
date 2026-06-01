@@ -4,16 +4,22 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
+  ArrowRight,
   AlertTriangle,
-  ChevronDown,
-  ChevronUp,
+  Banknote,
   Download,
+  FileCheck,
+  FileClock,
   HelpCircle,
   Info,
+  Landmark,
   RefreshCw,
+  Target,
   TrendingUp,
+  Wallet,
   X,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { cn, formatDateRelative } from '@/lib/utils'
@@ -24,6 +30,8 @@ interface InitialAuto {
   numberOfLateLodgements: number | null
   daysSinceLastPayment: number | null
   directorLoanReceivableAmount: number
+  directorLoanDetected: boolean | null
+  directorLoanReasoning: string | null
   creditorAmount: number | null
   latestFinancialYear: number | null
   hasLodgement: boolean
@@ -51,6 +59,10 @@ interface FullPrediction extends SbrPrediction {
   inputFeatures: SbrPredictionInput
   creditorAmount: number | null
   computedAt: string
+  autoDetectedDirectorLoan?: {
+    detected: boolean | null
+    reasoning: string | null
+  }
 }
 
 interface MissingPrereq {
@@ -85,7 +97,6 @@ function extractCachedInput(
   dpn: boolean
   paymentPlanType: 'plan' | 'upfront'
   directorLoanAtAppointment: boolean
-  directorLoanSentToAto: boolean
 } | null {
   if (!cached) return null
   const f = cached.inputFeatures
@@ -95,8 +106,6 @@ function extractCachedInput(
     paymentPlanType: ppt === 'plan' ? 'plan' : 'upfront',
     directorLoanAtAppointment:
       typeof f.directorLoanAtAppointment === 'boolean' ? f.directorLoanAtAppointment : false,
-    directorLoanSentToAto:
-      typeof f.directorLoanSentToAto === 'boolean' ? f.directorLoanSentToAto : false,
   }
 }
 
@@ -114,10 +123,8 @@ export function OutcomePredictionClient({
     cachedInputs?.paymentPlanType ?? 'upfront',
   )
   const [directorLoanAtAppointment, setDirectorLoanAtAppointment] = useState(
-    cachedInputs?.directorLoanAtAppointment ?? false,
-  )
-  const [directorLoanSentToAto, setDirectorLoanSentToAto] = useState(
-    cachedInputs?.directorLoanSentToAto ?? false,
+    // Pre-fill from the cached input if any, else from balance-sheet auto-detection.
+    cachedInputs?.directorLoanAtAppointment ?? initialAuto.directorLoanDetected === true,
   )
 
   const [prediction, setPrediction] = useState<FullPrediction | null>(null)
@@ -127,6 +134,8 @@ export function OutcomePredictionClient({
   // Inputs panel is always open on page load — the user often wants to tweak
   // and re-run, so keep the form visible. They can still collapse manually.
   const [inputsCollapsed, setInputsCollapsed] = useState(false)
+  // "About this prediction" methodology now lives behind a header info button.
+  const [methodologyOpen, setMethodologyOpen] = useState(false)
 
   const lodgementReady = auto.hasLodgement
   const canRun = lodgementReady
@@ -143,7 +152,6 @@ export function OutcomePredictionClient({
           dpn,
           paymentPlanType,
           directorLoanAtAppointment,
-          directorLoanSentToAto,
         }),
       })
       const data = await res.json()
@@ -205,6 +213,15 @@ export function OutcomePredictionClient({
 
           {prediction && (
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMethodologyOpen(true)}
+                aria-label="About this prediction"
+                title="About this prediction"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-foreground/60 hover:bg-surface/60 hover:text-foreground transition-colors"
+              >
+                <Info className="h-4 w-4" />
+              </button>
               <ExportButton prediction={prediction} clientName={clientName} />
               <Button variant="ghost" size="sm" onClick={runPrediction} loading={running}>
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -254,8 +271,6 @@ export function OutcomePredictionClient({
         setPaymentPlanType={setPaymentPlanType}
         directorLoanAtAppointment={directorLoanAtAppointment}
         setDirectorLoanAtAppointment={setDirectorLoanAtAppointment}
-        directorLoanSentToAto={directorLoanSentToAto}
-        setDirectorLoanSentToAto={setDirectorLoanSentToAto}
         collapsed={inputsCollapsed}
         onToggleCollapsed={() => setInputsCollapsed((v) => !v)}
         onGenerate={runPrediction}
@@ -267,9 +282,14 @@ export function OutcomePredictionClient({
       {prediction && (
         <>
           <HeadlineTiles prediction={prediction} />
+          <RejectionLearningPanel prediction={prediction} />
+          <ProfileStrengtheningPanel prediction={prediction} />
           <FeatureBreakdownPanel prediction={prediction} />
           <ComparableCasesPanel prediction={prediction} />
-          {/* <MethodologyCallout prediction={prediction} /> */}
+          {/* "About this prediction" — opened from the header info button. */}
+          {methodologyOpen && (
+            <MethodologyModal prediction={prediction} onClose={() => setMethodologyOpen(false)} />
+          )}
         </>
       )}
     </div>
@@ -326,8 +346,6 @@ interface InputPanelProps {
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
   setDirectorLoanAtAppointment: (v: boolean) => void
-  directorLoanSentToAto: boolean
-  setDirectorLoanSentToAto: (v: boolean) => void
   collapsed: boolean
   onToggleCollapsed: () => void
   onGenerate: () => void
@@ -345,8 +363,6 @@ function InputPanel(props: InputPanelProps) {
     setPaymentPlanType,
     directorLoanAtAppointment,
     setDirectorLoanAtAppointment,
-    directorLoanSentToAto,
-    setDirectorLoanSentToAto,
     collapsed,
     onToggleCollapsed,
     onGenerate,
@@ -368,9 +384,6 @@ function InputPanel(props: InputPanelProps) {
             <span className="text-foreground/30"> · </span>
             Director loan at appointment:{' '}
             <span className="text-foreground">{directorLoanAtAppointment ? 'Yes' : 'No'}</span>
-            <span className="text-foreground/30"> · </span>
-            Director loan sent to ATO:{' '}
-            <span className="text-foreground">{directorLoanSentToAto ? 'Yes' : 'No'}</span>
           </div>
           <button
             type="button"
@@ -461,16 +474,17 @@ function InputPanel(props: InputPanelProps) {
               checked={dpn}
               onChange={setDpn}
             />
-            <CheckboxField
-              label="Director loan at appointment"
-              checked={directorLoanAtAppointment}
-              onChange={setDirectorLoanAtAppointment}
-            />
-            <CheckboxField
-              label="Director loan sent to ATO"
-              checked={directorLoanSentToAto}
-              onChange={setDirectorLoanSentToAto}
-            />
+            <div>
+              <CheckboxField
+                label="Director loan at appointment"
+                checked={directorLoanAtAppointment}
+                onChange={setDirectorLoanAtAppointment}
+              />
+              <DirectorLoanAutoCaption
+                detected={auto.directorLoanDetected}
+                reasoning={auto.directorLoanReasoning}
+              />
+            </div>
             <fieldset className="rounded-lg border border-border bg-surface/30 px-3 py-2">
               <legend className="px-1 text-xs text-foreground/50">Payment approach</legend>
               <div className="flex gap-4 pt-1">
@@ -554,8 +568,9 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
             </h2>
           </div>
           <p className="mt-1 text-xs text-foreground/55">
-            These four fields can&apos;t be auto-detected from uploaded documents. Set each
-            one based on the client&apos;s actual situation before generating a prediction.
+            These fields drive the prediction. Director loan at appointment is pre-filled from
+            the balance sheet where possible — confirm or override each one based on the
+            client&apos;s actual situation before generating a prediction.
           </p>
         </div>
 
@@ -595,23 +610,6 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
             }
           />
           <HelpItem
-            title="Director loan sent to ATO"
-            body={
-              <>
-                <p>
-                  Tick only when the director loan amount has been formally assigned
-                  to or reported to the ATO as part of the workout. This is uncommon —
-                  most cases leave this unticked.
-                </p>
-                <p className="mt-1 text-foreground/55">
-                  <span className="text-foreground/80">Why it matters:</span> when sent
-                  to the ATO, the loan reduces the personal exposure and shifts the
-                  expected outcome slightly.
-                </p>
-              </>
-            }
-          />
-          <HelpItem
             title="Payment approach — Upfront vs Payment plan"
             body={
               <>
@@ -634,8 +632,8 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-5 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-foreground/65">
-          <span className="text-foreground/85">Quick sanity test:</span> leave all
-          three boxes unticked and Upfront selected — that gives the baseline
+          <span className="text-foreground/85">Quick sanity test:</span> leave both
+          boxes unticked and Upfront selected — that gives the baseline
           prediction for the most common profile. Then re-run with the actual values
           to see how the prediction shifts.
         </div>
@@ -711,48 +709,121 @@ function CheckboxField({
   )
 }
 
+function DirectorLoanAutoCaption({
+  detected,
+  reasoning,
+}: {
+  detected: boolean | null
+  reasoning: string | null
+}) {
+  if (detected === null) {
+    return (
+      <p className="mt-1 pl-1 text-xs text-foreground/40">
+        No balance sheet available — set manually.
+      </p>
+    )
+  }
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 pl-1 text-xs text-foreground/40">
+      {detected && (
+        <span className="rounded bg-success/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success">
+          Auto-detected
+        </span>
+      )}
+      <span>{reasoning} Toggle if incorrect.</span>
+    </p>
+  )
+}
+
+const RISK_BAND_META: Record<
+  FullPrediction['riskBand'],
+  { label: string; emoji: string; tile: string; text: string }
+> = {
+  likely_accepted: {
+    label: 'Likely accepted',
+    emoji: '🟢',
+    tile: 'border-success/40 bg-success/5',
+    text: 'text-success',
+  },
+  borderline: {
+    label: 'Borderline',
+    emoji: '🟡',
+    tile: 'border-warning/40 bg-warning/5',
+    text: 'text-warning',
+  },
+  high_rejection_risk: {
+    label: 'High rejection risk',
+    emoji: '🔴',
+    tile: 'border-destructive/40 bg-destructive/5',
+    text: 'text-destructive',
+  },
+}
+
+function paymentStructureLabel(
+  rec: FullPrediction['paymentStructureRecommendation']['recommended'],
+): string {
+  if (rec === 'upfront') return 'Upfront preferred'
+  if (rec === 'plan') return 'Payment plan preferred'
+  return 'No clear preference'
+}
+
+/**
+ * Plain-English explanation of what each payment-structure result means in
+ * practice — so a non-technical user knows what to actually do.
+ */
+function paymentStructureMeaning(
+  rec: FullPrediction['paymentStructureRecommendation']['recommended'],
+): string {
+  if (rec === 'upfront') {
+    return 'Most similar deals that got accepted were paid as a single lump sum — lead with an upfront offer.'
+  }
+  if (rec === 'plan') {
+    return 'Most similar deals that got accepted were paid in instalments — a payment plan should be acceptable.'
+  }
+  return 'Similar accepted deals used upfront and payment plans about equally. Both have been approved for this profile, so choose whichever suits the client’s cash position — it should not change the approval odds.'
+}
+
+function riskBandExportLabel(band: FullPrediction['riskBand']): string {
+  return RISK_BAND_META[band].label
+}
+
+function offerMoreVerdictLabel(
+  verdict: FullPrediction['rejectionLearning']['offerMoreVerdict'],
+): string {
+  if (verdict === 'higher_offer_may_help') return 'A higher offer should help this profile'
+  if (verdict === 'higher_offer_unlikely_to_help')
+    return 'A higher offer alone is unlikely to flip this profile'
+  return 'Insufficient signal'
+}
+
 function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
   const [calcOpen, setCalcOpen] = useState(false)
-
-  const confidenceLabel =
-    prediction.neighbourStdev < 5
-      ? 'Good'
-      : prediction.neighbourStdev <= 10
-        ? 'Moderate'
-        : 'Wide'
-
-  const confidenceTone =
-    confidenceLabel === 'Good'
-      ? 'text-success'
-      : confidenceLabel === 'Moderate'
-        ? 'text-warning'
-        : 'text-destructive'
-
-  const outcomeSeverity =
-    prediction.predictedOutcomePercent < 30 || prediction.predictedOutcomePercent > 60
-      ? 'text-destructive'
-      : prediction.predictedOutcomePercent < 50
-        ? 'text-foreground'
-        : 'text-warning'
 
   const suggestedRounded =
     prediction.suggestedOfferAmount != null
       ? roundToNearest(prediction.suggestedOfferAmount, 500)
       : null
 
+  const band = RISK_BAND_META[prediction.riskBand]
+  const payment = prediction.paymentStructureRecommendation
+
   return (
     <Card>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* 1. Recommended offer (predicted cents-in-the-dollar outcome) */}
         <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
-          <p className={cn('text-4xl font-bold tabular-nums', outcomeSeverity)}>
+          <p className="text-4xl font-bold tabular-nums text-foreground">
             {prediction.predictedOutcomePercent.toFixed(1)}%
           </p>
           <p className="mt-1 text-xs text-foreground/60">
             Range {prediction.predictedLowPercent.toFixed(1)}% –{' '}
-            {prediction.predictedHighPercent.toFixed(1)}%
+            {prediction.predictedHighPercent.toFixed(1)}% across {prediction.comparableCases.length}{' '}
+            similar cases
           </p>
-          <p className="mt-2 text-xs text-foreground/40">Predicted outcome</p>
+          <p className="mt-2 text-xs text-foreground/40">Recommended offer</p>
         </div>
+
+        {/* 2. Suggested SBR amount */}
         <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
           <p className="text-4xl font-bold tabular-nums text-foreground">
             {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
@@ -766,20 +837,41 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
               Run financials extraction to enable offer suggestion
             </p>
           )}
-          <p className="mt-2 text-xs text-foreground/40">Suggested SBR offer</p>
+          <p className="mt-2 text-xs text-foreground/40">Suggested SBR amount</p>
         </div>
-        <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
-          <p className={cn('text-4xl font-bold', confidenceTone)}>{confidenceLabel}</p>
-          <p className="mt-1 text-xs text-foreground/60">
-            Neighbour spread {prediction.neighbourStdev.toFixed(1)}pp
+
+        {/* 3. Risk band — traffic-light label only, never a probability */}
+        <div className={cn('rounded-lg border p-4 text-center', band.tile)}>
+          <p className={cn('text-lg font-bold', band.text)}>
+            {band.emoji} {band.label}
           </p>
-          <p className="mt-2 text-xs text-foreground/40">Confidence</p>
+          <p className="mt-1 text-xs text-foreground/60">{prediction.riskBandReasoning}</p>
+          <p className="mt-2 text-xs text-foreground/40">Risk band</p>
+        </div>
+
+        {/* 4. Payment structure recommendation */}
+        <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
+          <p className="text-lg font-bold text-foreground">
+            {paymentStructureLabel(payment.recommended)}
+          </p>
+          <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px]">
+            <span className="rounded bg-surface px-1.5 py-0.5 text-foreground/70">
+              Plan {payment.neighbourSplit.plan}
+            </span>
+            <span className="rounded bg-surface px-1.5 py-0.5 text-foreground/70">
+              Upfront {payment.neighbourSplit.upfront}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-foreground/60">
+            {paymentStructureMeaning(payment.recommended)}
+          </p>
+          <p className="mt-2 text-xs text-foreground/40">Payment structure</p>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-foreground/40">
           Prediction based on the {prediction.comparableCases.length} most similar historical
-          cases. Typical accuracy: ±6 percentage points.
+          cases. Typical accuracy: ±8 percentage points.
         </p>
         <button
           type="button"
@@ -794,7 +886,6 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
       {calcOpen && (
         <CalculationsModal
           prediction={prediction}
-          confidenceLabel={confidenceLabel}
           suggestedRounded={suggestedRounded}
           onClose={() => setCalcOpen(false)}
         />
@@ -805,12 +896,10 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
 
 function CalculationsModal({
   prediction,
-  confidenceLabel,
   suggestedRounded,
   onClose,
 }: {
   prediction: FullPrediction
-  confidenceLabel: string
   suggestedRounded: number | null
   onClose: () => void
 }) {
@@ -818,6 +907,11 @@ function CalculationsModal({
   const sum = outcomes.reduce((s, v) => s + v, 0)
   const mean = sum / outcomes.length
   const mcrFeeRate = 0.1
+  const k = prediction.comparableCases.length
+  const rejectedCount = prediction.rejectedNeighbours.length
+  const acceptedCount = k - rejectedCount
+  const band = RISK_BAND_META[prediction.riskBand]
+  const split = prediction.paymentStructureRecommendation.neighbourSplit
 
   return (
     <div
@@ -847,16 +941,19 @@ function CalculationsModal({
             </h2>
           </div>
           <p className="mt-1 text-xs text-foreground/55">
-            Step-by-step with this client&apos;s actual values. The same logic runs every
-            time — no AI involved.
+            How each of the four tiles is worked out, step-by-step with this client&apos;s actual
+            values. The same logic runs every time — no AI involved.
           </p>
         </div>
 
-        {/* Predicted outcome */}
+        {/* 1. Recommended offer */}
         <section className="mb-5">
-          <h3 className="mb-2 text-sm font-semibold text-foreground">
-            1. Predicted outcome ({prediction.predictedOutcomePercent.toFixed(1)}%)
+          <h3 className="mb-1 text-sm font-semibold text-foreground">
+            1. Recommended offer ({prediction.predictedOutcomePercent.toFixed(1)}%)
           </h3>
+          <p className="mb-2 text-xs italic text-foreground/45">
+            What it is: the cents-in-the-dollar settlement to put forward, as a % of the ATO debt.
+          </p>
           <p className="mb-2 text-xs text-foreground/65">
             Formula: <code className="text-foreground/90">average of the 8 nearest cases&apos; outcomes</code>
           </p>
@@ -896,18 +993,22 @@ function CalculationsModal({
             </div>
           </div>
           <p className="mt-2 text-xs text-foreground/45">
-            The 8 neighbours are picked using Euclidean distance over the 8 input features
+            The 8 neighbours are picked using Euclidean distance over the 7 input features
             after z-score standardisation (so days late and dollar amounts contribute on
             comparable scales).
           </p>
         </section>
 
-        {/* Suggested SBR offer */}
+        {/* 2. Suggested SBR amount */}
         <section className="mb-5">
-          <h3 className="mb-2 text-sm font-semibold text-foreground">
-            2. Suggested SBR offer{' '}
+          <h3 className="mb-1 text-sm font-semibold text-foreground">
+            2. Suggested SBR amount{' '}
             {suggestedRounded != null ? `(${formatAud(suggestedRounded)})` : '(not available)'}
           </h3>
+          <p className="mb-2 text-xs italic text-foreground/45">
+            What it is: the dollar offer that delivers the recommended % on this client&apos;s ATO
+            debt, grossed up for the MCR fee.
+          </p>
           {prediction.creditorAmount != null && prediction.suggestedOfferAmount != null ? (
             <>
               <p className="mb-2 text-xs text-foreground/65">
@@ -968,59 +1069,78 @@ function CalculationsModal({
           )}
         </section>
 
-        {/* Confidence */}
-        <section>
-          <h3 className="mb-2 text-sm font-semibold text-foreground">
-            3. Confidence ({confidenceLabel})
+        {/* 3. Risk band */}
+        <section className="mb-5">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">
+            3. Risk band ({band.emoji} {band.label})
           </h3>
+          <p className="mb-2 text-xs italic text-foreground/45">
+            What it is: a traffic-light read on how risky this profile looks — based purely on how
+            many similar past deals were rejected. It is not a probability.
+          </p>
           <p className="mb-2 text-xs text-foreground/65">
-            Formula:{' '}
+            Rule:{' '}
             <code className="text-foreground/90">
-              standard deviation of the 8 neighbour outcomes
+              count how many of the {k} closest cases were rejected
             </code>
           </p>
-          <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs">
-            <p className="text-foreground/60">Deviation of each neighbour from the mean:</p>
-            <ul className="mt-1 space-y-0.5 text-foreground/80">
-              {outcomes.map((o, i) => {
-                const dev = o - mean
-                return (
-                  <li key={i}>
-                    <span className="text-foreground/40">{i + 1}.</span> {o.toFixed(1)}% −{' '}
-                    {mean.toFixed(2)}% ={' '}
-                    <span className={dev >= 0 ? 'text-foreground' : 'text-foreground/80'}>
-                      {dev >= 0 ? '+' : ''}
-                      {dev.toFixed(2)}
-                    </span>{' '}
-                    <span className="text-foreground/40">(squared: {(dev * dev).toFixed(2)})</span>
-                  </li>
-                )
-              })}
-            </ul>
-            <div className="mt-3 border-t border-border/60 pt-2 text-foreground/70">
-              <div>
-                Variance = sum of squared deviations ÷ {outcomes.length} ={' '}
-                <span className="text-foreground">
-                  {(prediction.neighbourStdev * prediction.neighbourStdev).toFixed(2)}
-                </span>
-              </div>
-              <div>
-                Stdev = √variance ={' '}
-                <span className="text-foreground font-semibold">
-                  {prediction.neighbourStdev.toFixed(2)}pp
-                </span>
-              </div>
+          <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
+            <div>
+              Of the {k} closest cases:{' '}
+              <span className="text-success">{acceptedCount} accepted</span>,{' '}
+              <span className="text-warning">{rejectedCount} rejected</span>.
+            </div>
+            <div className="mt-2 border-t border-border/60 pt-2">
+              Bands: <span className="text-foreground">0–2 rejected → 🟢 Likely accepted</span> ·{' '}
+              <span className="text-foreground">3 rejected → 🟡 Borderline</span> ·{' '}
+              <span className="text-foreground">4+ rejected → 🔴 High rejection risk</span>
+            </div>
+            <div>
+              {rejectedCount} rejected →{' '}
+              <span className={cn('font-semibold', band.text)}>
+                {band.emoji} {band.label}
+              </span>
             </div>
           </div>
-          <div className="mt-2 grid gap-1 text-xs text-foreground/55">
-            <p>
-              <span className="text-foreground/80">Bands:</span> &lt; 5pp → Good · 5–10pp →
-              Moderate · &gt; 10pp → Wide
-            </p>
-            <p>
-              Lower stdev means the 8 similar cases agreed closely on the outcome — the
-              prediction is on firmer ground.
-            </p>
+          <p className="mt-2 text-xs text-foreground/45">{prediction.riskBandReasoning}</p>
+        </section>
+
+        {/* 4. Payment structure */}
+        <section>
+          <h3 className="mb-1 text-sm font-semibold text-foreground">
+            4. Payment structure ({paymentStructureLabel(prediction.paymentStructureRecommendation.recommended)})
+          </h3>
+          <p className="mb-2 text-xs italic text-foreground/45">
+            What it is: whether comparable accepted deals leaned toward an upfront payment or a
+            payment plan.
+          </p>
+          <p className="mb-2 text-xs text-foreground/65">
+            Rule:{' '}
+            <code className="text-foreground/90">
+              among the accepted neighbours, recommend a structure only on a 2:1 majority
+            </code>
+          </p>
+          <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
+            <div>
+              Accepted neighbours by structure:{' '}
+              <span className="text-foreground">{split.plan} payment plan</span> ·{' '}
+              <span className="text-foreground">{split.upfront} upfront</span>
+            </div>
+            <div className="mt-2 border-t border-border/60 pt-2">
+              Result:{' '}
+              <span className="text-foreground font-semibold">
+                {paymentStructureLabel(prediction.paymentStructureRecommendation.recommended)}
+              </span>{' '}
+              <span className="text-foreground/40">
+                {prediction.paymentStructureRecommendation.recommended === 'no_strong_signal'
+                  ? '(neither side reaches a 2:1 majority → no clear preference)'
+                  : '(reaches a 2:1 majority)'}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-foreground/70">
+            <span className="font-medium text-foreground/85">What this means: </span>
+            {paymentStructureMeaning(prediction.paymentStructureRecommendation.recommended)}
           </div>
         </section>
 
@@ -1031,6 +1151,264 @@ function CalculationsModal({
         </div>
       </div>
     </div>
+  )
+}
+
+const OFFER_MORE_META: Record<
+  FullPrediction['rejectionLearning']['offerMoreVerdict'],
+  { heading: string; banner: string }
+> = {
+  higher_offer_may_help: {
+    heading: 'A higher offer should help this profile',
+    banner: 'border-success/30 bg-success/5 text-foreground/80',
+  },
+  higher_offer_unlikely_to_help: {
+    heading: 'A higher offer alone is unlikely to flip this profile',
+    banner: 'border-warning/30 bg-warning/5 text-foreground/80',
+  },
+  insufficient_signal: {
+    heading: 'What the closest cases tell us',
+    banner: 'border-border bg-surface/40 text-foreground/80',
+  },
+}
+
+function OfferRangeCard({
+  label,
+  range,
+  tone,
+}: {
+  label: string
+  range: FullPrediction['rejectionLearning']['acceptedOfferRange']
+  tone: 'accepted' | 'rejected'
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface/40 p-3">
+      <p className="text-xs text-foreground/40">{label}</p>
+      {range ? (
+        <>
+          <p className="mt-1 text-sm font-medium text-foreground">
+            {range.min.toFixed(1)}% – {range.max.toFixed(1)}%
+          </p>
+          <p className="mt-0.5 text-xs text-foreground/50">
+            median {range.median.toFixed(1)}% ·{' '}
+            <span className={tone === 'rejected' ? 'text-warning' : 'text-success'}>
+              {range.count} {tone === 'rejected' ? 'rejected' : 'accepted'}
+            </span>
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-foreground/40">None among the closest cases</p>
+      )}
+    </div>
+  )
+}
+
+function RejectionLearningPanel({ prediction }: { prediction: FullPrediction }) {
+  const learning = prediction.rejectionLearning
+  const meta = OFFER_MORE_META[learning.offerMoreVerdict]
+
+  return (
+    <Card>
+      <h3 className="mb-1 text-sm font-semibold text-foreground">What the rejections tell us</h3>
+      <p className="mb-4 text-xs text-foreground/50">
+        How to read the rejected comparables — and whether a higher offer would realistically
+        help this profile.
+      </p>
+
+      <div className={cn('rounded-lg border px-3 py-2.5 text-xs leading-relaxed', meta.banner)}>
+        <p className="font-medium text-foreground">{meta.heading}</p>
+        <p className="mt-1">{learning.insight}</p>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <OfferRangeCard
+          label="Accepted comparables offered"
+          range={learning.acceptedOfferRange}
+          tone="accepted"
+        />
+        <OfferRangeCard
+          label="Rejected comparables offered"
+          range={learning.rejectedOfferRange}
+          tone="rejected"
+        />
+      </div>
+
+      {prediction.rejectedNeighbours.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs text-foreground/40">Rejected cases among the closest:</p>
+          <ul className="space-y-1 text-xs text-foreground/70">
+            {prediction.rejectedNeighbours.map((c) => (
+              <li key={c.id} className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                <span className="text-foreground/80">{c.clientName}</span>
+                <span className="text-foreground/40">— offered {c.outcomePercent.toFixed(1)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+const LEVER_ICONS: Record<string, LucideIcon> = {
+  'Offer level': TrendingUp,
+  'Payment structure': Wallet,
+  'Lodgement compliance': FileCheck,
+  'Late lodgements': FileClock,
+  'Payment activity': Banknote,
+  'Director loan': Landmark,
+}
+
+interface UiLever {
+  factor: string
+  suggestion: string
+  basis: string
+  current?: string
+  target?: string
+  impact?: 'high' | 'medium'
+}
+
+function ProfileStrengtheningPanel({ prediction }: { prediction: FullPrediction }) {
+  const learning = prediction.rejectionLearning
+  const payment = prediction.paymentStructureRecommendation
+
+  // Compose the "all ways" list: offer lever + payment structure + operational
+  // levers. Each is an association from accepted comparables, not a guarantee.
+  const offerLever: UiLever | null =
+    learning.offerMoreVerdict === 'higher_offer_may_help' && learning.acceptedOfferRange
+      ? {
+          factor: 'Offer level',
+          suggestion: 'Lift the offer toward the band where similar deals have been accepted.',
+          basis: 'Rejected comparables for this profile were offered less than the accepted ones — here, more cents in the dollar genuinely helps.',
+          current:
+            learning.rejectedOfferRange != null
+              ? `Rejected around ${learning.rejectedOfferRange.median.toFixed(1)}%`
+              : undefined,
+          target: `${learning.acceptedOfferRange.min.toFixed(1)}%–${learning.acceptedOfferRange.max.toFixed(1)}% (accepted band)`,
+          impact: 'high',
+        }
+      : learning.offerMoreVerdict === 'higher_offer_unlikely_to_help'
+        ? {
+            factor: 'Offer level',
+            suggestion:
+              'Do not rely on a higher offer here — put the effort into eligibility, documentation and lodgement compliance instead.',
+            basis: 'Rejected comparables offered as much or more than accepted ones, so more money alone is unlikely to flip the outcome.',
+            impact: 'medium',
+          }
+        : null
+
+  const structureLever: UiLever | null =
+    payment.recommended !== 'no_strong_signal'
+      ? {
+          factor: 'Payment structure',
+          suggestion:
+            payment.recommended === 'upfront'
+              ? 'Favour an upfront offer for this profile.'
+              : 'A payment plan appears workable for this profile.',
+          basis: payment.reasoning,
+          target: payment.recommended === 'upfront' ? 'Upfront' : 'Payment plan',
+          impact: 'medium',
+        }
+      : null
+
+  const allLevers: UiLever[] = [offerLever, structureLever, ...prediction.improvementLevers].filter(
+    (l): l is UiLever => l !== null,
+  )
+  // Highest-impact levers first so the practitioner sees the big wins at the top.
+  const order = { high: 0, medium: 1, undefined: 2 } as const
+  allLevers.sort(
+    (a, b) => order[a.impact ?? 'undefined'] - order[b.impact ?? 'undefined'],
+  )
+
+  const band = RISK_BAND_META[prediction.riskBand]
+
+  return (
+    <Card className="border-accent/30">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15">
+          <Target className="h-5 w-5 text-accent" />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-foreground">How to strengthen this profile</h3>
+          <p className="mt-0.5 text-xs text-foreground/55">
+            Currently{' '}
+            <span className={cn('font-medium', band.text)}>
+              {band.emoji} {band.label}
+            </span>
+            . Below are the levers most associated with the deals that got accepted — work the
+            high-impact ones first. These are associations, not guarantees of approval.
+          </p>
+        </div>
+      </div>
+
+      {allLevers.length === 0 ? (
+        <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 px-4 py-3 text-sm text-foreground/80">
+          <span className="text-success">✓</span>
+          <span>
+            This profile already aligns closely with the accepted comparables — no obvious gaps to
+            close. Apply practitioner judgement before quoting any figure.
+          </span>
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {allLevers.map((lever, i) => {
+            const Icon = LEVER_ICONS[lever.factor] ?? Target
+            return (
+              <li
+                key={`${lever.factor}-${i}`}
+                className="rounded-xl border border-border bg-surface/40 p-4"
+              >
+                <div className="flex gap-3.5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+                    <Icon className="h-5 w-5 text-accent" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/45">
+                        {lever.factor}
+                      </span>
+                      {lever.impact === 'high' && (
+                        <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                          High impact
+                        </span>
+                      )}
+                      {lever.impact === 'medium' && (
+                        <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/50">
+                          Worth doing
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm font-medium leading-snug text-foreground">
+                      {lever.suggestion}
+                    </p>
+                    {lever.current && lever.target && (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-md bg-warning/10 px-2 py-1 font-medium text-warning">
+                          Now: {lever.current}
+                        </span>
+                        <ArrowRight className="h-4 w-4 text-foreground/40" />
+                        <span className="rounded-md bg-success/10 px-2 py-1 font-medium text-success">
+                          Target: {lever.target}
+                        </span>
+                      </div>
+                    )}
+                    {!lever.current && lever.target && (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-md bg-success/10 px-2 py-1 font-medium text-success">
+                          Aim for: {lever.target}
+                        </span>
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs leading-relaxed text-foreground/50">{lever.basis}</p>
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+    </Card>
   )
 }
 
@@ -1067,28 +1445,54 @@ function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
   )
 }
 
+function CaseInfoTooltip({ explanation }: { explanation: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onBlur={() => setOpen(false)}
+        aria-label="Why this case got its outcome"
+        className="text-foreground/40 hover:text-foreground/80 transition-colors"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute right-0 top-5 z-20 w-56 rounded-md border border-border bg-primary px-2.5 py-2 text-xs leading-relaxed text-foreground/80 shadow-xl"
+        >
+          {explanation}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function ComparableCasesPanel({ prediction }: { prediction: FullPrediction }) {
   return (
     <Card>
-      <h3 className="mb-1 text-sm font-semibold text-foreground">Comparable cases</h3>
+      <h3 className="mb-1 text-sm font-semibold text-foreground">Closest historical cases</h3>
       <p className="mb-4 text-xs text-foreground/50">
         The {prediction.comparableCases.length} closest historical cases, sorted by similarity.
+        Hover the ⓘ for why each case got its outcome.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {prediction.comparableCases.map((c) => (
-          <div key={c.id} className="rounded-lg border border-border bg-surface/40 p-3">
+          <div
+            key={c.id}
+            className={cn(
+              'rounded-lg border border-border bg-surface/40 p-3',
+              // Rejected cases get a subtle amber left border instead of a pill.
+              !c.accepted && 'border-l-2 border-l-warning',
+            )}
+          >
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-medium text-foreground">{c.clientName}</p>
-              <span
-                className={cn(
-                  'rounded px-1.5 py-0.5 text-xs',
-                  c.accepted
-                    ? 'bg-success/15 text-success'
-                    : 'bg-destructive/15 text-destructive',
-                )}
-              >
-                {c.accepted ? 'Accepted' : 'Rejected'}
-              </span>
+              <CaseInfoTooltip explanation={c.outcomeExplanation} />
             </div>
             <div className="mt-1 flex items-center gap-3 text-xs text-foreground/60">
               <span>
@@ -1147,56 +1551,82 @@ function ComparableCasesPanel({ prediction }: { prediction: FullPrediction }) {
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function MethodologyCallout({ prediction }: { prediction: FullPrediction }) {
-  const [open, setOpen] = useState(false)
+function MethodologyModal({
+  prediction,
+  onClose,
+}: {
+  prediction: FullPrediction
+  onClose: () => void
+}) {
   return (
-    <Card className="border-accent/20 bg-accent/5">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 text-left"
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-surface p-6 shadow-2xl"
       >
-        <span className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-3 top-3 rounded-md p-1.5 text-foreground/50 hover:bg-primary/40 hover:text-foreground transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="mb-4 flex items-center gap-2 pr-8">
           <Info className="h-4 w-4 text-accent" />
-          <span className="text-sm font-semibold text-foreground">
-            Methodology &amp; limitations
-          </span>
-        </span>
-        {open ? (
-          <ChevronUp className="h-4 w-4 text-foreground/50" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-foreground/50" />
-        )}
-      </button>
-      {open && (
-        <div className="mt-4 space-y-4 text-xs text-foreground/70">
+          <h2 className="text-base font-semibold text-foreground">About this prediction</h2>
+        </div>
+
+        <div className="space-y-4 text-xs text-foreground/70">
           <div>
             <p className="text-foreground/90 font-medium mb-1">How this prediction works</p>
             <p>
-              We compare the client&apos;s profile across 8 factors (late lodgement history,
-              payment behaviour, DPN status, director loans, and payment-plan type) against{' '}
-              {prediction.trainingSetSize} historical MCR cases. The prediction is the average
-              outcome of the {prediction.comparableCases.length} most similar past cases; the
-              range is the lowest and highest outcomes in that group.
+              We compare the client&apos;s profile across 7 factors (late lodgement history,
+              payment behaviour, DPN status, director loan, and payment-plan type) against{' '}
+              {prediction.trainingSetSize} historical MCR cases (41 accepted, 18 rejected). The
+              recommended offer is the average outcome of the {prediction.comparableCases.length}{' '}
+              most similar past cases.
             </p>
           </div>
           <div>
-            <p className="text-foreground/90 font-medium mb-1">
-              What this prediction can and can&apos;t tell you
+            <p className="text-foreground/90 font-medium mb-1">About the risk band</p>
+            <p>
+              The risk band is a coarse signal based on how many of the{' '}
+              {prediction.comparableCases.length} closest past cases were rejected. It is NOT a
+              calibrated probability. In the historical data, rejected cases were offered amounts
+              between 19.7% and 61.7% — they were not systematically lower than accepted offers,
+              so offering more does not automatically reduce rejection risk.
             </p>
+          </div>
+          <div>
+            <p className="text-foreground/90 font-medium mb-1">Accuracy</p>
             <ul className="list-disc space-y-1 pl-5">
-              {prediction.accuracyDisclosure.knownLimitations.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
+              <li>Predictions are typically within ±8 percentage points of the actual outcome.</li>
+              <li>75% of historical outcomes fell inside the predicted range.</li>
               <li>
-                This prediction is a starting point for client conversations, not a final figure.
+                The model does not consider revenue size, ATO debt size, industry, ATO assessor
+                variance, documentation quality, or contested debts.
               </li>
             </ul>
           </div>
+          <p className="text-foreground/90 font-medium">
+            Always apply practitioner judgement before quoting any figure to a client.
+          </p>
         </div>
-      )}
-    </Card>
+
+        <div className="mt-6 flex justify-end">
+          <Button variant="primary" size="sm" onClick={onClose}>
+            Got it
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1240,6 +1670,40 @@ function ExportButton({
         : '',
     )
     push('ATO debt (creditor proxy)', prediction.creditorAmount ?? '')
+    push('Risk Band', riskBandExportLabel(prediction.riskBand))
+    push('Risk Band Reasoning', prediction.riskBandReasoning)
+    push(
+      'Payment Structure Recommendation',
+      `${paymentStructureLabel(prediction.paymentStructureRecommendation.recommended)} — ${prediction.paymentStructureRecommendation.reasoning}`,
+    )
+    push('')
+
+    push('WHAT THE REJECTIONS TELL US')
+    push('Higher offer verdict', offerMoreVerdictLabel(prediction.rejectionLearning.offerMoreVerdict))
+    push('Insight', prediction.rejectionLearning.insight)
+    {
+      const a = prediction.rejectionLearning.acceptedOfferRange
+      const r = prediction.rejectionLearning.rejectedOfferRange
+      push(
+        'Accepted comparables offered',
+        a ? `${a.min}%–${a.max}% (median ${a.median}%, n=${a.count})` : 'None among closest',
+      )
+      push(
+        'Rejected comparables offered',
+        r ? `${r.min}%–${r.max}% (median ${r.median}%, n=${r.count})` : 'None among closest',
+      )
+    }
+    push('')
+
+    push('HOW TO STRENGTHEN THIS PROFILE')
+    push('Note', 'Associations from comparable accepted cases — not guarantees of approval.')
+    if (prediction.improvementLevers.length === 0) {
+      push('', 'Profile already aligns closely with accepted comparables — no obvious gaps.')
+    } else {
+      prediction.improvementLevers.forEach((lever, i) => {
+        push(`${i + 1}. ${lever.factor}`, lever.suggestion, lever.basis)
+      })
+    }
     push('')
 
     push('INPUTS')
@@ -1248,10 +1712,6 @@ function ExportButton({
     push(
       'Director loan at appointment',
       prediction.inputFeatures.directorLoanAtAppointment ? 'Yes' : 'No',
-    )
-    push(
-      'Director loan sent to ATO',
-      prediction.inputFeatures.directorLoanSentToAto ? 'Yes' : 'No',
     )
     push('Director loan receivable', prediction.inputFeatures.directorLoanReceivableAmount)
     push('Cumulative days late', prediction.inputFeatures.cumulativeDaysLate)
@@ -1286,8 +1746,8 @@ function ExportButton({
       'DPN',
       'Payment plan',
       'Director loan at appt',
-      'Director loan to ATO',
       'Director loan receivable',
+      'Outcome Explanation',
     )
     prediction.comparableCases.forEach((c, i) => {
       push(
@@ -1304,19 +1764,29 @@ function ExportButton({
         c.features.dpn ? 'Yes' : 'No',
         c.features.paymentPlanType,
         c.features.directorLoanAtAppointment ? 'Yes' : 'No',
-        c.features.directorLoanSentToAto ? 'Yes' : 'No',
         c.features.directorLoanReceivableAmount,
+        c.outcomeExplanation,
       )
     })
     push('')
 
     push('METHODOLOGY')
+    push(
+      'How this prediction works',
+      `We compare the client's profile across 7 factors (late lodgement history, payment behaviour, DPN status, director loan, and payment-plan type) against ${prediction.trainingSetSize} historical MCR cases (41 accepted, 18 rejected). The recommended offer is the average outcome of the ${prediction.comparableCases.length} most similar past cases.`,
+    )
+    push(
+      'About the risk band',
+      `The risk band is a coarse signal based on how many of the ${prediction.comparableCases.length} closest past cases were rejected. It is NOT a calibrated probability. In the historical data, rejected cases were offered amounts between 19.7% and 61.7% — they were not systematically lower than accepted offers, so offering more does not automatically reduce rejection risk.`,
+    )
     push('Mean absolute error (pp)', prediction.accuracyDisclosure.meanAbsoluteError)
     push('Interval coverage', prediction.accuracyDisclosure.intervalCoverage)
     push('Sample size', prediction.accuracyDisclosure.sampleSize)
     for (const line of prediction.accuracyDisclosure.knownLimitations) {
       push('', line)
     }
+    push('Risk band disclaimer', prediction.accuracyDisclosure.riskBandDisclaimer)
+    push('', 'Always apply practitioner judgement before quoting any figure to a client.')
 
     const csv = lines.join('\r\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })

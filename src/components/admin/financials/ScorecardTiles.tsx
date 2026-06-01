@@ -40,8 +40,20 @@ export function ScorecardTiles({ comparison }: Props) {
   )
 }
 
+const AUD = new Intl.NumberFormat('en-AU', {
+  style: 'currency',
+  currency: 'AUD',
+  maximumFractionDigits: 0,
+})
+
+function formatAud(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  return AUD.format(v)
+}
+
 function Tile({ metric, invertSentiment }: { metric: HeadlineMetric; invertSentiment: boolean }) {
-  const { label, formatted, trend, yoyPercent, severity } = metric
+  const { label, formatted, trend, yoyPercent, severity, currentPeriodValue } = metric
+  const hasCurrentPeriod = currentPeriodValue !== undefined && currentPeriodValue !== null
 
   return (
     <div
@@ -64,6 +76,11 @@ function Tile({ metric, invertSentiment }: { metric: HeadlineMetric; invertSenti
       >
         {formatted}
       </div>
+      {hasCurrentPeriod && (
+        <div className="text-[11px] text-foreground/50 tabular-nums leading-tight">
+          Current YTD: <span className="text-foreground/70">{formatAud(currentPeriodValue)}</span>
+        </div>
+      )}
       <TrendSparkline
         values={trend}
         className={cn({

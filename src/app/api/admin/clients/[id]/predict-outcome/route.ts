@@ -49,8 +49,68 @@ const BodySchema = z.object({
   dpn: z.boolean(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
-  directorLoanSentToAto: z.boolean(),
+  // REMOVED in v2: the director-loan-sent-to-ATO flag
 })
+
+type ServerClient = ReturnType<typeof getSupabaseServerClient>
+
+interface AutoDetectedDirectorLoan {
+  detected: boolean | null
+  reasoning: string | null
+}
+
+/**
+ * Auto-detect whether a director loan was on the balance sheet at appointment.
+ * Prefers the current-period BS if extracted; falls back to the latest annual
+ * primary statement. Returns null when no balance sheet is available.
+ *
+ * The detected value is returned alongside the prediction so the UI can
+ * pre-fill the checkbox with an "Auto-detected from <source>" caption. The
+ * operator can still override before clicking Generate.
+ */
+async function autoDetectDirectorLoanAtAppointment(
+  supabase: ServerClient,
+  clientId: string,
+): Promise<AutoDetectedDirectorLoan> {
+  const { data: currentPeriod } = await supabase
+    .from('financial_statements')
+    .select('balance_sheet, period_label, financial_year, source_column')
+    .eq('client_id', clientId)
+    .eq('source_column', 'current_period')
+    .maybeSingle()
+
+  const { data: latestAnnual } = await supabase
+    .from('financial_statements')
+    .select('balance_sheet, financial_year')
+    .eq('client_id', clientId)
+    .eq('source_column', 'primary')
+    .order('financial_year', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const source = currentPeriod ?? latestAnnual
+  if (!source) {
+    return { detected: null, reasoning: null }
+  }
+
+  const bs = source.balance_sheet as ExtractedBalanceSheet | null
+  const directorLoanValue = Number(bs?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
+
+  if (directorLoanValue > 0) {
+    const sourceLabel = currentPeriod
+      ? `current period (${currentPeriod.period_label ?? `FY${currentPeriod.financial_year}`})`
+      : `FY${latestAnnual!.financial_year} balance sheet`
+    return {
+      detected: true,
+      reasoning: `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${sourceLabel}.`,
+    }
+  }
+
+  return {
+    detected: false,
+    reasoning: 'No director loan line item found on most recent balance sheet.',
+  }
+}
 
 interface MissingPrerequisite {
   field: string
@@ -63,6 +123,7 @@ interface PredictResponse extends SbrPrediction {
   creditorAmount: number | null
   computedAt: string
   cached: false
+  autoDetectedDirectorLoan: AutoDetectedDirectorLoan
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -152,11 +213,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
       : null
 
+    // Auto-detect the director loan at appointment from the latest balance
+    // sheet. The UI pre-fills the checkbox from this, but the operator's body
+    // value is what actually drives the prediction (they can override).
+    const autoDetectedDirectorLoan = await autoDetectDirectorLoanAtAppointment(
+      supabase,
+      clientId,
+    )
+
     const inputFeatures: SbrPredictionInput = {
       dpn: body.dpn,
       paymentPlanType: body.paymentPlanType,
       directorLoanAtAppointment: body.directorLoanAtAppointment,
-      directorLoanSentToAto: body.directorLoanSentToAto,
       directorLoanReceivableAmount,
       cumulativeDaysLate,
       numberOfLateLodgements,
@@ -183,7 +251,6 @@ export async function POST(req: NextRequest, { params }: Params) {
         dpn: row.dpn,
         paymentPlanType: row.payment_plan_type as 'plan' | 'upfront',
         directorLoanAtAppointment: row.director_loan_at_appointment,
-        directorLoanSentToAto: row.director_loan_sent_to_ato,
         directorLoanReceivableAmount: Number(row.director_loan_receivable_amount),
         cumulativeDaysLate: row.cumulative_days_late,
         numberOfLateLodgements: row.number_of_late_lodgements,
@@ -229,6 +296,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       creditorAmount,
       computedAt: now,
       cached: false,
+      autoDetectedDirectorLoan,
     }
     return NextResponse.json(response)
   } catch (err) {

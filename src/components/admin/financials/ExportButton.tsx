@@ -38,15 +38,23 @@ function fmtPercent(v: number | null | undefined): string {
 function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, clientName: string): string {
   const lines: string[] = []
   const years = comparison.years
+  const cp = comparison.currentPeriod ?? null
+  const ytdHeader = cp ? `Current YTD (to ${cp.periodEndDate})` : null
 
   lines.push(csvRow('Financial Statements Comparison', clientName))
   lines.push(csvRow('Generated', new Date().toISOString()))
   lines.push(csvRow('Period', `${comparison.periodRange.start} to ${comparison.periodRange.end}`))
+  if (cp) {
+    lines.push(csvRow('Current period', cp.periodLabel))
+  }
   lines.push('')
 
   // Headlines
   lines.push(csvRow('HEADLINES'))
-  lines.push(csvRow('Metric', ...years.map((y) => `FY${y}`), 'Latest severity'))
+  const headlineHeader = ['Metric', ...years.map((y) => `FY${y}`)]
+  if (ytdHeader) headlineHeader.push(ytdHeader)
+  headlineHeader.push('Latest severity')
+  lines.push(csvRow(...headlineHeader))
   for (const key of [
     'revenue',
     'netProfit',
@@ -55,7 +63,10 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
     'directorLoansReceivable',
   ] as const) {
     const m = comparison.headlines[key]
-    lines.push(csvRow(m.label, ...m.trend.map(fmtCurrency), m.severity))
+    const cells: Array<string | number | null | undefined> = [m.label, ...m.trend.map(fmtCurrency)]
+    if (ytdHeader) cells.push(fmtCurrency(m.currentPeriodValue ?? null))
+    cells.push(m.severity)
+    lines.push(csvRow(...cells))
   }
   lines.push('')
 
@@ -68,55 +79,68 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
 
   // Income statement
   lines.push(csvRow('INCOME STATEMENT'))
-  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`)))
+  const incomeHeader: string[] = ['Line item', ...years.map((y) => `FY${y}`)]
+  if (ytdHeader) incomeHeader.push(ytdHeader)
+  lines.push(csvRow(...incomeHeader))
   for (const section of comparison.incomeStatementDiffs) {
     lines.push(csvRow(`[${section.category}]`))
     for (const row of section.rows) {
-      lines.push(
-        csvRow(
-          row.label,
-          ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
-        ),
-      )
+      const cells: Array<string | number | null | undefined> = [
+        row.label,
+        ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
+      ]
+      if (ytdHeader) cells.push(fmtCurrency(row.currentPeriodValue ?? null))
+      lines.push(csvRow(...cells))
     }
   }
   lines.push('')
 
   // Balance sheet
   lines.push(csvRow('BALANCE SHEET'))
-  lines.push(csvRow('Line item', ...years.map((y) => `FY${y}`)))
+  const bsHeader: string[] = ['Line item', ...years.map((y) => `FY${y}`)]
+  if (ytdHeader) bsHeader.push(ytdHeader)
+  lines.push(csvRow(...bsHeader))
   for (const section of comparison.balanceSheetDiffs) {
     lines.push(csvRow(`[${section.category}]`))
     for (const row of section.rows) {
-      lines.push(
-        csvRow(
-          row.label,
-          ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
-        ),
-      )
+      const cells: Array<string | number | null | undefined> = [
+        row.label,
+        ...years.map((y) => fmtCurrency(row.valuesByYear[y])),
+      ]
+      if (ytdHeader) cells.push(fmtCurrency(row.currentPeriodValue ?? null))
+      lines.push(csvRow(...cells))
     }
   }
   lines.push('')
 
   // ATO aggregate
   lines.push(csvRow('ATO-RELATED CURRENT LIABILITIES (combined)'))
-  lines.push(csvRow('Component', ...years.map((y) => `FY${y}`)))
+  const atoHeader: string[] = ['Component', ...years.map((y) => `FY${y}`)]
+  if (ytdHeader) atoHeader.push(ytdHeader)
+  lines.push(csvRow(...atoHeader))
   for (const key of ATO_LIABILITY_KEYS) {
-    lines.push(
-      csvRow(
-        key,
-        ...years.map((y) => fmtCurrency(comparison.atoLiabilityByYear[y]?.byKey[key] ?? null)),
-      ),
-    )
+    const cells: Array<string | number | null | undefined> = [
+      key,
+      ...years.map((y) => fmtCurrency(comparison.atoLiabilityByYear[y]?.byKey[key] ?? null)),
+    ]
+    // Per-line current-period breakdown not exposed on CurrentPeriodSnapshot;
+    // leave blank when present.
+    if (ytdHeader) cells.push('')
+    lines.push(csvRow(...cells))
   }
-  lines.push(
-    csvRow('Total', ...years.map((y) => fmtCurrency(comparison.atoLiabilityByYear[y]?.total ?? null))),
-  )
+  const totalCells: Array<string | number | null | undefined> = [
+    'Total',
+    ...years.map((y) => fmtCurrency(comparison.atoLiabilityByYear[y]?.total ?? null)),
+  ]
+  if (cp) totalCells.push(fmtCurrency(cp.atoLiabilityTotal))
+  lines.push(csvRow(...totalCells))
   lines.push('')
 
-  // Ratios
+  // Ratios — leave the Current YTD column blank (ratios are full-year only).
   lines.push(csvRow('KEY RATIOS'))
-  lines.push(csvRow('Ratio', ...years.map((y) => `FY${y}`)))
+  const ratioHeader: string[] = ['Ratio', ...years.map((y) => `FY${y}`)]
+  if (ytdHeader) ratioHeader.push(ytdHeader)
+  lines.push(csvRow(...ratioHeader))
   const ratioKeys: Array<keyof (typeof comparison.ratiosByYear)[number]> = [
     'grossMarginPercent',
     'atoDebtAsPercentOfRevenue',
@@ -128,16 +152,39 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
     'netAssetsToTotalLiabilities',
   ]
   for (const rk of ratioKeys) {
+    const cells: Array<string | number | null | undefined> = [
+      rk,
+      ...years.map((y) => {
+        const v = comparison.ratiosByYear[y]?.[rk] ?? null
+        if (v === null) return ''
+        return rk.includes('Percent') || rk.includes('Revenue')
+          ? fmtPercent(v)
+          : v.toFixed(2)
+      }),
+    ]
+    if (ytdHeader) cells.push('')
+    lines.push(csvRow(...cells))
+  }
+  if (ytdHeader) {
     lines.push(
       csvRow(
-        rk,
-        ...years.map((y) => {
-          const v = comparison.ratiosByYear[y]?.[rk] ?? null
-          if (v === null) return ''
-          return rk.includes('Percent') || rk.includes('Revenue')
-            ? fmtPercent(v)
-            : v.toFixed(2)
-        }),
+        'Note: Ratios are calculated on a full-year basis from the 4 annual financial statements only. Current YTD figures are shown for raw line items only.',
+      ),
+    )
+  }
+
+  // Methodology footer
+  lines.push('')
+  lines.push(csvRow('METHODOLOGY'))
+  lines.push(
+    csvRow(
+      'Severities, sparklines and year-over-year ratios are computed exclusively from the 4 annual financial statements. The current-period (Current YTD) column is shown alongside for trend awareness only.',
+    ),
+  )
+  if (cp) {
+    lines.push(
+      csvRow(
+        `Current YTD column shows partial-period figures from the client's accounting software (${cp.periodLabel}). Year-over-year comparisons exclude this column because it represents a partial period only.`,
       ),
     )
   }

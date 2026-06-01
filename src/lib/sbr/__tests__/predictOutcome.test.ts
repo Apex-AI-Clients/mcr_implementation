@@ -6,7 +6,6 @@ const sampleInput: SbrPredictionInput = {
   dpn: false,
   paymentPlanType: 'plan',
   directorLoanAtAppointment: false,
-  directorLoanSentToAto: false,
   directorLoanReceivableAmount: 0,
   cumulativeDaysLate: 500,
   numberOfLateLodgements: 10,
@@ -30,6 +29,76 @@ function makeCase(
     sbrPayment: opts?.sbrPayment ?? 100_000,
   }
 }
+
+/**
+ * Synthetic training-set builder for the v2 risk-band and payment-structure
+ * tests. All cases share sampleInput's numeric features (so they're all in
+ * the k=8 neighbourhood), and the builder exposes knobs to control the
+ * accepted/rejected mix, the plan/upfront split, and the outcome spread.
+ */
+function buildSyntheticTrainingSet(
+  opts: {
+    rejectedCount?: number
+    acceptedPlan?: number
+    acceptedUpfront?: number
+    withRejectionsAt?: number
+    predictedNear?: number
+    acceptedOutcome?: number
+    rejectedOutcome?: number
+    acceptedCount?: number
+  } = {},
+): HistoricalSbrCase[] {
+  const cases: HistoricalSbrCase[] = []
+  let i = 0
+  const add = (outcome: number, accepted: boolean, plan: boolean) => {
+    cases.push(
+      makeCase(
+        `syn-${i}`,
+        `Synthetic ${i}`,
+        { ...sampleInput, paymentPlanType: plan ? 'plan' : 'upfront' },
+        outcome,
+        { accepted },
+      ),
+    )
+    i++
+  }
+
+  // Mode: control the accepted vs rejected offer levels (for rejectionLearning).
+  if (opts.acceptedOutcome != null && opts.rejectedOutcome != null) {
+    const ac = opts.acceptedCount ?? 4
+    const rc = opts.rejectedCount ?? 4
+    for (let n = 0; n < ac; n++) add(opts.acceptedOutcome, true, true)
+    for (let n = 0; n < rc; n++) add(opts.rejectedOutcome, false, false)
+    return cases
+  }
+
+  // Mode: control the rejected-outcome level and the resulting mean prediction.
+  if (opts.withRejectionsAt != null && opts.predictedNear != null) {
+    const rej = opts.withRejectionsAt
+    const acceptedOutcome = (8 * opts.predictedNear - 2 * rej) / 6
+    add(rej, false, false)
+    add(rej, false, false)
+    for (let n = 0; n < 6; n++) add(acceptedOutcome, true, true)
+    return cases
+  }
+
+  // Mode: control the plan/upfront split among accepted neighbours.
+  if (opts.acceptedPlan != null || opts.acceptedUpfront != null) {
+    const plan = opts.acceptedPlan ?? 0
+    const upfront = opts.acceptedUpfront ?? 0
+    for (let n = 0; n < plan; n++) add(40, true, true)
+    for (let n = 0; n < upfront; n++) add(40, true, false)
+    return cases
+  }
+
+  // Default mode: control how many of the 8 neighbours were rejected.
+  const rejectedCount = opts.rejectedCount ?? 0
+  for (let n = 0; n < rejectedCount; n++) add(40, false, false)
+  for (let n = 0; n < 8 - rejectedCount; n++) add(40, true, true)
+  return cases
+}
+
+const syntheticTrainingSet = buildSyntheticTrainingSet({ rejectedCount: 2 })
 
 describe('predictSbrOutcome', () => {
   it('throws on an empty training set', () => {
@@ -98,8 +167,8 @@ describe('predictSbrOutcome', () => {
   it('always populates the accuracy disclosure', () => {
     const only = makeCase('case-1', 'Only Co', sampleInput, 40)
     const result = predictSbrOutcome(sampleInput, [only])
-    expect(result.accuracyDisclosure.meanAbsoluteError).toBe(6.1)
-    expect(result.accuracyDisclosure.intervalCoverage).toBe('76%')
+    expect(result.accuracyDisclosure.meanAbsoluteError).toBe(7.7)
+    expect(result.accuracyDisclosure.intervalCoverage).toBe('75%')
     expect(result.accuracyDisclosure.sampleSize).toBe(1)
     expect(result.accuracyDisclosure.knownLimitations.length).toBeGreaterThan(0)
   })
@@ -117,17 +186,139 @@ describe('predictSbrOutcome', () => {
     expect(result.predictedHighPercent).toBe(50)
   })
 
-  it('emits a feature breakdown entry for each of the 8 features with plain-English notes', () => {
+  it('emits a feature breakdown entry for each of the 7 features with plain-English notes', () => {
     const trainingSet: HistoricalSbrCase[] = Array.from({ length: 10 }, (_, i) =>
       makeCase(`c-${i}`, `Co ${i}`, sampleInput, 38 + i * 0.5),
     )
     const result = predictSbrOutcome(sampleInput, trainingSet)
-    expect(result.featureBreakdown).toHaveLength(8)
+    expect(result.featureBreakdown).toHaveLength(7)
     for (const entry of result.featureBreakdown) {
       expect(entry.label.length).toBeGreaterThan(0)
       expect(entry.influenceNote.length).toBeGreaterThan(0)
       // No jargon allowed.
       expect(entry.influenceNote).not.toMatch(/z-?score|euclidean|k-?nn/i)
+    }
+  })
+})
+
+describe('v2 — risk banding and payment-structure recommendation', () => {
+  it('riskBand=likely_accepted when 0-2 of 8 neighbours rejected', () => {
+    const ts = buildSyntheticTrainingSet({ rejectedCount: 1 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.riskBand).toBe('likely_accepted')
+  })
+
+  it('riskBand=borderline when 3 of 8 neighbours rejected', () => {
+    const ts = buildSyntheticTrainingSet({ rejectedCount: 3 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.riskBand).toBe('borderline')
+  })
+
+  it('riskBand=high_rejection_risk when 4+ of 8 neighbours rejected', () => {
+    const ts = buildSyntheticTrainingSet({ rejectedCount: 5 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.riskBand).toBe('high_rejection_risk')
+  })
+
+  it('paymentStructureRecommendation respects 2:1 majority threshold', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedPlan: 6, acceptedUpfront: 2 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.paymentStructureRecommendation.recommended).toBe('plan')
+  })
+
+  it('paymentStructureRecommendation=no_strong_signal when split close to even', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedPlan: 4, acceptedUpfront: 4 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.paymentStructureRecommendation.recommended).toBe('no_strong_signal')
+  })
+
+  it('every comparable case has outcomeExplanation populated', () => {
+    const r = predictSbrOutcome(sampleInput, syntheticTrainingSet)
+    for (const c of r.comparableCases) {
+      expect(c.outcomeExplanation.length).toBeGreaterThan(20)
+      expect(c.outcomeExplanation).toMatch(/(accepted|rejected)/i)
+    }
+  })
+
+  it('feature vector is 7-dimensional (dl_ato removed)', () => {
+    // Compile-time: SbrPredictionInput must not allow the dropped dl-to-ATO flag.
+    const input: SbrPredictionInput = {
+      dpn: false,
+      paymentPlanType: 'upfront',
+      directorLoanAtAppointment: false,
+      directorLoanReceivableAmount: 0,
+      cumulativeDaysLate: 100,
+      numberOfLateLodgements: 1,
+      daysSinceLastPayment: 30,
+    }
+    expect(() => predictSbrOutcome(input, syntheticTrainingSet)).not.toThrow()
+  })
+
+  it('accuracyDisclosure exposes the updated MAE and coverage', () => {
+    const r = predictSbrOutcome(sampleInput, syntheticTrainingSet)
+    expect(r.accuracyDisclosure.meanAbsoluteError).toBe(7.7)
+    expect(r.accuracyDisclosure.intervalCoverage).toBe('75%')
+    expect(r.accuracyDisclosure.knownLimitations.some((s) => s.includes('19.7%'))).toBe(true)
+  })
+
+  it('rejectionLearning verdict=higher_offer_may_help when rejected offers were lower', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedOutcome: 40, rejectedOutcome: 25 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.rejectionLearning.offerMoreVerdict).toBe('higher_offer_may_help')
+    expect(r.rejectionLearning.acceptedOfferRange?.median).toBe(40)
+    expect(r.rejectionLearning.rejectedOfferRange?.median).toBe(25)
+  })
+
+  it('rejectionLearning verdict=higher_offer_unlikely_to_help when rejected offers were higher', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedOutcome: 40, rejectedOutcome: 55 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.rejectionLearning.offerMoreVerdict).toBe('higher_offer_unlikely_to_help')
+    expect(r.rejectionLearning.insight).toMatch(/beyond the offer|as much or MORE/i)
+  })
+
+  it('rejectionLearning gives the accepted band when no neighbours were rejected', () => {
+    const ts = buildSyntheticTrainingSet({ rejectedCount: 0 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.rejectionLearning.offerMoreVerdict).toBe('insufficient_signal')
+    expect(r.rejectionLearning.rejectedOfferRange).toBeNull()
+    expect(r.rejectionLearning.acceptedOfferRange).not.toBeNull()
+  })
+
+  it('improvementLevers surfaces lodgement compliance when worse than accepted comparables', () => {
+    const ts: HistoricalSbrCase[] = Array.from({ length: 8 }, (_, i) =>
+      makeCase(
+        `clean-${i}`,
+        `Clean ${i}`,
+        { ...sampleInput, cumulativeDaysLate: 50, numberOfLateLodgements: 2 },
+        38,
+        { accepted: true },
+      ),
+    )
+    const query: SbrPredictionInput = {
+      ...sampleInput,
+      cumulativeDaysLate: 5000,
+      numberOfLateLodgements: 30,
+    }
+    const r = predictSbrOutcome(query, ts)
+    expect(r.improvementLevers.some((l) => /lodgement/i.test(l.factor))).toBe(true)
+    expect(r.improvementLevers.some((l) => /late lodgement/i.test(l.factor))).toBe(true)
+  })
+
+  it('improvementLevers is empty when the client already matches accepted comparables', () => {
+    const ts = buildSyntheticTrainingSet({ rejectedCount: 0 }) // all accepted, features = sampleInput
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.improvementLevers).toHaveLength(0)
+  })
+
+  it('suggestedOfferAmount uses raw predicted outcome (no rejection floor)', () => {
+    // Construct a training set where rejections in neighbours are at 50%
+    // and the predicted outcome is 35%. v2 must NOT lift the offer to 50%+.
+    const ts = buildSyntheticTrainingSet({ withRejectionsAt: 50, predictedNear: 35 })
+    const r = predictSbrOutcome(sampleInput, ts, { creditorAmount: 200_000 })
+    // Predicted should be ~35; suggestedOfferAmount should reflect 35, not 50+
+    expect(r.predictedOutcomePercent).toBeLessThan(45)
+    if (r.suggestedOfferAmount !== null) {
+      expect(r.suggestedOfferAmount).toBeLessThan(120_000) // 50% × 200k / 0.9 ≈ 111k+
     }
   })
 })
