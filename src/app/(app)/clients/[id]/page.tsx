@@ -88,7 +88,7 @@ export default async function ClientDetailPage({ params }: Props) {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link
-        href="/admin/clients"
+        href="/clients"
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
@@ -107,7 +107,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href={`/admin/clients/${client.id}/intake`}
+            href={`/clients/${client.id}/intake`}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface/70"
           >
             <Pencil className="h-4 w-4" />

@@ -188,7 +188,7 @@ export function OutcomePredictionClient({
     <div className="space-y-6">
       <div className="space-y-3">
         <Link
-          href={`/admin/clients/${clientId}`}
+          href={`/clients/${clientId}`}
           className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -252,7 +252,7 @@ export function OutcomePredictionClient({
                 Statement CSV and run the analysis on the client page.
               </p>
               <Link
-                href={`/admin/clients/${clientId}`}
+                href={`/clients/${clientId}`}
                 className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
               >
                 Open client page
@@ -329,7 +329,7 @@ function PrereqMissingBlock({
             Once the missing step is complete, return here and click <em>Generate Prediction</em>.
           </p>
           <Link
-            href={`/admin/clients/${clientId}`}
+            href={`/clients/${clientId}`}
             className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
           >
             Open client page

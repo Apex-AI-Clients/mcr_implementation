@@ -2,18 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 /**
- * Single-role auth guard. Everything under /admin requires an authenticated
- * staff user; unauthenticated requests are bounced to /login. There is no
- * longer a client role or a separate /portal area — the intake wizard lives
- * under /admin/clients/.../intake.
+ * Single-role auth guard. Every page requires an authenticated staff user;
+ * unauthenticated requests are bounced to /login. The matcher already excludes
+ * /login, /api/*, Next internals, and static files, so anything reaching here
+ * is a protected page.
  */
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-
-  if (!pathname.startsWith('/admin')) {
-    return NextResponse.next()
-  }
-
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -41,7 +35,7 @@ export async function proxy(request: NextRequest) {
 
   if (!user) {
     const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirect', pathname)
+    loginUrl.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)
   }
 
@@ -49,5 +43,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  // Protect every route except /login, the API (self-authed), Next internals,
+  // and any path with a file extension (static assets).
+  matcher: ['/((?!api|_next|login|favicon.ico|.*\\.).*)'],
 }

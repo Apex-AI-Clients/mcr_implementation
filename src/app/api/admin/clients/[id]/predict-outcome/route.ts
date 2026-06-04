@@ -181,7 +181,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       missing.push({
         field: 'cumulativeDaysLate',
         blocker: 'lodgement_analyses',
-        actionUrl: `/admin/clients/${clientId}`,
+        actionUrl: `/clients/${clientId}`,
       })
     }
     if (missing.length > 0) {

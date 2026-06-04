@@ -172,7 +172,7 @@ export function ClientTable({ clients }: ClientTableProps) {
                   <td className="px-4 py-3.5">
                     <div className="flex items-center justify-end gap-1">
                       <Link
-                        href={`/admin/clients/${client.id}`}
+                        href={`/clients/${client.id}`}
                         className="rounded-md p-1.5 text-accent hover:bg-accent/10 transition-colors"
                         title="View client"
                         aria-label={`View ${client.name}`}

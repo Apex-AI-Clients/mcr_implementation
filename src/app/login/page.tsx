@@ -43,7 +43,7 @@ function LoginInner() {
     }
 
     // Single-role app: everyone lands in the admin workspace.
-    const destination = redirect ?? '/admin'
+    const destination = redirect ?? '/'
 
     router.push(destination)
     router.refresh()

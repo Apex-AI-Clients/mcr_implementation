@@ -82,7 +82,7 @@ export function ClientDetailsForm({
         setSaved(true)
         // Continue the wizard at the client-scoped URL (keeps saving spinner
         // until the new page mounts).
-        router.replace(`/admin/clients/${data.id}/intake`)
+        router.replace(`/clients/${data.id}/intake`)
         onSaved?.({ id: data.id, name: data.name, email: data.email })
       }
     } catch {

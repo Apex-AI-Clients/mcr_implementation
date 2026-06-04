@@ -33,7 +33,7 @@ export function ClientsPageClient({ clients, total, page, pageSize, query }: Cli
     const t = setTimeout(() => {
       const params = new URLSearchParams()
       if (term.trim()) params.set('q', term.trim())
-      router.replace(`/admin/clients${params.toString() ? `?${params.toString()}` : ''}`)
+      router.replace(`/clients${params.toString() ? `?${params.toString()}` : ''}`)
     }, 300)
     return () => clearTimeout(t)
   }, [term, query, router])
@@ -42,7 +42,7 @@ export function ClientsPageClient({ clients, total, page, pageSize, query }: Cli
     const params = new URLSearchParams()
     if (query.trim()) params.set('q', query.trim())
     if (p > 1) params.set('page', String(p))
-    router.replace(`/admin/clients${params.toString() ? `?${params.toString()}` : ''}`)
+    router.replace(`/clients${params.toString() ? `?${params.toString()}` : ''}`)
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))

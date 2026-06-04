@@ -121,7 +121,7 @@ export function ComparisonClient({
       {/* Page header */}
       <div className="space-y-3">
         <Link
-          href={`/admin/clients/${clientId}`}
+          href={`/clients/${clientId}`}
           className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />

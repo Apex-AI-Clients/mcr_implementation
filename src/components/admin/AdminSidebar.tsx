@@ -17,7 +17,7 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
   if (pathname.endsWith('/intake')) return null
 
   const isActive = (href: string) =>
-    href === '/admin' ? pathname === '/admin' : pathname === href || pathname.startsWith(`${href}/`)
+    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">
@@ -33,15 +33,15 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
 
       <nav className="flex flex-col gap-0.5 p-3 flex-1">
         <NavLink
-          href="/admin"
-          active={isActive('/admin')}
+          href="/"
+          active={isActive('/')}
           icon={<LayoutDashboard className="h-4 w-4" />}
         >
           Dashboard
         </NavLink>
         <NavLink
-          href="/admin/clients"
-          active={isActive('/admin/clients')}
+          href="/clients"
+          active={isActive('/clients')}
           icon={<Users className="h-4 w-4" />}
         >
           Clients

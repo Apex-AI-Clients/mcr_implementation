@@ -166,7 +166,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
     return (
       <div className="mx-auto max-w-2xl px-4 py-10 text-center">
         <Link
-          href="/admin/clients"
+          href="/clients"
           className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -229,7 +229,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
       <div className="flex flex-1 min-w-0 h-full flex-col overflow-y-auto">
         <div className="flex-1 px-6 md:px-12 py-8">
           <Link
-            href={clientId ? `/admin/clients/${clientId}` : '/admin/clients'}
+            href={clientId ? `/clients/${clientId}` : '/clients'}
             className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

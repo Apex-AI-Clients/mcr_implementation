@@ -32,7 +32,7 @@ export function ClientActions({ clientId, clientName, clientEmail }: ClientActio
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to delete client')
       }
-      router.push('/admin/clients')
+      router.push('/clients')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

@@ -51,7 +51,7 @@ export default async function AdminDashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Clients</CardTitle>
-          <Link href="/admin/clients" className="text-xs text-accent hover:text-accent/80">
+          <Link href="/clients" className="text-xs text-accent hover:text-accent/80">
             View all
           </Link>
         </CardHeader>
@@ -62,7 +62,7 @@ export default async function AdminDashboardPage() {
             return (
               <Link
                 key={client.id}
-                href={`/admin/clients/${client.id}`}
+                href={`/clients/${client.id}`}
                 className="flex items-center justify-between rounded-lg border border-white/6 bg-primary/40 px-3 py-2.5 hover:bg-surface/40 transition-colors"
               >
                 <div>
@@ -86,7 +86,7 @@ export default async function AdminDashboardPage() {
           {total === 0 && (
             <p className="py-8 text-center text-sm text-foreground/30">
               No clients yet.{' '}
-              <Link href="/admin/clients" className="text-accent underline">
+              <Link href="/clients" className="text-accent underline">
                 Add your first client
               </Link>
             </p>
