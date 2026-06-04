@@ -11,7 +11,7 @@ interface Props {
 export function LodgementAnalysisButton({ clientId }: Props) {
   return (
     <div className="mt-3 ml-6.5 flex justify-end">
-      <Link href={`/admin/clients/${clientId}/lodgement-compliance-analysis`}>
+      <Link href={`/clients/${clientId}/lodgement-compliance-analysis`}>
         <Button variant="primary" size="sm">
           <Activity className="h-3.5 w-3.5" />
           Lodgement Compliance Analysis

@@ -1,27 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Paths that never require authentication.
-const PUBLIC_PATHS = new Set<string>([
-  '/login',
-  '/portal/set-password',
-])
-
+/**
+ * Single-role auth guard. Every page requires an authenticated staff user;
+ * unauthenticated requests are bounced to /login. The matcher already excludes
+ * /login, /api/*, Next internals, and static files, so anything reaching here
+ * is a protected page.
+ */
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  const isAdminRoute = pathname.startsWith('/admin')
-  const isPortalRoute = pathname.startsWith('/portal')
-
-  if (!isAdminRoute && !isPortalRoute) {
-    return NextResponse.next()
-  }
-
-  // Old login pages redirect to /login (handled by their page.tsx redirects),
-  // but skip auth check so the redirect can happen.
-  if (PUBLIC_PATHS.has(pathname) || pathname === '/admin/login' || pathname === '/portal/login') {
-    return NextResponse.next()
-  }
-
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -49,24 +35,15 @@ export async function proxy(request: NextRequest) {
 
   if (!user) {
     const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirect', pathname)
+    loginUrl.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)
-  }
-
-  const role = (user.app_metadata?.role as string | undefined) ?? null
-
-  // A client user should never enter admin space, and an admin user should never
-  // enter the client portal — bounce them to their own side.
-  if (isAdminRoute && role === 'client') {
-    return NextResponse.redirect(new URL('/portal', request.url))
-  }
-  if (isPortalRoute && role !== 'client') {
-    return NextResponse.redirect(new URL('/admin', request.url))
   }
 
   return response
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/portal/:path*'],
+  // Protect every route except /login, the API (self-authed), Next internals,
+  // and any path with a file extension (static assets).
+  matcher: ['/((?!api|_next|login|favicon.ico|.*\\.).*)'],
 }

@@ -1,17 +1,25 @@
-import { NextResponse } from 'next/server'
-import { getPortalClient } from '@/lib/auth/portal'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireStaffUser } from '@/lib/auth/staff'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 
 /**
- * Returns the authenticated client's profile, documents, accountant details,
- * and ATO admin confirmation status. Backs the portal landing page.
+ * Returns a client's intake profile (documents, accountant details, company
+ * details, ATO admin flag) for the staff-driven intake wizard.
+ *
+ * Single-role model: requires an authenticated staff user and an explicit
+ * `?clientId=` — the client is chosen by staff, not derived from the session.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const ctx = await getPortalClient()
-    if (!ctx) {
+    const user = await requireStaffUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const clientId = req.nextUrl.searchParams.get('clientId')
+    if (!clientId) {
+      return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
     }
 
     const supabase = getSupabaseServerClient()
@@ -19,11 +27,11 @@ export async function GET() {
     const { data: client, error } = await supabase
       .from('clients')
       .select('id, name, email, status, ato_admin_confirmed, ato_admin_confirmed_at')
-      .eq('id', ctx.clientId)
+      .eq('id', clientId)
       .single()
 
     if (error || !client) {
-      return NextResponse.json({ error: 'Client profile not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
     const { data: rawDocs } = await supabase
@@ -91,6 +99,6 @@ export async function GET() {
     })
   } catch (err) {
     console.error('[GET /api/portal/me]', err)
-    return NextResponse.json({ error: 'Failed to load portal data' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to load intake data' }, { status: 500 })
   }
 }

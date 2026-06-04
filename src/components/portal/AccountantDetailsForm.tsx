@@ -7,11 +7,12 @@ import { CheckCircle } from 'lucide-react'
 import type { AccountantDetails } from '@/types/app'
 
 interface AccountantDetailsFormProps {
+  clientId: string
   initial: AccountantDetails | null
   onComplete?: () => void
 }
 
-export function AccountantDetailsForm({ initial, onComplete }: AccountantDetailsFormProps) {
+export function AccountantDetailsForm({ clientId, initial, onComplete }: AccountantDetailsFormProps) {
   const [companyName, setCompanyName] = useState(initial?.companyName ?? '')
   const [contactPerson, setContactPerson] = useState(initial?.contactPerson ?? '')
   const [phoneNumber, setPhoneNumber] = useState(initial?.phoneNumber ?? '')
@@ -29,7 +30,7 @@ export function AccountantDetailsForm({ initial, onComplete }: AccountantDetails
       const res = await fetch('/api/portal/accountant-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName, contactPerson, phoneNumber, emailAddress }),
+        body: JSON.stringify({ clientId, companyName, contactPerson, phoneNumber, emailAddress }),
       })
 
       if (!res.ok) {

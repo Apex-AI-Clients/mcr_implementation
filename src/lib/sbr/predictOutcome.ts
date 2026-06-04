@@ -15,6 +15,7 @@
  */
 
 import type {
+  AcceptedAlignedOffer,
   ComparableCase,
   FeatureBreakdownEntry,
   HistoricalSbrCase,
@@ -60,7 +61,7 @@ const FEATURE_DIRECTION: Record<SbrFeatureKey, 1 | -1 | 0> = {
 
 interface PredictOptions {
   creditorAmount?: number
-  mcrFeeRate?: number
+  sbrPractitionerFeeRate?: number
 }
 
 export function predictSbrOutcome(
@@ -73,7 +74,7 @@ export function predictSbrOutcome(
   }
 
   const k = Math.min(K_NEIGHBOURS, trainingSet.length)
-  const mcrFeeRate = options?.mcrFeeRate ?? 0.1
+  const sbrPractitionerFeeRate = options?.sbrPractitionerFeeRate ?? 0.125
 
   const trainMatrix = trainingSet.map((c) => toVector(c.features))
 
@@ -131,15 +132,24 @@ export function predictSbrOutcome(
   const rejectionLearning = buildRejectionLearning(comparableCases)
   const improvementLevers = buildImprovementLevers(input, comparableCases)
 
-  // NOTE: suggestedOfferAmount = predicted × creditorAmount / (1 - mcrFeeRate).
+  // NOTE: suggestedOfferAmount = predicted × creditorAmount / (1 - sbrPractitionerFeeRate).
   // We do NOT add a rejection floor / buffer. Earlier analysis (28 May 2026
   // validation) showed rejected offers in the dataset are NOT systematically
   // lower than accepted offers — Globexo rejected at 61.7%, E&M Kleaning at
   // 59.4%. The "offer more to flip" hypothesis is unsupported by the data.
   const suggestedOfferAmount =
     options?.creditorAmount != null && options.creditorAmount > 0
-      ? Math.round(((predictedOutcomePercent / 100) * options.creditorAmount) / (1 - mcrFeeRate))
+      ? Math.round(
+          ((predictedOutcomePercent / 100) * options.creditorAmount) / (1 - sbrPractitionerFeeRate),
+        )
       : null
+
+  const acceptedAlignedOffer = buildAcceptedAlignedOffer(
+    comparableCases,
+    options?.creditorAmount,
+    sbrPractitionerFeeRate,
+    suggestedOfferAmount,
+  )
 
   return {
     predictedOutcomePercent: round(predictedOutcomePercent, 1),
@@ -155,6 +165,7 @@ export function predictSbrOutcome(
     rejectedNeighbours,
     paymentStructureRecommendation,
     rejectionLearning,
+    acceptedAlignedOffer,
     improvementLevers,
     accuracyDisclosure: {
       meanAbsoluteError: 7.7,
@@ -380,6 +391,42 @@ function buildRejectionLearning(cases: ComparableCase[]): RejectionLearning {
  * here; this focuses on the operational levers a practitioner can pull before
  * lodging: lodgement compliance, payment recency, and the director loan.
  */
+/**
+ * The "what do we offer to get it accepted?" amount (Gabby/Tom request).
+ *
+ * The realistic lever once an SBR is on foot is the offer (and payment timing) —
+ * the lodgement history is already filed and can't change. So the target here
+ * is the highest offer at which a SIMILAR (k-NN) case was accepted — the proven
+ * ceiling of acceptance for this profile — converted to a gross dollar amount on
+ * the client's ATO debt. If no neighbour was accepted, we fall back to the
+ * highest similar offer overall as the best available proxy.
+ *
+ *  - 'raise'          → target above the current offer → lift toward it.
+ *  - 'already_strong' → current offer already at/above that ceiling → the lever
+ *                       is timing/completeness, not more money.
+ *  - 'no_data'        → no ATO debt figure to turn a % into dollars.
+ */
+function buildAcceptedAlignedOffer(
+  comparableCases: ComparableCase[],
+  creditorAmount: number | undefined,
+  feeRate: number,
+  currentAmount: number | null,
+): AcceptedAlignedOffer {
+  if (creditorAmount == null || creditorAmount <= 0) {
+    return { mode: 'no_data', currentAmount, targetAmount: null, targetPercent: null }
+  }
+
+  const accepted = comparableCases.filter((c) => c.accepted)
+  const pool = accepted.length > 0 ? accepted : comparableCases
+  const targetPercent = round(Math.max(...pool.map((c) => c.outcomePercent)), 1)
+  const targetAmount = Math.round(((targetPercent / 100) * creditorAmount) / (1 - feeRate))
+
+  const mode: AcceptedAlignedOffer['mode'] =
+    currentAmount != null && targetAmount > currentAmount ? 'raise' : 'already_strong'
+
+  return { mode, currentAmount, targetAmount, targetPercent }
+}
+
 function buildImprovementLevers(
   input: SbrPredictionInput,
   cases: ComparableCase[],

@@ -181,7 +181,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       missing.push({
         field: 'cumulativeDaysLate',
         blocker: 'lodgement_analyses',
-        actionUrl: `/admin/clients/${clientId}`,
+        actionUrl: `/clients/${clientId}`,
       })
     }
     if (missing.length > 0) {
@@ -264,7 +264,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const prediction = predictSbrOutcome(inputFeatures, trainingSet, {
       creditorAmount: creditorAmount ?? undefined,
-      mcrFeeRate: 0.1,
+      sbrPractitionerFeeRate: 0.125,
     })
 
     const now = new Date().toISOString()

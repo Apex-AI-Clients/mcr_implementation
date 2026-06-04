@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { getPortalClient } from '@/lib/auth/portal'
+import { requireStaffUser } from '@/lib/auth/staff'
 import { uploadToStorage } from '@/lib/storage/upload'
 import {
   CATEGORY_META,
@@ -14,14 +14,19 @@ const VALID_CATEGORIES = new Set(Object.values(DOCUMENT_CATEGORIES))
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getPortalClient()
-    if (!ctx) {
+    const user = await requireStaffUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
     const docCategory = formData.get('doc_category') as string | null
+    const clientId = formData.get('client_id') as string | null
+
+    if (!clientId) {
+      return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
+    }
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -50,7 +55,7 @@ export async function POST(req: NextRequest) {
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     const filePath = await uploadToStorage(
       supabase,
-      ctx.clientId,
+      clientId,
       file.name,
       file.type,
       fileBuffer,
@@ -59,7 +64,7 @@ export async function POST(req: NextRequest) {
     const { data: document, error: docError } = await supabase
       .from('documents')
       .insert({
-        client_id: ctx.clientId,
+        client_id: clientId,
         file_path: filePath,
         original_filename: file.name,
         file_type: file.type,
@@ -72,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     if (docError || !document) throw docError
 
-    await updateClientStatus(ctx.clientId)
+    await updateClientStatus(clientId)
 
     return NextResponse.json({ documentId: document.id }, { status: 201 })
   } catch (err) {

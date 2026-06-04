@@ -3,13 +3,13 @@
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
+import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
-import { CheckCircle2, XCircle, Download, Trash2, X } from 'lucide-react'
-import { ReuploadRequestButton } from '@/components/admin/ReuploadRequestButton'
+import { CheckCircle2, XCircle, Download, Trash2, X, Upload, Loader2 } from 'lucide-react'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
 import { formatBytes } from '@/lib/utils'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface DocumentStatusGridProps {
@@ -20,6 +20,7 @@ interface DocumentStatusGridProps {
 
 export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: DocumentStatusGridProps) {
   const router = useRouter()
+  const refresh = onDocumentDeleted ?? (() => router.refresh())
   const byCategory = new Map<string, DocumentRecord[]>()
   for (const doc of documents) {
     const existing = byCategory.get(doc.docCategory) ?? []
@@ -64,11 +65,20 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
             <p className="mt-1.5 ml-6.5 text-xs text-foreground/40">{meta.formatLabel}</p>
 
             {docs.map((doc) => (
-              <DocumentRow key={doc.id} doc={doc} clientId={clientId} onDeleted={onDocumentDeleted ?? (() => router.refresh())} />
+              <DocumentRow key={doc.id} doc={doc} onDeleted={refresh} />
             ))}
 
             {!received && (
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
+            )}
+
+            {clientId && (
+              <CategoryUploader
+                clientId={clientId}
+                category={category}
+                hasFiles={received}
+                onUploaded={refresh}
+              />
             )}
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
@@ -86,10 +96,9 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
   )
 }
 
-function DocumentRow({ doc, clientId, onDeleted }: { doc: DocumentRecord; clientId?: string; onDeleted?: () => void }) {
+function DocumentRow({ doc, onDeleted }: { doc: DocumentRecord; onDeleted: () => void }) {
   const [downloading, setDownloading] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [deleteMessage, setDeleteMessage] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
@@ -115,7 +124,7 @@ function DocumentRow({ doc, clientId, onDeleted }: { doc: DocumentRecord; client
       const res = await fetch(`/api/admin/documents/${doc.id}/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: deleteMessage.trim() || undefined }),
+        body: JSON.stringify({}),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -125,7 +134,7 @@ function DocumentRow({ doc, clientId, onDeleted }: { doc: DocumentRecord; client
       }
       setShowDeleteModal(false)
       setDeleting(false)
-      onDeleted?.()
+      onDeleted()
     } catch {
       setDeleteError('Failed to delete. Please try again.')
       setDeleting(false)
@@ -147,13 +156,6 @@ function DocumentRow({ doc, clientId, onDeleted }: { doc: DocumentRecord; client
             >
               <Download className="h-3.5 w-3.5" />
             </button>
-            {clientId && (
-              <ReuploadRequestButton
-                clientId={clientId}
-                documentId={doc.id}
-                documentName={doc.originalFilename}
-              />
-            )}
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
@@ -189,54 +191,113 @@ function DocumentRow({ doc, clientId, onDeleted }: { doc: DocumentRecord; client
               File: <span className="text-foreground">{doc.originalFilename}</span>
             </p>
             <p className="text-xs text-destructive/80 mb-4">
-              This will permanently delete the file. The client will need to re-upload if required.
+              This permanently deletes the file. You can upload a replacement in this section
+              afterwards.
             </p>
 
-            <div className="space-y-3">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={`delete-msg-${doc.id}`} className="text-xs font-medium text-muted">
-                  Message to client (optional)
-                </label>
-                <textarea
-                  id={`delete-msg-${doc.id}`}
-                  className="h-20 w-full rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted transition-colors focus:border-accent focus:outline-none resize-none"
-                  placeholder="e.g. Please re-upload the correct version of this document."
-                  value={deleteMessage}
-                  onChange={(e) => setDeleteMessage(e.target.value)}
-                />
-                <p className="text-xs text-foreground/30">
-                  If provided, the client will receive an email with your message.
-                </p>
-              </div>
+            {deleteError && <p className="text-xs text-destructive mb-3">{deleteError}</p>}
 
-              {deleteError && <p className="text-xs text-destructive">{deleteError}</p>}
-
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setShowDeleteModal(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="flex-1"
-                  loading={deleting}
-                  onClick={handleDelete}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete{deleteMessage.trim() ? ' & Notify' : ''}
-                </Button>
-              </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="flex-1"
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="flex-1"
+                loading={deleting}
+                onClick={handleDelete}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </Button>
             </div>
           </div>
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Inline uploader for a single document category on the client detail page.
+ * Staff can add or replace files without leaving the detail view. Posts to the
+ * staff-authenticated /api/portal/upload with the client id + category.
+ */
+function CategoryUploader({
+  clientId,
+  category,
+  hasFiles,
+  onUploaded,
+}: {
+  clientId: string
+  category: DocCategory
+  hasFiles: boolean
+  onUploaded: () => void
+}) {
+  const meta = CATEGORY_META[category]
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setError(null)
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('doc_category', category)
+        formData.append('client_id', clientId)
+        const res = await fetch('/api/portal/upload', { method: 'POST', body: formData })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          setError(data.error ?? 'Upload failed')
+          break
+        }
+      }
+      onUploaded()
+    } catch {
+      setError('Upload failed. Please try again.')
+    } finally {
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="mt-2 ml-6.5">
+      <input
+        ref={inputRef}
+        type="file"
+        accept={meta.acceptedFormats.join(',')}
+        multiple={meta.multipleFiles}
+        onChange={(e) => handleFiles(e.target.files)}
+        className="hidden"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={uploading}
+        onClick={() => inputRef.current?.click()}
+      >
+        {uploading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Upload className="h-3.5 w-3.5" />
+        )}
+        {hasFiles ? 'Upload / replace' : 'Upload file'}
+      </Button>
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+    </div>
   )
 }

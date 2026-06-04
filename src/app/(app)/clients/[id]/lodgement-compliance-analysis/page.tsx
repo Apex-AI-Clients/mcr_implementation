@@ -85,7 +85,7 @@ export default async function LodgementAnalysisPage({ params }: Props) {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link
-        href={`/admin/clients/${id}`}
+        href={`/clients/${id}`}
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />

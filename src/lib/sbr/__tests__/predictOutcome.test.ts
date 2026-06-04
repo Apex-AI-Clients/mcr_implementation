@@ -152,10 +152,10 @@ describe('predictSbrOutcome', () => {
     const only = makeCase('case-1', 'Only Co', sampleInput, 40)
     const result = predictSbrOutcome(sampleInput, [only], {
       creditorAmount: 200_000,
-      mcrFeeRate: 0.1,
+      sbrPractitionerFeeRate: 0.125,
     })
-    // 40% of 200k = 80k. Offer = 80k / (1 - 0.1) = 88,888.89 → rounded to 88,889.
-    expect(result.suggestedOfferAmount).toBe(88889)
+    // 40% of 200k = 80k. Offer = 80k / (1 - 0.125) = 91,428.57 → rounded to 91,429.
+    expect(result.suggestedOfferAmount).toBe(91429)
   })
 
   it('returns null suggestedOfferAmount when creditorAmount is not provided', () => {
@@ -308,6 +308,29 @@ describe('v2 — risk banding and payment-structure recommendation', () => {
     const ts = buildSyntheticTrainingSet({ rejectedCount: 0 }) // all accepted, features = sampleInput
     const r = predictSbrOutcome(sampleInput, ts)
     expect(r.improvementLevers).toHaveLength(0)
+  })
+
+  it('acceptedAlignedOffer = raise with a higher target when accepted deals offered more', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedOutcome: 40, rejectedOutcome: 25 })
+    const r = predictSbrOutcome(sampleInput, ts, { creditorAmount: 200_000 })
+    expect(r.acceptedAlignedOffer.mode).toBe('raise')
+    expect(r.acceptedAlignedOffer.targetPercent).toBe(40)
+    expect(r.acceptedAlignedOffer.targetAmount!).toBeGreaterThan(r.suggestedOfferAmount!)
+  })
+
+  it('acceptedAlignedOffer = already_strong when the current offer already tops accepted deals', () => {
+    // Accepted at 40, rejected at 55 → predicted mean (47.5%) exceeds the
+    // accepted ceiling (40%), so raising the offer is not the lever.
+    const ts = buildSyntheticTrainingSet({ acceptedOutcome: 40, rejectedOutcome: 55 })
+    const r = predictSbrOutcome(sampleInput, ts, { creditorAmount: 200_000 })
+    expect(r.acceptedAlignedOffer.mode).toBe('already_strong')
+  })
+
+  it('acceptedAlignedOffer = no_data without a creditor amount', () => {
+    const ts = buildSyntheticTrainingSet({ acceptedOutcome: 40, rejectedOutcome: 25 })
+    const r = predictSbrOutcome(sampleInput, ts)
+    expect(r.acceptedAlignedOffer.mode).toBe('no_data')
+    expect(r.acceptedAlignedOffer.targetAmount).toBeNull()
   })
 
   it('suggestedOfferAmount uses raw predicted outcome (no rejection floor)', () => {

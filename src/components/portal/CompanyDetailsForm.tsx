@@ -17,11 +17,12 @@ export interface CompanyDetails {
 }
 
 interface CompanyDetailsFormProps {
+  clientId: string
   initial: CompanyDetails | null
   onComplete?: () => void
 }
 
-export function CompanyDetailsForm({ initial, onComplete }: CompanyDetailsFormProps) {
+export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDetailsFormProps) {
   const [companyName, setCompanyName] = useState(initial?.companyName ?? '')
   const [acnNumber, setAcnNumber] = useState(initial?.acnNumber ?? '')
   const [abnNumber, setAbnNumber] = useState(initial?.abnNumber ?? '')
@@ -41,7 +42,7 @@ export function CompanyDetailsForm({ initial, onComplete }: CompanyDetailsFormPr
       const res = await fetch('/api/portal/company-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName, acnNumber, abnNumber, trustName, phoneNumber, emailAddress }),
+        body: JSON.stringify({ clientId, companyName, acnNumber, abnNumber, trustName, phoneNumber, emailAddress }),
       })
 
       if (!res.ok) {

@@ -15,7 +15,7 @@ interface Props {
  */
 export function PredictOutcomeButton({ clientId }: Props) {
   return (
-    <Link href={`/admin/clients/${clientId}/outcome-prediction`}>
+    <Link href={`/clients/${clientId}/outcome-prediction`}>
       <Button variant="accent" size="sm">
         <TrendingUp className="h-3.5 w-3.5" />
         Predict SBR Outcome

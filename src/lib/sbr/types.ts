@@ -104,6 +104,30 @@ export interface RejectionLearning {
 }
 
 /**
+ * The SBR dollar amount needed to bring this offer up to the level at which
+ * similar deals were ACCEPTED — the answer to "what do we offer to get it over
+ * the line?" (Gabby/Tom request).
+ *
+ * The target is the highest offer at which a similar (k-NN) case was accepted —
+ * the proven ceiling of acceptance for this profile — converted to a gross
+ * dollar amount on the client's ATO debt.
+ *
+ * mode:
+ *  - 'raise'          → target is above the current offer; lifting the offer
+ *                       toward it matches deals that were accepted.
+ *  - 'already_strong' → the current offer already sits at/above where similar
+ *                       deals were accepted, so the lever is timing/completeness
+ *                       (pay sooner, pay in full) rather than more money.
+ *  - 'no_data'        → no ATO debt figure available to compute a dollar amount.
+ */
+export interface AcceptedAlignedOffer {
+  mode: 'raise' | 'already_strong' | 'no_data'
+  currentAmount: number | null
+  targetAmount: number | null
+  targetPercent: number | null
+}
+
+/**
  * A concrete, actionable lever for moving a borderline / high-risk profile
  * closer to the accepted comparables (Gabby/Tom 26 May 2026: "how do we make
  * it accepted?"). Derived by comparing the client's actionable features against
@@ -143,6 +167,7 @@ export interface SbrPrediction {
   rejectedNeighbours: ComparableCase[]
   paymentStructureRecommendation: PaymentStructureRecommendation
   rejectionLearning: RejectionLearning
+  acceptedAlignedOffer: AcceptedAlignedOffer
   improvementLevers: ImprovementLever[]
   accuracyDisclosure: SbrAccuracyDisclosure
 }

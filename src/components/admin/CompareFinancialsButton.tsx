@@ -19,7 +19,7 @@ export function CompareFinancialsButton({ clientId, documentCount }: Props) {
 
   return (
     <div className="mt-3 ml-6.5 flex justify-end">
-      <Link href={`/admin/clients/${clientId}/financials-comparison`}>
+      <Link href={`/clients/${clientId}/financials-comparison`}>
         <Button variant="primary" size="sm">
           <BarChart3 className="h-3.5 w-3.5" />
           Compare Financials

@@ -188,7 +188,7 @@ export function OutcomePredictionClient({
     <div className="space-y-6">
       <div className="space-y-3">
         <Link
-          href={`/admin/clients/${clientId}`}
+          href={`/clients/${clientId}`}
           className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -252,7 +252,7 @@ export function OutcomePredictionClient({
                 Statement CSV and run the analysis on the client page.
               </p>
               <Link
-                href={`/admin/clients/${clientId}`}
+                href={`/clients/${clientId}`}
                 className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
               >
                 Open client page
@@ -282,8 +282,10 @@ export function OutcomePredictionClient({
       {prediction && (
         <>
           <HeadlineTiles prediction={prediction} />
-          <RejectionLearningPanel prediction={prediction} />
-          <ProfileStrengtheningPanel prediction={prediction} />
+          {/* Temporarily hidden (client request): "What the rejections tell us"
+              and "How to strengthen this profile". Re-enable by uncommenting. */}
+          {/* <RejectionLearningPanel prediction={prediction} /> */}
+          {/* <ProfileStrengtheningPanel prediction={prediction} /> */}
           <FeatureBreakdownPanel prediction={prediction} />
           <ComparableCasesPanel prediction={prediction} />
           {/* "About this prediction" — opened from the header info button. */}
@@ -327,7 +329,7 @@ function PrereqMissingBlock({
             Once the missing step is complete, return here and click <em>Generate Prediction</em>.
           </p>
           <Link
-            href={`/admin/clients/${clientId}`}
+            href={`/clients/${clientId}`}
             className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
           >
             Open client page
@@ -787,6 +789,7 @@ function riskBandExportLabel(band: FullPrediction['riskBand']): string {
   return RISK_BAND_META[band].label
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used by the temporarily-hidden export section
 function offerMoreVerdictLabel(
   verdict: FullPrediction['rejectionLearning']['offerMoreVerdict'],
 ): string {
@@ -803,6 +806,14 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
     prediction.suggestedOfferAmount != null
       ? roundToNearest(prediction.suggestedOfferAmount, 500)
       : null
+
+  // "What do we offer to get it accepted?" — shown for risky profiles.
+  const aligned = prediction.acceptedAlignedOffer
+  const targetRounded =
+    aligned.targetAmount != null ? roundToNearest(aligned.targetAmount, 500) : null
+  const isRisky = prediction.riskBand !== 'likely_accepted'
+  const showRaise = isRisky && aligned.mode === 'raise' && targetRounded != null
+  const showAlreadyStrong = isRisky && aligned.mode === 'already_strong'
 
   const band = RISK_BAND_META[prediction.riskBand]
   const payment = prediction.paymentStructureRecommendation
@@ -823,21 +834,61 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           <p className="mt-2 text-xs text-foreground/40">Recommended offer</p>
         </div>
 
-        {/* 2. Suggested SBR amount */}
-        <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
-          <p className="text-4xl font-bold tabular-nums text-foreground">
-            {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
-          </p>
-          {prediction.creditorAmount != null ? (
-            <p className="mt-1 text-xs text-foreground/60">
-              From predicted outcome on ATO debt of {formatAud(prediction.creditorAmount)}
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-warning">
-              Run financials extraction to enable offer suggestion
-            </p>
+        {/* 2. SBR amount — for risky profiles, shows the offer needed to reach
+            the level at which similar deals were accepted. */}
+        <div
+          className={cn(
+            'rounded-lg border p-4 text-center',
+            showRaise ? 'border-success/40 bg-success/5' : 'border-border bg-surface/50',
           )}
-          <p className="mt-2 text-xs text-foreground/40">Suggested SBR amount</p>
+        >
+          {prediction.creditorAmount == null ? (
+            <>
+              <p className="text-4xl font-bold tabular-nums text-foreground">—</p>
+              <p className="mt-1 text-xs text-warning">
+                Run financials extraction to enable offer suggestion
+              </p>
+              <p className="mt-2 text-xs text-foreground/40">Suggested SBR amount</p>
+            </>
+          ) : showRaise ? (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-success">
+                Amount to make it acceptable
+              </p>
+              <p className="mt-1 text-4xl font-bold tabular-nums text-success">
+                {formatAud(targetRounded)}
+              </p>
+              <p className="mt-1.5 text-xs text-foreground/70">
+                Current SBR amount is{' '}
+                <span className="font-medium text-foreground">{formatAud(suggestedRounded)}</span> —
+                raise it to{' '}
+                <span className="font-medium text-success">{formatAud(targetRounded)}</span> to match
+                similar deals that were accepted.
+              </p>
+              <p className="mt-2 text-xs text-foreground/40">SBR amount to aim for</p>
+            </>
+          ) : showAlreadyStrong ? (
+            <>
+              <p className="text-4xl font-bold tabular-nums text-foreground">
+                {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
+              </p>
+              <p className="mt-1.5 text-xs text-foreground/70">
+                This is the current SBR amount — already at the level similar deals were accepted
+                at. To improve the odds, pay sooner or in full rather than increasing the offer.
+              </p>
+              <p className="mt-2 text-xs text-foreground/40">Current SBR amount</p>
+            </>
+          ) : (
+            <>
+              <p className="text-4xl font-bold tabular-nums text-foreground">
+                {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
+              </p>
+              <p className="mt-1 text-xs text-foreground/60">
+                In line with similar deals that were accepted.
+              </p>
+              <p className="mt-2 text-xs text-foreground/40">Suggested SBR amount</p>
+            </>
+          )}
         </div>
 
         {/* 3. Risk band — traffic-light label only, never a probability */}
@@ -906,12 +957,15 @@ function CalculationsModal({
   const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
   const sum = outcomes.reduce((s, v) => s + v, 0)
   const mean = sum / outcomes.length
-  const mcrFeeRate = 0.1
+  const sbrPractitionerFeeRate = 0.125
   const k = prediction.comparableCases.length
   const rejectedCount = prediction.rejectedNeighbours.length
   const acceptedCount = k - rejectedCount
   const band = RISK_BAND_META[prediction.riskBand]
   const split = prediction.paymentStructureRecommendation.neighbourSplit
+  const aligned = prediction.acceptedAlignedOffer
+  const targetRounded =
+    aligned.targetAmount != null ? roundToNearest(aligned.targetAmount, 500) : null
 
   return (
     <div
@@ -999,22 +1053,24 @@ function CalculationsModal({
           </p>
         </section>
 
-        {/* 2. Suggested SBR amount */}
+        {/* 2. SBR amount — current offer + the amount to make it acceptable */}
         <section className="mb-5">
           <h3 className="mb-1 text-sm font-semibold text-foreground">
-            2. Suggested SBR amount{' '}
-            {suggestedRounded != null ? `(${formatAud(suggestedRounded)})` : '(not available)'}
+            2. SBR amount{' '}
+            {suggestedRounded != null ? `(current ${formatAud(suggestedRounded)})` : '(not available)'}
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the dollar offer that delivers the recommended % on this client&apos;s ATO
-            debt, grossed up for the MCR fee.
+            What it is: the current dollar offer (the recommended % on this client&apos;s ATO debt,
+            grossed up for the SBR practitioner fee) — and the amount needed to match similar deals
+            that were accepted.
           </p>
+          <p className="mb-2 text-xs font-medium text-foreground/80">2a. Current SBR amount</p>
           {prediction.creditorAmount != null && prediction.suggestedOfferAmount != null ? (
             <>
               <p className="mb-2 text-xs text-foreground/65">
                 Formula:{' '}
                 <code className="text-foreground/90">
-                  (predicted_outcome% × ATO_debt) ÷ (1 − MCR_fee_rate)
+                  (predicted_outcome% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
                 </code>
               </p>
               <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
@@ -1028,7 +1084,7 @@ function CalculationsModal({
                     {prediction.predictedOutcomePercent.toFixed(1)}%
                   </span>
                 </div>
-                <div>MCR fee rate = 10% (so creditors receive 90% of the offer)</div>
+                <div>SBR practitioner fee = 12.5% (so creditors receive 87.5% of the offer)</div>
                 <div className="mt-2 border-t border-border/60 pt-2">
                   Creditor receipt ={' '}
                   {(prediction.predictedOutcomePercent / 100).toFixed(3)} ×{' '}
@@ -1044,7 +1100,7 @@ function CalculationsModal({
                   {formatAud(
                     (prediction.predictedOutcomePercent / 100) * prediction.creditorAmount,
                   )}{' '}
-                  ÷ {(1 - mcrFeeRate).toFixed(2)} ={' '}
+                  ÷ {(1 - sbrPractitionerFeeRate).toFixed(3)} ={' '}
                   <span className="text-foreground font-semibold">
                     {formatAud(prediction.suggestedOfferAmount)}
                   </span>
@@ -1057,9 +1113,71 @@ function CalculationsModal({
                 </div>
               </div>
               <p className="mt-2 text-xs text-foreground/45">
-                The MCR fee comes off the gross offer before creditors are paid, so the
-                offer is back-calculated by dividing the creditor receipt by 0.90.
+                The SBR practitioner fee comes off the gross offer before creditors are paid, so the
+                offer is back-calculated by dividing the creditor receipt by 0.875.
               </p>
+
+              {/* 2b. Amount to make it acceptable */}
+              {aligned.targetPercent != null && aligned.targetAmount != null && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-medium text-foreground/80">
+                    2b. Amount to make it acceptable{' '}
+                    {targetRounded != null ? `(${formatAud(targetRounded)})` : ''}
+                  </p>
+                  <p className="mb-2 text-xs text-foreground/65">
+                    Formula:{' '}
+                    <code className="text-foreground/90">
+                      (highest_accepted_offer% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
+                    </code>
+                  </p>
+                  <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
+                    <div>
+                      Highest offer a similar case was accepted at ={' '}
+                      <span className="text-foreground">{aligned.targetPercent.toFixed(1)}%</span>
+                    </div>
+                    <div>
+                      Creditor receipt = {(aligned.targetPercent / 100).toFixed(3)} ×{' '}
+                      {formatAud(prediction.creditorAmount)} ={' '}
+                      <span className="text-foreground">
+                        {formatAud((aligned.targetPercent / 100) * prediction.creditorAmount)}
+                      </span>
+                    </div>
+                    <div>
+                      Offer ={' '}
+                      {formatAud((aligned.targetPercent / 100) * prediction.creditorAmount)} ÷{' '}
+                      {(1 - sbrPractitionerFeeRate).toFixed(3)} ={' '}
+                      <span className="text-foreground font-semibold">
+                        {formatAud(aligned.targetAmount)}
+                      </span>{' '}
+                      <span className="text-foreground/40">
+                        (rounded to {targetRounded != null ? formatAud(targetRounded) : '—'})
+                      </span>
+                    </div>
+                    <div className="mt-2 border-t border-border/60 pt-2">
+                      {aligned.mode === 'raise' ? (
+                        <span>
+                          Current offer {formatAud(suggestedRounded)} is below this — raising it to{' '}
+                          <span className="text-success font-medium">
+                            {formatAud(targetRounded)}
+                          </span>{' '}
+                          matches the deals that were accepted.
+                        </span>
+                      ) : (
+                        <span>
+                          The current offer {formatAud(suggestedRounded)} already meets or exceeds
+                          this level, so raising it further is not the lever — improve the odds by
+                          paying sooner or in full instead.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-foreground/45">
+                    The target is the highest cents-in-the-dollar at which a similar past case was
+                    accepted — i.e. the proven ceiling of acceptance for this profile. It is an
+                    association from comparable deals, not a guarantee of approval.
+                  </p>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-xs text-foreground/55">
@@ -1203,6 +1321,7 @@ function OfferRangeCard({
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- temporarily hidden, kept for re-enable
 function RejectionLearningPanel({ prediction }: { prediction: FullPrediction }) {
   const learning = prediction.rejectionLearning
   const meta = OFFER_MORE_META[learning.offerMoreVerdict]
@@ -1269,6 +1388,7 @@ interface UiLever {
   impact?: 'high' | 'medium'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- temporarily hidden, kept for re-enable
 function ProfileStrengtheningPanel({ prediction }: { prediction: FullPrediction }) {
   const learning = prediction.rejectionLearning
   const payment = prediction.paymentStructureRecommendation
@@ -1678,33 +1798,35 @@ function ExportButton({
     )
     push('')
 
-    push('WHAT THE REJECTIONS TELL US')
-    push('Higher offer verdict', offerMoreVerdictLabel(prediction.rejectionLearning.offerMoreVerdict))
-    push('Insight', prediction.rejectionLearning.insight)
-    {
-      const a = prediction.rejectionLearning.acceptedOfferRange
-      const r = prediction.rejectionLearning.rejectedOfferRange
-      push(
-        'Accepted comparables offered',
-        a ? `${a.min}%–${a.max}% (median ${a.median}%, n=${a.count})` : 'None among closest',
-      )
-      push(
-        'Rejected comparables offered',
-        r ? `${r.min}%–${r.max}% (median ${r.median}%, n=${r.count})` : 'None among closest',
-      )
-    }
-    push('')
+    // Temporarily hidden (client request): "What the rejections tell us" and
+    // "How to strengthen this profile" sections. Re-enable by uncommenting.
+    // push('WHAT THE REJECTIONS TELL US')
+    // push('Higher offer verdict', offerMoreVerdictLabel(prediction.rejectionLearning.offerMoreVerdict))
+    // push('Insight', prediction.rejectionLearning.insight)
+    // {
+    //   const a = prediction.rejectionLearning.acceptedOfferRange
+    //   const r = prediction.rejectionLearning.rejectedOfferRange
+    //   push(
+    //     'Accepted comparables offered',
+    //     a ? `${a.min}%–${a.max}% (median ${a.median}%, n=${a.count})` : 'None among closest',
+    //   )
+    //   push(
+    //     'Rejected comparables offered',
+    //     r ? `${r.min}%–${r.max}% (median ${r.median}%, n=${r.count})` : 'None among closest',
+    //   )
+    // }
+    // push('')
 
-    push('HOW TO STRENGTHEN THIS PROFILE')
-    push('Note', 'Associations from comparable accepted cases — not guarantees of approval.')
-    if (prediction.improvementLevers.length === 0) {
-      push('', 'Profile already aligns closely with accepted comparables — no obvious gaps.')
-    } else {
-      prediction.improvementLevers.forEach((lever, i) => {
-        push(`${i + 1}. ${lever.factor}`, lever.suggestion, lever.basis)
-      })
-    }
-    push('')
+    // push('HOW TO STRENGTHEN THIS PROFILE')
+    // push('Note', 'Associations from comparable accepted cases — not guarantees of approval.')
+    // if (prediction.improvementLevers.length === 0) {
+    //   push('', 'Profile already aligns closely with accepted comparables — no obvious gaps.')
+    // } else {
+    //   prediction.improvementLevers.forEach((lever, i) => {
+    //     push(`${i + 1}. ${lever.factor}`, lever.suggestion, lever.basis)
+    //   })
+    // }
+    // push('')
 
     push('INPUTS')
     push('DPN', prediction.inputFeatures.dpn ? 'Yes' : 'No')
