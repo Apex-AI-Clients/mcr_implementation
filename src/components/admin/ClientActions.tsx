@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mail, Trash2, AlertTriangle, X } from 'lucide-react'
+import { Trash2, AlertTriangle, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
@@ -16,30 +16,8 @@ export function ClientActions({ clientId, clientName, clientEmail }: ClientActio
   const router = useRouter()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmName, setConfirmName] = useState('')
-  const [reinviteState, setReinviteState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  async function handleReinvite() {
-    setError(null)
-    setReinviteState('sending')
-    try {
-      const res = await fetch(`/api/admin/clients/${clientId}/reinvite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to resend invite')
-      }
-      setReinviteState('sent')
-      setTimeout(() => setReinviteState('idle'), 4000)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-      setReinviteState('idle')
-    }
-  }
 
   async function handleDelete() {
     if (confirmName.trim() !== clientName.trim()) {
@@ -65,16 +43,6 @@ export function ClientActions({ clientId, clientName, clientEmail }: ClientActio
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleReinvite}
-          loading={reinviteState === 'sending'}
-        >
-          <Mail className="h-3.5 w-3.5" />
-          {reinviteState === 'sent' ? 'Invite Resent!' : 'Reinvite'}
-        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -107,8 +75,8 @@ export function ClientActions({ clientId, clientName, clientEmail }: ClientActio
                   <h2 className="text-base font-semibold text-foreground">Delete client?</h2>
                   <p className="mt-1 text-xs text-foreground/60 leading-relaxed">
                     This permanently deletes <span className="text-foreground">{clientName}</span>{' '}
-                    ({clientEmail}), all uploaded files, accountant and company details, and the
-                    auth account. The email can be re-invited afterwards.
+                    ({clientEmail}), along with all uploaded files and their accountant and company
+                    details. This cannot be undone.
                   </p>
                 </div>
               </div>

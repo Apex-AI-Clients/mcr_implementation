@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { getPortalClient } from '@/lib/auth/portal'
+import { requireStaffUser } from '@/lib/auth/staff'
 
-export async function GET() {
-  const ctx = await getPortalClient()
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export async function GET(req: NextRequest) {
+  const user = await requireStaffUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const clientId = req.nextUrl.searchParams.get('clientId')
+  if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
 
   const supabase = getSupabaseServerClient()
   const { data } = await supabase
     .from('company_details')
     .select('*')
-    .eq('client_id', ctx.clientId)
+    .eq('client_id', clientId)
     .maybeSingle()
 
   if (!data) return NextResponse.json(null)
@@ -28,18 +31,19 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getPortalClient()
-  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await requireStaffUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { companyName, acnNumber, abnNumber, trustName, phoneNumber, emailAddress } = body
+  const { clientId, companyName, acnNumber, abnNumber, trustName, phoneNumber, emailAddress } = body
+  if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
 
   const supabase = getSupabaseServerClient()
 
   const { data: existing } = await supabase
     .from('company_details')
     .select('id')
-    .eq('client_id', ctx.clientId)
+    .eq('client_id', clientId)
     .maybeSingle()
 
   if (existing) {
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
         email_address: emailAddress ?? null,
         updated_at: new Date().toISOString(),
       })
-      .eq('client_id', ctx.clientId)
+      .eq('client_id', clientId)
 
     if (error) {
       console.error('[POST /api/portal/company-details] update', error)
@@ -62,7 +66,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     const { error } = await supabase.from('company_details').insert({
-      client_id: ctx.clientId,
+      client_id: clientId,
       company_name: companyName ?? null,
       acn_number: acnNumber ?? null,
       abn_number: abnNumber ?? null,

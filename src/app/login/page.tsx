@@ -31,7 +31,7 @@ function LoginInner() {
     setLoading(true)
 
     const supabase = getSupabaseBrowserClient()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -42,9 +42,8 @@ function LoginInner() {
       return
     }
 
-    // Route based on role
-    const role = data.user?.app_metadata?.role as string | undefined
-    const destination = redirect ?? (role === 'client' ? '/portal' : '/admin')
+    // Single-role app: everyone lands in the admin workspace.
+    const destination = redirect ?? '/admin'
 
     router.push(destination)
     router.refresh()
@@ -117,7 +116,7 @@ function LoginInner() {
           </form>
 
           <p className="mt-6 text-center text-xs text-muted">
-            Haven&apos;t received an invite? Contact your MCR Partners advisor.
+            Trouble signing in? Contact your MCR Partners administrator.
           </p>
         </div>
       </div>

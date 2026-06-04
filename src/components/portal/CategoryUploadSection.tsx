@@ -12,6 +12,7 @@ import { formatBytes } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 
 interface CategoryUploadSectionProps {
+  clientId: string
   category: DocCategory
   documents: DocumentRecord[]
   onUploadComplete: () => void
@@ -20,6 +21,7 @@ interface CategoryUploadSectionProps {
 }
 
 export function CategoryUploadSection({
+  clientId,
   category,
   documents,
   onUploadComplete,
@@ -49,6 +51,7 @@ export function CategoryUploadSection({
           const formData = new FormData()
           formData.append('file', file)
           formData.append('doc_category', category)
+          formData.append('client_id', clientId)
 
           const res = await fetch('/api/portal/upload', {
             method: 'POST',
@@ -71,7 +74,7 @@ export function CategoryUploadSection({
       setUploading(false)
       onUploadComplete()
     },
-    [category, onUploadComplete],
+    [category, clientId, onUploadComplete],
   )
 
   async function handleDelete(documentId: string) {
@@ -81,7 +84,7 @@ export function CategoryUploadSection({
       const res = await fetch('/api/portal/delete-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ documentId, clientId }),
       })
       if (!res.ok) {
         const data = await res.json()

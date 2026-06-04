@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import Link from 'next/link'
-import { ArrowLeft, Building, Landmark } from 'lucide-react'
+import { ArrowLeft, Building, Landmark, Pencil } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,7 +105,16 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <ClientActions clientId={client.id} clientName={client.name} clientEmail={client.email} />
-        <PredictOutcomeButton clientId={client.id} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/clients/${client.id}/intake`}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface/70"
+          >
+            <Pencil className="h-4 w-4" />
+            Continue intake
+          </Link>
+          <PredictOutcomeButton clientId={client.id} />
+        </div>
       </div>
 
       <Card className="mb-4">
@@ -114,7 +123,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="mb-6 grid grid-cols-2 gap-3 text-xs text-foreground/50">
         <div>
-          <p className="text-foreground/30 mb-0.5">Invite Sent</p>
+          <p className="text-foreground/30 mb-0.5">Created</p>
           <p>{formatDate(client.created_at)}</p>
         </div>
         <div>

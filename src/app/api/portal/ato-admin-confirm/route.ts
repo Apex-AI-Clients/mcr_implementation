@@ -1,11 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { getPortalClient } from '@/lib/auth/portal'
+import { requireStaffUser } from '@/lib/auth/staff'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    const ctx = await getPortalClient()
-    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const user = await requireStaffUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { clientId } = await req.json()
+    if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
 
     const supabase = getSupabaseServerClient()
     const { error } = await supabase
@@ -14,7 +17,7 @@ export async function POST() {
         ato_admin_confirmed: true,
         ato_admin_confirmed_at: new Date().toISOString(),
       })
-      .eq('id', ctx.clientId)
+      .eq('id', clientId)
 
     if (error) throw error
     return NextResponse.json({ ok: true })
