@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Activity, ChevronDown, ChevronUp, Download, Info, X } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { DpnRiskPanel } from '@/components/admin/lodgement/DpnRiskPanel'
@@ -492,7 +493,11 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
           <CardTitle>Lodgement Compliance Analysis With AI</CardTitle>
         </div>
         {analysis && (
-          <div className="flex items-center gap-2">
+          <div className="no-print flex items-center gap-2">
+            <ExportPdfButton
+              targetId="lodgement-export-root"
+              fileName={`${analysis.sourceFilename.replace(/\.csv$/i, '')}_lodgement_analysis`}
+            />
             <Button variant="ghost" size="sm" onClick={handleExport}>
               <Download className="h-3.5 w-3.5" />
               Export

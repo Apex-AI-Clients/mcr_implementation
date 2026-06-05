@@ -11,6 +11,7 @@ import { IncomeStatementCompareTable } from '@/components/admin/financials/Incom
 import { BalanceSheetCompareTable } from '@/components/admin/financials/BalanceSheetCompareTable'
 import { RatiosPanel } from '@/components/admin/financials/RatiosPanel'
 import { ExportButton } from '@/components/admin/financials/ExportButton'
+import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -117,12 +118,12 @@ export function ComparisonClient({
     : null
 
   return (
-    <div className="space-y-6">
+    <div id="financials-export-root" className="space-y-6">
       {/* Page header */}
       <div className="space-y-3">
         <Link
           href={`/clients/${clientId}`}
-          className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
+          className="no-print inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to client
@@ -144,7 +145,11 @@ export function ComparisonClient({
           </div>
 
           {hasComparison && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="no-print flex flex-wrap items-center gap-2">
+              <ExportPdfButton
+                targetId="financials-export-root"
+                fileName={`${clientName}_financials_comparison`}
+              />
               <ExportButton
                 comparison={comparison}
                 aiSummary={aiSummary}
@@ -196,7 +201,13 @@ export function ComparisonClient({
                   The remaining files have not been parsed yet. Re-run extraction to include them.
                 </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={runBoth} loading={extracting || comparing}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={runBoth}
+                loading={extracting || comparing}
+                className="no-print"
+              >
                 Extract remaining
               </Button>
             </div>
