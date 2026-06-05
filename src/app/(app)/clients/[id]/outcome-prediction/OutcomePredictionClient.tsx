@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { cn, formatDateRelative } from '@/lib/utils'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
 
@@ -185,11 +186,11 @@ export function OutcomePredictionClient({
   }, [])
 
   return (
-    <div className="space-y-6">
+    <div id="print-root" className="space-y-6">
       <div className="space-y-3">
         <Link
           href={`/clients/${clientId}`}
-          className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
+          className="no-print inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to client
@@ -212,7 +213,7 @@ export function OutcomePredictionClient({
           </div>
 
           {prediction && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="no-print flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setMethodologyOpen(true)}
@@ -222,6 +223,7 @@ export function OutcomePredictionClient({
               >
                 <Info className="h-4 w-4" />
               </button>
+              <ExportPdfButton targetId="print-root" fileName={`${clientName}_sbr_outcome_prediction`} />
               <ExportButton prediction={prediction} clientName={clientName} />
               <Button variant="ghost" size="sm" onClick={runPrediction} loading={running}>
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -263,21 +265,24 @@ export function OutcomePredictionClient({
         </Card>
       )}
 
-      <InputPanel
-        auto={auto}
-        dpn={dpn}
-        setDpn={setDpn}
-        paymentPlanType={paymentPlanType}
-        setPaymentPlanType={setPaymentPlanType}
-        directorLoanAtAppointment={directorLoanAtAppointment}
-        setDirectorLoanAtAppointment={setDirectorLoanAtAppointment}
-        collapsed={inputsCollapsed}
-        onToggleCollapsed={() => setInputsCollapsed((v) => !v)}
-        onGenerate={runPrediction}
-        running={running}
-        canRun={canRun}
-        hasPrediction={prediction !== null}
-      />
+      {/* Inputs / auto-detected panel is screen-only — excluded from the PDF. */}
+      <div className="print:hidden">
+        <InputPanel
+          auto={auto}
+          dpn={dpn}
+          setDpn={setDpn}
+          paymentPlanType={paymentPlanType}
+          setPaymentPlanType={setPaymentPlanType}
+          directorLoanAtAppointment={directorLoanAtAppointment}
+          setDirectorLoanAtAppointment={setDirectorLoanAtAppointment}
+          collapsed={inputsCollapsed}
+          onToggleCollapsed={() => setInputsCollapsed((v) => !v)}
+          onGenerate={runPrediction}
+          running={running}
+          canRun={canRun}
+          hasPrediction={prediction !== null}
+        />
+      </div>
 
       {prediction && (
         <>
@@ -287,6 +292,21 @@ export function OutcomePredictionClient({
           {/* <RejectionLearningPanel prediction={prediction} /> */}
           {/* <ProfileStrengtheningPanel prediction={prediction} /> */}
           <FeatureBreakdownPanel prediction={prediction} />
+          {/* Print-only: the calculations breakdown that lives behind the
+              "Show calculations" modal on screen, rendered inline for the PDF
+              between "How we got here" and the nearest cases. */}
+          <div className="hidden print:block">
+            <Card>
+              <CalculationsContent
+                prediction={prediction}
+                suggestedRounded={
+                  prediction.suggestedOfferAmount != null
+                    ? roundToNearest(prediction.suggestedOfferAmount, 500)
+                    : null
+                }
+              />
+            </Card>
+          </div>
           <ComparableCasesPanel prediction={prediction} />
           {/* "About this prediction" — opened from the header info button. */}
           {methodologyOpen && (
@@ -390,7 +410,7 @@ function InputPanel(props: InputPanelProps) {
           <button
             type="button"
             onClick={onToggleCollapsed}
-            className="text-xs text-accent hover:text-accent/80"
+            className="no-print text-xs text-accent hover:text-accent/80"
           >
             Edit inputs
           </button>
@@ -460,7 +480,7 @@ function InputPanel(props: InputPanelProps) {
             <button
               type="button"
               onClick={() => setHelpOpen(true)}
-              className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
+              className="no-print inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
               aria-label="What do these inputs mean?"
             >
               <HelpCircle className="h-3.5 w-3.5" />
@@ -518,7 +538,7 @@ function InputPanel(props: InputPanelProps) {
         </div>
       </div>
 
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="no-print mt-5 flex justify-end gap-2">
         {hasPrediction && (
           <Button variant="ghost" size="md" onClick={onToggleCollapsed}>
             Cancel
@@ -927,7 +947,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
         <button
           type="button"
           onClick={() => setCalcOpen(true)}
-          className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80"
+          className="no-print inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80"
         >
           <HelpCircle className="h-3.5 w-3.5" />
           Show calculations
@@ -954,19 +974,6 @@ function CalculationsModal({
   suggestedRounded: number | null
   onClose: () => void
 }) {
-  const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
-  const sum = outcomes.reduce((s, v) => s + v, 0)
-  const mean = sum / outcomes.length
-  const sbrPractitionerFeeRate = 0.125
-  const k = prediction.comparableCases.length
-  const rejectedCount = prediction.rejectedNeighbours.length
-  const acceptedCount = k - rejectedCount
-  const band = RISK_BAND_META[prediction.riskBand]
-  const split = prediction.paymentStructureRecommendation.neighbourSplit
-  const aligned = prediction.acceptedAlignedOffer
-  const targetRounded =
-    aligned.targetAmount != null ? roundToNearest(aligned.targetAmount, 500) : null
-
   return (
     <div
       role="dialog"
@@ -987,7 +994,41 @@ function CalculationsModal({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="mb-5 pr-8">
+        <CalculationsContent prediction={prediction} suggestedRounded={suggestedRounded} />
+
+        <div className="mt-6 flex justify-end">
+          <Button variant="primary" size="sm" onClick={onClose}>
+            Got it
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CalculationsContent({
+  prediction,
+  suggestedRounded,
+}: {
+  prediction: FullPrediction
+  suggestedRounded: number | null
+}) {
+  const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
+  const sum = outcomes.reduce((s, v) => s + v, 0)
+  const mean = sum / outcomes.length
+  const sbrPractitionerFeeRate = 0.125
+  const k = prediction.comparableCases.length
+  const rejectedCount = prediction.rejectedNeighbours.length
+  const acceptedCount = k - rejectedCount
+  const band = RISK_BAND_META[prediction.riskBand]
+  const split = prediction.paymentStructureRecommendation.neighbourSplit
+  const aligned = prediction.acceptedAlignedOffer
+  const targetRounded =
+    aligned.targetAmount != null ? roundToNearest(aligned.targetAmount, 500) : null
+
+  return (
+    <>
+      <div className="mb-5 pr-8">
           <div className="flex items-center gap-2">
             <HelpCircle className="h-4 w-4 text-accent" />
             <h2 className="text-base font-semibold text-foreground">
@@ -1261,14 +1302,7 @@ function CalculationsModal({
             {paymentStructureMeaning(prediction.paymentStructureRecommendation.recommended)}
           </div>
         </section>
-
-        <div className="mt-6 flex justify-end">
-          <Button variant="primary" size="sm" onClick={onClose}>
-            Got it
-          </Button>
-        </div>
-      </div>
-    </div>
+    </>
   )
 }
 

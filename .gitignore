@@ -17,6 +17,10 @@
 /.next/
 /out/
 /sample pdf
+/sample_excel
+/gabi file
+/sbr_historical_cases (1).csv
+/SBR-Copy.db
 
 # production
 /build

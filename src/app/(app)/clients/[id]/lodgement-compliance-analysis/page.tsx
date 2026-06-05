@@ -83,10 +83,10 @@ export default async function LodgementAnalysisPage({ params }: Props) {
   const statusBadge = STATUS_LABELS[client.status] ?? { label: client.status, variant: 'muted' }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div id="lodgement-export-root" className="p-6 max-w-4xl mx-auto">
       <Link
         href={`/clients/${id}`}
-        className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
+        className="no-print mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to {client.name}
