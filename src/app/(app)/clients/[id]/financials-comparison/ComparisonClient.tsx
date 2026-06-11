@@ -1,10 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  ArrowLeft,
+  RefreshCw,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  CheckCircle2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { ScorecardTiles } from '@/components/admin/financials/ScorecardTiles'
 import { AiNarrativeCallout } from '@/components/admin/financials/AiNarrativeCallout'
 import { IncomeStatementCompareTable } from '@/components/admin/financials/IncomeStatementCompareTable'
@@ -27,6 +36,8 @@ interface Props {
   initialAiSummary: string | null
   initialGeneratedAt: string | null
   initialExtraction: ExtractionState
+  /** An in-flight job to resume polling (set when the page loads mid-run). */
+  initialJobId: string | null
 }
 
 interface ExtractError {
@@ -35,6 +46,26 @@ interface ExtractError {
   error: string
 }
 
+type JobMode = 'full' | 'compare'
+type JobPhase = 'idle' | 'pending' | 'processing' | 'done' | 'failed'
+
+interface ComparisonPayload {
+  comparison: FinancialsComparison
+  aiSummary: string | null
+  generatedAt: string
+  statementCount: number
+}
+
+interface JobStatusResponse {
+  status: Exclude<JobPhase, 'idle'>
+  mode: JobMode
+  error: string | null
+  result: ComparisonPayload | null
+  extractErrors: ExtractError[]
+}
+
+const POLL_INTERVAL_MS = 4000
+
 export function ComparisonClient({
   clientId,
   clientName,
@@ -42,6 +73,7 @@ export function ComparisonClient({
   initialAiSummary,
   initialGeneratedAt,
   initialExtraction,
+  initialJobId,
 }: Props) {
   const router = useRouter()
   const [comparison, setComparison] = useState<FinancialsComparison | null>(initialComparison)
@@ -49,69 +81,129 @@ export function ComparisonClient({
   const [generatedAt, setGeneratedAt] = useState<string | null>(initialGeneratedAt)
   const [extraction, setExtraction] = useState<ExtractionState>(initialExtraction)
   const [errors, setErrors] = useState<ExtractError[]>([])
-
-  const [extracting, setExtracting] = useState(false)
-  const [comparing, setComparing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function runExtraction() {
-    setExtracting(true)
-    setError(null)
-    setErrors([])
-    try {
-      const res = await fetch(`/api/admin/clients/${clientId}/extract-financials`, {
-        method: 'POST',
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Extraction failed.')
-        return false
-      }
-      if (Array.isArray(data.errors) && data.errors.length > 0) {
-        setErrors(data.errors as ExtractError[])
-      }
-      router.refresh() // pulls in fresh extraction state
-      return true
-    } catch {
-      setError('Network error during extraction.')
-      return false
-    } finally {
-      setExtracting(false)
+  const [phase, setPhase] = useState<JobPhase>(initialJobId ? 'processing' : 'idle')
+
+  // Track the active poll loop so we can cancel it on unmount / new job.
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeJobId = useRef<string | null>(initialJobId)
+  const modeRef = useRef<JobMode>('full')
+
+  const clearPoll = useCallback(() => {
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current)
+      pollTimer.current = null
     }
-  }
+  }, [])
 
-  async function runComparison() {
-    setComparing(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/admin/clients/${clientId}/financials-comparison`, {
-        method: 'POST',
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Comparison failed.')
-        return false
+  const applyDone = useCallback(
+    (data: JobStatusResponse) => {
+      if (data.result) {
+        setComparison(data.result.comparison)
+        setAiSummary(data.result.aiSummary)
+        setGeneratedAt(data.result.generatedAt)
+        setExtraction((prev) => ({
+          ...prev,
+          extractedCount: data.result?.statementCount ?? prev.extractedCount,
+          // A full run extracts every uploaded PDF.
+          hasUnextracted: data.mode === 'full' ? false : prev.hasUnextracted,
+        }))
       }
-      setComparison(data.comparison as FinancialsComparison)
-      setAiSummary(data.aiSummary ?? null)
-      setGeneratedAt(data.generatedAt ?? null)
-      setExtraction((prev) => ({ ...prev, extractedCount: data.statementCount }))
-      return true
-    } catch {
-      setError('Network error during comparison.')
-      return false
-    } finally {
-      setComparing(false)
+      setErrors(data.extractErrors ?? [])
+      setPhase('done')
+      router.refresh() // refresh server-rendered extraction counts
+    },
+    [router],
+  )
+
+  // Poll the status endpoint until the job resolves. Uses recursive setTimeout
+  // (not setInterval) so a slow response never overlaps the next poll.
+  const poll = useCallback(
+    async (jobId: string) => {
+      try {
+        const res = await fetch(
+          `/api/admin/clients/${clientId}/financials-comparison/status/${jobId}`,
+          { cache: 'no-store' },
+        )
+        if (activeJobId.current !== jobId) return // a newer job superseded this one
+        const data = (await res.json()) as JobStatusResponse & { error?: string }
+        if (!res.ok) {
+          setError(data.error ?? 'Failed to read job status.')
+          setPhase('failed')
+          return
+        }
+
+        if (data.status === 'done') {
+          applyDone(data)
+          return
+        }
+        if (data.status === 'failed') {
+          setError(data.error ?? 'The comparison failed. Please try again.')
+          setErrors(data.extractErrors ?? [])
+          setPhase('failed')
+          return
+        }
+
+        // pending | processing — keep polling.
+        setPhase(data.status)
+        pollTimer.current = setTimeout(() => poll(jobId), POLL_INTERVAL_MS)
+      } catch {
+        if (activeJobId.current !== jobId) return
+        setError('Network error while checking job status.')
+        setPhase('failed')
+      }
+    },
+    [clientId, applyDone],
+  )
+
+  const startJob = useCallback(
+    async (mode: JobMode) => {
+      clearPoll()
+      setError(null)
+      setErrors([])
+      setPhase('pending')
+      modeRef.current = mode
+      try {
+        const res = await fetch(
+          `/api/admin/clients/${clientId}/financials-comparison/start`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+          },
+        )
+        const data = (await res.json()) as { jobId?: string; error?: string }
+        if (!res.ok || !data.jobId) {
+          setError(data.error ?? 'Failed to start the comparison.')
+          setPhase('failed')
+          return
+        }
+        activeJobId.current = data.jobId
+        void poll(data.jobId)
+      } catch {
+        setError('Network error while starting the comparison.')
+        setPhase('failed')
+      }
+    },
+    [clientId, clearPoll, poll],
+  )
+
+  // Resume polling an in-flight job handed down from the server, and tidy up
+  // the timer on unmount.
+  useEffect(() => {
+    if (initialJobId) {
+      activeJobId.current = initialJobId
+      void poll(initialJobId)
     }
-  }
+    return clearPoll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  async function runBoth() {
-    const ok = await runExtraction()
-    if (!ok) return
-    // Wait for the router-refresh cycle implicitly; trigger comparison.
-    await runComparison()
-  }
+  const runFull = useCallback(() => startJob('full'), [startJob])
+  const runCompareOnly = useCallback(() => startJob('compare'), [startJob])
 
+  const running = phase === 'pending' || phase === 'processing'
   const hasComparison = comparison !== null
   const periodRangeLabel = comparison
     ? `${formatIso(comparison.periodRange.start)} to ${formatIso(comparison.periodRange.end)}`
@@ -131,9 +223,29 @@ export function ComparisonClient({
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-foreground">
-              Financial Statements — Compare Across Years
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-foreground">
+                Financial Statements — Compare Across Years
+              </h1>
+              {/* Status badge — screen-only (no-print keeps it out of the PDF;
+                  the CSV is built from data, so it never appears there). */}
+              {phase === 'pending' || phase === 'processing' ? (
+                <Badge variant="accent" className="no-print">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Processing
+                </Badge>
+              ) : phase === 'done' ? (
+                <Badge variant="success" className="no-print">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Completed
+                </Badge>
+              ) : phase === 'failed' ? (
+                <Badge variant="destructive" className="no-print">
+                  <AlertTriangle className="h-3 w-3" />
+                  Failed
+                </Badge>
+              ) : null}
+            </div>
             <p className="text-sm text-foreground/60 mt-0.5">{clientName}</p>
             {comparison && (
               <p className="text-xs text-foreground/40 mt-1">
@@ -155,17 +267,41 @@ export function ComparisonClient({
                 aiSummary={aiSummary}
                 clientName={clientName}
               />
-              <Button variant="ghost" size="sm" onClick={runBoth} loading={extracting || comparing}>
+              <Button variant="ghost" size="sm" onClick={runFull} loading={running} disabled={running}>
                 <RefreshCw className="h-3.5 w-3.5" />
                 Re-extract & re-run
               </Button>
-              <Button variant="primary" size="sm" onClick={runComparison} loading={comparing}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={runCompareOnly}
+                loading={running}
+                disabled={running}
+              >
                 Re-run comparison
               </Button>
             </div>
           )}
         </div>
       </div>
+
+      {/* In-progress status — the job runs in the background; we poll for it. */}
+      {running && (
+        <div className="no-print flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {modeRef.current === 'compare'
+                ? 'Rebuilding the comparison…'
+                : 'Extracting financials and building the comparison…'}
+            </p>
+            <p className="text-xs text-foreground/55 mt-0.5">
+              This runs in the background and can take a few minutes. You can leave this page
+              open — it updates automatically when finished.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Errors */}
       {error && (
@@ -178,11 +314,7 @@ export function ComparisonClient({
 
       {/* Empty / partial state — no comparison yet */}
       {!hasComparison && (
-        <EmptyState
-          extraction={extraction}
-          onRun={runBoth}
-          running={extracting || comparing}
-        />
+        <EmptyState extraction={extraction} onRun={runFull} running={running} />
       )}
 
       {/* Full comparison content */}
@@ -204,8 +336,9 @@ export function ComparisonClient({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={runBoth}
-                loading={extracting || comparing}
+                onClick={runFull}
+                loading={running}
+                disabled={running}
                 className="no-print"
               >
                 Extract remaining
@@ -264,7 +397,8 @@ function EmptyState({
         {extraction.documentCount} financial statement{extraction.documentCount === 1 ? '' : 's'} uploaded
       </p>
       <p className="text-xs text-foreground/55 mt-1.5 mb-4">
-        Click below to extract the figures and run the comparison — this takes about a minute.
+        Click below to extract the figures and run the comparison — this runs in the background and
+        can take a few minutes.
       </p>
       <Button variant="primary" size="md" onClick={onRun} loading={running}>
         Extract &amp; Compare

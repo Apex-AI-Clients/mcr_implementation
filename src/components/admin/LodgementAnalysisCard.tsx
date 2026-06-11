@@ -468,6 +468,15 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
     }
   }
 
+  // Auto-run the analysis on first load when a CSV is present but no saved
+  // analysis exists yet — avoids a redundant button click for the user.
+  useEffect(() => {
+    if (hasActivityStatementCsv && !initialAnalysis) {
+      runAnalysis()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function handleExport() {
     if (!analysis) return
     const csv = buildExportCsv(analysis)
@@ -529,11 +538,15 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
       {hasActivityStatementCsv && !analysis && (
         <div className="space-y-3">
           <p className="text-xs text-foreground/50">
-            Activity Statement CSV detected. Run the analysis to compute late lodgements.
+            {loading
+              ? 'Analysing the Activity Statement CSV to compute late lodgements…'
+              : error
+                ? 'Analysis could not be completed. Try again below.'
+                : 'Activity Statement CSV detected. Computing late lodgements…'}
           </p>
           <Button variant="primary" size="sm" onClick={runAnalysis} loading={loading}>
             <Activity className="h-3.5 w-3.5" />
-            Analyse Lodgements with AI
+            {error ? 'Retry analysis' : 'Analyse Lodgements with AI'}
           </Button>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>

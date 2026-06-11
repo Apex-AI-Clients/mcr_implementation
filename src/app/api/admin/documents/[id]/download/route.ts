@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    const signedUrl = await getSignedUrl(supabase, doc.file_path)
+    const signedUrl = await getSignedUrl(supabase, doc.file_path, doc.original_filename)
 
     return NextResponse.json({ url: signedUrl, filename: doc.original_filename })
   } catch (err) {
