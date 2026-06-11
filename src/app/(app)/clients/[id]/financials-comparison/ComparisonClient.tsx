@@ -288,8 +288,10 @@ export function ComparisonClient({
         </div>
       </div>
 
-      {/* In-progress status — the job runs in the background; we poll for it. */}
-      {running && (
+      {/* In-progress status — shown only when a comparison already exists (a
+          re-run). The first run with no comparison yet shows its loading state
+          inside EmptyState instead, to avoid two stacked loading panels. */}
+      {running && hasComparison && (
         <div className="no-print flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
           <div>
@@ -317,7 +319,12 @@ export function ComparisonClient({
 
       {/* Empty / partial state — no comparison yet */}
       {!hasComparison && (
-        <EmptyState extraction={extraction} onRun={runFull} running={running} />
+        <EmptyState
+          extraction={extraction}
+          onRun={runFull}
+          running={running}
+          failed={phase === 'failed'}
+        />
       )}
 
       {/* Full comparison content */}
@@ -366,10 +373,12 @@ function EmptyState({
   extraction,
   onRun,
   running,
+  failed,
 }: {
   extraction: ExtractionState
   onRun: () => void
   running: boolean
+  failed: boolean
 }) {
   if (extraction.documentCount === 0) {
     return (
@@ -394,18 +403,31 @@ function EmptyState({
     )
   }
 
+  // With ≥2 statements the comparison auto-starts on load, so there's no manual
+  // "Extract & Compare" prompt — show a loading state instead. If the run failed,
+  // offer a retry (the error message itself is rendered above this).
+  if (failed) {
+    return (
+      <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+        <p className="text-sm font-medium text-foreground">The comparison didn’t complete.</p>
+        <p className="text-xs text-foreground/55 mt-1.5 mb-4">You can run it again below.</p>
+        <Button variant="primary" size="md" onClick={onRun} loading={running}>
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border border-accent/30 bg-accent/5 p-8 text-center">
-      <p className="text-sm font-medium text-foreground">
-        {extraction.documentCount} financial statement{extraction.documentCount === 1 ? '' : 's'} uploaded
+      <Loader2 className="mx-auto h-6 w-6 animate-spin text-accent" />
+      <p className="mt-3 text-sm font-medium text-foreground">
+        Extracting figures and building the comparison…
       </p>
-      <p className="text-xs text-foreground/55 mt-1.5 mb-4">
-        Click below to extract the figures and run the comparison — this runs in the background and
-        can take a few minutes.
+      <p className="mt-1.5 text-xs text-foreground/55">
+        This runs in the background and can take a few minutes. It updates automatically when finished.
       </p>
-      <Button variant="primary" size="md" onClick={onRun} loading={running}>
-        Extract &amp; Compare
-      </Button>
     </div>
   )
 }

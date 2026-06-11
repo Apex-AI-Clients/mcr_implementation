@@ -175,6 +175,22 @@ export async function extractFinancialStatementFromPdf(
 
   const response = (await httpResponse.json()) as OpenRouterChatResponse
   const callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
+
+  // OpenRouter frequently returns provider failures as a 200 with an `error`
+  // object (top-level or per-choice) and no usable completion. Surface it so the
+  // logs show the real cause instead of "model did not call the tool".
+  const orError = response.error ?? response.choices?.[0]?.error
+  if (orError) {
+    const detail =
+      typeof orError.message === 'string' ? orError.message : JSON.stringify(orError)
+    console.error(
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: OpenRouter returned an error (code=${orError.code ?? 'n/a'}): ${detail}`,
+    )
+    throw new Error(
+      `extractFinancialStatementFromPdf: OpenRouter error for ${sourceFilename}: ${detail}`,
+    )
+  }
+
   const choice = response.choices?.[0]
   const finishReason = choice?.finish_reason ?? 'unknown'
   const toolCalls = choice?.message?.tool_calls ?? []
@@ -200,8 +216,14 @@ export async function extractFinancialStatementFromPdf(
   if (!toolCall || !toolCall.function) {
     const textHint =
       typeof choice?.message?.content === 'string' ? choice.message.content.slice(0, 300) : ''
+    // Dump the raw response (truncated) so we can see what the provider actually
+    // returned — an empty choice usually means the PDF wasn't ingested (native
+    // passthrough failed) or the provider silently dropped the forced tool call.
+    const rawDump = JSON.stringify(response).slice(0, 2000)
     console.error(
-      `[extractFinancialStatementFromPdf] ${sourceFilename}: model did not call the extraction tool. finish_reason=${finishReason}, model_text="${textHint}"`,
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: model did not call the extraction tool. ` +
+        `finish_reason=${finishReason}, native_finish_reason=${choice?.native_finish_reason ?? 'n/a'}, ` +
+        `model_text="${textHint}". Raw response (first 2000 chars): ${rawDump}`,
     )
     throw new Error(
       `extractFinancialStatementFromPdf: model did not call the extraction tool for ${sourceFilename}.${
@@ -241,8 +263,15 @@ export async function extractFinancialStatementFromPdf(
 
 interface OpenRouterChatResponse {
   model?: string
+  // OpenRouter returns provider/gateway failures as an `error` object — often
+  // with HTTP 200 and no `choices`. We must inspect this; otherwise the failure
+  // surfaces only as a confusing "model did not call the tool" with empty text.
+  error?: { message?: string; code?: number | string; metadata?: unknown }
   choices?: Array<{
     finish_reason?: string
+    // Some providers report a per-choice error here (e.g. Google safety blocks).
+    error?: { message?: string; code?: number | string }
+    native_finish_reason?: string
     message?: {
       content?: string | null
       tool_calls?: Array<{
