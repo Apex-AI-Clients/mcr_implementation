@@ -49,6 +49,31 @@ const EXTRACTION_TOOL_NAME = 'submit_extracted_financials'
  *  size and the model's PDF-parse time. */
 const MAX_PAGES_FOR_EXTRACTION = 8
 
+// Retry policy for the OpenRouter call. Gemini's PDF parse occasionally trips a
+// 504 gateway timeout (especially on full-size encrypted PDFs); these are
+// transient, so we re-issue the idempotent request. Kept small so a sustained
+// outage can't blow the route's 300s maxDuration across sequential documents.
+const MAX_OPENROUTER_ATTEMPTS = 3
+const PER_ATTEMPT_TIMEOUT_MS = 90_000
+
+/** Transient = worth retrying: any 5xx status/code, plus the upstream
+ *  "operation was aborted" / timeout messages OpenRouter reports as a 504. */
+function isTransientOpenRouterError(
+  status: number | string | undefined,
+  message: string,
+): boolean {
+  const code = typeof status === 'number' ? status : parseInt(String(status ?? ''), 10)
+  if (!Number.isNaN(code) && code >= 500 && code < 600) return true
+  const m = message.toLowerCase()
+  return m.includes('abort') || m.includes('timeout') || m.includes('timed out')
+}
+
+/** Short backoff between OpenRouter attempts: ~2s, then ~5s. */
+function backoffDelay(attempt: number): Promise<void> {
+  const ms = attempt === 1 ? 2000 : 5000
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export interface ExtractFromPdfInput {
   pdfBytes: Uint8Array
   sourceFilename: string
@@ -140,54 +165,113 @@ export async function extractFinancialStatementFromPdf(
     },
   }
 
-  const callStart = Date.now()
-  console.log(
-    `[extractFinancialStatementFromPdf] ${sourceFilename}: calling OpenRouter (Gemini 2.5 Flash)`,
-  )
+  // Gemini-via-OpenRouter intermittently returns a 504 ("operation was
+  // aborted") when Google's PDF parse runs long — especially on full-size
+  // encrypted/signed PDFs we can't trim. These are transient, so retry the
+  // (idempotent) request a few times with short backoff before giving up.
+  // The provider pin stays Google-only (compliance), so we never fall back to
+  // a non-Google provider — we just re-issue the same request.
+  const referer =
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.PUBLIC_APP_URL ?? 'https://mcr-partners.local'
 
-  // 5-minute timeout via AbortController. Matches the previous SDK timeout.
-  const controller = new AbortController()
-  const timeoutHandle = setTimeout(() => controller.abort(), 300_000)
+  let response: OpenRouterChatResponse | null = null
+  let callElapsed = '0.0'
+  let lastError = ''
 
-  let httpResponse: Response
-  try {
-    httpResponse = await fetch(OPENROUTER_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.PUBLIC_APP_URL ?? 'https://mcr-partners.local',
-        'X-Title': 'MCR Partners SBR Portal',
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeoutHandle)
+  for (let attempt = 1; attempt <= MAX_OPENROUTER_ATTEMPTS; attempt++) {
+    const callStart = Date.now()
+    console.log(
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: calling OpenRouter (Gemini 2.5 Flash), attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS}`,
+    )
+
+    // Per-attempt timeout. A single hung upstream shouldn't consume the whole
+    // function budget — abort and retry instead.
+    const controller = new AbortController()
+    const timeoutHandle = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS)
+
+    let httpResponse: Response
+    try {
+      httpResponse = await fetch(OPENROUTER_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': referer,
+          'X-Title': 'MCR Partners SBR Portal',
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      })
+    } catch (err) {
+      // AbortError (our per-attempt timeout) or a network blip — both transient.
+      const msg = err instanceof Error ? err.message : String(err)
+      lastError = msg
+      console.error(
+        `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} request error after ${((Date.now() - callStart) / 1000).toFixed(1)}s: ${msg}`,
+      )
+      if (attempt < MAX_OPENROUTER_ATTEMPTS) {
+        await backoffDelay(attempt)
+        continue
+      }
+      throw new Error(
+        `extractFinancialStatementFromPdf: OpenRouter request failed for ${sourceFilename} after ${MAX_OPENROUTER_ATTEMPTS} attempts: ${msg}`,
+      )
+    } finally {
+      clearTimeout(timeoutHandle)
+    }
+
+    callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
+
+    if (!httpResponse.ok) {
+      const errorText = await httpResponse.text().catch(() => '')
+      if (isTransientOpenRouterError(httpResponse.status, errorText) && attempt < MAX_OPENROUTER_ATTEMPTS) {
+        lastError = `HTTP ${httpResponse.status}: ${errorText.slice(0, 200)}`
+        console.error(
+          `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} transient HTTP ${httpResponse.status} after ${callElapsed}s — retrying`,
+        )
+        await backoffDelay(attempt)
+        continue
+      }
+      throw new Error(
+        `extractFinancialStatementFromPdf: OpenRouter HTTP ${httpResponse.status} for ${sourceFilename}: ${errorText.slice(0, 500)}`,
+      )
+    }
+
+    const candidate = (await httpResponse.json()) as OpenRouterChatResponse
+
+    // OpenRouter often returns provider failures as a 200 with an `error`
+    // object (top-level or per-choice) and no usable completion. Inspect it so
+    // the logs show the real cause instead of "model did not call the tool",
+    // and retry it when it's a transient gateway/timeout error.
+    const orError = candidate.error ?? candidate.choices?.[0]?.error
+    if (orError) {
+      const detail =
+        typeof orError.message === 'string' ? orError.message : JSON.stringify(orError)
+      if (isTransientOpenRouterError(orError.code, detail) && attempt < MAX_OPENROUTER_ATTEMPTS) {
+        lastError = `code=${orError.code ?? 'n/a'}: ${detail}`
+        console.error(
+          `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} transient OpenRouter error (code=${orError.code ?? 'n/a'}) after ${callElapsed}s: ${detail} — retrying`,
+        )
+        await backoffDelay(attempt)
+        continue
+      }
+      console.error(
+        `[extractFinancialStatementFromPdf] ${sourceFilename}: OpenRouter returned an error (code=${orError.code ?? 'n/a'}): ${detail}`,
+      )
+      throw new Error(
+        `extractFinancialStatementFromPdf: OpenRouter error for ${sourceFilename}: ${detail}`,
+      )
+    }
+
+    response = candidate
+    break
   }
 
-  if (!httpResponse.ok) {
-    const errorText = await httpResponse.text().catch(() => '')
+  if (!response) {
     throw new Error(
-      `extractFinancialStatementFromPdf: OpenRouter HTTP ${httpResponse.status} for ${sourceFilename}: ${errorText.slice(0, 500)}`,
-    )
-  }
-
-  const response = (await httpResponse.json()) as OpenRouterChatResponse
-  const callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
-
-  // OpenRouter frequently returns provider failures as a 200 with an `error`
-  // object (top-level or per-choice) and no usable completion. Surface it so the
-  // logs show the real cause instead of "model did not call the tool".
-  const orError = response.error ?? response.choices?.[0]?.error
-  if (orError) {
-    const detail =
-      typeof orError.message === 'string' ? orError.message : JSON.stringify(orError)
-    console.error(
-      `[extractFinancialStatementFromPdf] ${sourceFilename}: OpenRouter returned an error (code=${orError.code ?? 'n/a'}): ${detail}`,
-    )
-    throw new Error(
-      `extractFinancialStatementFromPdf: OpenRouter error for ${sourceFilename}: ${detail}`,
+      `extractFinancialStatementFromPdf: OpenRouter did not return a usable response for ${sourceFilename} after ${MAX_OPENROUTER_ATTEMPTS} attempts${
+        lastError ? ` (last error: ${lastError})` : ''
+      }.`,
     )
   }
 
