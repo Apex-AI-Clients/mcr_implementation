@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react'
 import { PortalStepper, type StepDescriptor } from '@/components/portal/PortalStepper'
 import { CategoryUploadSection } from '@/components/portal/CategoryUploadSection'
@@ -46,6 +47,7 @@ interface WizardStep extends StepDescriptor {
 }
 
 export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: Props) {
+  const router = useRouter()
   const [state, setState] = useState<State>(clientId ? { phase: 'loading' } : { phase: 'new' })
   const [activeStepId, setActiveStepId] = useState<string>('details')
 
@@ -209,7 +211,12 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
     if (activeIndex > 0) setActiveStepId(steps[activeIndex - 1].id)
   }
   function goNext() {
-    if (activeIndex < steps.length - 1) setActiveStepId(steps[activeIndex + 1].id)
+    if (activeIndex < steps.length - 1) {
+      setActiveStepId(steps[activeIndex + 1].id)
+    } else if (clientId) {
+      // Last step: finish intake and return to the client detail page.
+      router.push(`/clients/${clientId}`)
+    }
   }
 
   return (
@@ -309,7 +316,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
                 <ArrowLeft className="h-4 w-4" />
                 Previous
               </Button>
-              <Button variant="primary" size="md" onClick={goNext} disabled={isLastStep}>
+              <Button variant="primary" size="md" onClick={goNext}>
                 {isLastStep ? 'Done' : 'Next'}
                 {!isLastStep && <ArrowRight className="h-4 w-4" />}
               </Button>

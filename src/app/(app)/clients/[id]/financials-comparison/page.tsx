@@ -24,6 +24,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     { data: documents },
     { data: statements },
     { data: comparisonRow },
+    { data: activeJob },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -38,6 +39,16 @@ export default async function FinancialsComparisonPage({ params }: Props) {
       .from('financial_comparisons')
       .select('*')
       .eq('client_id', id)
+      .maybeSingle(),
+    // If a comparison job is mid-flight (e.g. the user refreshed during a run),
+    // hand its id to the client so polling resumes seamlessly.
+    supabase
+      .from('financial_comparison_jobs')
+      .select('id')
+      .eq('client_id', id)
+      .in('status', ['pending', 'processing'])
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -66,6 +77,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
           documentCount,
           hasUnextracted,
         }}
+        initialJobId={activeJob?.id ?? null}
       />
     </div>
   )

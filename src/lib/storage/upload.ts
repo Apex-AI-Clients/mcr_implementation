@@ -30,10 +30,13 @@ export async function uploadToStorage(
 export async function getSignedUrl(
   supabase: SupabaseClient,
   filePath: string,
+  downloadName?: string,
 ): Promise<string> {
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .createSignedUrl(filePath, SIGNED_URL_EXPIRY_SECONDS)
+    .createSignedUrl(filePath, SIGNED_URL_EXPIRY_SECONDS, {
+      download: downloadName ?? true,
+    })
 
   if (error || !data) throw error ?? new Error('Failed to create signed URL')
 
