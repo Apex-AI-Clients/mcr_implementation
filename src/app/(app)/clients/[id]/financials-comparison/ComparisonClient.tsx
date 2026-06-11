@@ -189,12 +189,15 @@ export function ComparisonClient({
     [clientId, clearPoll, poll],
   )
 
-  // Resume polling an in-flight job handed down from the server, and tidy up
-  // the timer on unmount.
+  // On load: resume an in-flight job, otherwise auto-start the comparison when
+  // there's no saved result yet and enough statements are uploaded — saves the
+  // user a redundant "Extract & Compare" click. Tidy up the timer on unmount.
   useEffect(() => {
     if (initialJobId) {
       activeJobId.current = initialJobId
       void poll(initialJobId)
+    } else if (!initialComparison && initialExtraction.documentCount >= 2) {
+      void startJob('full')
     }
     return clearPoll
     // eslint-disable-next-line react-hooks/exhaustive-deps
