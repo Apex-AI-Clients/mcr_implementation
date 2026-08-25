@@ -14,15 +14,15 @@
  * Returns: { jobId, reused } — reused=true when an active job already existed.
  *
  * NOTE: after() shares this function's duration budget; it does NOT grant extra
- * compute time. With Fluid Compute the budget is up to 300s (Hobby) / 800s
- * (Pro, configurable). Raise maxDuration once on Pro if jobs approach the cap.
+ * compute time. With Fluid Compute the ceiling is 300s on Hobby and 800s on Pro;
+ * we're on Pro, so the budget below is set to the full 800s.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { runComparisonJob } from '@/lib/financials/comparisonJob'
 
-export const maxDuration = 300
+export const maxDuration = 800
 
 // An 'active' job older than this is assumed dead (e.g. the function instance
 // was recycled mid-run) and will not block a fresh start.

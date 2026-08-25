@@ -52,7 +52,7 @@ const MAX_PAGES_FOR_EXTRACTION = 8
 // Retry policy for the OpenRouter call. Gemini's PDF parse occasionally trips a
 // 504 gateway timeout (especially on full-size encrypted PDFs); these are
 // transient, so we re-issue the idempotent request. Kept small so a sustained
-// outage can't blow the route's 300s maxDuration across sequential documents.
+// outage can't blow the route's 800s maxDuration across sequential documents.
 const MAX_OPENROUTER_ATTEMPTS = 3
 const PER_ATTEMPT_TIMEOUT_MS = 90_000
 

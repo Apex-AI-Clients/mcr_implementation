@@ -17,9 +17,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { extractAllFinancials } from '@/lib/financials/comparisonJob'
 
-// Needs headroom for several sequential PDF extractions. Requires Fluid Compute
-// to reach the full 300s on Vercel (Hobby caps at 60s without it).
-export const maxDuration = 300
+// Needs headroom for several sequential PDF extractions. Requires Fluid Compute;
+// 800s is the Pro-plan ceiling (Hobby caps at 300s, or 60s without Fluid).
+export const maxDuration = 800
 
 interface Params {
   params: Promise<{ id: string }>
