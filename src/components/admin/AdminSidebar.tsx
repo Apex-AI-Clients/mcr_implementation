@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, LayoutDashboard, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
+import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
+import { workspaceForPath } from '@/lib/workspaces'
 
 interface AdminSidebarProps {
   userEmail: string
@@ -16,8 +18,15 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
   // The intake wizard is full-screen — hide the sidebar so it spans the page.
   if (pathname.endsWith('/intake')) return null
 
-  const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)
+  // The workspace chooser at "/" owns the full viewport, and anything outside a
+  // workspace has no nav to show. Same mechanism, one check.
+  const workspace = workspaceForPath(pathname)
+  if (!workspace) return null
+
+  // A single-page workspace uses the top bar instead — see WorkspaceTopBar.
+  if (workspace.chrome !== 'sidebar') return null
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">
@@ -27,25 +36,24 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground leading-none">MCR Partners</p>
-          <p className="text-xs text-muted leading-none mt-0.5">Admin Panel</p>
+          <WorkspaceSwitcher current={workspace} />
         </div>
       </div>
 
       <nav className="flex flex-col gap-0.5 p-3 flex-1">
-        <NavLink
-          href="/"
-          active={isActive('/')}
-          icon={<LayoutDashboard className="h-4 w-4" />}
-        >
-          Dashboard
-        </NavLink>
-        <NavLink
-          href="/clients"
-          active={isActive('/clients')}
-          icon={<Users className="h-4 w-4" />}
-        >
-          Clients
-        </NavLink>
+        {workspace.nav.map((item) => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.href}
+              href={item.href}
+              active={isActive(item.href)}
+              icon={<Icon className="h-4 w-4" />}
+            >
+              {item.label}
+            </NavLink>
+          )
+        })}
       </nav>
 
       <div className="border-t border-border px-4 py-3 space-y-3">

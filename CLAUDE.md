@@ -284,17 +284,36 @@ created_at timestamptz DEFAULT now()
 
 ## Branding Tokens
 
-Use only via Tailwind config — never hardcode hex in components.
+Source of truth: `src/app/globals.css`. This is Tailwind v4 — tokens are declared
+in the `@theme inline` block, not in a `tailwind.config.ts` (there isn't one).
+Use the token classes only; never hardcode hex in components.
+
+**Fixed across both themes:**
 
 | Token | Hex | Usage |
 |---|---|---|
-| `primary` | `#1A1A2E` | Backgrounds, nav |
-| `accent` | `#E94560` | CTAs, highlights |
-| `surface` | `#16213E` | Cards, panels |
-| `foreground` | `#EAEAEA` | Body text |
-| `success` | `#00B894` | Received docs |
-| `warning` | `#FDCB6E` | Format warnings |
-| `destructive` | `#D63031` | Missing docs, errors |
+| `accent` | `#2563EB` | CTAs, highlights, active nav |
+| `success` | `#00B894` | Received docs, complete |
+| `warning` | `#F39C12` | Needs attention, format warnings |
+| `destructive` | `#E74C3C` | Missing docs, errors |
+
+**Theme-aware** — driven by `--mcr-*` CSS variables; the app ships dark by
+default and switches on `[data-theme="light"]`:
+
+| Token | Dark | Light | Usage |
+|---|---|---|---|
+| `primary` | `#0F1322` | `#F7F8FA` | Page background |
+| `surface` | `#171D2E` | `#FFFFFF` | Panels, hover fills |
+| `card` | `#1C2333` | `#FFFFFF` | Cards, sidebar |
+| `foreground` | `#E8ECF1` | `#0B0E16` | Body text |
+| `border` | `rgba(255,255,255,.08)` | `rgba(0,0,0,.12)` | Dividers, outlines |
+| `muted` | `rgba(255,255,255,.45)` | `rgba(11,14,22,.72)` | Secondary text |
+| `input-bg` | `#0F1322` | `#F0F2F5` | Form fields |
+
+Every new surface must be checked in both themes. `globals.css` also carries
+light-theme overrides for the opacity-based patterns the tables use
+(`border-white/8`, `bg-surface/60`, `text-foreground/50`, …) — reuse those exact
+classes rather than inventing new opacity steps, or light mode will drift.
 
 ---
 

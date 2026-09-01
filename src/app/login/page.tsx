@@ -178,7 +178,7 @@ function LoginInner() {
           </div>
 
           <p className="text-white/25 text-xs">
-            MCR Partners &times; Apex AI &mdash; Secure Portal
+            MCR Partners &mdash; Secure Portal
           </p>
         </div>
       </div>

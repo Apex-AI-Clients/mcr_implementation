@@ -4,6 +4,7 @@ import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
+import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -99,6 +100,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-foreground">{client.name}</h1>
           <p className="mt-0.5 text-sm text-foreground/50">{client.email}</p>
+          <LeadOriginLink clientId={client.id} />
         </div>
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>
