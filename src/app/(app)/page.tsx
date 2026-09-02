@@ -3,7 +3,8 @@ import { ArrowRight } from 'lucide-react'
 import { getSupabaseAuthClient } from '@/lib/supabase/server'
 import { getCompletenessSummary } from '@/lib/clients/completeness'
 import { getLeads } from '@/lib/leads/mock'
-import { countOpenLeads, countNeedingFollowUp } from '@/lib/leads/followUp'
+// countNeedingFollowUp is hidden with the rest of the follow-up UI.
+import { countOpenLeads } from '@/lib/leads/followUp'
 import { WORKSPACES, type Workspace } from '@/lib/workspaces'
 import { firstNameFromMetadata } from '@/lib/utils'
 
@@ -31,7 +32,7 @@ export default async function WorkspaceChooserPage() {
   // Mock until Stage 4 — the counts are real, the source isn't.
   const leads = getLeads()
   const openLeads = countOpenLeads(leads)
-  const followUps = countNeedingFollowUp(leads)
+  // const followUps = countNeedingFollowUp(leads)
 
   const [crm, sbr] = WORKSPACES
 
@@ -68,12 +69,14 @@ export default async function WorkspaceChooserPage() {
             workspace={crm}
             stats={[
               { value: openLeads, label: openLeads === 1 ? 'Open lead' : 'Open leads' },
-              {
-                value: followUps,
-                label: 'Need follow-up',
-                // The one number here that means someone has to do something today.
-                tone: followUps > 0 ? 'warning' : undefined,
-              },
+              // Follow-up stat — hidden with the rest of the follow-up UI (table
+              // column, filter toggle, page-header count, top-bar pill, record
+              // badge). Restore alongside the `followUps` line above.
+              // {
+              //   value: followUps,
+              //   label: 'Need follow-up',
+              //   tone: followUps > 0 ? 'warning' : undefined,
+              // },
             ]}
           />
           <WorkspaceCard

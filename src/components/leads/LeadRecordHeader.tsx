@@ -3,10 +3,10 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
+// import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { SOURCE_META, STAGE_META } from '@/lib/leads/constants'
 import { formatFullDate } from '@/lib/leads/format'
-import { needsFollowUp } from '@/lib/leads/followUp'
+// import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
 
 interface LeadRecordHeaderProps {
@@ -29,7 +29,9 @@ export function LeadRecordHeader({ lead }: LeadRecordHeaderProps) {
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="text-xl font-semibold text-foreground">{lead.name}</h1>
         <Badge variant={stage.badge}>{stage.label}</Badge>
-        {needsFollowUp(lead) && <FollowUpBadge />}
+        {/* Follow-up badge — hidden with the rest of the follow-up UI (table
+            column, filter toggle, page-header count, top-bar pill). */}
+        {/* {needsFollowUp(lead) && <FollowUpBadge />} */}
       </div>
 
       <p className="mt-1.5 text-sm text-foreground/50">

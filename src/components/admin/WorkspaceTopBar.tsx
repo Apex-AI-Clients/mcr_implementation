@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Flag, LogOut } from 'lucide-react'
+// Flag is only used by the follow-up pill, hidden for now.
+import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
-import { useFollowUpCount } from '@/components/leads/LeadsStore'
+// import { useFollowUpCount } from '@/components/leads/LeadsStore'
 import { workspaceForPath } from '@/lib/workspaces'
 
 interface WorkspaceTopBarProps {
@@ -21,7 +22,7 @@ interface WorkspaceTopBarProps {
  */
 export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
   const pathname = usePathname() ?? ''
-  const followUpCount = useFollowUpCount()
+  // const followUpCount = useFollowUpCount()
 
   // The intake wizard is full-screen and owns its own chrome.
   if (pathname.endsWith('/intake')) return null
@@ -48,8 +49,9 @@ export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
               /
             </span>
             <WorkspaceSwitcher current={workspace} variant="bar" />
-            {/* Carries the follow-up count that used to sit in the sidebar. It
-                also reaches the lead record, which had no count at all. */}
+            {/* Follow-up pill — hidden for now, along with the table column,
+                the filter toggle and the page-header count. `workspace.badge`
+                stays in lib/workspaces.ts so this restores as-is.
             {workspace.badge === 'leadFollowUps' && followUpCount > 0 && (
               <Link
                 href="/leads"
@@ -60,6 +62,7 @@ export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
                 <span className="hidden sm:inline">need follow-up</span>
               </Link>
             )}
+            */}
           </>
         )}
       </div>

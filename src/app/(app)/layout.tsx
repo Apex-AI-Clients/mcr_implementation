@@ -36,7 +36,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         initialActivities={getAllLeadActivities()}
         author={author}
       >
-        <div className="flex h-screen overflow-hidden bg-primary">
+        {/* Fixed to the viewport rather than `h-screen`: the root layout leaves
+            body as `min-h-full` with no overflow rule, so a 100vh shell still
+            let the document keep a second scrollbar of its own next to
+            <main>'s. Taking the shell out of flow makes that impossible.
+            /login sits outside this route group and is unaffected. */}
+        <div className="fixed inset-0 flex overflow-hidden bg-primary">
           <AdminSidebar userEmail={user.email ?? ''} signOut={signOut} />
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <WorkspaceTopBar userEmail={user.email ?? ''} signOut={signOut} />

@@ -95,10 +95,10 @@ describe('LeadFilters layout', () => {
       ?.parentElement
     expect(row?.className).toContain('flex')
 
-    // All four selects and the follow-up toggle are siblings on that row.
+    // All four selects are siblings on that row. The follow-up toggle used to
+    // be asserted here too — it is commented out in LeadFilters for now.
     for (const label of LABELS) {
       expect(screen.getByLabelText(label).closest('div')?.parentElement?.parentElement).toBe(row)
     }
-    expect(screen.getByRole('switch', { name: /follow-up/i }).parentElement).toBe(row)
   })
 })

@@ -3,14 +3,22 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { StageSelect } from '@/components/leads/StageSelect'
-import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
+// Follow-up flag temporarily hidden — see the note on LeadRowProps.
+// import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { SOURCE_META } from '@/lib/leads/constants'
 import { formatDebt, formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
   lead: Lead
-  flagged: boolean
+  /**
+   * Follow-up flag hidden for now, along with its table column and the filter
+   * toggle. The rule itself (needsFollowUp) is untouched and still drives the
+   * page-header count — uncomment `flagged` here, the <td> below, the card
+   * badge, the COLUMNS entry in LeadTable and the toggle in LeadFilters to
+   * bring it back.
+   */
+  // flagged: boolean
   onRequestConvert: (lead: Lead) => void
 }
 
@@ -18,7 +26,7 @@ interface LeadRowProps {
  * Desktop table row. Opening the record deliberately does not clear the
  * follow-up flag — only a recorded action does that.
  */
-export function LeadTableRow({ lead, flagged, onRequestConvert }: LeadRowProps) {
+export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
   const router = useRouter()
 
   return (
@@ -52,13 +60,13 @@ export function LeadTableRow({ lead, flagged, onRequestConvert }: LeadRowProps) 
       <td className="px-4 py-3.5 whitespace-nowrap text-foreground/50">
         {SOURCE_META[lead.source].short}
       </td>
-      <td className="px-4 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td>
+      {/* <td className="px-4 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
     </tr>
   )
 }
 
 /** Below md the same row stacks into a card. */
-export function LeadCard({ lead, flagged, onRequestConvert }: LeadRowProps) {
+export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
   const router = useRouter()
 
   return (
@@ -76,7 +84,7 @@ export function LeadCard({ lead, flagged, onRequestConvert }: LeadRowProps) {
             >
               {lead.name}
             </Link>
-            {flagged && <FollowUpBadge compact />}
+            {/* {flagged && <FollowUpBadge compact />} */}
           </div>
           <p className="mt-1 truncate text-xs text-foreground/50">{lead.email}</p>
           <p className="mt-0.5 text-xs tabular-nums text-foreground/50">

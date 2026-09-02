@@ -98,12 +98,13 @@ describe('LeadsPageClient', () => {
     ])
   })
 
-  it('summarises the count and how many need follow-up', () => {
+  it('summarises the lead count, without the follow-up count for now', () => {
     renderList()
     const summary = screen.getByRole('heading', { name: 'Leads' }).parentElement?.textContent ?? ''
     expect(summary).toContain('4 leads')
-    // Only the open, overdue lead counts — the closed one is never chased.
-    expect(summary).toContain('1 needs follow-up')
+    // The follow-up count is commented out in LeadsPageClient along with the
+    // table column, the filter toggle and the top-bar pill.
+    expect(summary).not.toMatch(/follow-up/i)
   })
 
   it('filters by search after the debounce', async () => {
@@ -122,7 +123,10 @@ describe('LeadsPageClient', () => {
     await waitFor(() => expect(visibleNames()).toEqual(['Marcus Oyelaran']))
   })
 
-  it('narrows to flagged leads with the follow-up toggle, excluding closed ones', async () => {
+  // Skipped while the follow-up toggle is commented out in LeadFilters. The
+  // rule itself stays covered by followUp.test.ts and filter.test.ts; unskip
+  // this when the toggle comes back.
+  it.skip('narrows to flagged leads with the follow-up toggle, excluding closed ones', async () => {
     const user = userEvent.setup()
     renderList()
 

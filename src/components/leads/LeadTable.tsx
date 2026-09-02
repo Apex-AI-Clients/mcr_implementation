@@ -2,7 +2,8 @@
 
 import { LeadTableRow, LeadCard } from '@/components/leads/LeadTableRow'
 import { Button } from '@/components/ui/Button'
-import { needsFollowUp } from '@/lib/leads/followUp'
+// Only the follow-up column is hidden; the rule still runs elsewhere.
+// import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
 
 interface LeadTableProps {
@@ -22,7 +23,9 @@ const COLUMNS = [
   { label: 'State', className: 'text-left' },
   { label: 'Stage', className: 'text-left' },
   { label: 'Source', className: 'text-left' },
-  { label: '', className: 'text-left' },
+  // Follow-up flag column — hidden for now. Keep in step with the matching
+  // <td> in LeadTableRow, or the header and body column counts diverge.
+  // { label: '', className: 'text-left' },
 ]
 
 export function LeadTable({
@@ -60,7 +63,11 @@ export function LeadTable({
   return (
     <div className="overflow-hidden rounded-xl border border-white/8">
       {/* Desktop table */}
-      <div className="hidden overflow-x-auto md:block">
+      {/* overflow-y-hidden is load-bearing: with only overflow-x set, the CSS
+          Overflow spec turns the other axis' `visible` into `auto`, making this
+          a vertical scroll container as well — a second scrollbar inside the
+          page's own. */}
+      <div className="hidden overflow-x-auto overflow-y-hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/8 bg-surface/60">
@@ -80,7 +87,6 @@ export function LeadTable({
               <LeadTableRow
                 key={lead.id}
                 lead={lead}
-                flagged={needsFollowUp(lead)}
                 onRequestConvert={onRequestConvert}
               />
             ))}
@@ -94,7 +100,6 @@ export function LeadTable({
           <LeadCard
             key={lead.id}
             lead={lead}
-            flagged={needsFollowUp(lead)}
             onRequestConvert={onRequestConvert}
           />
         ))}

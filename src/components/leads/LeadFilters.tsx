@@ -1,6 +1,7 @@
 'use client'
 
-import { Flag, X } from 'lucide-react'
+// Flag is only used by the follow-up toggle, hidden for now.
+import { X } from 'lucide-react'
 import { Select } from '@/components/ui/Select'
 import {
   ALL_STAGES,
@@ -86,6 +87,9 @@ export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
         options={DATE_OPTIONS}
       />
 
+      {/* Follow-up toggle — hidden for now. `followUpOnly` stays in
+          LeadFilterState and filterLeads still honours it, so restoring this
+          block is all that's needed.
       <button
         type="button"
         role="switch"
@@ -100,6 +104,7 @@ export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
         <Flag className="h-3 w-3" aria-hidden="true" />
         Follow-up
       </button>
+      */}
 
       {active && (
         <button

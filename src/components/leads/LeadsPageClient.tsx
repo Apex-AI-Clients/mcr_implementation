@@ -10,7 +10,8 @@ import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { EMPTY_FILTERS, filterLeads, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { leadsToCsv } from '@/lib/leads/format'
-import { needsFollowUp } from '@/lib/leads/followUp'
+// Only the follow-up count in the header is hidden; the rule is unchanged.
+// import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
 
 const SEARCH_DEBOUNCE_MS = 250
@@ -34,7 +35,7 @@ export function LeadsPageClient() {
 
   const visible = useMemo(() => filterLeads(leads, filters), [leads, filters])
   const active = hasActiveFilters(filters)
-  const followUps = useMemo(() => leads.filter((lead) => needsFollowUp(lead)).length, [leads])
+  // const followUps = useMemo(() => leads.filter((lead) => needsFollowUp(lead)).length, [leads])
 
   function patchFilters(patch: Partial<LeadFilterState>) {
     setFilters((prev) => ({ ...prev, ...patch }))
@@ -66,11 +67,15 @@ export function LeadsPageClient() {
           <p className="mt-1 text-sm text-foreground/50">
             <span className="tabular-nums">{leads.length}</span>{' '}
             {leads.length === 1 ? 'lead' : 'leads'}
+            {/* Follow-up count — hidden along with the table column and the
+                filter toggle. Restore this with the `followUps` useMemo and the
+                needsFollowUp import above.
             <span aria-hidden="true"> · </span>
             <span className={followUps > 0 ? 'text-warning' : undefined}>
               <span className="tabular-nums">{followUps}</span> need
               {followUps === 1 ? 's' : ''} follow-up
             </span>
+            */}
           </p>
         </div>
         <div className="flex items-center gap-2">
