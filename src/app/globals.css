@@ -91,6 +91,16 @@ body {
 [data-theme="light"] .border-white\/5 {
   border-color: var(--mcr-border);
 }
+/* `divide-*` colours children through their own selector, so the
+   .border-white/5 rule above never reaches them - without this, table row
+   dividers are white-on-white in light mode. Applies to ClientTable and
+   LeadTable alike. */
+[data-theme="light"] .divide-white\/5 > * {
+  border-color: var(--mcr-border);
+}
+[data-theme="light"] .divide-white\/8 > * {
+  border-color: var(--mcr-border);
+}
 [data-theme="light"] .border-white\/10 {
   border-color: rgba(0, 0, 0, 0.1);
 }

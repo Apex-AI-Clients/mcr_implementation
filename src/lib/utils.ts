@@ -42,3 +42,19 @@ export function daysSince(iso: string): number {
 export function isExpired(iso: string): boolean {
   return new Date(iso) < new Date()
 }
+
+/**
+ * First name from a Supabase user's `user_metadata`, or null when none of the
+ * usual keys carry one. Used for the greeting and for activity authorship.
+ */
+export function firstNameFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): string | null {
+  for (const key of ['full_name', 'name', 'first_name']) {
+    const value = metadata?.[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim().split(/\s+/)[0]
+    }
+  }
+  return null
+}

@@ -1,175 +1,172 @@
-import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { REQUIRED_CATEGORIES } from '@/lib/constants'
-import { Badge } from '@/components/ui/Badge'
-import { formatDateRelative } from '@/lib/utils'
 import Link from 'next/link'
-import {
-  Users,
-  FileText,
-  CheckCircle2,
-  Clock,
-  ArrowRight,
-  type LucideIcon,
-} from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import { getSupabaseAuthClient } from '@/lib/supabase/server'
+import { getCompletenessSummary } from '@/lib/clients/completeness'
+import { getLeads } from '@/lib/leads/queries'
+// countNeedingFollowUp is hidden with the rest of the follow-up UI.
+import { countOpenLeads } from '@/lib/leads/followUp'
+import { WORKSPACES, type Workspace } from '@/lib/workspaces'
+import { firstNameFromMetadata } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminDashboardPage() {
-  const supabase = await getSupabaseServerClient()
+interface Stat {
+  value: number
+  label: string
+  /** Amber when there's something to act on today. */
+  tone?: 'warning'
+}
 
-  const { data: clients } = await supabase
-    .from('clients')
-    .select('id, name, created_at')
-    .order('created_at', { ascending: false })
+/**
+ * Workspace chooser. The sidebar hides itself here and WorkspaceTopBar takes
+ * over, so this page owns the whole area below the header.
+ */
+export default async function WorkspaceChooserPage() {
+  const supabase = await getSupabaseAuthClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  const { data: documents } = await supabase
-    .from('documents')
-    .select('client_id, doc_category, status')
+  const summary = await getCompletenessSummary()
 
-  // Count unique (non-rejected) categories per client.
-  const docsPerClient = new Map<string, Set<string>>()
-  let totalDocuments = 0
-  for (const doc of documents ?? []) {
-    if (doc.status === 'rejected') continue
-    totalDocuments++
-    if (!docsPerClient.has(doc.client_id)) docsPerClient.set(doc.client_id, new Set())
-    docsPerClient.get(doc.client_id)!.add(doc.doc_category)
-  }
+  const leads = await getLeads()
+  const openLeads = countOpenLeads(leads)
+  // const followUps = countNeedingFollowUp(leads)
 
-  // A file is "complete" once all REQUIRED categories are in — same rule the
-  // upload route uses to set client status. The 3 optional categories don't count.
-  const requiredMet = (clientId: string) =>
-    REQUIRED_CATEGORIES.filter((cat) => docsPerClient.get(clientId)?.has(cat)).length
-
-  const total = clients?.length ?? 0
-  const completedClients = (clients ?? []).filter(
-    (c) => requiredMet(c.id) >= REQUIRED_CATEGORIES.length,
-  ).length
-  const inProgressClients = total - completedClients
-
-  // Portfolio-wide completeness — required categories collected / required total.
-  const collected = (clients ?? []).reduce((sum, c) => sum + requiredMet(c.id), 0)
-  const maxPossible = total * REQUIRED_CATEGORIES.length
-  const overallPct = maxPossible ? Math.round((collected / maxPossible) * 100) : 0
+  const [crm, sbr] = WORKSPACES
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-        <p className="mt-1 text-sm text-foreground/50">Overview of all active client files</p>
+    // 3.5rem is the WorkspaceTopBar height — explicit beats a percentage that
+    // has to resolve against a flex-sized scroll container.
+    <div className="relative flex min-h-[calc(100vh-3.5rem)] items-center justify-center overflow-hidden px-6 py-14">
+      {/* Ambient wash. Accent is fixed across themes, so a low opacity reads
+          correctly in both without a second palette. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[28rem] w-[28rem] rounded-full bg-accent/8 blur-[120px]" />
+        <div className="absolute -bottom-48 -right-32 h-[26rem] w-[26rem] rounded-full bg-accent/6 blur-[120px]" />
+        <div
+          className="absolute inset-0 opacity-[0.035]"
+          style={{
+            backgroundImage:
+              'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+            color: 'var(--color-accent)',
+          }}
+        />
       </div>
 
-      {/* Stats — derived from real document data */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 mb-6">
-        <StatCard label="Total Clients" value={total} icon={Users} />
-        <StatCard label="Documents Collected" value={totalDocuments} icon={FileText} />
-        <StatCard label="Clients Complete" value={completedClients} icon={CheckCircle2} color="success" />
-        <StatCard label="Awaiting Documents" value={inProgressClients} icon={Clock} color="warning" />
-      </div>
-
-      {/* Portfolio completeness — a dashboard-only summary metric */}
-      <div className="mb-8 rounded-xl border border-border bg-card p-5">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-              Document collection progress
-            </p>
-            <p className="mt-1 text-sm text-foreground/60">
-              {collected} of {maxPossible} required document categories received across all clients
-            </p>
-          </div>
-          <span className="text-2xl font-bold text-foreground tabular-nums">{overallPct}%</span>
+      <div className="relative w-full max-w-4xl">
+        <div className="mb-9">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            {greetingLine(user?.user_metadata)}
+          </h1>
+          <p className="mt-2 text-base text-foreground/50">Where would you like to start?</p>
         </div>
-        <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-primary">
-          <div
-            className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${overallPct}%` }}
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <WorkspaceCard
+            workspace={crm}
+            stats={[
+              { value: openLeads, label: openLeads === 1 ? 'Open lead' : 'Open leads' },
+              // Follow-up stat — hidden with the rest of the follow-up UI (table
+              // column, filter toggle, page-header count, top-bar pill, record
+              // badge). Restore alongside the `followUps` line above.
+              // {
+              //   value: followUps,
+              //   label: 'Need follow-up',
+              //   tone: followUps > 0 ? 'warning' : undefined,
+              // },
+            ]}
+          />
+          <WorkspaceCard
+            workspace={sbr}
+            stats={[
+              {
+                value: summary.totalClients,
+                label: summary.totalClients === 1 ? 'Active file' : 'Active files',
+              },
+              { value: summary.awaitingDocuments, label: 'Awaiting docs' },
+            ]}
           />
         </div>
-      </div>
 
-      {/* Recent clients — card grid, deliberately distinct from the Clients table */}
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Recent Clients</h2>
-        <Link
-          href="/clients"
-          className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent/80"
-        >
-          View all
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+        <p className="mt-8 text-xs text-foreground/30">MCR Partners</p>
       </div>
-
-      {total === 0 ? (
-        <div className="rounded-xl border border-dashed border-border py-12 text-center">
-          <p className="text-sm text-foreground/40">
-            No clients yet.{' '}
-            <Link href="/clients" className="text-accent underline">
-              Add your first client
-            </Link>
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {(clients ?? []).slice(0, 6).map((client) => {
-            const met = requiredMet(client.id)
-            const pct = Math.round((met / REQUIRED_CATEGORIES.length) * 100)
-            const isComplete = met >= REQUIRED_CATEGORIES.length
-            return (
-              <Link
-                key={client.id}
-                href={`/clients/${client.id}`}
-                className="group flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/40 hover:bg-surface/40"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{client.name}</p>
-                    <p className="mt-0.5 text-xs text-foreground/40">
-                      Added {formatDateRelative(client.created_at)}
-                    </p>
-                  </div>
-                  <Badge variant={isComplete ? 'success' : 'warning'}>
-                    {isComplete ? 'Complete' : 'In progress'}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-primary">
-                    <div
-                      className={`h-full rounded-full ${isComplete ? 'bg-success' : pct > 50 ? 'bg-warning' : 'bg-accent'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-foreground/50 tabular-nums whitespace-nowrap">
-                    {met}/{REQUIRED_CATEGORIES.length} required
-                  </span>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      )}
     </div>
   )
 }
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-}: {
-  label: string
-  value: number
-  icon: LucideIcon
-  color?: 'success' | 'warning' | 'destructive'
-}) {
+function WorkspaceCard({ workspace, stats }: { workspace: Workspace; stats: Stat[] }) {
+  const Icon = workspace.icon
+
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-2xl font-bold text-foreground">{value}</p>
-        <Icon className={`h-5 w-5 ${color ? `text-${color}` : 'text-foreground/30'}`} />
+    <Link
+      href={workspace.href}
+      className="group flex flex-col rounded-2xl border border-border bg-card p-7 transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 transition-colors group-hover:bg-accent/15">
+        <Icon className="h-6 w-6 text-accent" />
       </div>
-      <p className={`text-xs mt-1 ${color ? `text-${color}` : 'text-foreground/50'}`}>{label}</p>
-    </div>
+
+      <h2 className="mt-5 text-xl font-semibold tracking-tight text-foreground">
+        {workspace.name}
+      </h2>
+      {workspace.fullName !== workspace.name && (
+        <p className="mt-1 text-xs text-foreground/40">{workspace.fullName}</p>
+      )}
+      <p className="mt-2.5 min-h-[2.75rem] text-sm leading-relaxed text-foreground/55">
+        {workspace.description}
+      </p>
+
+      <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border pt-5">
+        {stats.map((stat) => (
+          <div key={stat.label}>
+            <p
+              className={`text-3xl font-bold tabular-nums ${
+                stat.tone === 'warning' ? 'text-warning' : 'text-foreground'
+              }`}
+            >
+              {stat.value}
+            </p>
+            <p
+              className={`mt-1 text-xs ${
+                stat.tone === 'warning' ? 'text-warning/80' : 'text-foreground/40'
+              }`}
+            >
+              {stat.label}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-accent">
+        Open {workspace.name}
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </Link>
   )
+}
+
+/**
+ * One line, time-of-day aware. Falls back to "Welcome back" when Supabase has
+ * no name for the user.
+ *
+ * The hour is resolved in Australia/Sydney, not the server's timezone — this
+ * renders on a UTC host and MCR is an Australian practice, so a plain
+ * `getHours()` would greet Gabby with "Good evening" at 9am.
+ */
+function greetingLine(metadata: Record<string, unknown> | undefined): string {
+  const firstName = firstNameFromMetadata(metadata)
+  if (!firstName) return 'Welcome back'
+
+  const hour = Number(
+    new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Sydney',
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(new Date()),
+  )
+
+  const partOfDay = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  return `${partOfDay}, ${firstName}`
 }

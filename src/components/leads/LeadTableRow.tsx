@@ -1,0 +1,159 @@
+'use client'
+
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { StageSelect } from '@/components/leads/StageSelect'
+import { DebtSelect } from '@/components/leads/DebtSelect'
+// Follow-up flag temporarily hidden — see the note on LeadRowProps.
+// import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
+import { Badge } from '@/components/ui/Badge'
+import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
+import { formatDebtRange, formatPhone, formatShortDate } from '@/lib/leads/format'
+import type { Lead } from '@/types/leads'
+
+interface LeadRowProps {
+  lead: Lead
+  /**
+   * Follow-up flag hidden for now, along with its table column and the filter
+   * toggle. The rule itself (needsFollowUp) is untouched and still drives the
+   * page-header count — uncomment `flagged` here, the <td> below, the card
+   * badge, the COLUMNS entry in LeadTable and the toggle in LeadFilters to
+   * bring it back.
+   */
+  // flagged: boolean
+  onRequestConvert: (lead: Lead) => void
+}
+
+/**
+ * Desktop table row. Opening the record deliberately does not clear the
+ * follow-up flag — only a recorded action does that.
+ */
+export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
+  const router = useRouter()
+
+  return (
+    <tr
+      onClick={() => router.push(`/leads/${lead.id}`)}
+      className="cursor-pointer bg-primary transition-colors hover:bg-surface/40"
+    >
+      <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
+        {formatShortDate(lead.createdAt)}
+      </td>
+      <td className="px-4 py-3.5">
+        <Link
+          href={`/leads/${lead.id}`}
+          onClick={(event) => event.stopPropagation()}
+          className="font-medium text-foreground hover:text-accent"
+        >
+          {lead.name}
+        </Link>
+      </td>
+      <td className="px-4 py-3.5 max-w-[180px] truncate text-foreground/50">{lead.email}</td>
+      <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
+        {formatPhone(lead.phone)}
+      </td>
+      {/* Editable in the row, like Stage. The column is no longer right-aligned
+          because it holds a control rather than a figure; the fixed width keeps
+          the values lined up down the column. */}
+      <td className="px-4 py-3.5 w-[168px]">
+        <DebtSelect lead={lead} />
+      </td>
+      {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
+          so it shouldn't take someone a phone call to find out. */}
+      <td className="px-4 py-3.5 whitespace-nowrap">
+        {lead.entityType ? (
+          <Badge variant={ENTITY_TYPE_META[lead.entityType].badge}>
+            {ENTITY_TYPE_META[lead.entityType].label}
+          </Badge>
+        ) : (
+          <span className="text-foreground/25">&mdash;</span>
+        )}
+      </td>
+      <td className="px-4 py-3.5 text-foreground/50">
+        {lead.state ?? <span className="text-foreground/25">&mdash;</span>}
+      </td>
+      {/* The one column allowed to lose information — the record has it in
+          full. Capped so a long message can't push Stage and Source off screen. */}
+      <td className="px-4 py-3.5 max-w-[16rem]">
+        {lead.message ? (
+          <span className="block truncate text-foreground/50" title={lead.message}>
+            {lead.message}
+          </span>
+        ) : (
+          <span className="text-foreground/25">&mdash;</span>
+        )}
+      </td>
+      <td className="px-4 py-3.5 w-[150px]">
+        <StageSelect lead={lead} onRequestConvert={onRequestConvert} />
+      </td>
+      <td className="px-4 py-3.5 whitespace-nowrap text-foreground/50">
+        {SOURCE_META[lead.source].short}
+      </td>
+      {/* <td className="px-4 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
+    </tr>
+  )
+}
+
+/** Below md the same row stacks into a card. */
+export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
+  const router = useRouter()
+
+  return (
+    <div
+      onClick={() => router.push(`/leads/${lead.id}`)}
+      className="cursor-pointer space-y-3 border-b border-white/5 bg-primary p-4 last:border-b-0"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/leads/${lead.id}`}
+              onClick={(event) => event.stopPropagation()}
+              className="truncate font-medium text-foreground hover:text-accent"
+            >
+              {lead.name}
+            </Link>
+            {/* {flagged && <FollowUpBadge compact />} */}
+          </div>
+          <p className="mt-1 truncate text-xs text-foreground/50">{lead.email}</p>
+          <p className="mt-0.5 text-xs tabular-nums text-foreground/50">
+            {formatPhone(lead.phone)}
+          </p>
+        </div>
+        <p className="shrink-0 font-medium tabular-nums text-foreground">
+          {formatDebtRange(lead.debtMin, lead.debtMax)}
+        </p>
+      </div>
+
+      {lead.message && (
+        <p className="truncate text-xs text-foreground/50" title={lead.message}>
+          {lead.message}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2 text-xs text-foreground/40">
+        <span className="tabular-nums">{formatShortDate(lead.createdAt)}</span>
+        {lead.entityType && (
+          <>
+            <span aria-hidden="true">&middot;</span>
+            <span>{ENTITY_TYPE_META[lead.entityType].label}</span>
+          </>
+        )}
+        <span aria-hidden="true">·</span>
+        {lead.state && <span>{lead.state}</span>}
+        <span aria-hidden="true">·</span>
+        <span>{SOURCE_META[lead.source].short}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <DebtSelect lead={lead} selectSize="md" className="w-full" />
+        <StageSelect
+          lead={lead}
+          onRequestConvert={onRequestConvert}
+          selectSize="md"
+          className="w-full"
+        />
+      </div>
+    </div>
+  )
+}
