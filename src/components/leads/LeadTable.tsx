@@ -19,8 +19,8 @@ const COLUMNS = [
   { label: 'Name', className: 'text-left' },
   { label: 'Email', className: 'text-left' },
   { label: 'Phone', className: 'text-left' },
-  // Left-aligned now that the cell holds a select rather than a figure.
-  { label: 'Debt', className: 'text-left' },
+  // Right-aligned: the cell holds a typed figure, so the amounts line up.
+  { label: 'Debt', className: 'text-right' },
   { label: 'Entity', className: 'text-left' },
   { label: 'State', className: 'text-left' },
   { label: 'Message', className: 'text-left' },

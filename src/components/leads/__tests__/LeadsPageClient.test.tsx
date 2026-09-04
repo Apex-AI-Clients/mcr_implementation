@@ -240,10 +240,10 @@ describe('LeadsPageClient', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(visibleNames()[0]).toBe('Dean Whitlock')
-    // Debt is a select in the row now, so assert its value rather than text:
-    // every row carries every preset label as an <option>.
-    const debt = inTable().getByLabelText('Debt for Dean Whitlock') as HTMLSelectElement
-    expect(debt.value).toBe('150000:250000')
+    // Debt is a typed figure in the row; the display carries the formatted range.
+    expect(inTable().getByLabelText('Edit debt for Dean Whitlock').textContent).toContain(
+      '$150k \u2013 $250k',
+    )
     expect(inTable().getByText('Trust')).toBeTruthy()
     expect(inTable().getByText('Civil contracting, mostly PAYG.')).toBeTruthy()
   })
@@ -259,5 +259,138 @@ describe('LeadsPageClient', () => {
     expect(within(dialog).getByText(/creates a client file for Marcus Oyelaran/)).toBeTruthy()
     // Not committed until the dialog is confirmed.
     expect(select.value).toBe('lead')
+  })
+})
+
+describe('editing debt in the row', () => {
+  /** Open the row's debt editor and return its input. */
+  async function openDebt(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.click(inTable().getByLabelText(`Edit debt for ${name}`))
+    return inTable().getByLabelText(`Debt for ${name}`) as HTMLInputElement
+  }
+
+  it('shows the stored range until it is edited', () => {
+    renderList()
+    // Fixture 'a' is 50,000-74,999.
+    expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
+      '$100k \u2013 $125k',
+    )
+  })
+
+  it('accepts an exact figure and stores it as a point amount', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    await user.type(input, '63500')
+    await user.keyboard('{Enter}')
+
+    // min === max, so it renders as one amount rather than a range.
+    await waitFor(() =>
+      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
+        '$64k',
+      ),
+    )
+  })
+
+  it.each([
+    ['$120,000', '$120k'],
+    ['120k', '$120k'],
+    ['120000', '$120k'],
+  ])('accepts %s', async (typed, expected) => {
+    const user = userEvent.setup()
+    renderList()
+
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    await user.type(input, typed)
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
+        expected,
+      ),
+    )
+  })
+
+  it('does not prefill the editor from a bracket, so Enter cannot silently pin it', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    // 'a' holds a bracket (100,000-124,999), not an exact figure.
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    expect(input.value).toBe('')
+    // The current range is offered as a placeholder for context only.
+    expect(input.placeholder).toContain('$100k')
+  })
+
+  it('prefills the editor when the stored value is already exact', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    let input = await openDebt(user, 'Marcus Oyelaran')
+    await user.type(input, '63500')
+    await user.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(inTable().queryByLabelText('Debt for Marcus Oyelaran')).toBeNull(),
+    )
+
+    input = await openDebt(user, 'Marcus Oyelaran')
+    expect(input.value).toBe('63500')
+  })
+
+  it('clears the debt when the field is emptied', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    await user.clear(input)
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
+        '\u2014',
+      ),
+    )
+  })
+
+  it.each([
+    ['not sure', /Enter an amount/],
+    ['50k to 100k', /one amount, not a range/],
+    ['3', /at least \$1,000/],
+  ])('refuses %s with a reason rather than guessing', async (typed, message) => {
+    const user = userEvent.setup()
+    renderList()
+
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    await user.type(input, typed)
+    await user.keyboard('{Enter}')
+
+    expect(inTable().getByText(message)).toBeTruthy()
+    // Still editing, and the stored value is untouched.
+    expect(inTable().getByLabelText('Debt for Marcus Oyelaran')).toBeTruthy()
+  })
+
+  it('abandons the edit on Escape', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    const input = await openDebt(user, 'Marcus Oyelaran')
+    await user.type(input, '999999')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() =>
+      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
+        '$100k \u2013 $125k',
+      ),
+    )
+  })
+
+  it('does not open the record when the editor is used', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    // The row is clickable; the control inside it must not trigger that.
+    await user.click(inTable().getByLabelText('Edit debt for Marcus Oyelaran'))
+    expect(inTable().getByLabelText('Debt for Marcus Oyelaran')).toBeTruthy()
   })
 })

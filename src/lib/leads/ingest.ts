@@ -76,12 +76,15 @@ function mapDebt(raw: string | null): DebtRange {
   return WEBSITE_DEBT_CODES[raw.trim().toLowerCase()] ?? { min: null, max: null }
 }
 
+/** Why a typed debt value could not be used. Drives the message staff see. */
+export type LooseDebtFailure = 'not_a_number' | 'ambiguous' | 'too_small'
+
 export type LooseDebtResult =
   | { kind: 'parsed'; min: number; max: number }
   /** Nothing was typed — there is nothing to preserve. */
   | { kind: 'absent' }
   /** Something was typed that is not a usable figure; keep the raw text. */
-  | { kind: 'unparseable'; raw: string }
+  | { kind: 'unparseable'; raw: string; reason: LooseDebtFailure }
 
 /**
  * A free-text debt field, parsed loosely.
@@ -103,7 +106,10 @@ export function parseLooseDebt(raw: string | null): LooseDebtResult {
   // One number, optionally with $ , . spaces and a k/m suffix. Any other
   // wording around it is fine; more than one number is ambiguous, so it isn't.
   const matches = trimmed.match(/\d[\d,\s.]*\s*[kKmM]?/g)
-  if (!matches || matches.length !== 1) return { kind: 'unparseable', raw: trimmed }
+  if (!matches) return { kind: 'unparseable', raw: trimmed, reason: 'not_a_number' }
+  // More than one number is a range or a typo; either way, guessing which is
+  // meant would be inventing data.
+  if (matches.length !== 1) return { kind: 'unparseable', raw: trimmed, reason: 'ambiguous' }
 
   const token = matches[0].trim()
   const suffix = /[kK]$/.test(token) ? 1_000 : /[mM]$/.test(token) ? 1_000_000 : 1
@@ -115,10 +121,14 @@ export function parseLooseDebt(raw: string | null): LooseDebtResult {
   const normalised = /\.\d{1,2}$/.test(digits) ? digits : digits.replace(/\./g, '')
 
   const value = Number.parseFloat(normalised)
-  if (!Number.isFinite(value) || value <= 0) return { kind: 'unparseable', raw: trimmed }
+  if (!Number.isFinite(value) || value <= 0) {
+    return { kind: 'unparseable', raw: trimmed, reason: 'not_a_number' }
+  }
 
   const dollars = Math.round(value * suffix)
-  if (dollars < MIN_PLAUSIBLE_DEBT) return { kind: 'unparseable', raw: trimmed }
+  if (dollars < MIN_PLAUSIBLE_DEBT) {
+    return { kind: 'unparseable', raw: trimmed, reason: 'too_small' }
+  }
 
   return { kind: 'parsed', min: dollars, max: dollars }
 }

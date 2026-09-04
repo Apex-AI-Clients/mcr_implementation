@@ -3,12 +3,12 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { StageSelect } from '@/components/leads/StageSelect'
-import { DebtSelect } from '@/components/leads/DebtSelect'
+import { DebtInput } from '@/components/leads/DebtInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { Badge } from '@/components/ui/Badge'
 import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
-import { formatDebtRange, formatPhone, formatShortDate } from '@/lib/leads/format'
+import { formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -52,11 +52,11 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
       <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
         {formatPhone(lead.phone)}
       </td>
-      {/* Editable in the row, like Stage. The column is no longer right-aligned
-          because it holds a control rather than a figure; the fixed width keeps
-          the values lined up down the column. */}
-      <td className="px-4 py-3.5 w-[168px]">
-        <DebtSelect lead={lead} />
+      {/* An exact figure, typed. The forms can only give a bracket; once the
+          real number is known it should not have to be rounded to the nearest
+          band. Right-aligned so the amounts line up down the column. */}
+      <td className="px-4 py-3.5 w-[132px] text-right">
+        <DebtInput lead={lead} />
       </td>
       {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
           so it shouldn't take someone a phone call to find out. */}
@@ -120,9 +120,9 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
             {formatPhone(lead.phone)}
           </p>
         </div>
-        <p className="shrink-0 font-medium tabular-nums text-foreground">
-          {formatDebtRange(lead.debtMin, lead.debtMax)}
-        </p>
+        <div className="w-[124px] shrink-0">
+          <DebtInput lead={lead} variant="card" />
+        </div>
       </div>
 
       {lead.message && (
@@ -145,15 +145,12 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
         <span>{SOURCE_META[lead.source].short}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <DebtSelect lead={lead} selectSize="md" className="w-full" />
-        <StageSelect
-          lead={lead}
-          onRequestConvert={onRequestConvert}
-          selectSize="md"
-          className="w-full"
-        />
-      </div>
+      <StageSelect
+        lead={lead}
+        onRequestConvert={onRequestConvert}
+        selectSize="md"
+        className="w-full"
+      />
     </div>
   )
 }
