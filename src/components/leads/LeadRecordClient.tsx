@@ -11,8 +11,18 @@ import { LeadActivityForm } from '@/components/leads/LeadActivityForm'
 import { LeadActivityTimeline } from '@/components/leads/LeadActivityTimeline'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
-import { formatAge, formatDebt, formatPhone, isValidAuMobile, isValidEmail } from '@/lib/leads/format'
-import type { Lead } from '@/types/leads'
+import { Select } from '@/components/ui/Select'
+import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import {
+  debtSelectOptions,
+  decodeDebtRange,
+  formatAge,
+  formatDebtRange,
+  formatPhone,
+  isValidAuMobile,
+  isValidEmail,
+} from '@/lib/leads/format'
+import type { EntityType, Lead } from '@/types/leads'
 
 interface LeadRecordClientProps {
   leadId: string
@@ -47,20 +57,76 @@ export function LeadRecordClient({ leadId }: LeadRecordClientProps) {
         {/* Left — history */}
         <div className="space-y-4 lg:order-1">
           <LeadActivityForm leadId={lead.id} />
+
+          {/* The lead's own words — read-only, and the only verbatim record of
+              what they asked for. Staff commentary goes in notes. Omitted
+              entirely when there is nothing, rather than an empty heading. */}
+          {lead.message && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
+                Their message
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">
+                {lead.message}
+              </p>
+            </div>
+          )}
+
           <LeadActivityTimeline activities={activities} />
         </div>
 
         {/* Right — the record */}
         <div className="space-y-4 lg:order-2">
-          <div className="rounded-xl border border-border bg-card p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-              Debt
-            </p>
-            <p className="mt-1 text-3xl font-bold tabular-nums text-foreground">
-              {formatDebt(lead.debtAmount)}
-            </p>
-            <p className="mt-1 text-xs text-foreground/40">{lead.state}</p>
+          <div className="space-y-4 rounded-xl border border-border bg-card p-5">
+            <InlineSelect
+              label="Debt"
+              leadId={lead.id}
+              value={debtSelectOptions(lead.debtMin, lead.debtMax).value}
+              display={formatDebtRange(lead.debtMin, lead.debtMax, 'full')}
+              isEmpty={lead.debtMin === null && lead.debtMax === null}
+              options={debtSelectOptions(lead.debtMin, lead.debtMax).options}
+              patchFor={(value) => {
+                const { min, max } = decodeDebtRange(value)
+                return { debtMin: min, debtMax: max }
+              }}
+            />
+            <p className="text-xs text-foreground/40">{lead.state ?? 'State not given'}</p>
           </div>
+
+          <div className="rounded-xl border border-border bg-card p-5">
+            <InlineSelect
+              label="Business type"
+              leadId={lead.id}
+              value={lead.entityType ?? ''}
+              display={
+                lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : '—'
+              }
+              isEmpty={lead.entityType === null}
+              emptyLabel="Not given"
+              size="sm"
+              options={ALL_ENTITY_TYPES.map((type) => ({
+                value: type,
+                label: ENTITY_TYPE_META[type].label,
+              }))}
+              patchFor={(value) => ({ entityType: (value || null) as EntityType | null })}
+            />
+            {lead.entityType === 'trust' && (
+              <p className="mt-2 text-xs text-warning">
+                A trust cannot take the SBR path.
+              </p>
+            )}
+          </div>
+
+          {/* Read-only, like the message — the lead's own words, and free text
+              the form required of them. */}
+          {lead.preferredCallTime && (
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
+                Preferred call time
+              </p>
+              <p className="mt-1.5 text-sm text-foreground/80">{lead.preferredCallTime}</p>
+            </div>
+          )}
 
           <div className="rounded-xl border border-border bg-card p-5">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-foreground/40">
@@ -177,6 +243,133 @@ function ConversionPanel({ lead, onConvert }: { lead: Lead; onConvert: () => voi
       <Button type="button" className="mt-4 w-full" onClick={onConvert}>
         {markedButUnlinked ? 'Create their client file' : 'Convert to client'}
       </Button>
+    </div>
+  )
+}
+
+interface InlineSelectProps {
+  label: string
+  /** Stored value as a select value; '' means nothing chosen. */
+  value: string
+  /** Formatted value shown when not editing. */
+  display: string
+  /** Drives the muted treatment — the display string may legitimately be an em dash. */
+  isEmpty: boolean
+  /** Leading option that clears the field. Omit when the option list carries its own. */
+  emptyLabel?: string
+  options: { value: string; label: string }[]
+  leadId: string
+  /** Maps the chosen value to the Lead patch to dispatch. */
+  patchFor: (value: string) => Partial<Lead>
+  size?: 'sm' | 'lg'
+}
+
+/**
+ * Sibling to InlineField for values that come from a fixed set. Same
+ * begin/save/cancel shape, same UPDATE_LEAD dispatch — Enter saves, Escape
+ * cancels.
+ *
+ * Correcting one of these is a data correction, not contact: UPDATE_LEAD
+ * deliberately leaves `lastActionAt` alone and writes no activity. Only the four
+ * composer types and stage changes touch the clock.
+ */
+function InlineSelect({
+  label,
+  value,
+  display,
+  isEmpty,
+  emptyLabel,
+  options,
+  leadId,
+  patchFor,
+  size = 'lg',
+}: InlineSelectProps) {
+  const { updateLead } = useLeads()
+  const { toast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  function begin() {
+    setDraft(value)
+    setEditing(true)
+  }
+
+  function save() {
+    updateLead(leadId, patchFor(draft))
+    setEditing(false)
+    toast(`${label} updated.`)
+  }
+
+  const fieldId = `inline-${label.toLowerCase().replace(/\s+/g, '-')}`
+
+  if (editing) {
+    return (
+      <div>
+        <label
+          htmlFor={fieldId}
+          className="text-xs font-medium uppercase tracking-wide text-foreground/40"
+        >
+          {label}
+        </label>
+        <div className="mt-2 flex items-start gap-1.5">
+          <Select
+            id={fieldId}
+            autoFocus
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                save()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                setEditing(false)
+              }
+            }}
+            placeholder={emptyLabel}
+            options={options}
+          />
+          <button
+            type="button"
+            onClick={save}
+            aria-label={`Save ${label.toLowerCase()}`}
+            className="mt-0.5 rounded-lg p-1.5 text-success transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            aria-label={`Cancel editing ${label.toLowerCase()}`}
+            className="mt-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="group flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">{label}</p>
+        <p
+          className={`${size === 'lg' ? 'mt-1 text-2xl font-bold tabular-nums' : 'mt-1.5 text-sm'} ${
+            isEmpty ? 'text-foreground/40' : 'text-foreground'
+          }`}
+        >
+          {display}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={begin}
+        aria-label={`Edit ${label.toLowerCase()}`}
+        className="shrink-0 rounded-lg p-1.5 text-muted opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }
@@ -299,7 +492,7 @@ function InlineField({
         <p className="text-xs text-muted">{label}</p>
         <p
           className={`mt-0.5 truncate text-sm ${
-            value ? 'text-foreground' : 'text-foreground/35'
+            value ? 'text-foreground' : 'text-foreground/40'
           }`}
         >
           {value ? (display ?? value) : (placeholder ?? '—')}

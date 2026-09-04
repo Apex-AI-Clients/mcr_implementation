@@ -1,44 +1,73 @@
 'use client'
 
 import { createContext, useCallback, useContext, useMemo, useReducer } from 'react'
-import type { AuState, Lead, LeadActivity, LeadActivityType, LeadStage } from '@/types/leads'
+import type {
+  AuState,
+  EntityType,
+  Lead,
+  LeadActivity,
+  LeadActivityType,
+  LeadStage,
+} from '@/types/leads'
 import { needsFollowUp } from '@/lib/leads/followUp'
 import { STAGE_META } from '@/lib/leads/constants'
+import { useToast } from '@/components/ui/Toast'
 
 /**
- * In-memory CRM store for Stage 2.
+ * CRM store.
  *
- * Everything here runs on the mock seed handed down from the server; nothing is
- * written to Supabase. State lives above both `/leads` and `/leads/[id]` so a
- * logged action on the record is reflected in the list without a round trip —
- * which is what makes "the follow-up flag survives opening a record but clears
- * on a logged action" observable. A hard reload resets to the seed.
+ * State lives above both `/leads` and `/leads/[id]` so a logged action on the
+ * record is reflected in the list without a round trip — which is what makes
+ * "the follow-up flag survives opening a record but clears on a logged action"
+ * observable.
  *
- * Stage 4 replaces the two `persist*` seams below with Supabase writes; the
- * reducer and the optimistic/rollback flow stay as they are.
+ * Every mutation is optimistic: the reducer applies it immediately, then the
+ * persistence adapter writes it. If the write fails the change is rolled back
+ * and the user is told, so the screen never quietly disagrees with the
+ * database. Without an adapter the store is purely in-memory, which is what
+ * the tests use.
  */
 
 // ============================================================
-// Persistence seams — no-ops until Stage 4
+// Persistence seams
 // ============================================================
 
 /**
- * Where Stage 4 attaches the Supabase writes. Both default to no-ops, so today
- * the store is purely in-memory; passing an adapter is all that changes.
+ * Where the database writes attach. Every hook is optional and defaults to a
+ * no-op, so omitting the adapter leaves the store in memory.
+ *
+ * Throwing from any of these rolls the optimistic update back. None of them
+ * may write `last_action_at`: the trigger on lead_activities owns that column,
+ * which is why a data correction (no activity) leaves the follow-up clock
+ * alone while a stage change (which carries one) resets it.
  */
 export interface LeadsPersistence {
-  /** Throwing rolls the optimistic stage change back. */
-  stageChange?: (change: { leadId: string; stage: LeadStage }) => Promise<void>
+  createLead?: (input: { lead: Lead; activity: LeadActivity | null }) => Promise<void>
+  /** A data correction — deliberately carries no activity. */
+  updateLead?: (input: { leadId: string; patch: Partial<Lead> }) => Promise<void>
+  logActivity?: (input: { activity: LeadActivity }) => Promise<void>
+  stageChange?: (change: {
+    leadId: string
+    stage: LeadStage
+    activity: LeadActivity
+  }) => Promise<void>
   /**
    * Records the client file against the lead. If this throws, the client file
    * exists but the lead does not know about it — the caller must say so rather
    * than retry, because a duplicate client row is worse than a visible
    * inconsistency.
    */
-  conversion?: (link: { leadId: string; clientId: string }) => Promise<void>
+  conversion?: (link: {
+    leadId: string
+    clientId: string
+    activity: LeadActivity
+  }) => Promise<void>
 }
 
 const NO_PERSISTENCE: LeadsPersistence = {}
+
+/** Sentinel for a rollback that has no activity to remove. */
+const NO_ACTIVITY = '__no_activity__'
 
 // ============================================================
 // State
@@ -56,6 +85,8 @@ export type LeadsAction =
   | { type: 'SET_STAGE'; leadId: string; stage: LeadStage; activity: LeadActivity; at: string }
   | { type: 'SET_CONVERTED'; leadId: string; clientId: string; activity: LeadActivity; at: string }
   | { type: 'ROLLBACK_LEAD'; lead: Lead; removeActivityId: string }
+  /** Undo an optimistic ADD_LEAD whose write failed. */
+  | { type: 'REMOVE_LEAD'; leadId: string }
 
 /** Exported for unit tests — this is where the follow-up clock rules live. */
 export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState {
@@ -129,6 +160,12 @@ export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState
         leads: state.leads.map((lead) => (lead.id === action.lead.id ? action.lead : lead)),
         activities: state.activities.filter((a) => a.id !== action.removeActivityId),
       }
+
+    case 'REMOVE_LEAD':
+      return {
+        leads: state.leads.filter((lead) => lead.id !== action.leadId),
+        activities: state.activities.filter((a) => a.leadId !== action.leadId),
+      }
   }
 }
 
@@ -140,9 +177,14 @@ export interface NewLeadInput {
   name: string
   email: string
   phone: string
-  /** Integer cents. */
-  debtAmount: number
+  /** Whole dollars. Null max is open-ended. */
+  debtMin: number | null
+  debtMax: number | null
   state: AuState
+  entityType?: EntityType | null
+  /** The lead's own words from the capture form. Not an activity. */
+  message?: string
+  /** Staff commentary, saved as the first activity. */
   note?: string
 }
 
@@ -162,10 +204,20 @@ interface LeadsContextValue {
 
 const LeadsContext = createContext<LeadsContextValue | null>(null)
 
-let idCounter = 0
-function newId(prefix: string): string {
-  idCounter += 1
-  return `${prefix}_local_${idCounter}_${Math.random().toString(36).slice(2, 8)}`
+/**
+ * Real UUIDs: these ids are the primary keys the database stores, so the
+ * optimistic row and the persisted row are the same row. `randomUUID` needs a
+ * secure context, hence the fallback.
+ */
+function newId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const rand = (Math.random() * 16) | 0
+    const value = char === 'x' ? rand : (rand & 0x3) | 0x8
+    return value.toString(16)
+  })
 }
 
 interface LeadsStoreProviderProps {
@@ -189,6 +241,7 @@ export function LeadsStoreProvider({
     leads: initialLeads,
     activities: initialActivities,
   })
+  const { toast } = useToast()
 
   const getLead = useCallback(
     (leadId: string) => state.leads.find((lead) => lead.id === leadId),
@@ -207,12 +260,18 @@ export function LeadsStoreProvider({
     (input: NewLeadInput) => {
       const at = new Date().toISOString()
       const lead: Lead = {
-        id: newId('ld'),
+        id: newId(),
         name: input.name,
-        email: input.email,
-        phone: input.phone,
-        debtAmount: input.debtAmount,
+        // Lowercased to match what the route stores, so the optimistic row and
+        // the persisted row don't disagree until the next reload.
+        email: input.email.trim().toLowerCase(),
+        phone: input.phone.trim(),
+        debtMin: input.debtMin,
+        debtMax: input.debtMax,
         state: input.state,
+        entityType: input.entityType ?? null,
+        message: input.message?.trim() || null,
+        preferredCallTime: null,
         stage: 'lead',
         // Always manual here — this one didn't come from a campaign.
         source: 'manual',
@@ -226,7 +285,7 @@ export function LeadsStoreProvider({
       }
       const activity: LeadActivity | null = input.note?.trim()
         ? {
-            id: newId('act'),
+            id: newId(),
             leadId: lead.id,
             type: 'note',
             body: input.note.trim(),
@@ -236,32 +295,60 @@ export function LeadsStoreProvider({
         : null
 
       dispatch({ type: 'ADD_LEAD', lead, activity })
+
+      // Optimistic: the dialog closes straight away. If the write fails the row
+      // is taken back out rather than left looking saved.
+      void persistence.createLead?.({ lead, activity })?.catch(() => {
+        dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
+        toast(`${lead.name} could not be saved. Please add them again.`, { tone: 'error' })
+      })
+
       return lead
     },
-    [author],
+    [author, persistence, toast],
   )
 
-  const updateLead = useCallback((leadId: string, patch: Partial<Lead>) => {
-    dispatch({ type: 'UPDATE_LEAD', leadId, patch, at: new Date().toISOString() })
-  }, [])
+  const updateLead = useCallback(
+    (leadId: string, patch: Partial<Lead>) => {
+      const previous = state.leads.find((lead) => lead.id === leadId)
+      dispatch({ type: 'UPDATE_LEAD', leadId, patch, at: new Date().toISOString() })
+
+      void persistence.updateLead?.({ leadId, patch })?.catch(() => {
+        // NO_ACTIVITY matches nothing, so only the lead is restored.
+        if (previous) {
+          dispatch({ type: 'ROLLBACK_LEAD', lead: previous, removeActivityId: NO_ACTIVITY })
+        }
+        toast("That didn't save. The previous value has been put back.", { tone: 'error' })
+      })
+    },
+    [state.leads, persistence, toast],
+  )
 
   const logActivity = useCallback(
     (leadId: string, type: LeadActivityType, body: string) => {
       const activity: LeadActivity = {
-        id: newId('act'),
+        id: newId(),
         leadId,
         type,
         body: body.trim(),
         author,
         createdAt: new Date().toISOString(),
       }
+      const previous = state.leads.find((lead) => lead.id === leadId)
       dispatch({
         type: 'LOG_ACTIVITY',
         activity,
         nextStep: type === 'next_step' ? activity.body : undefined,
       })
+
+      void persistence.logActivity?.({ activity })?.catch(() => {
+        if (previous) {
+          dispatch({ type: 'ROLLBACK_LEAD', lead: previous, removeActivityId: activity.id })
+        }
+        toast("That didn't save. Please try again.", { tone: 'error' })
+      })
     },
-    [author],
+    [author, state.leads, persistence, toast],
   )
 
   const changeStage = useCallback(
@@ -271,7 +358,7 @@ export function LeadsStoreProvider({
 
       const at = new Date().toISOString()
       const activity: LeadActivity = {
-        id: newId('act'),
+        id: newId(),
         leadId,
         type: 'stage_change',
         body: `Stage changed from ${STAGE_META[previous.stage].label} to ${STAGE_META[stage].label}.`,
@@ -283,7 +370,7 @@ export function LeadsStoreProvider({
       dispatch({ type: 'SET_STAGE', leadId, stage, activity, at })
 
       try {
-        await persistence.stageChange?.({ leadId, stage })
+        await persistence.stageChange?.({ leadId, stage, activity })
       } catch (error) {
         dispatch({ type: 'ROLLBACK_LEAD', lead: previous, removeActivityId: activity.id })
         throw error
@@ -294,17 +381,20 @@ export function LeadsStoreProvider({
 
   const markConverted = useCallback(
     async (leadId: string, clientId: string) => {
-      await persistence.conversion?.({ leadId, clientId })
-
       const at = new Date().toISOString()
       const activity: LeadActivity = {
-        id: newId('act'),
+        id: newId(),
         leadId,
         type: 'stage_change',
         body: 'Converted to a client file in the restructuring workspace.',
         author,
         createdAt: at,
       }
+
+      // Persist first, then apply: the client file already exists at this
+      // point, so the caller has to be able to tell the difference between
+      // "linked" and "created but not linked".
+      await persistence.conversion?.({ leadId, clientId, activity })
       dispatch({ type: 'SET_CONVERTED', leadId, clientId, activity, at })
     },
     [author, persistence],

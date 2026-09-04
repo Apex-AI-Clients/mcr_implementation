@@ -52,7 +52,7 @@ export function WorkspaceSwitcher({ current, variant = 'sidebar' }: WorkspaceSwi
         aria-expanded={open}
         className={
           variant === 'bar'
-            ? 'flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+            ? 'flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent'
             : '-ml-1 mt-0.5 flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted transition-colors hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-accent'
         }
       >

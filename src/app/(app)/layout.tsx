@@ -4,7 +4,8 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { WorkspaceTopBar } from '@/components/admin/WorkspaceTopBar'
 import { LeadsStoreProvider } from '@/components/leads/LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
-import { getLeads, getAllLeadActivities } from '@/lib/leads/mock'
+import { getLeads, getAllLeadActivities } from '@/lib/leads/queries'
+import { leadsPersistence } from '@/lib/leads/persistence'
 import { firstNameFromMetadata } from '@/lib/utils'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -25,16 +26,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/login')
   }
 
-  // The CRM seed is loaded here rather than in the leads routes so the sidebar's
-  // follow-up count stays live as Gabby works. Mock until Stage 4.
+  // Loaded here rather than in the leads routes so the sidebar and the list
+  // read the same state as Gabby works.
+  const [leads, activities] = await Promise.all([getLeads(), getAllLeadActivities()])
   const author = firstNameFromMetadata(user.user_metadata) ?? user.email?.split('@')[0] ?? 'You'
 
   return (
     <ToastProvider>
       <LeadsStoreProvider
-        initialLeads={getLeads()}
-        initialActivities={getAllLeadActivities()}
+        initialLeads={leads}
+        initialActivities={activities}
         author={author}
+        persistence={leadsPersistence}
       >
         {/* Fixed to the viewport rather than `h-screen`: the root layout leaves
             body as `min-h-full` with no overflow rule, so a 100vh shell still

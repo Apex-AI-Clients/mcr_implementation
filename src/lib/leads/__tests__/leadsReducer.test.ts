@@ -24,7 +24,11 @@ function staleLead(overrides: Partial<Lead> = {}): Lead {
     name: 'Sasha Lorenz',
     email: 'sasha@example.com.au',
     phone: '0421004772',
-    debtAmount: 6_400_000,
+    debtMin: 100_000,
+    debtMax: 124_999,
+    entityType: 'company',
+    message: null,
+    preferredCallTime: null,
     state: 'NSW',
     stage: 'lead',
     source: 'facebook',
@@ -90,6 +94,47 @@ describe('follow-up clock', () => {
     })
     expect(next.leads[0].phone).toBe('0400000000')
     expect(next.leads[0].lastActionAt).toBe(at(40))
+    expect(needsFollowUp(next.leads[0], NOW)).toBe(true)
+  })
+
+  it('keeps the flag when the debt range is corrected', () => {
+    // Correcting a range is a data correction, not contact. It must not reset
+    // the clock and must not write an activity.
+    const next = leadsReducer(stateWith(staleLead()), {
+      type: 'UPDATE_LEAD',
+      leadId: 'ld_1',
+      patch: { debtMin: 500_000, debtMax: null },
+      at: NOW.toISOString(),
+    })
+    expect(next.leads[0].debtMin).toBe(500_000)
+    expect(next.leads[0].debtMax).toBeNull()
+    expect(next.leads[0].lastActionAt).toBe(at(40))
+    expect(next.activities).toHaveLength(0)
+    expect(needsFollowUp(next.leads[0], NOW)).toBe(true)
+  })
+
+  it('keeps the flag when the business type is corrected', () => {
+    const next = leadsReducer(stateWith(staleLead()), {
+      type: 'UPDATE_LEAD',
+      leadId: 'ld_1',
+      patch: { entityType: 'trust' },
+      at: NOW.toISOString(),
+    })
+    expect(next.leads[0].entityType).toBe('trust')
+    expect(next.leads[0].lastActionAt).toBe(at(40))
+    expect(next.activities).toHaveLength(0)
+    expect(needsFollowUp(next.leads[0], NOW)).toBe(true)
+  })
+
+  it('keeps the flag when debt or business type is cleared to unknown', () => {
+    const next = leadsReducer(stateWith(staleLead()), {
+      type: 'UPDATE_LEAD',
+      leadId: 'ld_1',
+      patch: { debtMin: null, debtMax: null, entityType: null },
+      at: NOW.toISOString(),
+    })
+    expect(next.leads[0].debtMin).toBeNull()
+    expect(next.leads[0].entityType).toBeNull()
     expect(needsFollowUp(next.leads[0], NOW)).toBe(true)
   })
 

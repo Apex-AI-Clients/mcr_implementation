@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { getSupabaseAuthClient } from '@/lib/supabase/server'
 import { getCompletenessSummary } from '@/lib/clients/completeness'
-import { getLeads } from '@/lib/leads/mock'
+import { getLeads } from '@/lib/leads/queries'
 // countNeedingFollowUp is hidden with the rest of the follow-up UI.
 import { countOpenLeads } from '@/lib/leads/followUp'
 import { WORKSPACES, type Workspace } from '@/lib/workspaces'
@@ -29,8 +29,7 @@ export default async function WorkspaceChooserPage() {
 
   const summary = await getCompletenessSummary()
 
-  // Mock until Stage 4 — the counts are real, the source isn't.
-  const leads = getLeads()
+  const leads = await getLeads()
   const openLeads = countOpenLeads(leads)
   // const followUps = countNeedingFollowUp(leads)
 
@@ -113,7 +112,7 @@ function WorkspaceCard({ workspace, stats }: { workspace: Workspace; stats: Stat
         {workspace.name}
       </h2>
       {workspace.fullName !== workspace.name && (
-        <p className="mt-1 text-xs text-foreground/35">{workspace.fullName}</p>
+        <p className="mt-1 text-xs text-foreground/40">{workspace.fullName}</p>
       )}
       <p className="mt-2.5 min-h-[2.75rem] text-sm leading-relaxed text-foreground/55">
         {workspace.description}

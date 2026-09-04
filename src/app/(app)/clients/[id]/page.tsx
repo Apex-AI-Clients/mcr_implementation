@@ -110,7 +110,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={`/clients/${client.id}/intake`}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface/70"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-primary"
           >
             <Pencil className="h-4 w-4" />
             Continue intake

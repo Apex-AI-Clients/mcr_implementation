@@ -3,10 +3,12 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { StageSelect } from '@/components/leads/StageSelect'
+import { DebtSelect } from '@/components/leads/DebtSelect'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { SOURCE_META } from '@/lib/leads/constants'
-import { formatDebt, formatPhone, formatShortDate } from '@/lib/leads/format'
+import { Badge } from '@/components/ui/Badge'
+import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
+import { formatDebtRange, formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -50,10 +52,37 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
       <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
         {formatPhone(lead.phone)}
       </td>
-      <td className="px-4 py-3.5 whitespace-nowrap text-right font-medium tabular-nums text-foreground">
-        {formatDebt(lead.debtAmount)}
+      {/* Editable in the row, like Stage. The column is no longer right-aligned
+          because it holds a control rather than a figure; the fixed width keeps
+          the values lined up down the column. */}
+      <td className="px-4 py-3.5 w-[168px]">
+        <DebtSelect lead={lead} />
       </td>
-      <td className="px-4 py-3.5 text-foreground/50">{lead.state}</td>
+      {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
+          so it shouldn't take someone a phone call to find out. */}
+      <td className="px-4 py-3.5 whitespace-nowrap">
+        {lead.entityType ? (
+          <Badge variant={ENTITY_TYPE_META[lead.entityType].badge}>
+            {ENTITY_TYPE_META[lead.entityType].label}
+          </Badge>
+        ) : (
+          <span className="text-foreground/25">&mdash;</span>
+        )}
+      </td>
+      <td className="px-4 py-3.5 text-foreground/50">
+        {lead.state ?? <span className="text-foreground/25">&mdash;</span>}
+      </td>
+      {/* The one column allowed to lose information — the record has it in
+          full. Capped so a long message can't push Stage and Source off screen. */}
+      <td className="px-4 py-3.5 max-w-[16rem]">
+        {lead.message ? (
+          <span className="block truncate text-foreground/50" title={lead.message}>
+            {lead.message}
+          </span>
+        ) : (
+          <span className="text-foreground/25">&mdash;</span>
+        )}
+      </td>
       <td className="px-4 py-3.5 w-[150px]">
         <StageSelect lead={lead} onRequestConvert={onRequestConvert} />
       </td>
@@ -92,24 +121,39 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
           </p>
         </div>
         <p className="shrink-0 font-medium tabular-nums text-foreground">
-          {formatDebt(lead.debtAmount)}
+          {formatDebtRange(lead.debtMin, lead.debtMax)}
         </p>
       </div>
 
+      {lead.message && (
+        <p className="truncate text-xs text-foreground/50" title={lead.message}>
+          {lead.message}
+        </p>
+      )}
+
       <div className="flex items-center gap-2 text-xs text-foreground/40">
         <span className="tabular-nums">{formatShortDate(lead.createdAt)}</span>
+        {lead.entityType && (
+          <>
+            <span aria-hidden="true">&middot;</span>
+            <span>{ENTITY_TYPE_META[lead.entityType].label}</span>
+          </>
+        )}
         <span aria-hidden="true">·</span>
-        <span>{lead.state}</span>
+        {lead.state && <span>{lead.state}</span>}
         <span aria-hidden="true">·</span>
         <span>{SOURCE_META[lead.source].short}</span>
       </div>
 
-      <StageSelect
-        lead={lead}
-        onRequestConvert={onRequestConvert}
-        selectSize="md"
-        className="w-full"
-      />
+      <div className="grid grid-cols-2 gap-2">
+        <DebtSelect lead={lead} selectSize="md" className="w-full" />
+        <StageSelect
+          lead={lead}
+          onRequestConvert={onRequestConvert}
+          selectSize="md"
+          className="w-full"
+        />
+      </div>
     </div>
   )
 }

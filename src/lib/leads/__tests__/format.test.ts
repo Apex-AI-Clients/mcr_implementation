@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  formatDebt,
-  parseDebtInput,
+  formatDebtRange,
+  overlapsFloor,
+  compareByDebtDesc,
   normalisePhone,
   isValidAuMobile,
   formatPhone,
@@ -13,6 +14,7 @@ import {
   formatAge,
   leadsToCsv,
 } from '../format'
+import { DEBT_PRESETS } from '../constants'
 import type { Lead } from '@/types/leads'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z') // midday in Sydney
@@ -23,7 +25,11 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     name: 'Test Lead',
     email: 'test@example.com.au',
     phone: '0402915338',
-    debtAmount: 4_150_000,
+    debtMin: 100_000,
+    debtMax: 124_999,
+    entityType: 'company',
+    message: null,
+    preferredCallTime: null,
     state: 'VIC',
     stage: 'lead',
     source: 'facebook',
@@ -38,45 +44,102 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
   }
 }
 
-describe('formatDebt', () => {
-  it('formats whole dollars without decimals', () => {
-    expect(formatDebt(4_150_000)).toBe('$41,500')
+describe('formatDebtRange', () => {
+  it('renders both-null as an em dash, never a blank', () => {
+    expect(formatDebtRange(null, null)).toBe('\u2014')
+    expect(formatDebtRange(null, null, 'full')).toBe('\u2014')
   })
 
-  it('shows cents only when there are any', () => {
-    expect(formatDebt(4_150_075)).toBe('$41,500.75')
+  it('renders an open-ended range with a plus', () => {
+    // The website form only offers "$150,000 or +" — it must not be shown as a
+    // closed bracket it never claimed.
+    expect(formatDebtRange(150_000, null)).toBe('$150k+')
+    expect(formatDebtRange(150_000, null, 'full')).toBe('$150,000+')
+    expect(formatDebtRange(500_000, null)).toBe('$500k+')
   })
 
-  it('handles zero and large amounts', () => {
-    expect(formatDebt(0)).toBe('$0')
-    expect(formatDebt(39_600_000)).toBe('$396,000')
+  it('renders a closed range', () => {
+    expect(formatDebtRange(100_000, 124_999)).toBe('$100k \u2013 $125k')
+    expect(formatDebtRange(100_000, 124_999, 'full')).toBe('$100,000 \u2013 $124,999')
+    expect(formatDebtRange(250_000, 500_000)).toBe('$250k \u2013 $500k')
+  })
+
+  it('renders a single typed figure as one amount, not a degenerate range', () => {
+    // A free-text debt field produces min === max; "$120k – $120k" would look
+    // like a bug.
+    expect(formatDebtRange(120_000, 120_000)).toBe('$120k')
+    expect(formatDebtRange(45_000, 45_000, 'full')).toBe('$45,000')
+  })
+
+  it('renders a zero or unknown floor as "Under"', () => {
+    expect(formatDebtRange(0, 49_999)).toBe('Under $50k')
+    expect(formatDebtRange(0, 49_999, 'full')).toBe('Under $49,999')
+    expect(formatDebtRange(null, 49_999)).toBe('Under $50k')
+  })
+
+  it('abbreviates to the nearest thousand in short form', () => {
+    expect(formatDebtRange(125_000, 149_999)).toBe('$125k \u2013 $150k')
+  })
+
+  it('formats every preset without throwing', () => {
+    for (const preset of DEBT_PRESETS) {
+      expect(typeof formatDebtRange(preset.min, preset.max)).toBe('string')
+      expect(formatDebtRange(preset.min, preset.max)).not.toBe('')
+    }
   })
 })
 
-describe('parseDebtInput', () => {
-  it.each([
-    ['41500', 4_150_000],
-    ['$41,500', 4_150_000],
-    ['  $41,500  ', 4_150_000],
-    ['41500.75', 4_150_075],
-    ['0.05', 5],
-    ['.5', 50],
-  ])('parses %s', (input, expected) => {
-    expect(parseDebtInput(input)).toBe(expected)
+describe('overlapsFloor', () => {
+  const at = (debtMin: number | null, debtMax: number | null) => ({ debtMin, debtMax })
+
+  it('matches a closed range whose top reaches the floor', () => {
+    expect(overlapsFloor(at(100_000, 124_999), 100_000)).toBe(true)
+    expect(overlapsFloor(at(100_000, 124_999), 125_000)).toBe(false)
   })
 
-  it('avoids float drift on cents', () => {
-    // 41500.55 * 100 is 4150054.999... in binary floating point.
-    expect(parseDebtInput('41500.55')).toBe(4_150_055)
-    expect(Number.isInteger(parseDebtInput('41500.55'))).toBe(true)
+  it('matches an open-ended range at any lower floor', () => {
+    // This is the case equality would get wrong: "$150k+" has to show up under
+    // $100k+, because it could be anything above $150k.
+    expect(overlapsFloor(at(150_000, null), 100_000)).toBe(true)
+    expect(overlapsFloor(at(150_000, null), 150_000)).toBe(true)
+    expect(overlapsFloor(at(150_000, null), 250_000)).toBe(false)
   })
 
-  it.each(['', '   ', 'abc', '-500', '0', '1.2.3', '12abc', '$'])(
-    'rejects %s',
-    (input) => {
-      expect(parseDebtInput(input)).toBeNull()
-    },
-  )
+  it('never matches a lead with no debt recorded', () => {
+    expect(overlapsFloor(at(null, null), 50_000)).toBe(false)
+  })
+
+  it('puts every preset above its own floor', () => {
+    for (const preset of DEBT_PRESETS) {
+      if (preset.min === null) continue
+      expect(overlapsFloor(at(preset.min, preset.max), preset.min)).toBe(true)
+    }
+  })
+})
+
+describe('compareByDebtDesc', () => {
+  it('sorts largest first by min', () => {
+    const sorted = [{ debtMin: 100_000 }, { debtMin: 500_000 }, { debtMin: 50_000 }].sort(
+      compareByDebtDesc,
+    )
+    expect(sorted.map((l) => l.debtMin)).toEqual([500_000, 100_000, 50_000])
+  })
+
+  it('puts unknown debt last', () => {
+    const sorted = [{ debtMin: null }, { debtMin: 100_000 }, { debtMin: null }, { debtMin: 500_000 }]
+      .sort(compareByDebtDesc)
+    expect(sorted.map((l) => l.debtMin)).toEqual([500_000, 100_000, null, null])
+  })
+
+  it('is not alphabetical — $500k outranks $100k', () => {
+    // Sorting the labels would put "$100k \u2013 $125k" above "$500k+".
+    const sorted = [{ debtMin: 100_000 }, { debtMin: 500_000 }].sort(compareByDebtDesc)
+    expect(sorted[0].debtMin).toBe(500_000)
+  })
+
+  it('treats two unknowns as equal', () => {
+    expect(compareByDebtDesc({ debtMin: null }, { debtMin: null })).toBe(0)
+  })
 })
 
 describe('phone', () => {
@@ -165,10 +228,10 @@ describe('leadsToCsv', () => {
     const lines = csv.split('\r\n')
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe(
-      'Date added,Name,Email,Phone,Debt (AUD),State,Stage,Source,Last action',
+      'Date added,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action',
     )
     expect(lines[1]).toBe(
-      '2026-08-26,Test Lead,test@example.com.au,0402 915 338,41500.00,VIC,Lead,Facebook,2026-08-26',
+      '2026-08-26,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26',
     )
   })
 
@@ -180,10 +243,30 @@ describe('leadsToCsv', () => {
     expect(csv).toContain('"a""b@example.com"')
   })
 
-  it('emits debt as a bare number so a spreadsheet can sum it', () => {
-    const csv = leadsToCsv([makeLead({ debtAmount: 39_600_000 })])
-    expect(csv).toContain(',396000.00,')
+  it('emits debt as two bare numbers so a spreadsheet can sort and filter it', () => {
+    const csv = leadsToCsv([makeLead({ debtMin: 250_000, debtMax: 500_000 })])
+    expect(csv).toContain(',250000,500000,')
     expect(csv).not.toContain('$')
+  })
+
+  it('leaves the max blank for an open-ended range', () => {
+    const csv = leadsToCsv([makeLead({ debtMin: 150_000, debtMax: null })])
+    expect(csv).toContain(',150000,,')
+  })
+
+  it('leaves both blank when no debt was given', () => {
+    const csv = leadsToCsv([makeLead({ debtMin: null, debtMax: null })])
+    expect(csv).not.toContain('\u2014')
+  })
+
+  it('includes the message, quoted when it contains a comma', () => {
+    const csv = leadsToCsv([makeLead({ message: 'Behind on PAYG, and GST.' })])
+    expect(csv).toContain('"Behind on PAYG, and GST."')
+  })
+
+  it('emits the entity type label, blank when unknown', () => {
+    expect(leadsToCsv([makeLead({ entityType: 'trust' })])).toContain(',Trust,')
+    expect(leadsToCsv([makeLead({ entityType: null })])).toContain(',,')
   })
 
   it('returns just the header for an empty view', () => {

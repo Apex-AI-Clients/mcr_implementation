@@ -1,4 +1,10 @@
-import type { LeadStage, LeadSource, LeadActivityType, AuState } from '@/types/leads'
+import type {
+  LeadStage,
+  LeadSource,
+  LeadActivityType,
+  AuState,
+  EntityType,
+} from '@/types/leads'
 import { OPEN_STAGES } from './followUp'
 
 /** The follow-up threshold. Defined in followUp.ts; re-exported here so callers
@@ -51,6 +57,74 @@ export const SOURCE_META: Record<LeadSource, { label: string; short: string }> =
 }
 
 export const ALL_SOURCES = Object.keys(SOURCE_META) as LeadSource[]
+
+// ============================================================
+// Debt
+// ============================================================
+
+export interface DebtPreset {
+  label: string
+  min: number | null
+  max: number | null
+}
+
+/**
+ * Editing is a dropdown; the range underneath is storage, not UI. Covers both
+ * scales seen in the wild — the website's consumer-debt brackets ($30k-$150k+)
+ * and the larger business brackets the client described.
+ *
+ * `$150k+` and the narrower brackets above it deliberately coexist: a website
+ * lead that only said "$150,000 or +" must never be presented as though it had
+ * said $250k-$500k.
+ */
+export const DEBT_PRESETS: DebtPreset[] = [
+  { label: 'Not given', min: null, max: null },
+  { label: 'Under $50k', min: 0, max: 49_999 },
+  { label: '$50k – $75k', min: 50_000, max: 74_999 },
+  { label: '$75k – $100k', min: 75_000, max: 99_999 },
+  { label: '$100k – $125k', min: 100_000, max: 124_999 },
+  { label: '$125k – $150k', min: 125_000, max: 149_999 },
+  { label: '$150k+', min: 150_000, max: null },
+  { label: '$150k – $250k', min: 150_000, max: 250_000 },
+  { label: '$250k – $500k', min: 250_000, max: 500_000 },
+  { label: '$500k+', min: 500_000, max: null },
+]
+
+/**
+ * The filter offers floors, not brackets — Gabby wants "show me the big ones",
+ * not "show me exactly this bracket".
+ */
+export const DEBT_FLOORS: { value: string; label: string; floor: number }[] = [
+  { value: '50000', label: '$50k+', floor: 50_000 },
+  { value: '100000', label: '$100k+', floor: 100_000 },
+  { value: '150000', label: '$150k+', floor: 150_000 },
+  { value: '250000', label: '$250k+', floor: 250_000 },
+  { value: '500000', label: '$500k+', floor: 500_000 },
+]
+
+// ============================================================
+// Entity type
+// ============================================================
+
+/** Trust is amber: it cannot take the SBR path, so it should catch the eye. */
+export const ENTITY_TYPE_META: Record<
+  EntityType,
+  { label: string; badge: 'muted' | 'warning' }
+> = {
+  company: { label: 'Company', badge: 'muted' },
+  trust: { label: 'Trust', badge: 'warning' },
+}
+
+export const ALL_ENTITY_TYPES = Object.keys(ENTITY_TYPE_META) as EntityType[]
+
+// ============================================================
+// Sort
+// ============================================================
+
+export const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'recent', label: 'Newest first' },
+  { value: 'debt', label: 'Largest debt first' },
+]
 
 // ============================================================
 // States

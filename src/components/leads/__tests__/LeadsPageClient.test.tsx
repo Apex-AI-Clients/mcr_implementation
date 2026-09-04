@@ -32,7 +32,11 @@ function makeLead(overrides: Partial<Lead>): Lead {
     name: 'Placeholder',
     email: 'placeholder@example.com.au',
     phone: '0400000000',
-    debtAmount: 5_000_000,
+    debtMin: 100_000,
+    debtMax: 124_999,
+    entityType: 'company',
+    message: null,
+    preferredCallTime: null,
     state: 'NSW',
     stage: 'lead',
     source: 'facebook',
@@ -188,10 +192,12 @@ describe('LeadsPageClient', () => {
     expect(within(dialog).getByLabelText('Name')).toBeTruthy()
     expect(within(dialog).getByLabelText('Email')).toBeTruthy()
     expect(within(dialog).getByLabelText('Phone')).toBeTruthy()
-    expect(within(dialog).getByLabelText('Debt amount')).toBeTruthy()
+    expect(within(dialog).getByLabelText('Debt')).toBeTruthy()
     expect(within(dialog).getByLabelText('State')).toBeTruthy()
+    expect(within(dialog).getByLabelText(/Business type/)).toBeTruthy()
+    expect(within(dialog).getByLabelText(/Their message/)).toBeTruthy()
     // Deliberately absent — it is off the public capture form.
-    expect(within(dialog).queryByLabelText(/company/i)).toBeNull()
+    expect(within(dialog).queryByLabelText(/^Company$/i)).toBeNull()
   })
 
   it('reports validation errors under the fields, not in a banner', async () => {
@@ -203,13 +209,12 @@ describe('LeadsPageClient', () => {
 
     await user.type(within(dialog).getByLabelText('Email'), 'not-an-email')
     await user.type(within(dialog).getByLabelText('Phone'), '0312345678')
-    await user.type(within(dialog).getByLabelText('Debt amount'), 'abc')
     await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
     expect(within(dialog).getByText('Enter a name.')).toBeTruthy()
     expect(within(dialog).getByText('That email address does not look right.')).toBeTruthy()
     expect(within(dialog).getByText(/Australian mobile/)).toBeTruthy()
-    expect(within(dialog).getByText(/positive amount/)).toBeTruthy()
+    expect(within(dialog).getByText('Choose a debt range.')).toBeTruthy()
     expect(within(dialog).getByText('Choose a state.')).toBeTruthy()
   })
 
@@ -223,13 +228,24 @@ describe('LeadsPageClient', () => {
     await user.type(within(dialog).getByLabelText('Name'), 'Dean Whitlock')
     await user.type(within(dialog).getByLabelText('Email'), 'dean@whitlockcivil.com.au')
     await user.type(within(dialog).getByLabelText('Phone'), '0407 552 118')
-    await user.type(within(dialog).getByLabelText('Debt amount'), '$210,000')
+    // "$150k – $250k" is index 7 in DEBT_PRESETS.
+    await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
     await user.selectOptions(within(dialog).getByLabelText('State'), 'QLD')
+    await user.selectOptions(within(dialog).getByLabelText(/Business type/), 'trust')
+    await user.type(
+      within(dialog).getByLabelText(/Their message/),
+      'Civil contracting, mostly PAYG.',
+    )
     await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(visibleNames()[0]).toBe('Dean Whitlock')
-    expect(inTable().getByText('$210,000')).toBeTruthy()
+    // Debt is a select in the row now, so assert its value rather than text:
+    // every row carries every preset label as an <option>.
+    const debt = inTable().getByLabelText('Debt for Dean Whitlock') as HTMLSelectElement
+    expect(debt.value).toBe('150000:250000')
+    expect(inTable().getByText('Trust')).toBeTruthy()
+    expect(inTable().getByText('Civil contracting, mostly PAYG.')).toBeTruthy()
   })
 
   it('asks for confirmation before converting rather than changing stage outright', async () => {

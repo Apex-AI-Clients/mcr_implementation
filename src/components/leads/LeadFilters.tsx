@@ -8,6 +8,8 @@ import {
   ALL_SOURCES,
   AU_STATES,
   DATE_RANGES,
+  DEBT_FLOORS,
+  SORT_OPTIONS,
   SOURCE_META,
   STAGE_META,
 } from '@/lib/leads/constants'
@@ -28,6 +30,8 @@ const SOURCE_OPTIONS = ALL_SOURCES.map((source) => ({
   value: source,
   label: SOURCE_META[source].label,
 }))
+// Floors, not brackets: "show me the big ones", not "exactly this bracket".
+const DEBT_OPTIONS = DEBT_FLOORS.map((f) => ({ value: f.value, label: f.label }))
 const DATE_OPTIONS = DATE_RANGES.filter((range) => range.value !== 'any').map((range) => ({
   value: range.value,
   label: range.label,
@@ -65,6 +69,17 @@ export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
           onChange({ state: (event.target.value || 'all') as LeadFilterState['state'] })
         }
         options={STATE_OPTIONS}
+      />
+      <Select
+        aria-label="Filter by minimum debt"
+        selectSize="sm"
+        wrapperClassName="w-[112px]"
+        placeholder="Any debt"
+        value={filters.debtFloor === null ? '' : String(filters.debtFloor)}
+        onChange={(event) =>
+          onChange({ debtFloor: event.target.value ? Number(event.target.value) : null })
+        }
+        options={DEBT_OPTIONS}
       />
       <Select
         aria-label="Filter by source"
@@ -105,6 +120,19 @@ export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
         Follow-up
       </button>
       */}
+
+      {/* Sort is not a filter — it changes the order, not the set, so it sits
+          outside the active-filter count and the clear control. */}
+      <Select
+        aria-label="Sort leads"
+        selectSize="sm"
+        wrapperClassName="w-[150px]"
+        value={filters.sort}
+        onChange={(event) =>
+          onChange({ sort: event.target.value as LeadFilterState['sort'] })
+        }
+        options={SORT_OPTIONS}
+      />
 
       {active && (
         <button

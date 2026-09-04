@@ -19,8 +19,11 @@ const COLUMNS = [
   { label: 'Name', className: 'text-left' },
   { label: 'Email', className: 'text-left' },
   { label: 'Phone', className: 'text-left' },
-  { label: 'Debt', className: 'text-right' },
+  // Left-aligned now that the cell holds a select rather than a figure.
+  { label: 'Debt', className: 'text-left' },
+  { label: 'Entity', className: 'text-left' },
   { label: 'State', className: 'text-left' },
+  { label: 'Message', className: 'text-left' },
   { label: 'Stage', className: 'text-left' },
   { label: 'Source', className: 'text-left' },
   // Follow-up flag column — hidden for now. Keep in step with the matching

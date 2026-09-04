@@ -1,11 +1,11 @@
 import type { Lead } from '@/types/leads'
-import { STAGE_META, SOURCE_META } from './constants'
+import { STAGE_META, SOURCE_META, ENTITY_TYPE_META, DEBT_PRESETS } from './constants'
 
 /**
  * Rendering and parsing edge for lead data.
  *
- * Money lives as integer cents everywhere else in the app; it only becomes a
- * string here. Dates are formatted against Australia/Sydney rather than the
+ * Debt is a range in whole dollars, so there is no money parsing here — only
+ * formatting and the comparisons the list needs. Dates are formatted against Australia/Sydney rather than the
  * host's timezone — these components render on a UTC server and hydrate in the
  * user's browser, and an unanchored `toLocaleDateString` disagrees across that
  * boundary by a whole day.
@@ -14,32 +14,122 @@ import { STAGE_META, SOURCE_META } from './constants'
 const AU_TZ = 'Australia/Sydney'
 
 // ============================================================
-// Money
+// Debt range
 // ============================================================
 
-/** Integer cents → "$41,500" (or "$41,500.75" when there are cents). */
-export function formatDebt(cents: number): string {
-  const hasCents = cents % 100 !== 0
-  return new Intl.NumberFormat('en-AU', {
-    style: 'currency',
-    currency: 'AUD',
-    minimumFractionDigits: hasCents ? 2 : 0,
-    maximumFractionDigits: hasCents ? 2 : 0,
-  }).format(cents / 100)
+const EM_DASH = '—'
+const EN_DASH = '–'
+
+/** "$125k" — rounded to the nearest thousand for the table. */
+function short(dollars: number): string {
+  return `$${Math.round(dollars / 1000)}k`
+}
+
+/** "$124,999" — the exact stored figure, for the record. */
+function full(dollars: number): string {
+  return `$${dollars.toLocaleString('en-AU')}`
 }
 
 /**
- * Parse a typed debt amount into integer cents.
- * Tolerates "$", thousands commas and surrounding spaces.
- * Returns null when the value isn't a positive number.
+ * Debt as a human range.
+ *
+ *   both null  -> "—"          (never a blank cell)
+ *   max null   -> "$150k+"       (open-ended, as the form posted it)
+ *   min 0/null -> "Under $50k"
+ *   min === max -> "$120k"      (a single typed figure, not a bracket)
+ *   otherwise  -> "$100k – $125k"
+ *
+ * `style: 'full'` spells the figures out for the record; the table uses the
+ * abbreviated form.
  */
-export function parseDebtInput(raw: string): number | null {
-  const cleaned = raw.replace(/[$,\s]/g, '')
-  if (!cleaned) return null
-  if (!/^\d*\.?\d+$/.test(cleaned)) return null
-  const value = Number.parseFloat(cleaned)
-  if (!Number.isFinite(value) || value <= 0) return null
-  return Math.round(value * 100)
+export function formatDebtRange(
+  min: number | null,
+  max: number | null,
+  style: 'short' | 'full' = 'short',
+): string {
+  const money = style === 'full' ? full : short
+
+  if (min === null && max === null) return EM_DASH
+  if (max === null) return `${money(min as number)}+`
+  if (min === null || min === 0) return `Under ${money(max)}`
+  // A free-text form yields a point figure ("120k"), not a bracket. Rendering
+  // it as "$120k – $120k" would read like a parsing accident.
+  if (min === max) return money(min)
+  return `${money(min)} ${EN_DASH} ${money(max)}`
+}
+
+/**
+ * A debt range as a select value, e.g. "100000:124999", "150000:" (open-ended)
+ * or ":" (not given).
+ *
+ * The range itself is the option value rather than an index into DEBT_PRESETS,
+ * so a lead whose range is not in the preset list can still be represented —
+ * which matters because a free-text debt field yields point figures like
+ * 120000:120000 that no preset will ever match.
+ */
+export function encodeDebtRange(min: number | null, max: number | null): string {
+  return `${min ?? ''}:${max ?? ''}`
+}
+
+export function decodeDebtRange(value: string): { min: number | null; max: number | null } {
+  const [rawMin = '', rawMax = ''] = value.split(':')
+  const parse = (raw: string): number | null => {
+    if (raw === '') return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return { min: parse(rawMin), max: parse(rawMax) }
+}
+
+/**
+ * Options for a debt select, plus the value that is currently selected.
+ *
+ * When the lead's range matches no preset the current range is prepended as its
+ * own option. Without that the control would show "Not given" for a lead that
+ * has a debt, and saving would silently wipe it.
+ */
+export function debtSelectOptions(
+  min: number | null,
+  max: number | null,
+): { options: { value: string; label: string }[]; value: string } {
+  const value = encodeDebtRange(min, max)
+  const options = DEBT_PRESETS.map((preset) => ({
+    value: encodeDebtRange(preset.min, preset.max),
+    label: preset.label,
+  }))
+
+  if (!options.some((option) => option.value === value)) {
+    options.unshift({ value, label: formatDebtRange(min, max, 'full') })
+  }
+
+  return { options, value }
+}
+
+/**
+ * Does a lead's range reach a filter floor?
+ *
+ * An overlap test, not equality — a lead that only said "$150,000 or +" has to
+ * appear under the $100k+ floor, because it might be anything above $150k.
+ */
+export function overlapsFloor(lead: Pick<Lead, 'debtMin' | 'debtMax'>, floor: number): boolean {
+  if (lead.debtMax === null) return lead.debtMin === null ? false : lead.debtMin >= floor
+  return lead.debtMax >= floor
+}
+
+/**
+ * Largest debt first, by `debtMin`, with unknown debt last.
+ *
+ * Never sort by the formatted label — alphabetically "$100k" sorts above
+ * "$500k".
+ */
+export function compareByDebtDesc(
+  a: Pick<Lead, 'debtMin'>,
+  b: Pick<Lead, 'debtMin'>,
+): number {
+  if (a.debtMin === null && b.debtMin === null) return 0
+  if (a.debtMin === null) return 1
+  if (b.debtMin === null) return -1
+  return b.debtMin - a.debtMin
 }
 
 // ============================================================
@@ -139,8 +229,13 @@ const CSV_COLUMNS = [
   'Name',
   'Email',
   'Phone',
-  'Debt (AUD)',
+  // Two bare-number columns rather than one label: a single label column can't
+  // be filtered or sorted in a spreadsheet, which is the point of the export.
+  'Debt min',
+  'Debt max',
+  'Entity type',
   'State',
+  'Message',
   'Stage',
   'Source',
   'Last action',
@@ -151,9 +246,9 @@ function csvCell(value: string): string {
 }
 
 /**
- * The current filtered view as CSV, same columns as the table.
- * Debt is emitted as a bare number and dates as ISO so the result is usable in
- * a spreadsheet rather than just readable.
+ * The current filtered view as CSV, same columns and order as the table.
+ * Debt is emitted as two bare numbers and dates as ISO, so the result is
+ * sortable and filterable rather than merely readable.
  */
 export function leadsToCsv(leads: Lead[]): string {
   const rows = leads.map((lead) =>
@@ -162,8 +257,11 @@ export function leadsToCsv(leads: Lead[]): string {
       lead.name,
       lead.email,
       formatPhone(lead.phone),
-      (lead.debtAmount / 100).toFixed(2),
-      lead.state,
+      lead.debtMin === null ? '' : String(lead.debtMin),
+      lead.debtMax === null ? '' : String(lead.debtMax),
+      lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : '',
+      lead.state ?? '',
+      lead.message ?? '',
       STAGE_META[lead.stage].label,
       SOURCE_META[lead.source].label,
       formatIsoDate(lead.lastActionAt),
