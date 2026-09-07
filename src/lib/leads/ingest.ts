@@ -2,6 +2,7 @@ import type { AuState, EntityType, LeadSource } from '@/types/leads'
 import { normalisePhone, isValidEmail } from './format'
 import {
   DEBT_FIELD_FORMAT,
+  DEBT_LABELS,
   ENTITY_TYPE_ALIASES,
   FIELD_MAPS,
   HONEYPOT_FIELD,
@@ -9,6 +10,7 @@ import {
   STATE_ALIASES,
   UNSELECTED_STATE_SENTINELS,
   WEBSITE_DEBT_CODES,
+  normaliseDebtLabel,
   type DebtFieldFormat,
   type DebtRange,
   type FieldMap,
@@ -77,6 +79,18 @@ function mapDebt(raw: string | null): DebtRange {
 }
 
 /** Why a typed debt value could not be used. Drives the message staff see. */
+/**
+ * A debt option's label text to a range — how Meta lead forms deliver the
+ * answer. Returns null when the label is not one we know, so the caller can
+ * preserve the raw text instead of guessing a bracket from it.
+ */
+export function mapDebtLabel(raw: string | null): DebtRange | null {
+  if (raw === null) return null
+  const key = normaliseDebtLabel(raw)
+  if (!key) return null
+  return DEBT_LABELS[key] ?? null
+}
+
 export type LooseDebtFailure = 'not_a_number' | 'ambiguous' | 'too_small'
 
 export type LooseDebtResult =
@@ -228,6 +242,16 @@ export function mapLead(
       // What they typed is the only record of what they owe. Losing it to a
       // failed parse would be worse than not having a number at all.
       if (parsed.kind === 'unparseable') message = appendRawDebt(message, parsed.raw)
+    }
+  } else if (debtFormat === 'label') {
+    const matched = mapDebtLabel(rawDebt)
+    if (matched) {
+      debt = matched
+    } else {
+      debt = { min: null, max: null }
+      // An unknown label means the form's options changed. Keep the words so
+      // the bracket can be recovered, and so the mapping gap is visible.
+      if (rawDebt) message = appendRawDebt(message, rawDebt)
     }
   } else {
     debt = mapDebt(rawDebt)

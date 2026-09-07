@@ -45,13 +45,16 @@ export const WEBSITE_DEBT_CODES: Record<string, DebtRange> = {
  *
  *   'code'      -> a select posting the positional codes in WEBSITE_DEBT_CODES
  *   'free_text' -> an open input; whatever the visitor typed
+ *   'label'     -> the option's own label text, as Facebook delivers it
  *
- * Per-form, because the same site does both: the select-based forms post codes,
- * while the results form's debt field is an open input whose value is only ever
- * whatever was typed into it. Reading a typed "3" through the code table would
- * silently turn it into $100k-$125k.
+ * Per-form, because no two of these agree. The website's select-based forms
+ * post positions ("3"); its results form posts whatever was typed; and Meta
+ * returns the label a lead actually saw ("$100,000 - $124,999"). Reading any
+ * one through another's table quietly invents a figure: "3" through the code
+ * table becomes $100k-$125k, and a label through the free-text parser is two
+ * numbers and so ambiguous.
  */
-export type DebtFieldFormat = 'code' | 'free_text'
+export type DebtFieldFormat = 'code' | 'free_text' | 'label'
 
 export const DEBT_FIELD_FORMAT: Record<string, DebtFieldFormat> = {
   website: 'code',
@@ -61,8 +64,75 @@ export const DEBT_FIELD_FORMAT: Record<string, DebtFieldFormat> = {
   // The odd one out — free text, and its debt_label is always empty.
   website_results: 'free_text',
   google_form: 'code',
-  facebook: 'code',
+  // Meta lead forms return the option's label text, never a positional value.
+  facebook: 'label',
 }
+
+/**
+ * Normalise a debt label for lookup.
+ *
+ * Meta's form editor rewrites a typed hyphen as an en dash, and the label that
+ * comes back will not match a hardcoded hyphen — so every separator is folded
+ * to a single one. Currency symbols, thousands commas and case are dropped for
+ * the same reason: the label is display text, and display text drifts.
+ */
+export function normaliseDebtLabel(raw: string): string {
+  return raw
+    .toLowerCase()
+    // en dash, em dash, non-breaking hyphen and "to" all mean the same thing
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/\bto\b/g, '-')
+    .replace(/[$,]/g, '')
+    // spaces around the separator are noise
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Debt option labels to ranges, covering both bracket sets in play: the
+ * website's six consumer brackets and the larger business brackets the client
+ * described (CRM_ADDENDUM.md §2). Keys are already normalised.
+ *
+ * Open-ended labels — "or +", "+", "over", "more than" — must keep a null max.
+ * A lead who only said "$150,000 or +" must never be shown as a closed
+ * bracket it never claimed.
+ */
+export const DEBT_LABELS: Record<string, DebtRange> = {}
+
+function registerDebtLabel(range: DebtRange, ...labels: string[]): void {
+  for (const label of labels) DEBT_LABELS[normaliseDebtLabel(label)] = range
+}
+
+// --- the website's six consumer brackets --------------------------------
+registerDebtLabel({ min: 30_000, max: 49_999 }, '$30,000 - $49,999', '$30k - $50k', 'under $50,000', 'less than $50,000')
+registerDebtLabel({ min: 50_000, max: 74_999 }, '$50,000 - $74,999', '$50k - $75k')
+registerDebtLabel({ min: 75_000, max: 99_999 }, '$75,000 - $99,999', '$75k - $100k')
+registerDebtLabel({ min: 100_000, max: 124_999 }, '$100,000 - $124,999', '$100k - $125k')
+registerDebtLabel({ min: 125_000, max: 149_999 }, '$125,000 - $149,999', '$125k - $150k')
+registerDebtLabel(
+  { min: 150_000, max: null },
+  '$150,000 or +',
+  '$150,000+',
+  '$150k+',
+  'over $150,000',
+  'more than $150,000',
+  '$150,000 or more',
+)
+
+// --- the larger business brackets ---------------------------------------
+registerDebtLabel({ min: 100_000, max: 250_000 }, '$100,000 - $250,000', '$100k - $250k')
+registerDebtLabel({ min: 150_000, max: 250_000 }, '$150,000 - $250,000', '$150k - $250k')
+registerDebtLabel({ min: 250_000, max: 500_000 }, '$250,000 - $500,000', '$250k - $500k')
+registerDebtLabel(
+  { min: 500_000, max: null },
+  '$500,000 or +',
+  '$500,000+',
+  '$500k+',
+  'over $500,000',
+  'more than $500,000',
+  '$500,000 or more',
+)
 
 /**
  * Below this, a figure typed into a free-text debt field is not a dollar

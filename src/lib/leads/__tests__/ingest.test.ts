@@ -6,10 +6,17 @@ import {
   flattenFacebookFields,
   isHoneypotTripped,
   parseLooseDebt,
+  mapDebtLabel,
   RAW_DEBT_NOTE_PREFIX,
 } from '../ingest'
 import { formatDebtRange } from '../format'
-import { WEBSITE_DEBT_CODES, DEBT_FIELD_FORMAT, MIN_PLAUSIBLE_DEBT } from '../ingestConfig'
+import {
+  WEBSITE_DEBT_CODES,
+  DEBT_FIELD_FORMAT,
+  DEBT_LABELS,
+  MIN_PLAUSIBLE_DEBT,
+  normaliseDebtLabel,
+} from '../ingestConfig'
 
 /**
  * Ingestion mapping, against committed fixtures of the real payload shapes.
@@ -172,7 +179,7 @@ describe('flattenFacebookFields', () => {
     const fields = flattenFacebookFields(fixture('facebook_lead_fields').field_data)
     expect(fields.full_name).toBe('Oscar Vandeleur')
     expect(fields.phone_number).toBe('+61435872640')
-    expect(fields.debt_range).toBe('150k_plus')
+    expect(fields.debt_range).toBe('$100,000 - $124,999')
   })
 
   it('survives a missing or non-array field_data', () => {
@@ -192,8 +199,9 @@ describe('flattenFacebookFields', () => {
     // "Western Australia" spelled out, from a custom question.
     expect(result.lead.state).toBe('WA')
     expect(result.lead.entityType).toBe('company')
-    expect(result.lead.debtMin).toBe(150_000)
-    expect(result.lead.debtMax).toBeNull()
+    // Meta returns the option's label text, which the 'label' format resolves.
+    expect(result.lead.debtMin).toBe(100_000)
+    expect(result.lead.debtMax).toBe(124_999)
     expect(result.lead.externalId).toBe('708090102030405')
     expect(result.lead.source).toBe('facebook')
   })
@@ -359,6 +367,146 @@ describe('mapLead — website_results free-text debt', () => {
     const result = mapLead(fixture('website_results_three'), 'website', 'r8', {
       formKey: 'website_something_new',
     })
+    expect(result.ok && result.lead.debtMin).toBe(100_000)
+  })
+})
+
+// ============================================================
+// facebook — the option's label text, not a positional code
+// ============================================================
+
+describe('normaliseDebtLabel', () => {
+  it('folds every separator Meta might emit to one form', () => {
+    const canonical = normaliseDebtLabel('$100,000 - $124,999')
+    for (const variant of [
+      '$100,000 ' + '\u2013' + ' $124,999', // en dash — what Meta's editor produces
+      '$100,000 ' + '\u2014' + ' $124,999', // em dash
+      '$100,000 ' + '\u2011' + ' $124,999', // non-breaking hyphen
+      '$100,000 to $124,999',
+      '$100,000-$124,999',
+      '  $100,000   -   $124,999  ',
+      '$100,000 - $124,999'.toUpperCase(),
+    ]) {
+      expect(normaliseDebtLabel(variant), variant).toBe(canonical)
+    }
+  })
+
+  it('drops currency symbols and thousands separators', () => {
+    expect(normaliseDebtLabel('$150,000+')).toBe('150000+')
+  })
+})
+
+describe('DEBT_LABELS', () => {
+  it('is the format configured for facebook', () => {
+    expect(DEBT_FIELD_FORMAT.facebook).toBe('label')
+  })
+
+  it('keeps open-ended labels open-ended', () => {
+    for (const label of ['$150,000 or +', '$150k+', 'over $150,000', '$500k+', 'over $500,000']) {
+      expect(mapDebtLabel(label)?.max, label).toBeNull()
+    }
+  })
+
+  it('covers both bracket sets', () => {
+    // The website's consumer brackets...
+    expect(mapDebtLabel('$30,000 - $49,999')).toEqual({ min: 30_000, max: 49_999 })
+    expect(mapDebtLabel('$75,000 - $99,999')).toEqual({ min: 75_000, max: 99_999 })
+    // ...and the larger business ones.
+    expect(mapDebtLabel('$250,000 - $500,000')).toEqual({ min: 250_000, max: 500_000 })
+    expect(mapDebtLabel('$500,000 or +')).toEqual({ min: 500_000, max: null })
+  })
+
+  it('never holds an inverted range', () => {
+    for (const [key, range] of Object.entries(DEBT_LABELS)) {
+      if (range.min !== null && range.max !== null) {
+        expect(range.max, key).toBeGreaterThanOrEqual(range.min)
+      }
+    }
+  })
+
+  it('returns null for a label it does not know, rather than a guess', () => {
+    expect(mapDebtLabel('roughly a hundred grand')).toBeNull()
+    expect(mapDebtLabel('')).toBeNull()
+    expect(mapDebtLabel(null)).toBeNull()
+  })
+
+  it('does not fall back to the positional code table', () => {
+    // "3" is a code, not a label. Reading it here would silently produce
+    // $100k-$125k — the bug this format exists to avoid.
+    expect(mapDebtLabel('3')).toBeNull()
+  })
+})
+
+describe('mapLead — facebook label debt', () => {
+  function fbLead(fixtureName: string) {
+    const fields = flattenFacebookFields(fixture(fixtureName).field_data)
+    return mapLead(fields, 'facebook', 'fb-1')
+  }
+
+  it('resolves an exact label', () => {
+    const result = fbLead('facebook_lead_fields')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(100_000)
+    expect(result.lead.debtMax).toBe(124_999)
+    // Matched, so the message is left exactly as written.
+    expect(result.lead.message).toBe('Mostly plant finance rather than tax.')
+  })
+
+  it('resolves the en dash variant Meta actually sends', () => {
+    const result = fbLead('facebook_debt_endash')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(100_000)
+    expect(result.lead.debtMax).toBe(124_999)
+  })
+
+  it('resolves an uppercased label', () => {
+    const result = fbLead('facebook_debt_uppercase')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(100_000)
+    expect(result.lead.debtMax).toBe(124_999)
+  })
+
+  it('keeps "$150,000 or +" open-ended', () => {
+    const result = fbLead('facebook_debt_openended')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(150_000)
+    expect(result.lead.debtMax).toBeNull()
+    expect(formatDebtRange(result.lead.debtMin, result.lead.debtMax)).toBe('$150k+')
+  })
+
+  it('preserves an unmatched label in the message instead of guessing', () => {
+    const result = fbLead('facebook_debt_unmatched')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBeNull()
+    expect(result.lead.debtMax).toBeNull()
+    expect(result.lead.message).toBe(
+      'Mostly plant finance rather than tax.\n\n' +
+        RAW_DEBT_NOTE_PREFIX +
+        ' Somewhere between a lot and heaps',
+    )
+  })
+
+  it('leaves the message untouched when the debt field is empty', () => {
+    const result = fbLead('facebook_debt_empty')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBeNull()
+    expect(result.lead.debtMax).toBeNull()
+    // Nothing was answered, so there is nothing to preserve.
+    expect(result.lead.message).toBe('Mostly plant finance rather than tax.')
+    expect(result.lead.message).not.toContain(RAW_DEBT_NOTE_PREFIX)
+  })
+
+  it('does not read a label through the free-text parser', () => {
+    // A two-number label is "ambiguous" to parseLooseDebt; the label format
+    // must resolve it rather than discard it.
+    expect(parseLooseDebt('$100,000 - $124,999').kind).toBe('unparseable')
+    const result = fbLead('facebook_lead_fields')
     expect(result.ok && result.lead.debtMin).toBe(100_000)
   })
 })
