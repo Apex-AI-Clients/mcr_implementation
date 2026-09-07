@@ -164,13 +164,30 @@ describe('phone', () => {
     },
   )
 
-  it('formats to 04xx xxx xxx', () => {
+  it('formats an Australian mobile as 04xx xxx xxx', () => {
     expect(formatPhone('0402915338')).toBe('0402 915 338')
     expect(formatPhone('+61402915338')).toBe('0402 915 338')
   })
 
+  it.each([
+    ['4155550123', '(415) 555-0123'],
+    ['14155550123', '(415) 555-0123'],
+    ['+14155550123', '(415) 555-0123'],
+    ['415-555-0123', '(415) 555-0123'],
+    ['(415) 555 0123', '(415) 555-0123'],
+  ])('formats %s in US style', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+  })
+
+  it('never forces US grouping onto an Australian number', () => {
+    // "(040) 291-5338" is not a number anyone could dial.
+    expect(formatPhone('0402915338')).not.toContain('(')
+    expect(formatPhone('0298765432')).not.toContain('(')
+  })
+
   it('returns unrecognised input untouched', () => {
     expect(formatPhone('switchboard')).toBe('switchboard')
+    expect(formatPhone('12345')).toBe('12345')
   })
 })
 

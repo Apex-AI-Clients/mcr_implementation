@@ -69,7 +69,11 @@ body {
    Scrollbar
    ============================================================ */
 ::-webkit-scrollbar {
+  /* `width` governs vertical bars only — without `height` a horizontal bar
+     falls back to the browser default (~15px), which is what made the one
+     under the leads table so heavy. */
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: var(--mcr-surface);

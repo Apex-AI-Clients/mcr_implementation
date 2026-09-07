@@ -7,6 +7,7 @@ import { DebtInput } from '@/components/leads/DebtInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { Badge } from '@/components/ui/Badge'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
 import { formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
@@ -54,8 +55,9 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
       </td>
       {/* An exact figure, typed. The forms can only give a bracket; once the
           real number is known it should not have to be rounded to the nearest
-          band. Right-aligned so the amounts line up down the column. */}
-      <td className="px-4 py-3.5 w-[132px] text-right">
+          band. Left-aligned: a short single figure like "$150k" stranded on the
+          right edge of the cell reads as misaligned against its neighbours. */}
+      <td className="px-4 py-3.5 w-[160px] min-w-[160px] whitespace-nowrap text-left">
         <DebtInput lead={lead} />
       </td>
       {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
@@ -74,17 +76,30 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
       </td>
       {/* The one column allowed to lose information — the record has it in
           full. Capped so a long message can't push Stage and Source off screen. */}
-      <td className="px-4 py-3.5 max-w-[16rem]">
+      <td className="px-4 py-3.5 max-w-[12rem]">
         {lead.message ? (
-          <span className="block truncate text-foreground/50" title={lead.message}>
-            {lead.message}
-          </span>
+          // Truncated in the row, in full on hover or focus — the column is the
+          // one allowed to lose information, but not to hide it.
+          <Tooltip content={lead.message} className="block min-w-0 cursor-help">
+            <span className="block truncate text-foreground/50">{lead.message}</span>
+          </Tooltip>
         ) : (
           <span className="text-foreground/25">&mdash;</span>
         )}
       </td>
-      <td className="px-4 py-3.5 w-[150px]">
-        <StageSelect lead={lead} onRequestConvert={onRequestConvert} />
+      {/* "Non-proceeding" and "Do not contact" are 14 characters; with the
+          select's own padding and chevron they need ~150px of control, so a
+          narrower cell clipped the selected label and forced you to open the
+          dropdown to read it. */}
+      <td className="px-4 py-3.5 w-[188px] min-w-[188px]">
+        {/* min-w on the control as well as the cell: a w-full <select> has a
+            min-content width of zero, so without it auto table layout crushes
+            this column to the chevron alone once the table overflows. */}
+        <StageSelect
+          lead={lead}
+          onRequestConvert={onRequestConvert}
+          className="min-w-[150px]"
+        />
       </td>
       <td className="px-4 py-3.5 whitespace-nowrap text-foreground/50">
         {SOURCE_META[lead.source].short}
@@ -121,7 +136,7 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
           </p>
         </div>
         <div className="w-[124px] shrink-0">
-          <DebtInput lead={lead} variant="card" />
+          <DebtInput lead={lead} />
         </div>
       </div>
 

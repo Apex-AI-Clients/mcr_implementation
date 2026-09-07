@@ -149,11 +149,36 @@ export function isValidAuMobile(raw: string): boolean {
   return /^04\d{8}$/.test(normalisePhone(raw))
 }
 
-/** "0402915338" → "0402 915 338". Unrecognised input is returned as-is. */
+/**
+ * Phone number for display.
+ *
+ *   US    "4155550123"  -> "(415) 555-0123"
+ *   AU    "0402915338"  -> "0402 915 338"
+ *   other                  returned untouched
+ *
+ * US shape is detected rather than assumed: a leading 0 means an Australian
+ * number, and forcing US grouping onto one would render 0402 915 338 as
+ * "(040) 291-5338", which is not a number anyone could dial.
+ */
 export function formatPhone(raw: string): string {
   const digits = normalisePhone(raw)
-  if (!/^04\d{8}$/.test(digits)) return raw
-  return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+
+  // Strip a US country code if present.
+  const national = digits.startsWith('+1')
+    ? digits.slice(2)
+    : digits.length === 11 && digits.startsWith('1')
+      ? digits.slice(1)
+      : digits
+
+  if (/^\d{10}$/.test(national) && !national.startsWith('0')) {
+    return `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`
+  }
+
+  if (/^04\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  }
+
+  return raw
 }
 
 // ============================================================

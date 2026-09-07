@@ -11,8 +11,6 @@ import type { Lead } from '@/types/leads'
 
 interface DebtInputProps {
   lead: Lead
-  /** Rendered in the mobile card, where there is room for a full-width field. */
-  variant?: 'row' | 'card'
 }
 
 const FAILURE_MESSAGE: Record<LooseDebtFailure, string> = {
@@ -37,7 +35,7 @@ const FAILURE_MESSAGE: Record<LooseDebtFailure, string> = {
  * UPDATE_LEAD, which writes no activity and leaves `last_action_at` to the
  * database trigger. Editing debt must never clear a follow-up flag.
  */
-export function DebtInput({ lead, variant = 'row' }: DebtInputProps) {
+export function DebtInput({ lead }: DebtInputProps) {
   const { updateLead } = useLeads()
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
@@ -108,7 +106,7 @@ export function DebtInput({ lead, variant = 'row' }: DebtInputProps) {
                 cancel()
               }
             }}
-            className="h-8 w-full min-w-0 rounded-lg border border-border bg-input-bg px-2 text-right text-sm tabular-nums text-foreground transition-colors placeholder:text-foreground/40 focus:border-accent focus:outline-none"
+            className="h-8 w-full min-w-0 rounded-lg border border-border bg-input-bg px-2 text-left text-sm tabular-nums text-foreground transition-colors placeholder:text-foreground/40 focus:border-accent focus:outline-none"
           />
           <button
             type="button"
@@ -140,12 +138,10 @@ export function DebtInput({ lead, variant = 'row' }: DebtInputProps) {
         begin()
       }}
       aria-label={`Edit debt for ${lead.name}`}
-      className={`group/debt flex w-full items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-        variant === 'card' ? 'justify-start' : 'justify-end'
-      }`}
+      className="group/debt flex w-full items-center justify-start gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <span
-        className={`tabular-nums ${
+        className={`whitespace-nowrap tabular-nums ${
           lead.debtMin === null ? 'text-foreground/25' : 'font-medium text-foreground'
         }`}
       >
