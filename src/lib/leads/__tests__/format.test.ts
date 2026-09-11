@@ -170,24 +170,39 @@ describe('phone', () => {
   })
 
   it.each([
-    ['4155550123', '(415) 555-0123'],
-    ['14155550123', '(415) 555-0123'],
-    ['+14155550123', '(415) 555-0123'],
-    ['415-555-0123', '(415) 555-0123'],
-    ['(415) 555 0123', '(415) 555-0123'],
-  ])('formats %s in US style', (input, expected) => {
+    ['0298765432', '02 9876 5432'],
+    ['0387654321', '03 8765 4321'],
+    ['0732109876', '07 3210 9876'],
+    ['0891234567', '08 9123 4567'],
+    ['+61298765432', '02 9876 5432'],
+    ['(02) 9876-5432', '02 9876 5432'],
+  ])('formats the landline %s as 0X XXXX XXXX', (input, expected) => {
     expect(formatPhone(input)).toBe(expected)
   })
 
-  it('never forces US grouping onto an Australian number', () => {
-    // "(040) 291-5338" is not a number anyone could dial.
-    expect(formatPhone('0402915338')).not.toContain('(')
-    expect(formatPhone('0298765432')).not.toContain('(')
+  it.each([
+    ['1300123456', '1300 123 456'],
+    ['1800123456', '1800 123 456'],
+    ['131234', '13 12 34'],
+  ])('formats the service number %s', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+  })
+
+  it('never groups a number in US style', () => {
+    // "(040) 291-5338" is not a number anyone could dial, and MCR's leads are
+    // Australian — a US grouping is always wrong here.
+    for (const input of ['0402915338', '0298765432', '1300123456', '4155550123']) {
+      expect(formatPhone(input)).not.toContain('(')
+      expect(formatPhone(input)).not.toContain('-')
+    }
   })
 
   it('returns unrecognised input untouched', () => {
     expect(formatPhone('switchboard')).toBe('switchboard')
     expect(formatPhone('12345')).toBe('12345')
+    // Ten digits with no leading zero is not an Australian number; it is left
+    // as entered rather than guessed at.
+    expect(formatPhone('4155550123')).toBe('4155550123')
   })
 })
 

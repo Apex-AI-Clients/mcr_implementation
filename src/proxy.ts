@@ -43,7 +43,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Protect every route except /login, the API (self-authed), Next internals,
-  // and any path with a file extension (static assets).
-  matcher: ['/((?!api|_next|login|favicon.ico|.*\\.).*)'],
+  // Protect every route except /login, /privacy (public legal page — crawlers
+  // must reach it unauthenticated), the API (self-authed), Next internals, and
+  // any path with a file extension (static assets).
+  matcher: ['/((?!api|_next|login|privacy|favicon.ico|.*\\.).*)'],
 }

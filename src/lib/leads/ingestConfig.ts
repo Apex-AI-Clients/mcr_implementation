@@ -79,14 +79,16 @@ export const DEBT_FIELD_FORMAT: Record<string, DebtFieldFormat> = {
 export function normaliseDebtLabel(raw: string): string {
   return raw
     .toLowerCase()
-    // en dash, em dash, non-breaking hyphen and "to" all mean the same thing
+    // en dash, em dash, non-breaking hyphen and "to" all mean the same thing.
+    // "to" is folded first, because the word boundaries it relies on stop
+    // existing once the spaces around it are gone.
     .replace(/[\u2010-\u2015]/g, '-')
     .replace(/\bto\b/g, '-')
     .replace(/[$,]/g, '')
-    // spaces around the separator are noise
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim()
+    // Every space, not just runs of them. The live Facebook form writes its
+    // open-ended option as "$500k +" and the website writes "$500k+"; those are
+    // one bracket, not two.
+    .replace(/\s+/g, '')
 }
 
 /**
@@ -121,11 +123,28 @@ registerDebtLabel(
 )
 
 // --- the larger business brackets ---------------------------------------
-registerDebtLabel({ min: 100_000, max: 250_000 }, '$100,000 - $250,000', '$100k - $250k')
+// The entries marked MCR26_MAIN are transcribed character-for-character off
+// form 1681820256160730 (MCR26_MAIN_LeadForm_SBR-Verifed). They are the option
+// values Meta actually sends, so they are copied verbatim — including the
+// missing "k" in "$250-$500k" and the space in "$500k +". Tidying either one up
+// here would simply stop it matching. Both bracket sets have to coexist: the
+// website's six consumer brackets are narrower and still in use.
+registerDebtLabel(
+  { min: 100_000, max: 250_000 },
+  '$100k-$250k', // MCR26_MAIN
+  '$100,000 - $250,000',
+  '$100k - $250k',
+)
 registerDebtLabel({ min: 150_000, max: 250_000 }, '$150,000 - $250,000', '$150k - $250k')
-registerDebtLabel({ min: 250_000, max: 500_000 }, '$250,000 - $500,000', '$250k - $500k')
+registerDebtLabel(
+  { min: 250_000, max: 500_000 },
+  '$250-$500k', // MCR26_MAIN — the "k" after 250 really is missing on the form
+  '$250,000 - $500,000',
+  '$250k - $500k',
+)
 registerDebtLabel(
   { min: 500_000, max: null },
+  '$500k +', // MCR26_MAIN — the space before the "+" really is on the form
   '$500,000 or +',
   '$500,000+',
   '$500k+',
@@ -169,7 +188,11 @@ export const STATE_ALIASES: Record<string, AuState> = {
   'northern territory': 'NT',
 }
 
-/** biz_type posts "Company" or "Trust". */
+/**
+ * The website's biz_type posts "Company" or "Trust". Meta's equivalent question
+ * on MCR26_MAIN posts the option value "Pty Ltd", which is why that alias is
+ * here and not only the bare word "company".
+ */
 export const ENTITY_TYPE_ALIASES: Record<string, 'company' | 'trust'> = {
   company: 'company',
   'pty ltd': 'company',
@@ -218,15 +241,41 @@ export const FIELD_MAPS: Record<'website' | 'google_form' | 'facebook', FieldMap
     message: ['message', 'comments'],
     callTime: ['call_time', 'preferred_call_time'],
   },
+  // Read off the live form MCR26_MAIN_LeadForm_SBR-Verifed, id
+  // 1681820256160730. Meta derives a custom question's key from the question
+  // text, so the trailing "?" and the parentheses ARE the key — rewriting them
+  // into something tidier matches nothing at all.
+  //
+  // The page runs 19 active forms and the older ones were written with
+  // different wording, so the previous keys stay on behind the live ones as
+  // fallbacks. `pick` takes the first non-blank key it finds, so MCR26_MAIN
+  // wins wherever both are present.
+  //
+  // `inbox_url` is deliberately absent: Meta attaches it to every lead as an
+  // internal link back to the Page inbox. It is not an answer to a question.
   facebook: {
     name: ['full_name'],
     email: ['email'],
     phone: ['phone_number'],
-    // Placeholders until Gabby's live form's question labels are known.
-    debt: ['debt_range', 'how_much_debt', 'what_is_your_approximate_debt'],
-    state: ['state', 'which_state_are_you_in'],
-    entityType: ['business_type', 'company_or_trust'],
-    message: ['message', 'tell_us_about_your_situation'],
+    debt: [
+      'what_is_the_amount_of_ato_debt_you_are_dealing_with?',
+      'debt_range',
+      'how_much_debt',
+      'what_is_your_approximate_debt',
+    ],
+    state: ['which_state_are_you_from?', 'state', 'which_state_are_you_in'],
+    entityType: [
+      'do_you_run_a_company_(pty_ltd)_or_trust?',
+      'business_type',
+      'company_or_trust',
+    ],
+    message: [
+      'anything_else_you_want_us_to_know_before_we_call_you?',
+      'message',
+      'tell_us_about_your_situation',
+    ],
+    // MCR26_MAIN does not ask for a call time, so it contributes no key here.
+    // The older forms' keys stay so the other 18 keep filling the column.
     callTime: ['preferred_call_time', 'best_time_to_call'],
   },
 }

@@ -150,32 +150,43 @@ export function isValidAuMobile(raw: string): boolean {
 }
 
 /**
- * Phone number for display.
+ * Phone number for display, in Australian conventions.
  *
- *   US    "4155550123"  -> "(415) 555-0123"
- *   AU    "0402915338"  -> "0402 915 338"
- *   other                  returned untouched
+ *   mobile      "0402915338" -> "0402 915 338"
+ *   landline    "0298765432" -> "02 9876 5432"
+ *   1300/1800   "1800123456" -> "1800 123 456"
+ *   13 short    "131234"     -> "13 12 34"
+ *   other                       returned untouched
  *
- * US shape is detected rather than assumed: a leading 0 means an Australian
- * number, and forcing US grouping onto one would render 0402 915 338 as
- * "(040) 291-5338", which is not a number anyone could dial.
+ * `normalisePhone` has already folded +61 down to a leading 0, so every shape
+ * matched here is the national form.
+ *
+ * Anything unrecognised is returned exactly as entered rather than grouped on a
+ * guess. That includes the ten-digit no-leading-zero shape this function used
+ * to render as US "(415) 555-0123" — MCR's leads are Australian, so that
+ * grouping was only ever going to mislead someone dialling.
  */
 export function formatPhone(raw: string): string {
   const digits = normalisePhone(raw)
 
-  // Strip a US country code if present.
-  const national = digits.startsWith('+1')
-    ? digits.slice(2)
-    : digits.length === 11 && digits.startsWith('1')
-      ? digits.slice(1)
-      : digits
-
-  if (/^\d{10}$/.test(national) && !national.startsWith('0')) {
-    return `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`
-  }
-
+  // Mobile: 04xx xxx xxx
   if (/^04\d{8}$/.test(digits)) {
     return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  }
+
+  // Geographic landline, area codes 02 / 03 / 07 / 08: 0X XXXX XXXX
+  if (/^0[2378]\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 2)} ${digits.slice(2, 6)} ${digits.slice(6)}`
+  }
+
+  // Service numbers: 1300 XXX XXX and 1800 XXX XXX
+  if (/^1[38]00\d{6}$/.test(digits)) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+  }
+
+  // The six-digit 13 form: 13 XX XX
+  if (/^13\d{4}$/.test(digits)) {
+    return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4)}`
   }
 
   return raw

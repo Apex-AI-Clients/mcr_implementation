@@ -14,6 +14,7 @@ import {
   WEBSITE_DEBT_CODES,
   DEBT_FIELD_FORMAT,
   DEBT_LABELS,
+  FIELD_MAPS,
   MIN_PLAUSIBLE_DEBT,
   normaliseDebtLabel,
 } from '../ingestConfig'
@@ -508,5 +509,128 @@ describe('mapLead — facebook label debt', () => {
     expect(parseLooseDebt('$100,000 - $124,999').kind).toBe('unparseable')
     const result = fbLead('facebook_lead_fields')
     expect(result.ok && result.lead.debtMin).toBe(100_000)
+  })
+})
+
+
+// ============================================================
+// facebook — MCR26_MAIN_LeadForm_SBR-Verifed, form 1681820256160730
+// ============================================================
+
+describe('mapLead — the live MCR26_MAIN Facebook form', () => {
+  function mcr26(fixtureName: string, externalId: string) {
+    const fields = flattenFacebookFields(fixture(fixtureName).field_data)
+    return mapLead(fields, 'facebook', externalId)
+  }
+
+  it('maps a complete submission from the real form', () => {
+    const result = mcr26('facebook_mcr26_main', 'fb-1120394857601928')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead).toEqual({
+      name: 'Marissa Thorne',
+      email: 'marissa@thornefitout.com.au',
+      phone: '0412887340',
+      debtMin: 100_000,
+      debtMax: 250_000,
+      state: 'NSW',
+      entityType: 'company',
+      message: 'Two BAS quarters behind, director penalty letter arrived Monday.',
+      // This form has no call-time question, so the column stays empty rather
+      // than being filled from something that was never an answer to it.
+      preferredCallTime: null,
+      source: 'facebook',
+      externalId: 'fb-1120394857601928',
+    })
+  })
+
+  it('keeps the trailing "?" and the parentheses, which are part of the key', () => {
+    // Meta derives a custom question's key from the question text. Normalising
+    // the punctuation out of these would match nothing at all.
+    expect(FIELD_MAPS.facebook.debt).toContain(
+      'what_is_the_amount_of_ato_debt_you_are_dealing_with?',
+    )
+    expect(FIELD_MAPS.facebook.state).toContain('which_state_are_you_from?')
+    expect(FIELD_MAPS.facebook.entityType).toContain('do_you_run_a_company_(pty_ltd)_or_trust?')
+    expect(FIELD_MAPS.facebook.message).toContain(
+      'anything_else_you_want_us_to_know_before_we_call_you?',
+    )
+  })
+
+  it('reads "$250-$500k" — the missing "k" is on the live form, not a typo here', () => {
+    const result = mcr26('facebook_mcr26_250_500', 'fb-1120394857602044')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(250_000)
+    expect(result.lead.debtMax).toBe(500_000)
+    // Matched, so nothing is appended to what the lead wrote.
+    expect(result.lead.message).toBe('Payment plan defaulted in July.')
+    expect(result.lead.message).not.toContain(RAW_DEBT_NOTE_PREFIX)
+  })
+
+  it('reads "$500k +" with the space, and keeps it open-ended', () => {
+    const result = mcr26('facebook_mcr26_500_plus', 'fb-1120394857602171')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(500_000)
+    // Half a million "or more" must never be shown as a bracket that closes.
+    expect(result.lead.debtMax).toBeNull()
+    expect(formatDebtRange(result.lead.debtMin, result.lead.debtMax)).toBe('$500k+')
+    expect(result.lead.message).toBeNull()
+  })
+
+  it('folds "$500k +" and "$500k+" to one key', () => {
+    expect(normaliseDebtLabel('$500k +')).toBe(normaliseDebtLabel('$500k+'))
+    expect(mapDebtLabel('$500k +')).toEqual({ min: 500_000, max: null })
+    expect(mapDebtLabel('$500k+')).toEqual({ min: 500_000, max: null })
+  })
+
+  it('maps Meta\'s "Pty Ltd" option value, not just the word "Company"', () => {
+    expect(mcr26('facebook_mcr26_main', 'e1')).toMatchObject({
+      lead: { entityType: 'company' },
+    })
+    expect(mcr26('facebook_mcr26_500_plus', 'e2')).toMatchObject({
+      lead: { entityType: 'trust' },
+    })
+  })
+
+  it('reads NT, which this form offers and the website form does not', () => {
+    const result = mcr26('facebook_mcr26_500_plus', 'fb-nt')
+    expect(result.ok && result.lead.state).toBe('NT')
+  })
+
+  it('ignores inbox_url, which is Meta internal', () => {
+    const fields = flattenFacebookFields(fixture('facebook_mcr26_main').field_data)
+    // It is in the payload...
+    expect(String(fields.inbox_url)).toContain('business.facebook.com')
+    // ...and in no field map, so it reaches no column.
+    for (const keys of Object.values(FIELD_MAPS.facebook)) {
+      expect(keys).not.toContain('inbox_url')
+    }
+    // ...and it is not the honeypot, so its presence must not read as spam.
+    expect(isHoneypotTripped(fields)).toBe(false)
+  })
+
+  it('still reads the wording of the older forms, for the other 18 on the page', () => {
+    // MCR26_MAIN is one of 19 active forms and the rest were written with
+    // different question text, so the previous keys stay on as fallbacks.
+    const fields = flattenFacebookFields(fixture('facebook_lead_fields').field_data)
+    const result = mapLead(fields, 'facebook', 'fb-older-form')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(100_000)
+    expect(result.lead.state).toBe('WA')
+    expect(result.lead.entityType).toBe('company')
+    expect(result.lead.message).toBe('Mostly plant finance rather than tax.')
+    // An older form that does ask for a call time still fills the column.
+    expect(result.lead.preferredCallTime).toBe('Weekday afternoons')
+  })
+
+  it('keeps both bracket sets, which overlap at $100k', () => {
+    // Facebook's brackets are wider than the website's and both are live, so
+    // neither set may displace the other.
+    expect(mapDebtLabel('$100k-$250k')).toEqual({ min: 100_000, max: 250_000 })
+    expect(mapDebtLabel('$100,000 - $124,999')).toEqual({ min: 100_000, max: 124_999 })
   })
 })
