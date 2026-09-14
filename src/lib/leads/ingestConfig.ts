@@ -189,17 +189,45 @@ export const STATE_ALIASES: Record<string, AuState> = {
 }
 
 /**
- * The website's biz_type posts "Company" or "Trust". Meta's equivalent question
- * on MCR26_MAIN posts the option value "Pty Ltd", which is why that alias is
- * here and not only the bare word "company".
+ * Normalise an entity answer for lookup.
+ *
+ * Meta sends the option's KEY, not the label a lead saw: the answer to
+ * MCR26_MAIN's "Do you run a company (Pty Ltd) or Trust?" arrives as
+ * `pty_ltd`, never as "Pty Ltd". The website posts the display value
+ * ("Company", "Trust"), and older Meta forms posted labels too. Folding
+ * underscores and hyphens to spaces, collapsing runs of whitespace and
+ * lowercasing makes one table serve all three, so a form author switching a
+ * label from "Pty Ltd" to "Pty. Ltd" is the only thing that can break it.
  */
-export const ENTITY_TYPE_ALIASES: Record<string, 'company' | 'trust'> = {
-  company: 'company',
-  'pty ltd': 'company',
-  'company (pty ltd)': 'company',
-  trust: 'trust',
-  'family trust': 'trust',
+export function normaliseEntityValue(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
+
+/**
+ * Entity answers to the two paths that matter. Keys are already normalised, so
+ * a value is only ever looked up through `normaliseEntityValue`.
+ *
+ * Nothing here guesses. An answer that is not in this table maps to null and
+ * the lead shows an empty Business type. Defaulting would be worse than an
+ * empty cell in one direction in particular: a lead wrongly marked Trust reads
+ * as ineligible for SBR and gets worked as a dead end.
+ */
+export const ENTITY_TYPE_ALIASES: Record<string, 'company' | 'trust'> = {}
+
+function registerEntityAlias(type: 'company' | 'trust', ...values: string[]): void {
+  for (const value of values) ENTITY_TYPE_ALIASES[normaliseEntityValue(value)] = type
+}
+
+// Both spellings of each answer are listed rather than left to the normaliser,
+// so this table records what the live forms actually send. `pty_ltd` is the
+// MCR26_MAIN option key; "Pty Ltd" and "Company" are display values from the
+// website form and the older Meta forms.
+registerEntityAlias('company', 'Company', 'pty_ltd', 'Pty Ltd', 'company_pty_ltd', 'Company (Pty Ltd)')
+registerEntityAlias('trust', 'Trust', 'trust', 'family_trust', 'Family Trust')
 
 /**
  * Which payload key carries which of our fields, per source.

@@ -22,7 +22,10 @@ const COLUMNS = [
   // Left-aligned to match the cell: a short single figure stranded on the
   // right edge reads as misaligned.
   { label: 'Debt', className: 'text-left' },
-  { label: 'Entity', className: 'text-left' },
+  // Longer than the "Company"/"Trust" badges beneath it, so it sets this
+  // column's width — nowrap keeps it on one line rather than stacking and
+  // making every header row taller.
+  { label: 'Business type', className: 'text-left whitespace-nowrap' },
   { label: 'State', className: 'text-left' },
   { label: 'Message', className: 'text-left' },
   { label: 'Stage', className: 'text-left' },

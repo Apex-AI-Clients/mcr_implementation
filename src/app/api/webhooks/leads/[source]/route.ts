@@ -240,8 +240,8 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
         continue
       }
 
-      const fields = await fetchLeadFields(leadgenId, pageId)
-      if (!fields) {
+      const lead = await fetchLead(leadgenId, pageId)
+      if (!lead) {
         await logIntake({
           source,
           externalId: leadgenId,
@@ -253,14 +253,18 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
         continue
       }
 
-      const mapped = mapLead(flattenFacebookFields(fields), source, leadgenId)
+      // formId is carried only so an unmapped question key can name the form
+      // that needs remapping — there are 19 of them on the Page.
+      const mapped = mapLead(flattenFacebookFields(lead.fieldData), source, leadgenId, {
+        formId: lead.formId,
+      })
       if (!mapped.ok) {
         await logIntake({
           source,
           externalId: leadgenId,
           outcome: 'rejected',
           error: mapped.error,
-          rawBody: { field_data: fields },
+          rawBody: { field_data: lead.fieldData },
         })
         outcomes.push('rejected')
         continue
@@ -282,8 +286,15 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
  *
  * The page token is looked up by page id so switching from the test Page to
  * Gabby's real one is a config change, not a code change.
+ *
+ * `form_id` comes back alongside the answers and is kept: it is the only thing
+ * in the response that says which of the Page's 19 forms a lead came from, and
+ * an unmapped question key is not actionable without it.
  */
-async function fetchLeadFields(leadgenId: string, pageId: string | null): Promise<unknown | null> {
+async function fetchLead(
+  leadgenId: string,
+  pageId: string | null,
+): Promise<{ fieldData: unknown; formId: string | null } | null> {
   const token = pageAccessToken(pageId)
   if (!token) {
     console.error(`[webhooks/leads] no page access token configured for page_id=${pageId}`)
@@ -297,8 +308,12 @@ async function fetchLeadFields(leadgenId: string, pageId: string | null): Promis
       console.error(`[webhooks/leads] Graph API returned ${response.status} for ${leadgenId}`)
       return null
     }
-    const payload = (await response.json()) as { field_data?: unknown }
-    return payload.field_data ?? null
+    const payload = (await response.json()) as { field_data?: unknown; form_id?: unknown }
+    if (payload.field_data === undefined || payload.field_data === null) return null
+    return {
+      fieldData: payload.field_data,
+      formId: typeof payload.form_id === 'string' ? payload.form_id : null,
+    }
   } catch (err) {
     console.error('[webhooks/leads] Graph API fetch threw:', err instanceof Error ? err.message : err)
     return null

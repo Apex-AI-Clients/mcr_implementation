@@ -11,6 +11,7 @@ import {
   UNSELECTED_STATE_SENTINELS,
   WEBSITE_DEBT_CODES,
   normaliseDebtLabel,
+  normaliseEntityValue,
   type DebtFieldFormat,
   type DebtRange,
   type FieldMap,
@@ -155,9 +156,19 @@ function appendRawDebt(message: string | null, raw: string): string {
   return message ? `${message}\n\n${note}` : note
 }
 
-function mapEntityType(raw: string | null): EntityType | null {
+/**
+ * An entity answer to the SBR-qualifying path, or null.
+ *
+ * Null means "we were not told", and it has to stay null: the two values are
+ * not interchangeable to whoever works the lead, and a Trust cannot take the
+ * SBR path. Normalised on lookup so the option key Meta sends (`pty_ltd`) and
+ * the display value the website posts ("Company") read through one table.
+ */
+export function mapEntityType(raw: string | null): EntityType | null {
   if (raw === null) return null
-  return ENTITY_TYPE_ALIASES[raw.trim().toLowerCase()] ?? null
+  const key = normaliseEntityValue(raw)
+  if (!key) return null
+  return ENTITY_TYPE_ALIASES[key] ?? null
 }
 
 /**
@@ -187,6 +198,40 @@ export function flattenFacebookFields(fieldData: unknown): Payload {
 }
 
 /**
+ * Keys Meta attaches to a lead that are not answers to a question, so their
+ * absence from the field map is correct rather than a gap. `inbox_url` is the
+ * link back to the Page inbox; add to this set rather than to a field map when
+ * Meta starts sending another.
+ */
+const FACEBOOK_NON_QUESTION_KEYS = new Set(['inbox_url'])
+
+/**
+ * Warn about answer keys no field map claims.
+ *
+ * The Page runs 19 forms and old ones get relaunched across campaigns. Meta
+ * derives a question's key from its text, so an editor rewording "Which state
+ * are you from?" mints a new key, `pick` finds nothing, and the lead lands with
+ * a blank State, Debt and Business type while everything reports success. There
+ * is no error to notice — which is the problem this exists to fix.
+ *
+ * KEYS ONLY, never values: an answer is the lead's name, phone number or
+ * financial position, and log lines are not a place for any of it. The key is
+ * the question's wording, which is ours and is the only part that identifies
+ * what needs remapping.
+ */
+function warnUnmappedFacebookFields(
+  payload: Payload,
+  fieldMap: FieldMap,
+  formId: string,
+): void {
+  const mapped = new Set(Object.values(fieldMap).flat())
+  for (const key of Object.keys(payload)) {
+    if (mapped.has(key) || FACEBOOK_NON_QUESTION_KEYS.has(key)) continue
+    console.warn(`[webhooks/leads] unmapped facebook field key=${key} form_id=${formId}`)
+  }
+}
+
+/**
  * Map a payload to a lead.
  *
  * `source` comes from the caller — which reads it from the route param, never
@@ -197,9 +242,15 @@ export function mapLead(
   payload: Payload,
   source: LeadSource,
   externalId: string | null,
-  options: { formKey?: string } = {},
+  options: { formKey?: string; formId?: string | null } = {},
 ): IngestResult {
   const fieldMap: FieldMap = FIELD_MAPS[source as keyof typeof FIELD_MAPS] ?? FIELD_MAPS.website
+
+  // Before the validation returns below, so a reworded question that costs us
+  // the name key is reported as a mapping gap and not only as "Missing name".
+  if (source === 'facebook') {
+    warnUnmappedFacebookFields(payload, fieldMap, options.formId ?? 'unknown')
+  }
 
   // Which form this came from decides how its debt field is read. Defaults to
   // the code table, so a form nobody has configured cannot accidentally get

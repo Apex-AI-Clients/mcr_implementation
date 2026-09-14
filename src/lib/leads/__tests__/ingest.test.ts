@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import {
   mapLead,
+  mapEntityType,
   flattenFacebookFields,
   isHoneypotTripped,
   parseLooseDebt,
@@ -14,6 +15,7 @@ import {
   WEBSITE_DEBT_CODES,
   DEBT_FIELD_FORMAT,
   DEBT_LABELS,
+  ENTITY_TYPE_ALIASES,
   FIELD_MAPS,
   MIN_PLAUSIBLE_DEBT,
   normaliseDebtLabel,
@@ -632,5 +634,230 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
     // neither set may displace the other.
     expect(mapDebtLabel('$100k-$250k')).toEqual({ min: 100_000, max: 250_000 })
     expect(mapDebtLabel('$100,000 - $124,999')).toEqual({ min: 100_000, max: 124_999 })
+  })
+})
+
+describe('mapEntityType', () => {
+  // Business type is the SBR-qualifying question, so a wrong answer is worse
+  // than none: a lead marked Trust reads as ineligible and gets worked as a
+  // dead end. Every case below therefore asserts an exact value or null —
+  // never "something sensible".
+
+  it("maps Meta's option key, which is what the live form actually sends", () => {
+    // MCR26_MAIN returns the option's KEY, not the label the lead saw.
+    expect(mapEntityType('pty_ltd')).toBe('company')
+    expect(mapEntityType('trust')).toBe('trust')
+  })
+
+  it('still maps the display values older forms and the website send', () => {
+    expect(mapEntityType('Pty Ltd')).toBe('company')
+    // The website's biz_type — the one that must never come back as Trust.
+    expect(mapEntityType('Company')).toBe('company')
+    expect(mapEntityType('Trust')).toBe('trust')
+  })
+
+  it('reads underscores, hyphens and case as the same answer', () => {
+    for (const spelling of ['pty_ltd', 'pty-ltd', 'PTY LTD', '  Pty   Ltd  ']) {
+      expect(mapEntityType(spelling), spelling).toBe('company')
+    }
+    for (const spelling of ['family_trust', 'Family Trust', 'FAMILY-TRUST']) {
+      expect(mapEntityType(spelling), spelling).toBe('trust')
+    }
+  })
+
+  it('maps an unrecognised answer to null rather than guessing', () => {
+    expect(mapEntityType('Partnership')).toBeNull()
+    expect(mapEntityType('Sole trader')).toBeNull()
+    expect(mapEntityType('on')).toBeNull()
+  })
+
+  it('maps an absent or blank answer to null', () => {
+    expect(mapEntityType(null)).toBeNull()
+    expect(mapEntityType('')).toBeNull()
+    expect(mapEntityType('   ')).toBeNull()
+  })
+
+  it('keys the alias table in normalised form, so every entry is reachable', () => {
+    // A key that does not survive normalisation is a dead entry: it would sit
+    // in the table looking like coverage while matching nothing.
+    for (const key of Object.keys(ENTITY_TYPE_ALIASES)) {
+      expect(mapEntityType(key), key).toBe(ENTITY_TYPE_ALIASES[key])
+    }
+  })
+})
+
+describe('mapLead — entity type per source', () => {
+  it('resolves the website form biz_type "Company", the case most enquiries send', () => {
+    const result = mapLead({ ...fixture('website_lead'), biz_type: 'Company' }, 'website', 'w-1')
+    expect(result.ok && result.lead.entityType).toBe('company')
+  })
+
+  it('resolves the website form biz_type "Trust"', () => {
+    const result = mapLead({ ...fixture('website_lead'), biz_type: 'Trust' }, 'website', 'w-2')
+    expect(result.ok && result.lead.entityType).toBe('trust')
+  })
+
+  it('leaves an unrecognised or absent website biz_type null', () => {
+    const unrecognised = mapLead(
+      { ...fixture('website_lead'), biz_type: 'Partnership' },
+      'website',
+      'w-3',
+    )
+    expect(unrecognised.ok && unrecognised.lead.entityType).toBeNull()
+
+    const payload = { ...fixture('website_lead') }
+    delete payload.biz_type
+    const absent = mapLead(payload, 'website', 'w-4')
+    expect(absent.ok && absent.lead.entityType).toBeNull()
+  })
+})
+
+describe('mapLead — MCR26_MAIN delivering option keys', () => {
+  // Transcribed from leadgen 1785284235823017 on form
+  // MCR26_MAIN_LeadForm_SBR-Verifed. The same form that returns the label
+  // "$100k-$250k" for debt returns the KEY "pty_ltd" for business type and
+  // "vic" for state, which is why the entity lookup cannot be label-only.
+  function optionKeys() {
+    return flattenFacebookFields(fixture('facebook_mcr26_option_keys').field_data)
+  }
+
+  it('maps the whole payload, entity type included', () => {
+    const result = mapLead(optionKeys(), 'facebook', 'fb-1785284235823017')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead).toEqual({
+      name: 'Priya Raghavan',
+      email: 'priya@raghavanjoinery.com.au',
+      phone: '0402119873',
+      debtMin: 100_000,
+      debtMax: 250_000,
+      // Lower-case "vic" is an option key too, and STATE_ALIASES already reads it.
+      state: 'VIC',
+      entityType: 'company',
+      message: 'test',
+      preferredCallTime: null,
+      source: 'facebook',
+      externalId: 'fb-1785284235823017',
+    })
+  })
+
+  it('tolerates a field with no values array at all', () => {
+    // inbox_url arrives on this lead as `{ name: 'inbox_url' }` with no
+    // `values` key. Flattening must not throw on it...
+    const fields = optionKeys()
+    expect(() => flattenFacebookFields(fixture('facebook_mcr26_option_keys').field_data))
+      .not.toThrow()
+    // ...and a field with no answer contributes no key, so nothing downstream
+    // can read `undefined` as an answer.
+    expect('inbox_url' in fields).toBe(false)
+    // The rest of the payload is unaffected by it.
+    expect(fields.full_name).toBe('Priya Raghavan')
+  })
+
+  it('would ignore inbox_url even if Meta did send it a value', () => {
+    // It is Meta's internal link back to the Page inbox, not an answer, so it
+    // is in no field map and is not the honeypot.
+    for (const keys of Object.values(FIELD_MAPS.facebook)) {
+      expect(keys).not.toContain('inbox_url')
+    }
+    expect(isHoneypotTripped({ ...optionKeys(), inbox_url: 'https://business.facebook.com/x' }))
+      .toBe(false)
+  })
+
+  it('leaves the entity null if the form renames its options', () => {
+    const fields = { ...optionKeys(), 'do_you_run_a_company_(pty_ltd)_or_trust?': 'proprietary_ltd' }
+    const result = mapLead(fields, 'facebook', 'fb-renamed')
+    expect(result.ok && result.lead.entityType).toBeNull()
+  })
+
+  it('leaves the entity null if the form drops the question', () => {
+    const fields = { ...optionKeys() }
+    delete fields['do_you_run_a_company_(pty_ltd)_or_trust?']
+    const result = mapLead(fields, 'facebook', 'fb-dropped')
+    expect(result.ok && result.lead.entityType).toBeNull()
+  })
+})
+
+describe('unmapped Facebook field keys', () => {
+  // The Page runs 19 forms and old ones get relaunched. Meta derives a
+  // question's key from its text, so rewording one mints a new key that no
+  // field map claims: the answer is silently dropped and the lead lands with a
+  // blank column while the webhook reports success. These warnings are the only
+  // thing that surfaces it, so they are worth a test.
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function warningsFor(payload: Record<string, unknown>, formId?: string): string[] {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapLead(payload, 'facebook', 'fb-1', formId === undefined ? {} : { formId })
+    return warn.mock.calls.map((call) => String(call[0]))
+  }
+
+  function mcr26Fields() {
+    return flattenFacebookFields(fixture('facebook_mcr26_option_keys').field_data)
+  }
+
+  it('says nothing when every key is mapped', () => {
+    expect(warningsFor(mcr26Fields(), '1681820256160730')).toEqual([])
+  })
+
+  it('names the reworded key and the form it came from', () => {
+    const fields = { ...mcr26Fields(), 'which_state_do_you_operate_in?': 'vic' }
+    expect(warningsFor(fields, '1681820256160730')).toEqual([
+      '[webhooks/leads] unmapped facebook field key=which_state_do_you_operate_in? form_id=1681820256160730',
+    ])
+  })
+
+  it('never logs the answer, only the key', () => {
+    // An answer is the lead's own words, their phone number or their financial
+    // position. None of it belongs in a log line.
+    const fields = {
+      ...mcr26Fields(),
+      'what_is_your_mobile?': '0402119873',
+      'how_much_do_you_owe_the_ato_right_now?': '$250,000',
+    }
+    const warnings = warningsFor(fields, '1681820256160730')
+    expect(warnings).toHaveLength(2)
+    for (const line of warnings) {
+      expect(line).not.toContain('0402119873')
+      expect(line).not.toContain('250,000')
+    }
+  })
+
+  it('stays quiet about inbox_url, which is not an answer', () => {
+    // Meta attaches it to every lead as a link back to the Page inbox, so
+    // warning about it would make the warnings worthless.
+    const fields = { ...mcr26Fields(), inbox_url: 'https://business.facebook.com/latest/inbox/all' }
+    expect(warningsFor(fields, '1681820256160730')).toEqual([])
+  })
+
+  it('warns even when the lead is rejected outright', () => {
+    // A reworded name question rejects the lead for "Missing name". The
+    // rejection alone does not say which key moved; the warning does.
+    const fields = mcr26Fields()
+    delete fields.full_name
+    fields['what_is_your_full_name?'] = 'Priya Raghavan'
+    const warnings = warningsFor(fields, '1681820256160730')
+    expect(warnings).toContain(
+      '[webhooks/leads] unmapped facebook field key=what_is_your_full_name? form_id=1681820256160730',
+    )
+  })
+
+  it('falls back to form_id=unknown rather than logging nothing', () => {
+    const fields = { ...mcr26Fields(), 'a_new_question?': 'yes' }
+    expect(warningsFor(fields)).toEqual([
+      '[webhooks/leads] unmapped facebook field key=a_new_question? form_id=unknown',
+    ])
+  })
+
+  it('does not warn on the website form, whose payload carries other keys', () => {
+    // external_id, submitted_at and the honeypot are all expected there, and
+    // warning about them would be noise on every single website lead.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mapLead(fixture('website_lead'), 'website', 'w-1')
+    expect(warn).not.toHaveBeenCalled()
   })
 })
