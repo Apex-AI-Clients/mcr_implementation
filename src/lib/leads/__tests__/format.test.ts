@@ -6,6 +6,8 @@ import {
   normalisePhone,
   isValidAuMobile,
   formatPhone,
+  describePhone,
+  isRecognisedPhone,
   isValidEmail,
   daysBetween,
   formatShortDate,
@@ -197,12 +199,174 @@ describe('phone', () => {
     }
   })
 
-  it('returns unrecognised input untouched', () => {
+  it.each([
+    ['412345678', '0412 345 678'], // a form handler coerced the field to a number
+    ['4 1234 5678', '0412 345 678'], // ...and someone spaced it out by hand
+    ['298765432', '02 9876 5432'], // Sydney landline, same missing zero
+    ['387654321', '03 8765 4321'], // Melbourne
+    ['732109876', '07 3210 9876'], // Brisbane
+    ['891234567', '08 9123 4567'], // Perth
+  ])('restores the stripped leading zero on %s', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+    expect(isRecognisedPhone(input)).toBe(true)
+  })
+
+  it('reads a stripped-zero number the same as the number itself', () => {
+    // The zero is the only thing that went missing, so the two spellings have
+    // to land on one string — otherwise the same lead reads as two numbers.
+    expect(formatPhone('412345678')).toBe(formatPhone('0412345678'))
+    expect(formatPhone('298765432')).toBe(formatPhone('0298765432'))
+  })
+
+  it.each([
+    ['+917018102917', '+91 701 810 2917'], // India
+    ['+77780001985', '+7 778 000 1985'], // Kazakhstan, on Russia's +7
+    ['+6421555017', '+64 215 550 17'], // New Zealand — threes, not NZ's own convention
+    ['+447700900412', '+44 770 090 0412'], // United Kingdom
+    ['+12025550143', '+1 202 555 0143'], // United States
+    ['+971501234567', '+971 501 234 567'], // UAE, a three-digit code
+    ['+91 70181 02917', '+91 701 810 2917'], // already spaced, regrouped
+  ])('formats the international number %s', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+  })
+
+  it('never moves a digit, only inserts spaces', () => {
+    // The one thing a phone formatter must not do. A mistyped grouping reads
+    // as a different number and gets dialled as one — worse than no grouping.
+    for (const input of ['+917018102917', '+77780001985', '+999123456789', '+35312345678']) {
+      expect(formatPhone(input).replace(/ /g, '')).toBe(input.replace(/ /g, ''))
+    }
+  })
+
+  it('groups an unknown country code whole rather than splitting it wrong', () => {
+    // +999 is unassigned. Nothing in the number says where the code ends, so
+    // nothing here claims to know: the digits are grouped in threes and no
+    // country code is marked off.
+    expect(formatPhone('+999123456789')).toBe('+999 123 456 789')
+  })
+
+  it('leaves the Australian shapes exactly as they were', () => {
+    // +61 is folded to a leading 0 by normalisePhone, so the international
+    // case must never see an Australian number.
+    expect(formatPhone('+61402915338')).toBe('0402 915 338')
+    expect(formatPhone('+61298765432')).toBe('02 9876 5432')
+  })
+
+  it('returns input with no digits in it untouched', () => {
+    // Nothing to group, so nothing is done to it.
     expect(formatPhone('switchboard')).toBe('switchboard')
-    expect(formatPhone('12345')).toBe('12345')
-    // Ten digits with no leading zero is not an Australian number; it is left
-    // as entered rather than guessed at.
-    expect(formatPhone('4155550123')).toBe('4155550123')
+    expect(formatPhone('')).toBe('')
+    expect(formatPhone('n/a')).toBe('n/a')
+  })
+
+  it('returns digits mixed with anything else untouched', () => {
+    // Grouping by digit count would have to either drop the rest or space it
+    // at random. Both misrepresent what was typed, so neither is done.
+    expect(formatPhone('0412-abc-999')).toBe('0412-abc-999')
+    expect(formatPhone('0402 915 338 (mob)')).toBe('0402 915 338 (mob)')
+  })
+
+  // ---- best-effort fallback ------------------------------------------------
+
+  it.each([
+    ['945359847', '9453 598 47'], // 9  -> XXXX XXX XX
+    ['1234567890', '1234 567 890'], // 10 -> XXXX XXX XXX
+    ['86856416735', '8685 641 673 5'], // 11 -> remainder after one more space
+    ['868564167351', '8685 641 673 51'], // 12 -> ditto, two digits left over
+  ])('groups the unrecognised %s as %s', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+  })
+
+  it('leaves the stripped-zero landlines to their own case, not the fallback', () => {
+    // A nine-digit number opening on 2, 3, 7 or 8 is a landline that lost its
+    // leading 0, and that case runs first — so "745359847" is the Brisbane
+    // number 07 4535 9847, not the fallback's "7453 598 47". Only nine-digit
+    // numbers opening on something else (0, 1, 5, 6, 9) reach the fallback.
+    expect(formatPhone('745359847')).toBe('07 4535 9847')
+    expect(isRecognisedPhone('745359847')).toBe(true)
+    expect(formatPhone('945359847')).toBe('9453 598 47')
+    expect(isRecognisedPhone('945359847')).toBe(false)
+  })
+
+  it.each([
+    ['12345678', '123 456 78'], // 8, threes from the left
+    ['1234567', '123 4567'], // 7 — the last group runs on rather than strand a digit
+    ['12345', '123 45'], // 5
+    ['1', '1'], // one digit, nothing to group
+  ])('groups the short %s as %s', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+  })
+
+  it.each([
+    '945359847',
+    '1234567890',
+    '86856416735',
+    '868564167351',
+    '12345678901234567890',
+    '12345678',
+    '987654321',
+    '512345678',
+    '4155550123',
+  ])('preserves %s digit for digit', (input) => {
+    // The one invariant the fallback cannot break. Grouping is cosmetic: every
+    // digit that went in comes out, in the order it went in, and nothing is
+    // added. A dropped or swapped digit is a wrong number that looks right.
+    expect(formatPhone(input).replace(/ /g, '')).toBe(input)
+  })
+
+  it('preserves the digits of the known shapes too', () => {
+    for (const input of ['0402915338', '0298765432', '1800123456', '131234']) {
+      expect(formatPhone(input).replace(/ /g, ''), input).toBe(input)
+    }
+    // The two stripped-zero cases add exactly one 0 at the front and nothing
+    // else — the only place in this file where the output gains a digit.
+    expect(formatPhone('412345678').replace(/ /g, '')).toBe('0412345678')
+    expect(formatPhone('298765432').replace(/ /g, '')).toBe('0298765432')
+  })
+
+  it.each([
+    // Each of these is a length the fallback also handles, which is the point:
+    // "0402915338" groups the same either way, but "0298765432" would come out
+    // "0298 765 432" instead of the correct "02 9876 5432" if the fallback got
+    // to it first.
+    ['0402915338', '0402 915 338'],
+    ['0298765432', '02 9876 5432'],
+    ['0387654321', '03 8765 4321'],
+    ['1800123456', '1800 123 456'],
+    ['1300123456', '1300 123 456'],
+    ['131234', '13 12 34'],
+    ['412345678', '0412 345 678'],
+    ['298765432', '02 9876 5432'],
+    // ...and the international shapes, which the fallback would otherwise
+    // render as an Australian number with a "+" glued to the front.
+    ['+917018102917', '+91 701 810 2917'],
+    ['+77780001985', '+7 778 000 1985'],
+    ['+61402915338', '0402 915 338'],
+  ])('keeps %s on its known shape, ahead of the fallback', (input, expected) => {
+    expect(formatPhone(input)).toBe(expected)
+    expect(isRecognisedPhone(input)).toBe(true)
+  })
+
+  it.each([
+    '12345678901',
+    '987654321',
+    '512345678',
+    '112345678',
+    '12345678',
+    '4155550123',
+    'switchboard',
+  ])('flags %s as unrecognised even though it is grouped', (input) => {
+    // Everything with digits is grouped now, so the rendered text no longer
+    // says which numbers are real — "8685 641 673 5" scans like a phone number.
+    // `recognised` is the only thing that still distinguishes them, and the
+    // table dims on it.
+    expect(isRecognisedPhone(input)).toBe(false)
+  })
+
+  it('keeps describePhone and formatPhone in step', () => {
+    for (const input of ['0402915338', '412345678', '987654321', '+77780001985']) {
+      expect(formatPhone(input), input).toBe(describePhone(input).text)
+    }
   })
 })
 

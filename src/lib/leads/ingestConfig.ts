@@ -73,8 +73,10 @@ export const DEBT_FIELD_FORMAT: Record<string, DebtFieldFormat> = {
  *
  * Meta's form editor rewrites a typed hyphen as an en dash, and the label that
  * comes back will not match a hardcoded hyphen — so every separator is folded
- * to a single one. Currency symbols, thousands commas and case are dropped for
- * the same reason: the label is display text, and display text drifts.
+ * to a single one. Currency symbols, thousands commas, underscores and case are
+ * dropped for the same reason: the label is display text, display text drifts,
+ * and what Meta actually delivers is the option KEY it minted from that display
+ * text — the same string with its spaces underscored.
  */
 export function normaliseDebtLabel(raw: string): string {
   return raw
@@ -85,6 +87,14 @@ export function normaliseDebtLabel(raw: string): string {
     .replace(/[\u2010-\u2015]/g, '-')
     .replace(/\bto\b/g, '-')
     .replace(/[$,]/g, '')
+    // An option KEY, not its value: Meta derives the key from the display
+    // label by swapping the label's spaces for underscores, so "$500k +"
+    // arrives as "$500k_+" and the Feb 2025 form's "$100k - $250k" as
+    // "$100k_-_$250k". An underscore is that encoding and nothing else — no
+    // debt bracket has ever meant anything by one — so it is dropped outright.
+    // Before the whitespace strip, so a key and the label it was minted from
+    // land on the same string.
+    .replace(/_+/g, '')
     // Every space, not just runs of them. The live Facebook form writes its
     // open-ended option as "$500k +" and the website writes "$500k+"; those are
     // one bracket, not two.
@@ -129,22 +139,36 @@ registerDebtLabel(
 // missing "k" in "$250-$500k" and the space in "$500k +". Tidying either one up
 // here would simply stop it matching. Both bracket sets have to coexist: the
 // website's six consumer brackets are narrower and still in use.
+//
+// META SENDS THE OPTION KEY, NOT THE VALUE. For most of MCR26_MAIN's brackets
+// the two are the same string, which is why they matched at all; where the
+// value contains a space they are not, and "$500k +" is delivered as "$500k_+".
+// The entries marked KEY are those literal keys, registered next to the values
+// they were minted from. `normaliseDebtLabel` folds underscores and so already
+// resolves both, and these entries are redundant while it does — they are here
+// so the next form with an odd key shape shows up as a duplicate line to
+// reconcile rather than as a blank Debt column nobody notices.
 registerDebtLabel(
   { min: 100_000, max: 250_000 },
   '$100k-$250k', // MCR26_MAIN
+  '$100k_-_$250k', // KEY — the Feb 2025 form's key shape for the same bracket
   '$100,000 - $250,000',
   '$100k - $250k',
 )
 registerDebtLabel({ min: 150_000, max: 250_000 }, '$150,000 - $250,000', '$150k - $250k')
 registerDebtLabel(
   { min: 250_000, max: 500_000 },
-  '$250-$500k', // MCR26_MAIN — the "k" after 250 really is missing on the form
+  // MCR26_MAIN. The "k" after 250 really is missing on the form, and with no
+  // space anywhere in it the option's key is this same string — which is why
+  // this bracket never went blank the way "$500k +" did.
+  '$250-$500k',
   '$250,000 - $500,000',
   '$250k - $500k',
 )
 registerDebtLabel(
   { min: 500_000, max: null },
   '$500k +', // MCR26_MAIN — the space before the "+" really is on the form
+  '$500k_+', // KEY — the space became an underscore; this is what arrives
   '$500,000 or +',
   '$500,000+',
   '$500k+',

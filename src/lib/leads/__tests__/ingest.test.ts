@@ -588,6 +588,49 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
     expect(mapDebtLabel('$500k+')).toEqual({ min: 500_000, max: null })
   })
 
+  it('reads the option KEY "$500k_+", which is what Meta actually sends', () => {
+    // The bug this covers: Meta names a select option's key after its display
+    // value with the spaces underscored, and sends the key. Every other
+    // MCR26_MAIN bracket has no space in it, so key and value are the same
+    // string and matched; only "$500k +" became "$500k_+", missed the table
+    // and left the Debt column blank on the largest leads on the board.
+    const result = mcr26('facebook_mcr26_500_plus_key', 'fb-1785284235823199')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(500_000)
+    expect(result.lead.debtMax).toBeNull()
+    expect(formatDebtRange(result.lead.debtMin, result.lead.debtMax)).toBe('$500k+')
+    // Matched, so the lead's own words are all that is in the message.
+    expect(result.lead.message).toBe('Two directors, both have penalty notices.')
+    expect(result.lead.message).not.toContain(RAW_DEBT_NOTE_PREFIX)
+  })
+
+  it.each<[string, number, number | null]>([
+    ['$500k_+', 500_000, null], // the option key, underscored
+    ['$500k +', 500_000, null], // the display value on MCR26_MAIN
+    ['$500k+', 500_000, null], // how the website writes the same bracket
+    ['$100k_-_$250k', 100_000, 250_000], // the Feb 2025 form's key shape
+    ['$250-$500k', 250_000, 500_000], // key == value, no space to underscore
+  ])('maps the option key %s', (label, min, max) => {
+    expect(mapDebtLabel(label), label).toEqual({ min, max })
+  })
+
+  it('folds every "$500k" spelling to one key, keys included', () => {
+    // All three are one bracket, so they must be one lookup key — otherwise
+    // registering the value is no protection for the key, or the reverse.
+    const canonical = normaliseDebtLabel('$500k+')
+    for (const variant of ['$500k_+', '$500k +', '$500k+']) {
+      expect(normaliseDebtLabel(variant), variant).toBe(canonical)
+    }
+  })
+
+  it('strips underscores without disturbing the separator', () => {
+    // "$100k_-_$250k" is the same bracket as "$100k-$250k": the underscores
+    // are the key encoding, the hyphen between them is the range.
+    expect(normaliseDebtLabel('$100k_-_$250k')).toBe(normaliseDebtLabel('$100k-$250k'))
+    expect(normaliseDebtLabel('$100k_-_$250k')).toBe('100k-250k')
+  })
+
   it('maps Meta\'s "Pty Ltd" option value, not just the word "Company"', () => {
     expect(mcr26('facebook_mcr26_main', 'e1')).toMatchObject({
       lead: { entityType: 'company' },
