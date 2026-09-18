@@ -8,8 +8,8 @@ import { DebtInput } from '@/components/leads/DebtInput'
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
-import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
-import { formatPhone, formatShortDate } from '@/lib/leads/format'
+import { ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { formatLeadSource, formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -101,8 +101,12 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
           className="min-w-[150px]"
         />
       </td>
+      {/* The partner who ran the campaign, where one is known — "Facebook ·
+          EPIC DM". Resolved from the campaign name captured at ingest, so it
+          costs no request. Plain "Facebook" when the lead came from elsewhere,
+          the campaign is unknown, or it is run in-house. */}
       <td className="px-4 py-3.5 whitespace-nowrap text-foreground/50">
-        {SOURCE_META[lead.source].short}
+        {formatLeadSource(lead)}
       </td>
       {/* <td className="px-4 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
     </tr>
@@ -157,7 +161,7 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
         <span aria-hidden="true">·</span>
         {lead.state && <span>{lead.state}</span>}
         <span aria-hidden="true">·</span>
-        <span>{SOURCE_META[lead.source].short}</span>
+        <span>{formatLeadSource(lead, 'short')}</span>
       </div>
 
       <StageSelect

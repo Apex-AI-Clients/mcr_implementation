@@ -1,5 +1,6 @@
 import type { AuState, EntityType, LeadSource } from '@/types/leads'
 import { normalisePhone, isValidEmail } from './format'
+import type { AdAttribution } from './metaAds'
 import {
   DEBT_FIELD_FORMAT,
   DEBT_LABELS,
@@ -40,6 +41,24 @@ export interface IngestedLead {
   preferredCallTime: string | null
   source: LeadSource
   externalId: string | null
+  /**
+   * Meta ad attribution. Like externalId, none of it is an answer to a
+   * question — it comes from the webhook envelope and the Graph response — so
+   * it is handed in rather than picked out of the payload. Null on every other
+   * source, and null on Meta's test leads, which no ad delivered.
+   */
+  metaFormId: string | null
+  metaAdId: string | null
+  metaAdgroupId: string | null
+  metaPageId: string | null
+  /**
+   * Resolved from the ad id in the same request, so the dashboard never has to
+   * call Meta. Null as a group when there was no ad or the lookup failed.
+   */
+  metaCampaignId: string | null
+  metaCampaignName: string | null
+  metaAdName: string | null
+  metaAccountId: string | null
 }
 
 export type IngestResult =
@@ -231,6 +250,19 @@ function warnUnmappedFacebookFields(
   }
 }
 
+export interface MapLeadOptions {
+  /** Which form's debt field format to apply. Defaults to the source. */
+  formKey?: string
+  /** From the Graph response. Also names the form in unmapped-key warnings. */
+  formId?: string | null
+  /** From the webhook change value — all three are null on Meta's test leads. */
+  adId?: string | null
+  adgroupId?: string | null
+  pageId?: string | null
+  /** The ad resolved to its campaign. Absent when there was no ad to resolve. */
+  ad?: AdAttribution
+}
+
 /**
  * Map a payload to a lead.
  *
@@ -242,7 +274,7 @@ export function mapLead(
   payload: Payload,
   source: LeadSource,
   externalId: string | null,
-  options: { formKey?: string; formId?: string | null } = {},
+  options: MapLeadOptions = {},
 ): IngestResult {
   const fieldMap: FieldMap = FIELD_MAPS[source as keyof typeof FIELD_MAPS] ?? FIELD_MAPS.website
 
@@ -324,6 +356,14 @@ export function mapLead(
       preferredCallTime: callTime ?? null,
       source,
       externalId,
+      metaFormId: options.formId ?? null,
+      metaAdId: options.adId ?? null,
+      metaAdgroupId: options.adgroupId ?? null,
+      metaPageId: options.pageId ?? null,
+      metaCampaignId: options.ad?.campaignId ?? null,
+      metaCampaignName: options.ad?.campaignName ?? null,
+      metaAdName: options.ad?.adName ?? null,
+      metaAccountId: options.ad?.accountId ?? null,
     },
   }
 }

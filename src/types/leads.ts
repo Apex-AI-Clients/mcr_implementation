@@ -64,6 +64,27 @@ export interface Lead {
   /** ISO — the follow-up clock. Reset only by a recorded human action. */
   lastActionAt: string
   convertedClientId: string | null
+  /**
+   * Meta ad attribution, captured at delivery because it cannot be recovered
+   * afterwards. Null on every non-Facebook lead, and null on Meta's test leads
+   * for everything but the form and Page — no ad delivered those. Nothing reads
+   * these yet.
+   */
+  metaFormId: string | null
+  metaAdId: string | null
+  /** Meta's spelling for the ad set. */
+  metaAdgroupId: string | null
+  metaPageId: string | null
+  /**
+   * Resolved from the ad at ingest and stored denormalised, so a dashboard
+   * reads campaign names from our own table instead of calling Meta. Null as a
+   * group when no ad delivered the lead or the lookup failed — the raw ids
+   * above still identify it either way.
+   */
+  metaCampaignId: string | null
+  metaCampaignName: string | null
+  metaAdName: string | null
+  metaAccountId: string | null
   createdAt: string
   updatedAt: string
 }

@@ -28,6 +28,14 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
     last_action_at: '2026-08-30T00:00:00.000Z',
     converted_client_id: null,
     external_id: 'abc123',
+    meta_form_id: '1785284235823017',
+    meta_ad_id: '23859402118830412',
+    meta_adgroup_id: '23859402118820412',
+    meta_page_id: '102030405060708',
+    meta_campaign_id: '23859402118800412',
+    meta_campaign_name: 'MCR26 | SBR | Prospecting',
+    meta_ad_name: 'SBR_Verified_Static_A',
+    meta_account_id: '1029384756',
     created_at: '2026-08-01T00:00:00.000Z',
     updated_at: '2026-08-30T00:00:00.000Z',
     ...overrides,
@@ -55,6 +63,14 @@ describe('toLead', () => {
       stageSince: '2026-08-20T00:00:00.000Z',
       lastActionAt: '2026-08-30T00:00:00.000Z',
       convertedClientId: null,
+      metaFormId: '1785284235823017',
+      metaAdId: '23859402118830412',
+      metaAdgroupId: '23859402118820412',
+      metaPageId: '102030405060708',
+      metaCampaignId: '23859402118800412',
+      metaCampaignName: 'MCR26 | SBR | Prospecting',
+      metaAdName: 'SBR_Verified_Static_A',
+      metaAccountId: '1029384756',
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-30T00:00:00.000Z',
     })
@@ -73,6 +89,15 @@ describe('toLead', () => {
         company: null,
         next_step: null,
         converted_client_id: null,
+        // Every non-Facebook lead has these unset, as do Meta's test leads.
+        meta_form_id: null,
+        meta_ad_id: null,
+        meta_adgroup_id: null,
+        meta_page_id: null,
+        meta_campaign_id: null,
+        meta_campaign_name: null,
+        meta_ad_name: null,
+        meta_account_id: null,
       }),
     )
     expect(lead.debtMin).toBeNull()
@@ -82,6 +107,14 @@ describe('toLead', () => {
     expect(lead.preferredCallTime).toBeNull()
     expect(lead.nextStep).toBeNull()
     expect(lead.convertedClientId).toBeNull()
+    expect(lead.metaFormId).toBeNull()
+    expect(lead.metaAdId).toBeNull()
+    expect(lead.metaAdgroupId).toBeNull()
+    expect(lead.metaPageId).toBeNull()
+    expect(lead.metaCampaignId).toBeNull()
+    expect(lead.metaCampaignName).toBeNull()
+    expect(lead.metaAdName).toBeNull()
+    expect(lead.metaAccountId).toBeNull()
   })
 
   it('preserves an open-ended range so the display stays honest', () => {

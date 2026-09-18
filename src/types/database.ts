@@ -489,6 +489,14 @@ export type Database = {
           id: string
           last_action_at: string
           message: string | null
+          meta_account_id: string | null
+          meta_ad_id: string | null
+          meta_ad_name: string | null
+          meta_adgroup_id: string | null
+          meta_campaign_id: string | null
+          meta_campaign_name: string | null
+          meta_form_id: string | null
+          meta_page_id: string | null
           name: string
           next_step: string | null
           phone: string
@@ -511,6 +519,14 @@ export type Database = {
           id?: string
           last_action_at?: string
           message?: string | null
+          meta_account_id?: string | null
+          meta_ad_id?: string | null
+          meta_ad_name?: string | null
+          meta_adgroup_id?: string | null
+          meta_campaign_id?: string | null
+          meta_campaign_name?: string | null
+          meta_form_id?: string | null
+          meta_page_id?: string | null
           name: string
           next_step?: string | null
           phone: string
@@ -533,6 +549,14 @@ export type Database = {
           id?: string
           last_action_at?: string
           message?: string | null
+          meta_account_id?: string | null
+          meta_ad_id?: string | null
+          meta_ad_name?: string | null
+          meta_adgroup_id?: string | null
+          meta_campaign_id?: string | null
+          meta_campaign_name?: string | null
+          meta_form_id?: string | null
+          meta_page_id?: string | null
           name?: string
           next_step?: string | null
           phone?: string

@@ -59,6 +59,42 @@ export const SOURCE_META: Record<LeadSource, { label: string; short: string }> =
 export const ALL_SOURCES = Object.keys(SOURCE_META) as LeadSource[]
 
 // ============================================================
+// Lead-gen partners
+// ============================================================
+
+export interface PartnerRule {
+  /** Tested against `meta_campaign_name`. Never anchored to a whole name. */
+  pattern: RegExp
+  /** Short name, as it should read beside the source. */
+  name: string
+}
+
+/**
+ * Campaign-name patterns to the partner who runs the campaign.
+ *
+ * MAINTAINED BY HAND. Every entry is added when a partner is confirmed — there
+ * is no feed to derive this from, and Meta does not know who we contract with.
+ * Add a row here when a new partner starts running campaigns; nothing else in
+ * the app needs touching.
+ *
+ * Patterns rather than exact names, because a campaign name carries the things
+ * that change — a quarter, a month, a creative round ("Q4", "Apr24") — around a
+ * marker that does not. Matching the whole name would need a new entry every
+ * quarter and would quietly stop attributing the moment one was missed.
+ *
+ * First match wins, so order these most specific first if two could ever
+ * overlap. Keep the flags to `i`: a `g` regex carries lastIndex between calls
+ * and would match every other lead.
+ */
+export const PARTNERS: readonly PartnerRule[] = [
+  { pattern: /\bEPICDM\b/i, name: 'EPIC DM' },
+  // Running, but nobody has confirmed who runs it. 'TBC' is shown rather than
+  // nothing, so the gap is visible on the record instead of looking like an
+  // organic lead — replace the name here once the client says.
+  { pattern: /^C-COLD-MCR\b/i, name: 'TBC' },
+]
+
+// ============================================================
 // Debt
 // ============================================================
 

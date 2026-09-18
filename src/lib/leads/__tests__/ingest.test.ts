@@ -48,6 +48,15 @@ describe('mapLead — website form', () => {
       preferredCallTime: 'After 6pm, on site until then',
       source: 'website',
       externalId: 'ext-1',
+      // Nothing off Facebook carries attribution.
+      metaFormId: null,
+      metaAdId: null,
+      metaAdgroupId: null,
+      metaPageId: null,
+      metaCampaignId: null,
+      metaCampaignName: null,
+      metaAdName: null,
+      metaAccountId: null,
     })
   })
 
@@ -544,6 +553,15 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
       preferredCallTime: null,
       source: 'facebook',
       externalId: 'fb-1120394857601928',
+      // mcr26() passes no options, so these mirror a delivery that carried none.
+      metaFormId: null,
+      metaAdId: null,
+      metaAdgroupId: null,
+      metaPageId: null,
+      metaCampaignId: null,
+      metaCampaignName: null,
+      metaAdName: null,
+      metaAccountId: null,
     })
   })
 
@@ -782,6 +800,15 @@ describe('mapLead — MCR26_MAIN delivering option keys', () => {
       preferredCallTime: null,
       source: 'facebook',
       externalId: 'fb-1785284235823017',
+      // Passed in by the route, not read off the payload — none here.
+      metaFormId: null,
+      metaAdId: null,
+      metaAdgroupId: null,
+      metaPageId: null,
+      metaCampaignId: null,
+      metaCampaignName: null,
+      metaAdName: null,
+      metaAccountId: null,
     })
   })
 
@@ -902,5 +929,96 @@ describe('unmapped Facebook field keys', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mapLead(fixture('website_lead'), 'website', 'w-1')
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+// ============================================================
+// Meta ad attribution
+// ============================================================
+
+describe('mapLead — Meta ad attribution', () => {
+  const fields = () => flattenFacebookFields(fixture('facebook_mcr26_main').field_data)
+
+  it('carries the delivery identifiers onto the lead', () => {
+    // None of these are answers to a question: form_id comes from the Graph
+    // response and the rest from the webhook envelope, so they are handed in
+    // the way externalId is.
+    const result = mapLead(fields(), 'facebook', 'fb-1', {
+      formId: '1681820256160730',
+      adId: '23859402118830412',
+      adgroupId: '23859402118820412',
+      pageId: '102030405060708',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead.metaFormId).toBe('1681820256160730')
+    expect(result.lead.metaAdId).toBe('23859402118830412')
+    expect(result.lead.metaAdgroupId).toBe('23859402118820412')
+    expect(result.lead.metaPageId).toBe('102030405060708')
+  })
+
+  it('leaves a test lead null rather than inventing an ad', () => {
+    // Meta's test tool sends leadgen_id and page_id and nothing else — no ad
+    // delivered it, so ad_id and adgroup_id are genuinely absent.
+    const result = mapLead(fields(), 'facebook', 'fb-test', {
+      formId: '1681820256160730',
+      pageId: '102030405060708',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead.metaAdId).toBeNull()
+    expect(result.lead.metaAdgroupId).toBeNull()
+    expect(result.lead.metaFormId).toBe('1681820256160730')
+  })
+
+  it('carries the resolved campaign through as one block', () => {
+    const result = mapLead(fields(), 'facebook', 'fb-3', {
+      adId: '23859402118830412',
+      ad: {
+        campaignId: '23859402118800412',
+        campaignName: 'MCR26 | SBR | Prospecting',
+        adName: 'SBR_Verified_Static_A',
+        accountId: '1029384756',
+      },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead.metaCampaignId).toBe('23859402118800412')
+    expect(result.lead.metaCampaignName).toBe('MCR26 | SBR | Prospecting')
+    expect(result.lead.metaAdName).toBe('SBR_Verified_Static_A')
+    expect(result.lead.metaAccountId).toBe('1029384756')
+  })
+
+  it('leaves the resolved columns null when the lookup gave nothing back', () => {
+    // An unresolvable ad still stores its raw id, which is what keeps a later
+    // backfill possible.
+    const result = mapLead(fields(), 'facebook', 'fb-4', { adId: '23859402118830412' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead.metaAdId).toBe('23859402118830412')
+    expect(result.lead.metaCampaignId).toBeNull()
+    expect(result.lead.metaCampaignName).toBeNull()
+    expect(result.lead.metaAdName).toBeNull()
+    expect(result.lead.metaAccountId).toBeNull()
+  })
+
+  it('never reads them out of the payload, where a form could forge them', () => {
+    // Extra keys make the unmapped-field warning fire; it is not what is under
+    // test here.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const forged = { ...fields(), ad_id: '99', adgroup_id: '99', form_id: '99', page_id: '99' }
+    const result = mapLead(forged, 'facebook', 'fb-2')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead.metaAdId).toBeNull()
+    expect(result.lead.metaAdgroupId).toBeNull()
+    expect(result.lead.metaFormId).toBeNull()
+    expect(result.lead.metaPageId).toBeNull()
+    warn.mockRestore()
   })
 })

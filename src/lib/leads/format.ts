@@ -1,5 +1,5 @@
 import type { Lead } from '@/types/leads'
-import { STAGE_META, SOURCE_META, ENTITY_TYPE_META, DEBT_PRESETS } from './constants'
+import { STAGE_META, SOURCE_META, ENTITY_TYPE_META, DEBT_PRESETS, PARTNERS } from './constants'
 
 /**
  * Rendering and parsing edge for lead data.
@@ -130,6 +130,43 @@ export function compareByDebtDesc(
   if (a.debtMin === null) return 1
   if (b.debtMin === null) return -1
   return b.debtMin - a.debtMin
+}
+
+// ============================================================
+// Source and partner
+// ============================================================
+
+/**
+ * The partner who ran the campaign a lead came from, or null.
+ *
+ * Null covers three different things that all render the same way: the lead
+ * came from somewhere other than a Facebook ad, the ad's campaign could not be
+ * resolved at ingest, or the campaign matched no partner and is therefore run
+ * in-house. None of them should claim a partner, so none of them do.
+ *
+ * First match wins. See PARTNERS for what is matched and why it is a pattern.
+ */
+export function partnerForCampaign(campaignName: string | null): string | null {
+  if (!campaignName) return null
+  return PARTNERS.find((partner) => partner.pattern.test(campaignName))?.name ?? null
+}
+
+/**
+ * How a lead's origin reads: "Facebook · EPIC DM", or plain "Facebook" when no
+ * partner is known.
+ *
+ * `short` gives the table's abbreviated source ("FB · EPIC DM") for places
+ * where the column is tight; the partner name itself is never abbreviated,
+ * because it is the part somebody is actually scanning for.
+ */
+export function formatLeadSource(
+  lead: Pick<Lead, 'source' | 'metaCampaignName'>,
+  style: 'short' | 'full' = 'full',
+): string {
+  const source = SOURCE_META[lead.source]
+  const base = style === 'full' ? source.label : source.short
+  const partner = partnerForCampaign(lead.metaCampaignName)
+  return partner ? `${base} · ${partner}` : base
 }
 
 // ============================================================

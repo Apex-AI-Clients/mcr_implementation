@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { SOURCE_META, STAGE_META } from '@/lib/leads/constants'
-import { formatFullDate } from '@/lib/leads/format'
+import { STAGE_META } from '@/lib/leads/constants'
+import { formatFullDate, formatLeadSource } from '@/lib/leads/format'
 // import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
 
@@ -35,7 +35,7 @@ export function LeadRecordHeader({ lead }: LeadRecordHeaderProps) {
       </div>
 
       <p className="mt-1.5 text-sm text-foreground/50">
-        {SOURCE_META[lead.source].label}
+        {formatLeadSource(lead)}
         <span aria-hidden="true"> · </span>
         Added {formatFullDate(lead.createdAt)}
       </p>

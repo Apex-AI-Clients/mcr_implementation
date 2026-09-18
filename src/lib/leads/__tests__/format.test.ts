@@ -15,8 +15,10 @@ import {
   formatIsoDate,
   formatAge,
   leadsToCsv,
+  partnerForCampaign,
+  formatLeadSource,
 } from '../format'
-import { DEBT_PRESETS } from '../constants'
+import { DEBT_PRESETS, PARTNERS } from '../constants'
 import type { Lead } from '@/types/leads'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z') // midday in Sydney
@@ -40,6 +42,14 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     stageSince: '2026-08-26T00:00:00.000Z',
     lastActionAt: '2026-08-26T00:00:00.000Z',
     convertedClientId: null,
+    metaFormId: null,
+    metaAdId: null,
+    metaAdgroupId: null,
+    metaPageId: null,
+    metaCampaignId: null,
+    metaCampaignName: null,
+    metaAdName: null,
+    metaAccountId: null,
     createdAt: '2026-08-26T00:00:00.000Z',
     updatedAt: '2026-08-26T00:00:00.000Z',
     ...overrides,
@@ -467,5 +477,93 @@ describe('leadsToCsv', () => {
 
   it('returns just the header for an empty view', () => {
     expect(leadsToCsv([]).split('\r\n')).toHaveLength(1)
+  })
+})
+
+// ============================================================
+// Source and partner
+// ============================================================
+
+describe('partnerForCampaign', () => {
+  it('finds the marker wherever it sits in the name', () => {
+    // The point of a pattern: the quarter and the month move, the marker does
+    // not, and none of these should need a new PARTNERS entry.
+    expect(partnerForCampaign('EPICDM Q4 Prospecting')).toBe('EPIC DM')
+    expect(partnerForCampaign('MCR26 EPICDM Apr24')).toBe('EPIC DM')
+    expect(partnerForCampaign('MCR26-EPICDM-Q4')).toBe('EPIC DM')
+  })
+
+  it('ignores case', () => {
+    expect(partnerForCampaign('mcr26 epicdm q4')).toBe('EPIC DM')
+  })
+
+  it('only matches C-COLD-MCR at the start, as the pattern is anchored', () => {
+    expect(partnerForCampaign('C-COLD-MCR Q4')).toBe('TBC')
+    expect(partnerForCampaign('C-COLD-MCR-Apr24')).toBe('TBC')
+    expect(partnerForCampaign('Retargeting C-COLD-MCR Q4')).toBeNull()
+  })
+
+  it('returns null for an in-house campaign, an absent one, and an empty one', () => {
+    // All three render as plain "Facebook" — none of them may claim a partner.
+    expect(partnerForCampaign('MCR26 | SBR | Prospecting')).toBeNull()
+    expect(partnerForCampaign(null)).toBeNull()
+    expect(partnerForCampaign('')).toBeNull()
+  })
+
+  it('does NOT match a marker glued to an underscore', () => {
+    // `\b` sits between a word character and a non-word one, and `_` counts as
+    // a word character — so an underscore-separated name misses. Meta names
+    // frequently use underscores (this Page's own form is
+    // MCR26_MAIN_LeadForm_SBR-Verifed), so if the real campaigns are named that
+    // way the patterns in PARTNERS need widening to treat `_` as a separator.
+    // Pinned deliberately: this is the behaviour of the configured patterns,
+    // and it should fail loudly here if someone changes them.
+    expect(partnerForCampaign('MCR26_EPICDM_Q4')).toBeNull()
+    expect(partnerForCampaign('C-COLD-MCR_Q4_Apr24')).toBeNull()
+  })
+
+  it('keeps every pattern free of the g flag', () => {
+    // A /g regex carries lastIndex between .test() calls, so it would match
+    // every other lead and nobody would work out why.
+    for (const partner of PARTNERS) {
+      expect(partner.pattern.global).toBe(false)
+    }
+  })
+})
+
+describe('formatLeadSource', () => {
+  it('reads "Facebook · EPIC DM" when the partner is known', () => {
+    const lead = makeLead({ source: 'facebook', metaCampaignName: 'MCR26 EPICDM Q4' })
+    expect(formatLeadSource(lead)).toBe('Facebook · EPIC DM')
+  })
+
+  it('falls back to plain "Facebook" when the campaign is unknown or absent', () => {
+    expect(formatLeadSource(makeLead({ metaCampaignName: null }))).toBe('Facebook')
+    expect(formatLeadSource(makeLead({ metaCampaignName: 'MCR26 | SBR | House' }))).toBe(
+      'Facebook',
+    )
+  })
+
+  it('abbreviates the source but never the partner', () => {
+    // The partner is the part being scanned for; the source is the part the
+    // reader already knows from the column it is in.
+    const lead = makeLead({ metaCampaignName: 'EPICDM Q4' })
+    expect(formatLeadSource(lead, 'short')).toBe('FB · EPIC DM')
+    expect(formatLeadSource(makeLead({ metaCampaignName: null }), 'short')).toBe('FB')
+  })
+
+  it('never claims a partner for a lead that did not come from an ad', () => {
+    // A manual or website lead has no campaign name at all, so there is nothing
+    // to match and nothing to show.
+    expect(formatLeadSource(makeLead({ source: 'manual' }))).toBe('Added manually')
+    expect(formatLeadSource(makeLead({ source: 'website' }))).toBe('Website')
+  })
+
+  it('shows TBC rather than hiding an unconfirmed partner', () => {
+    // An unattributed campaign must not read like an in-house one — that is the
+    // whole reason the placeholder exists.
+    expect(formatLeadSource(makeLead({ metaCampaignName: 'C-COLD-MCR Q4' }))).toBe(
+      'Facebook · TBC',
+    )
   })
 })

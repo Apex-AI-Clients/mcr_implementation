@@ -80,6 +80,10 @@ export async function storeIngestedLead(lead: IngestedLead): Promise<IngestStore
     .maybeSingle()
 
   if (known) {
+    // The existing row's attribution is left alone: it belongs to the touch
+    // that created the lead, and overwriting it would rewrite where the lead
+    // came from. A second touch's ad ids are therefore not kept anywhere —
+    // deliberate, pending a decision on what a multi-ad lead should say.
     const { error } = await supabase.from('lead_activities').insert({
       lead_id: known.id,
       type: 'note',
@@ -107,6 +111,14 @@ export async function storeIngestedLead(lead: IngestedLead): Promise<IngestStore
       preferred_call_time: lead.preferredCallTime,
       source: lead.source,
       external_id: lead.externalId,
+      meta_form_id: lead.metaFormId,
+      meta_ad_id: lead.metaAdId,
+      meta_adgroup_id: lead.metaAdgroupId,
+      meta_page_id: lead.metaPageId,
+      meta_campaign_id: lead.metaCampaignId,
+      meta_campaign_name: lead.metaCampaignName,
+      meta_ad_name: lead.metaAdName,
+      meta_account_id: lead.metaAccountId,
       stage: 'lead',
     })
     .select('id')
