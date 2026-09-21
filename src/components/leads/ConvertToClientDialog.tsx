@@ -5,10 +5,20 @@ import Link from 'next/link'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { createClientFromLead } from '@/lib/leads/convert'
-import type { Lead } from '@/types/leads'
+import {
+  emptyConversionForm,
+  hasErrors,
+  validateConversion,
+  type ConversionErrors,
+  type ConversionForm,
+} from '@/lib/leads/conversionForm'
+import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import type { EntityType, Lead } from '@/types/leads'
 
 interface ConvertToClientDialogProps {
   lead: Lead | null
@@ -16,7 +26,7 @@ interface ConvertToClientDialogProps {
 }
 
 type Phase =
-  | { kind: 'confirm' }
+  | { kind: 'form' }
   | { kind: 'working' }
   /** 409 — the email already belongs to a client file. Offer to link instead. */
   | { kind: 'duplicate'; clientId: string }
@@ -25,20 +35,36 @@ type Phase =
   | { kind: 'failed'; message: string }
 
 /**
- * Confirmation for the most consequential action in the CRM — it writes into
- * the restructuring workspace, so it never happens on a stray select change.
+ * Conversion, and the details it now requires.
+ *
+ * This used to be a two-field confirmation. It collects steps 1 and 2 of the
+ * SBR intake up front instead, because a client file created from a lead
+ * arrived knowing only a name and an email, and somebody had to go and find
+ * the ACN afterwards. Asking here means intake opens already filled in, and
+ * everything on it stays editable there.
+ *
+ * Still the most consequential action in the CRM — it writes into the
+ * restructuring workspace — so it never happens on a stray select change.
  */
 export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogProps) {
   const { markConverted } = useLeads()
   const { toast } = useToast()
-  const [phase, setPhase] = useState<Phase>({ kind: 'confirm' })
+  const [phase, setPhase] = useState<Phase>({ kind: 'form' })
+  const [form, setForm] = useState<ConversionForm>(() => emptyConversionForm(lead))
+  const [errors, setErrors] = useState<ConversionErrors>({})
 
   // Reset when a different lead is opened. React-sanctioned "adjust state
   // during render" — same pattern as ClientsPageClient, no effect needed.
   const [prevLeadId, setPrevLeadId] = useState<string | null>(lead?.id ?? null)
   if ((lead?.id ?? null) !== prevLeadId) {
     setPrevLeadId(lead?.id ?? null)
-    setPhase({ kind: 'confirm' })
+    setPhase({ kind: 'form' })
+    setForm(emptyConversionForm(lead))
+    setErrors({})
+  }
+
+  function patch(change: Partial<ConversionForm>) {
+    setForm((current) => ({ ...current, ...change }))
   }
 
   async function link(clientId: string) {
@@ -58,9 +84,17 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
 
   async function handleConvert() {
     if (!lead) return
-    setPhase({ kind: 'working' })
 
-    const result = await createClientFromLead(lead)
+    const found = validateConversion(form)
+    setErrors(found)
+    if (hasErrors(found)) {
+      // Back to the form rather than through to the API — this is the gate.
+      setPhase({ kind: 'form' })
+      return
+    }
+
+    setPhase({ kind: 'working' })
+    const result = await createClientFromLead(form)
 
     if (result.kind === 'failed') {
       setPhase({ kind: 'failed', message: result.message })
@@ -88,26 +122,123 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   }
 
   const working = phase.kind === 'working'
+  const showForm = phase.kind === 'form' || working || phase.kind === 'failed'
+  const isTrust = form.entityType === 'trust'
 
   return (
     <Dialog
       open={lead !== null}
-      onClose={onClose}
-      title={phase.kind === 'duplicate' ? 'This email already has a client file' : 'Convert to client'}
+      onClose={working ? () => {} : onClose}
+      title={
+        phase.kind === 'duplicate' ? 'This email already has a client file' : 'Convert to client'
+      }
       description={
-        lead && (phase.kind === 'confirm' || phase.kind === 'working' || phase.kind === 'failed')
-          ? `This creates a client file for ${lead.name} and opens their intake.`
+        lead && showForm
+          ? `These details start ${lead.name}'s intake. Everything here can be changed later on the intake form.`
           : undefined
       }
+      className="max-w-2xl"
       footer={<Footer phase={phase} onConvert={handleConvert} onLink={link} onClose={onClose} />}
     >
       {lead && (
         <div className="space-y-4">
-          {(phase.kind === 'confirm' || phase.kind === 'working' || phase.kind === 'failed') && (
-            <div className="space-y-2 rounded-lg border border-border bg-surface/40 px-3 py-3 text-sm">
-              <Row label="Name" value={lead.name} />
-              <Row label="Email" value={lead.email} />
-            </div>
+          {showForm && (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleConvert()
+              }}
+            >
+              <Fieldset legend="Client">
+                <Input
+                  id="convert-name"
+                  label="Name"
+                  value={form.name}
+                  error={errors.name}
+                  disabled={working}
+                  onChange={(event) => patch({ name: event.target.value })}
+                />
+                <Input
+                  id="convert-email"
+                  label="Email"
+                  type="email"
+                  value={form.email}
+                  error={errors.email}
+                  disabled={working}
+                  onChange={(event) => patch({ email: event.target.value })}
+                />
+              </Fieldset>
+
+              <Fieldset legend="Company or trust">
+                <Select
+                  id="convert-entity-type"
+                  label="Entity type"
+                  value={form.entityType}
+                  disabled={working}
+                  onChange={(event) =>
+                    patch({ entityType: event.target.value as EntityType })
+                  }
+                  options={ALL_ENTITY_TYPES.map((type) => ({
+                    value: type,
+                    label: ENTITY_TYPE_META[type].label,
+                  }))}
+                />
+
+                {/* Which of these is required follows the entity: an ACN
+                    belongs to a company, a trust name to a trust. Both stay
+                    visible either way, because a trust with a corporate
+                    trustee has all of them. */}
+                <Input
+                  id="convert-company-name"
+                  label={isTrust ? 'Name of company (trustee, if any)' : 'Name of company'}
+                  value={form.companyName}
+                  error={errors.companyName}
+                  disabled={working}
+                  onChange={(event) => patch({ companyName: event.target.value })}
+                />
+                <Input
+                  id="convert-acn"
+                  label={isTrust ? 'ACN number (if there is one)' : 'ACN number'}
+                  value={form.acnNumber}
+                  error={errors.acnNumber}
+                  disabled={working}
+                  onChange={(event) => patch({ acnNumber: event.target.value })}
+                />
+                <Input
+                  id="convert-abn"
+                  label="ABN number"
+                  value={form.abnNumber}
+                  error={errors.abnNumber}
+                  disabled={working}
+                  onChange={(event) => patch({ abnNumber: event.target.value })}
+                />
+                <Input
+                  id="convert-trust-name"
+                  label={isTrust ? 'Name of trust' : 'Name of trust (if any)'}
+                  value={form.trustName}
+                  error={errors.trustName}
+                  disabled={working}
+                  onChange={(event) => patch({ trustName: event.target.value })}
+                />
+                <Input
+                  id="convert-phone"
+                  label="Company or trust phone (optional)"
+                  value={form.phoneNumber}
+                  disabled={working}
+                  onChange={(event) => patch({ phoneNumber: event.target.value })}
+                />
+                <Input
+                  id="convert-entity-email"
+                  label="Company or trust email (optional)"
+                  type="email"
+                  value={form.emailAddress}
+                  error={errors.emailAddress}
+                  disabled={working}
+                  onChange={(event) => patch({ emailAddress: event.target.value })}
+                />
+              </Fieldset>
+            </form>
           )}
 
           {phase.kind === 'duplicate' && (
@@ -155,6 +286,17 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   )
 }
 
+function Fieldset({ legend, children }: { legend: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-xs font-medium uppercase tracking-wide text-foreground/40">
+        {legend}
+      </legend>
+      {children}
+    </fieldset>
+  )
+}
+
 function Footer({
   phase,
   onConvert,
@@ -199,14 +341,5 @@ function Footer({
         {phase.kind === 'failed' ? 'Try again' : 'Convert'}
       </Button>
     </>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="text-xs text-muted">{label}</span>
-      <span className="truncate text-foreground">{value}</span>
-    </div>
   )
 }

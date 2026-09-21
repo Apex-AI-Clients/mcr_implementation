@@ -2,9 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
+/**
+ * Step 2 of the intake, optionally supplied at creation.
+ *
+ * Every field is optional here because this endpoint serves two callers: the
+ * intake wizard, which creates a bare client and fills these in later, and
+ * lead conversion, which will not let anyone through without them. Which
+ * fields are required is a decision about the conversion form, not about
+ * what a client row is allowed to look like — see conversionForm.ts.
+ */
+const CompanyDetailsSchema = z.object({
+  companyName: z.string().max(200).optional(),
+  acnNumber: z.string().max(40).optional(),
+  abnNumber: z.string().max(40).optional(),
+  trustName: z.string().max(200).optional(),
+  phoneNumber: z.string().max(40).optional(),
+  emailAddress: z.string().max(200).optional(),
+})
+
 const CreateClientSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email(),
+  companyDetails: CompanyDetailsSchema.optional(),
 })
 
 /**
@@ -81,6 +100,34 @@ export async function POST(req: NextRequest) {
 
     if (insertError || !client) {
       throw insertError ?? new Error('Insert returned no row')
+    }
+
+    // Written in the same request as the client, so intake opens pre-filled
+    // rather than asking again for what was just typed at conversion.
+    const details = parsed.data.companyDetails
+    if (details) {
+      const { error: detailsError } = await supabase.from('company_details').insert({
+        client_id: client.id,
+        company_name: details.companyName ?? null,
+        acn_number: details.acnNumber ?? null,
+        abn_number: details.abnNumber ?? null,
+        trust_name: details.trustName ?? null,
+        phone_number: details.phoneNumber ?? null,
+        email_address: details.emailAddress ?? null,
+      })
+
+      if (detailsError) {
+        // Undo the client rather than leave a file the caller was told not to
+        // create without these. A half-made client with no details is the
+        // exact state this whole change exists to prevent, and the caller
+        // cannot retry safely while it sits there holding the email.
+        await supabase.from('clients').delete().eq('id', client.id)
+        console.error('[POST /api/admin/clients] details insert failed:', detailsError.message)
+        return NextResponse.json(
+          { error: 'Could not save the company details. No client file was created.' },
+          { status: 500 },
+        )
+      }
     }
 
     return NextResponse.json(client, { status: 201 })

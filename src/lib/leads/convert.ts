@@ -1,11 +1,16 @@
-import type { Lead } from '@/types/leads'
+import { toCompanyDetails, type ConversionForm } from './conversionForm'
 
 /**
  * Creating a client file from a lead.
  *
- * POST /api/admin/clients takes only { name, email }. It answers 409 with the
- * id of the client that already owns the email, which is not an error to show
- * raw — it's an opportunity to link the two records instead.
+ * The details collected at conversion go with the create call rather than in
+ * a second request: two requests can half-succeed, and a client file that
+ * exists without the details somebody was just made to type is the state this
+ * flow is meant to rule out. The route rolls the client back if the details
+ * cannot be written.
+ *
+ * It answers 409 with the id of the client that already owns the email, which
+ * is not an error to show raw — it's an opportunity to link the two records.
  */
 
 export type ConvertResult =
@@ -16,13 +21,17 @@ export type ConvertResult =
 
 const GENERIC_FAILURE = "That didn't work. No client file was created."
 
-export async function createClientFromLead(lead: Lead): Promise<ConvertResult> {
+export async function createClientFromLead(form: ConversionForm): Promise<ConvertResult> {
   let response: Response
   try {
     response = await fetch('/api/admin/clients', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: lead.name, email: lead.email }),
+      body: JSON.stringify({
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        companyDetails: toCompanyDetails(form),
+      }),
     })
   } catch {
     return { kind: 'failed', message: 'Could not reach the server. No client file was created.' }

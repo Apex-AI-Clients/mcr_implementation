@@ -52,17 +52,17 @@ const LEAD: Lead = {
   updatedAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
 }
 
+/** Returns the spy, so a caller can assert on what was actually sent. */
 function mockFetch(status: number, body: unknown) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      async () =>
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-    ),
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
   )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 function renderList(persistence?: LeadsPersistence) {
@@ -100,6 +100,30 @@ async function openConversion(user: ReturnType<typeof userEvent.setup>) {
   return screen.findByRole('dialog')
 }
 
+/**
+ * Fill in what conversion now requires.
+ *
+ * Name and email arrive pre-filled from the lead; the company details do not,
+ * and without them Convert refuses — which is the whole point of the form, and
+ * is asserted on its own below.
+ */
+async function fillRequired(
+  user: ReturnType<typeof userEvent.setup>,
+  dialog: HTMLElement,
+) {
+  await user.type(within(dialog).getByLabelText('Name of company'), 'Whitlock Civil Pty Ltd')
+  await user.type(within(dialog).getByLabelText('ACN number'), '123456789')
+  await user.type(within(dialog).getByLabelText('ABN number'), '12345678901')
+}
+
+/** Open the dialog and complete it, for the cases that are about what
+ *  happens after Convert rather than about the form itself. */
+async function openAndFill(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await openConversion(user)
+  await fillRequired(user, dialog)
+  return dialog
+}
+
 describe('ConvertToClientDialog', () => {
   it('names the person and says what will happen', async () => {
     const user = userEvent.setup()
@@ -107,9 +131,12 @@ describe('ConvertToClientDialog', () => {
 
     const dialog = await openConversion(user)
     expect(
-      within(dialog).getByText('This creates a client file for Dean Whitlock and opens their intake.'),
+      within(dialog).getByText(/These details start Dean Whitlock's intake/),
     ).toBeTruthy()
-    expect(within(dialog).getByText('dean@whitlockcivil.com.au')).toBeTruthy()
+    // Name and email come across from the lead already filled in.
+    expect((within(dialog).getByLabelText('Email') as HTMLInputElement).value).toBe(
+      'dean@whitlockcivil.com.au',
+    )
     expect(within(dialog).getByRole('button', { name: 'Convert' })).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeTruthy()
   })
@@ -123,6 +150,58 @@ describe('ConvertToClientDialog', () => {
     await openConversion(user)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(stageSelect().value).toBe('prospect')
+  })
+
+  it('refuses to convert until the intake details are filled in', async () => {
+    // The gate. A client file used to be created knowing only a name and an
+    // email, leaving somebody to find the ACN afterwards.
+    const user = userEvent.setup()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    renderList()
+
+    const dialog = await openConversion(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    expect(within(dialog).getByText('Enter the company name.')).toBeTruthy()
+    expect(within(dialog).getByText('Enter the ACN.')).toBeTruthy()
+    expect(within(dialog).getByText('Enter the ABN.')).toBeTruthy()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(stageSelect().value).toBe('prospect')
+  })
+
+  it('asks a trust for its name instead of an ACN', async () => {
+    // Demanding both of every client would mean "N/A" on every conversion,
+    // and that junk would auto-fill the intake form.
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    await user.selectOptions(within(dialog).getByLabelText('Entity type'), 'trust')
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    expect(within(dialog).getByText('Enter the trust name.')).toBeTruthy()
+    expect(within(dialog).queryByText('Enter the ACN.')).toBeNull()
+    expect(within(dialog).queryByText('Enter the company name.')).toBeNull()
+  })
+
+  it('sends the details with the client so intake opens filled in', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    renderList()
+
+    const dialog = await openAndFill(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const sent = JSON.parse(init.body as string)
+    expect(sent.companyDetails).toMatchObject({
+      companyName: 'Whitlock Civil Pty Ltd',
+      acnNumber: '123456789',
+      abnNumber: '12345678901',
+    })
   })
 
   it('leaves the stage alone when cancelled', async () => {
@@ -141,7 +220,7 @@ describe('ConvertToClientDialog', () => {
     mockFetch(201, { id: 'client-1' })
     renderList()
 
-    const dialog = await openConversion(user)
+    const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -160,7 +239,7 @@ describe('ConvertToClientDialog', () => {
     mockFetch(409, { error: 'A client with this email already exists', clientId: 'client-9' })
     renderList()
 
-    const dialog = await openConversion(user)
+    const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
     await waitFor(() =>
@@ -176,7 +255,7 @@ describe('ConvertToClientDialog', () => {
     mockFetch(409, { error: 'exists', clientId: 'client-9' })
     renderList()
 
-    const dialog = await openConversion(user)
+    const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
     await user.click(await within(dialog).findByRole('button', { name: 'Link to existing file' }))
 
@@ -190,7 +269,7 @@ describe('ConvertToClientDialog', () => {
     mockFetch(500, { error: 'Failed to create client' })
     renderList()
 
-    const dialog = await openConversion(user)
+    const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
     await waitFor(() =>
@@ -211,7 +290,7 @@ describe('ConvertToClientDialog', () => {
       },
     })
 
-    const dialog = await openConversion(user)
+    const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
     await waitFor(() =>
