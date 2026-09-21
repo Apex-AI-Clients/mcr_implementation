@@ -2,9 +2,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { getSupabaseAuthClient } from '@/lib/supabase/server'
 import { getCompletenessSummary } from '@/lib/clients/completeness'
-import { getLeads } from '@/lib/leads/queries'
-// countNeedingFollowUp is hidden with the rest of the follow-up UI.
-import { countOpenLeads } from '@/lib/leads/followUp'
+import { getOpenLeadCount } from '@/lib/leads/queries'
 import { WORKSPACES, type Workspace } from '@/lib/workspaces'
 import { firstNameFromMetadata } from '@/lib/utils'
 
@@ -29,9 +27,9 @@ export default async function WorkspaceChooserPage() {
 
   const summary = await getCompletenessSummary()
 
-  const leads = await getLeads()
-  const openLeads = countOpenLeads(leads)
-  // const followUps = countNeedingFollowUp(leads)
+  // Counted in SQL rather than by reading every lead and calling .length —
+  // that load was also silently capped at PostgREST's 1000-row ceiling.
+  const openLeads = await getOpenLeadCount()
 
   const [crm, sbr] = WORKSPACES
 

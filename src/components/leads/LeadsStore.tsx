@@ -51,6 +51,16 @@ export interface LeadsPersistence {
     stage: LeadStage
     activity: LeadActivity
   }) => Promise<void>
+  /** The text of one timeline entry. Carries no activity, so no clock reset. */
+  editActivity?: (input: { leadId: string; activityId: string; body: string }) => Promise<void>
+  /** Removes one timeline entry. See the route for what it does NOT undo. */
+  deleteActivity?: (input: { leadId: string; activityId: string }) => Promise<void>
+  /**
+   * Permanent. Throwing leaves every lead in place, which is the only safe
+   * failure mode for a delete — the caller shows the error rather than a list
+   * that has quietly lost a row the database still holds.
+   */
+  deleteLeads?: (input: { ids: string[] }) => Promise<void>
   /**
    * Records the client file against the lead. If this throws, the client file
    * exists but the lead does not know about it — the caller must say so rather
@@ -87,6 +97,12 @@ export type LeadsAction =
   | { type: 'ROLLBACK_LEAD'; lead: Lead; removeActivityId: string }
   /** Undo an optimistic ADD_LEAD whose write failed. */
   | { type: 'REMOVE_LEAD'; leadId: string }
+  /** Deleted for good, after the database confirmed it. */
+  | { type: 'REMOVE_LEADS'; ids: string[] }
+  | { type: 'EDIT_ACTIVITY'; activityId: string; body: string; nextStepFor?: string }
+  | { type: 'REMOVE_ACTIVITY'; activityId: string; nextStepFor?: string; nextStep?: string | null }
+  /** Rows just read from the server — see SYNC in the reducer. */
+  | { type: 'SYNC'; leads: Lead[]; activities: LeadActivity[] }
 
 /** Exported for unit tests — this is where the follow-up clock rules live. */
 export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState {
@@ -166,6 +182,65 @@ export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState
         leads: state.leads.filter((lead) => lead.id !== action.leadId),
         activities: state.activities.filter((a) => a.leadId !== action.leadId),
       }
+
+    // Editing text is not an action: lastActionAt is deliberately untouched,
+    // the same way a phone-number correction leaves it alone.
+    case 'EDIT_ACTIVITY':
+      return {
+        leads: action.nextStepFor
+          ? state.leads.map((lead) =>
+              lead.id === action.nextStepFor ? { ...lead, nextStep: action.body } : lead,
+            )
+          : state.leads,
+        activities: state.activities.map((activity) =>
+          activity.id === action.activityId ? { ...activity, body: action.body } : activity,
+        ),
+      }
+
+    case 'REMOVE_ACTIVITY':
+      return {
+        // When the entry being removed was the next step the record shows,
+        // the lead falls back to whatever is left rather than keeping one
+        // nobody can find.
+        leads: action.nextStepFor
+          ? state.leads.map((lead) =>
+              lead.id === action.nextStepFor
+                ? { ...lead, nextStep: action.nextStep ?? null }
+                : lead,
+            )
+          : state.leads,
+        activities: state.activities.filter((activity) => activity.id !== action.activityId),
+      }
+
+    case 'REMOVE_LEADS': {
+      const gone = new Set(action.ids)
+      return {
+        leads: state.leads.filter((lead) => !gone.has(lead.id)),
+        activities: state.activities.filter((a) => !gone.has(a.leadId)),
+      }
+    }
+
+    // A page or a record has just been read from the database. The server is
+    // authoritative for the rows it returned, so those replace what is held;
+    // anything it did not mention is left alone, because it is either a lead
+    // on another page or one optimistically added a moment ago whose write has
+    // not come back yet. Upsert, never replace wholesale.
+    case 'SYNC': {
+      const incoming = new Map(action.leads.map((lead) => [lead.id, lead]))
+      const merged = state.leads.map((lead) => incoming.get(lead.id) ?? lead)
+      const known = new Set(state.leads.map((lead) => lead.id))
+      for (const lead of action.leads) if (!known.has(lead.id)) merged.push(lead)
+
+      const activityIds = new Set(state.activities.map((activity) => activity.id))
+      const newActivities = action.activities.filter((a) => !activityIds.has(a.id))
+
+      return {
+        leads: merged,
+        activities: newActivities.length
+          ? [...state.activities, ...newActivities]
+          : state.activities,
+      }
+    }
   }
 }
 
@@ -200,6 +275,19 @@ interface LeadsContextValue {
   changeStage: (leadId: string, stage: LeadStage) => Promise<void>
   /** Rejects when the client file exists but the lead could not be updated. */
   markConverted: (leadId: string, clientId: string) => Promise<void>
+  /** Permanent, and confirmed by the database before anything leaves the list. */
+  deleteLeads: (ids: string[]) => Promise<void>
+  /** Correct the wording of a timeline entry. Rejects on failure. */
+  editActivity: (activityId: string, body: string) => Promise<void>
+  /** Remove a timeline entry. Rejects on failure, having changed nothing. */
+  deleteActivity: (activityId: string) => Promise<void>
+  /**
+   * Hand the store what the server just returned. Pages call this with their
+   * own slice — the list with its ten rows, the record with its one — so the
+   * store holds what is on screen plus anything optimistic, and no longer
+   * needs every lead in the database to be loaded up front.
+   */
+  syncFromServer: (leads: Lead[], activities: LeadActivity[]) => void
 }
 
 const LeadsContext = createContext<LeadsContextValue | null>(null)
@@ -221,8 +309,9 @@ function newId(): string {
 }
 
 interface LeadsStoreProviderProps {
-  initialLeads: Lead[]
-  initialActivities: LeadActivity[]
+  /** Usually empty — pages sync their own rows in. */
+  initialLeads?: Lead[]
+  initialActivities?: LeadActivity[]
   /** Name recorded against activities this user creates. */
   author: string
   /** Stage 4 supplies the Supabase writes; omitted, the store stays in memory. */
@@ -231,8 +320,8 @@ interface LeadsStoreProviderProps {
 }
 
 export function LeadsStoreProvider({
-  initialLeads,
-  initialActivities,
+  initialLeads = [],
+  initialActivities = [],
   author,
   persistence = NO_PERSISTENCE,
   children,
@@ -408,6 +497,98 @@ export function LeadsStoreProvider({
     [author, persistence],
   )
 
+  const deleteLeads = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return
+      // Persist first, then apply — the reverse of every other mutation here.
+      // An optimistic delete that fails would have to put rows back, and a row
+      // reappearing after someone watched it vanish reads as a bug in a way
+      // that a row which never left does not.
+      await persistence.deleteLeads?.({ ids })
+      dispatch({ type: 'REMOVE_LEADS', ids })
+    },
+    [persistence],
+  )
+
+  /** The newest `next_step` entry on a lead — the one the record displays. */
+  const currentNextStep = useCallback(
+    (leadId: string, exclude?: string) =>
+      state.activities
+        .filter(
+          (activity) =>
+            activity.leadId === leadId &&
+            activity.type === 'next_step' &&
+            activity.id !== exclude,
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+    [state.activities],
+  )
+
+  const editActivity = useCallback(
+    async (activityId: string, body: string) => {
+      const existing = state.activities.find((activity) => activity.id === activityId)
+      if (!existing) return
+      const trimmed = body.trim()
+      if (!trimmed || trimmed === existing.body) return
+
+      // Mirror the lead's next step only when this entry is the one showing.
+      const mirrors =
+        existing.type === 'next_step' && currentNextStep(existing.leadId)?.id === activityId
+
+      dispatch({
+        type: 'EDIT_ACTIVITY',
+        activityId,
+        body: trimmed,
+        nextStepFor: mirrors ? existing.leadId : undefined,
+      })
+
+      try {
+        await persistence.editActivity?.({
+          leadId: existing.leadId,
+          activityId,
+          body: trimmed,
+        })
+      } catch (error) {
+        // Put the old wording back rather than leave the screen showing an
+        // edit the database rejected.
+        dispatch({
+          type: 'EDIT_ACTIVITY',
+          activityId,
+          body: existing.body,
+          nextStepFor: mirrors ? existing.leadId : undefined,
+        })
+        throw error
+      }
+    },
+    [state.activities, currentNextStep, persistence],
+  )
+
+  const deleteActivity = useCallback(
+    async (activityId: string) => {
+      const existing = state.activities.find((activity) => activity.id === activityId)
+      if (!existing) return
+
+      const mirrors =
+        existing.type === 'next_step' && currentNextStep(existing.leadId)?.id === activityId
+      const fallback = mirrors ? currentNextStep(existing.leadId, activityId)?.body ?? null : null
+
+      // Persist first, as with deleting a lead: an entry that vanishes and
+      // then comes back reads as a bug in a way one that never left does not.
+      await persistence.deleteActivity?.({ leadId: existing.leadId, activityId })
+      dispatch({
+        type: 'REMOVE_ACTIVITY',
+        activityId,
+        nextStepFor: mirrors ? existing.leadId : undefined,
+        nextStep: fallback,
+      })
+    },
+    [state.activities, currentNextStep, persistence],
+  )
+
+  const syncFromServer = useCallback((leads: Lead[], activities: LeadActivity[]) => {
+    dispatch({ type: 'SYNC', leads, activities })
+  }, [])
+
   const followUpCount = useMemo(
     () => state.leads.filter((lead) => needsFollowUp(lead)).length,
     [state.leads],
@@ -424,6 +605,10 @@ export function LeadsStoreProvider({
       logActivity,
       changeStage,
       markConverted,
+      deleteLeads,
+      editActivity,
+      deleteActivity,
+      syncFromServer,
     }),
     [
       state.leads,
@@ -435,6 +620,10 @@ export function LeadsStoreProvider({
       logActivity,
       changeStage,
       markConverted,
+      deleteLeads,
+      editActivity,
+      deleteActivity,
+      syncFromServer,
     ],
   )
 

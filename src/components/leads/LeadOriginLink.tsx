@@ -1,32 +1,25 @@
-'use client'
-
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
-import { useLeads } from '@/components/leads/LeadsStore'
 
 interface LeadOriginLinkProps {
-  clientId: string
+  /** The lead this client file was converted from, or null. Resolved server-side. */
+  leadId: string | null
 }
 
 /**
  * The other half of the join: a client file points back at the lead it came
  * from, so staff keep the history the moment someone converts.
  *
- * The link is resolved from the CRM store rather than the database because the
- * lead → client relationship lives in memory until Stage 4 adds
- * `leads.converted_client_id`. That means it holds for the session in which the
- * conversion happened, and after a reload there is nothing to show — so this
- * renders nothing rather than something wrong.
+ * Resolved by the page from `leads.converted_client_id` rather than by
+ * scanning the client store. That scan only ever worked while the browser
+ * held every lead, and it lost the link on reload; a query holds for good.
  */
-export function LeadOriginLink({ clientId }: LeadOriginLinkProps) {
-  const { leads } = useLeads()
-  const origin = leads.find((lead) => lead.convertedClientId === clientId)
-
-  if (!origin) return null
+export function LeadOriginLink({ leadId }: LeadOriginLinkProps) {
+  if (!leadId) return null
 
   return (
     <Link
-      href={`/leads/${origin.id}`}
+      href={`/leads/${leadId}`}
       className="mt-1.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
     >
       Converted from a lead

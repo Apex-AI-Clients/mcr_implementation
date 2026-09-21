@@ -5,6 +5,7 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
+import { getLeadIdForClient } from '@/lib/leads/queries'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -29,6 +30,7 @@ export default async function ClientDetailPage({ params }: Props) {
     { data: rawDocs },
     { data: rawAccountant },
     { data: rawCompany },
+    originLeadId,
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -37,6 +39,9 @@ export default async function ClientDetailPage({ params }: Props) {
       .order('uploaded_at', { ascending: false }),
     supabase.from('accountant_details').select('*').eq('client_id', id).maybeSingle(),
     supabase.from('company_details').select('*').eq('client_id', id).maybeSingle(),
+    // Was a scan of the client-side lead list, which only worked while the
+    // browser held every lead and was lost on reload.
+    getLeadIdForClient(id),
   ])
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
@@ -100,7 +105,7 @@ export default async function ClientDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-foreground">{client.name}</h1>
           <p className="mt-0.5 text-sm text-foreground/50">{client.email}</p>
-          <LeadOriginLink clientId={client.id} />
+          <LeadOriginLink leadId={originLeadId} />
         </div>
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>

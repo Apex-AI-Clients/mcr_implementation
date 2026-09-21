@@ -534,7 +534,7 @@ export type Database = {
           source: string
           stage?: string
           stage_since?: string
-          state: string | null
+          state?: string | null
           updated_at?: string
         }
         Update: {

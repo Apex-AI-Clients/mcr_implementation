@@ -11,9 +11,11 @@ import type { Lead } from '@/types/leads'
 
 interface LeadRecordHeaderProps {
   lead: Lead
+  /** Record-level actions, right-aligned against the name. */
+  actions?: React.ReactNode
 }
 
-export function LeadRecordHeader({ lead }: LeadRecordHeaderProps) {
+export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
   const stage = STAGE_META[lead.stage]
 
   return (
@@ -26,12 +28,15 @@ export function LeadRecordHeader({ lead }: LeadRecordHeaderProps) {
         All leads
       </Link>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="text-xl font-semibold text-foreground">{lead.name}</h1>
-        <Badge variant={stage.badge}>{stage.label}</Badge>
-        {/* Follow-up badge — hidden with the rest of the follow-up UI (table
-            column, filter toggle, page-header count, top-bar pill). */}
-        {/* {needsFollowUp(lead) && <FollowUpBadge />} */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-xl font-semibold text-foreground">{lead.name}</h1>
+          <Badge variant={stage.badge}>{stage.label}</Badge>
+          {/* Follow-up badge — hidden with the rest of the follow-up UI (table
+              column, filter toggle, page-header count, top-bar pill). */}
+          {/* {needsFollowUp(lead) && <FollowUpBadge />} */}
+        </div>
+        {actions}
       </div>
 
       <p className="mt-1.5 text-sm text-foreground/50">

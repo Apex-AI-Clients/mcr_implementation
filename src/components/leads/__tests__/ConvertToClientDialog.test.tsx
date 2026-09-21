@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { LeadsPageClient } from '../LeadsPageClient'
 import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
+import { EMPTY_FILTERS } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
 
 /**
@@ -73,7 +74,16 @@ function renderList(persistence?: LeadsPersistence) {
         author="Gabby"
         persistence={persistence}
       >
-        <LeadsPageClient />
+        {/* The list renders the page the server sent; the store supplies the
+            optimistic overlay on top of it. */}
+        <LeadsPageClient
+          filters={EMPTY_FILTERS}
+          leads={[LEAD]}
+          total={1}
+          page={1}
+          pageCount={1}
+          pageSize={10}
+        />
       </LeadsStoreProvider>
     </ToastProvider>,
   )

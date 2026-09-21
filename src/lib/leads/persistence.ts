@@ -11,13 +11,17 @@ import type { LeadsPersistence } from '@/components/leads/LeadsStore'
  * that column.
  */
 
-async function send(url: string, method: 'POST' | 'PATCH', body: unknown): Promise<void> {
+async function send(
+  url: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown,
+): Promise<void> {
   let response: Response
   try {
     response = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
     throw new Error('Could not reach the server')
@@ -62,6 +66,19 @@ export const leadsPersistence: LeadsPersistence = {
 
   logActivity: ({ activity }) =>
     send(`/api/admin/leads/${activity.leadId}/activities`, 'POST', { activity }),
+
+  // Editing the text of a note is not a new action, so neither of these
+  // carries an activity and neither resets the follow-up clock.
+  editActivity: ({ leadId, activityId, body }) =>
+    send(`/api/admin/leads/${leadId}/activities/${activityId}`, 'PATCH', { body }),
+
+  deleteActivity: ({ leadId, activityId }) =>
+    send(`/api/admin/leads/${leadId}/activities/${activityId}`, 'DELETE'),
+
+  // Hard delete, one or many. Posts to an explicit /delete path rather than
+  // using the DELETE verb, because this always carries a body of ids and a
+  // DELETE with a body is inconsistently handled across proxies.
+  deleteLeads: ({ ids }) => send('/api/admin/leads/delete', 'POST', { ids }),
 
   // Stage and activity together, so the clock and the history can't disagree.
   stageChange: ({ leadId, stage, activity }) =>

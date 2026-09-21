@@ -1,5 +1,12 @@
-import type { Lead } from '@/types/leads'
-import { STAGE_META, SOURCE_META, ENTITY_TYPE_META, DEBT_PRESETS, PARTNERS } from './constants'
+import type { Lead, LeadActivity, LeadActivityType } from '@/types/leads'
+import {
+  STAGE_META,
+  SOURCE_META,
+  ENTITY_TYPE_META,
+  DEBT_PRESETS,
+  PARTNERS,
+  ACTIVITY_TYPE_META,
+} from './constants'
 
 /**
  * Rendering and parsing edge for lead data.
@@ -489,7 +496,63 @@ const CSV_COLUMNS = [
   'Stage',
   'Source',
   'Last action',
+  // A bare count alongside the text, for the same reason debt is two numbers:
+  // a spreadsheet can sort and filter on it, and the prose column cannot.
+  'Notes count',
+  'Notes',
 ] as const
+
+/**
+ * The activity types a person composed. `stage_change` is written by the
+ * system and belongs to the stage history, not to somebody's notes — the same
+ * split the record's two tabs make.
+ */
+const COMPOSED_TYPES: LeadActivityType[] = ['note', 'call', 'email', 'next_step']
+
+/**
+ * A lead's notes for one CSV cell, on a single line.
+ *
+ *   1) 10 Aug 2026, Note, Gabby: Spoke about the BAS arrears. | 2) 12 Aug
+ *   2026, Call, Gabby: Left a voicemail.
+ *
+ * Oldest first, because numbering a list implies reading it in order.
+ *
+ * NO LINE BREAKS, anywhere. A newline inside a quoted CSV cell is legal and
+ * Excel does render it, but it also makes that row as tall as the note is
+ * long — one lead with five notes turns an otherwise scannable sheet into a
+ * column of paragraphs. Keeping every row one line high is worth more than
+ * the prettier layout it costs, because the grid is the thing the rest of the
+ * export is for. Every run of whitespace in a body is collapsed to a single
+ * space to guarantee it.
+ *
+ * Entries are separated by a pipe and numbered, so the boundaries are still
+ * findable in a long cell. Separators stay ASCII: the bodies are full of
+ * " - " already, so a dash would be ambiguous.
+ *
+ * This is as far as a CSV goes. Notes that are genuinely comfortable to read
+ * need wrapping and a column width, and neither exists in this file format.
+ */
+export function formatLeadNotes(activities: LeadActivity[]): string {
+  const composed = activities
+    .filter((activity) => COMPOSED_TYPES.includes(activity.type))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+  return composed
+    .map((activity, index) => {
+      // \s+ rather than just newlines: tabs and carriage returns would break
+      // the row just as thoroughly.
+      const body = activity.body.replace(/\s+/g, ' ').trim()
+      const label = ACTIVITY_TYPE_META[activity.type].label
+      const stamp = formatFullDate(activity.createdAt)
+      return `${index + 1}) ${stamp}, ${label}, ${activity.author}: ${body}`
+    })
+    .join(' | ')
+}
+
+/** How many composed entries a lead has — the number beside the prose. */
+export function countLeadNotes(activities: LeadActivity[]): number {
+  return activities.filter((activity) => COMPOSED_TYPES.includes(activity.type)).length
+}
 
 function csvCell(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
@@ -500,7 +563,15 @@ function csvCell(value: string): string {
  * Debt is emitted as two bare numbers and dates as ISO, so the result is
  * sortable and filterable rather than merely readable.
  */
-export function leadsToCsv(leads: Lead[]): string {
+export function leadsToCsv(
+  leads: Lead[],
+  /**
+   * Activities per lead id. Omitted, the two notes columns come out empty
+   * rather than absent — the header should not change shape depending on
+   * whether the caller had the history to hand.
+   */
+  activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
+): string {
   const rows = leads.map((lead) =>
     [
       formatIsoDate(lead.createdAt),
@@ -511,10 +582,14 @@ export function leadsToCsv(leads: Lead[]): string {
       lead.debtMax === null ? '' : String(lead.debtMax),
       lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : '',
       lead.state ?? '',
-      lead.message ?? '',
+      // Collapsed, for the same reason the notes are: a newline the visitor
+      // typed into the form makes this row as tall as their message.
+      (lead.message ?? '').replace(/\s+/g, ' ').trim(),
       STAGE_META[lead.stage].label,
       SOURCE_META[lead.source].label,
       formatIsoDate(lead.lastActionAt),
+      String(countLeadNotes(activitiesByLead.get(lead.id) ?? [])),
+      formatLeadNotes(activitiesByLead.get(lead.id) ?? []),
     ]
       .map(csvCell)
       .join(','),

@@ -4,22 +4,34 @@ import userEvent from '@testing-library/user-event'
 import { LeadsPageClient } from '../LeadsPageClient'
 import { LeadsStoreProvider } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
+import { EMPTY_FILTERS, type LeadFilterState } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
 
 /**
  * Smoke test for the leads list.
  *
- * Verifies the behaviours that can't be read off the markup — debounced search,
- * additive filters, the follow-up toggle, the empty states and the add-lead
- * dialog's shape. Rendering is the only way to check these short of a browser.
+ * Paging, filtering and sorting happen in Postgres now, so what this asserts
+ * has changed shape: not "which rows survive a filter" — that is
+ * queries.ts's job and filter.test.ts still covers the predicate — but that
+ * every control puts the right thing in the URL, and that the table renders
+ * the page the server sent. The URL is the contract between the two.
  */
 
+const replace = vi.fn()
+const push = vi.fn()
+const refresh = vi.fn()
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push, replace, refresh }),
   usePathname: () => '/leads',
 }))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  replace.mockClear()
+  push.mockClear()
+  refresh.mockClear()
+})
 
 const DAY_MS = 86_400_000
 function daysAgo(n: number): string {
@@ -60,19 +72,33 @@ function makeLead(overrides: Partial<Lead>): Lead {
 }
 
 const LEADS: Lead[] = [
-  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2), lastActionAt: daysAgo(2) }),
-  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', state: 'NSW', stage: 'prospect', source: 'website', createdAt: daysAgo(9), lastActionAt: daysAgo(9) }),
-  // Open and long overdue — this is the one the follow-up toggle should keep.
-  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', createdAt: daysAgo(50), lastActionAt: daysAgo(45) }),
-  // Closed and long overdue — must never flag.
-  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80), lastActionAt: daysAgo(75) }),
+  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2) }),
+  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', stage: 'prospect', source: 'website', createdAt: daysAgo(9) }),
+  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', createdAt: daysAgo(50) }),
+  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80) }),
 ]
 
-function renderList(leads: Lead[] = LEADS) {
+interface RenderOptions {
+  leads?: Lead[]
+  filters?: Partial<LeadFilterState>
+  total?: number
+  page?: number
+  pageCount?: number
+}
+
+function renderList(options: RenderOptions = {}) {
+  const leads = options.leads ?? LEADS
   return render(
     <ToastProvider>
-      <LeadsStoreProvider initialLeads={leads} initialActivities={[]} author="Gabby">
-        <LeadsPageClient />
+      <LeadsStoreProvider author="Gabby">
+        <LeadsPageClient
+          filters={{ ...EMPTY_FILTERS, ...options.filters }}
+          leads={leads}
+          total={options.total ?? leads.length}
+          page={options.page ?? 1}
+          pageCount={options.pageCount ?? 1}
+          pageSize={10}
+        />
       </LeadsStoreProvider>
     </ToastProvider>,
   )
@@ -81,26 +107,54 @@ function renderList(leads: Lead[] = LEADS) {
 /**
  * Queries scoped to the desktop table.
  *
- * The table and the sub-md card list are both in the DOM at once — the split is
- * pure CSS, and jsdom applies none — so an unscoped query matches every lead
- * twice.
+ * The table and the sub-md card list are both in the DOM at once — the split
+ * is pure CSS, and jsdom applies none — so an unscoped query matches every
+ * lead twice.
  */
 function inTable() {
   return within(screen.getByRole('table'))
 }
 
-/** Lead names currently rendered in the desktop table. */
+/**
+ * Lead names currently rendered in the desktop table.
+ *
+ * Read off the row's link rather than a cell index — the name is the only
+ * link in a row, and an index breaks every time a column is added at the
+ * left, which is exactly what selection and delete did.
+ */
 function visibleNames(): string[] {
   const table = screen.queryByRole('table')
   if (!table) return []
   return within(table)
     .getAllByRole('row')
     .slice(1) // drop the header row
-    .map((row) => within(row).getAllByRole('cell')[1].textContent ?? '')
+    .map((row) => within(row).queryByRole('link')?.textContent ?? '')
+}
+
+/**
+ * The wide run of page numbers.
+ *
+ * Pagination renders two lists — a wide one and a narrow one — and the
+ * breakpoint shows exactly one. A real browser exposes only the visible list
+ * (the other is display:none, which screen readers skip), but jsdom applies no
+ * CSS, so an unscoped query matches both.
+ */
+function inPagination() {
+  const nav = screen.getByRole('navigation', { name: 'Pagination' })
+  const wide = nav.querySelectorAll('ol')[0] as HTMLElement
+  return { nav, wide: within(wide) }
+}
+
+/** The path the last navigation asked for. */
+function lastReplace(): string {
+  expect(replace).toHaveBeenCalled()
+  return replace.mock.calls[replace.mock.calls.length - 1][0] as string
 }
 
 describe('LeadsPageClient', () => {
-  it('lists every lead, newest first', () => {
+  it('renders the page the server sent, in the order it sent it', () => {
+    // No client-side sort: the database ordered these and the table must not
+    // second-guess it.
     renderList()
     expect(visibleNames()).toEqual([
       'Marcus Oyelaran',
@@ -110,71 +164,132 @@ describe('LeadsPageClient', () => {
     ])
   })
 
-  it('summarises the lead count, without the follow-up count for now', () => {
-    renderList()
+  it('counts every matching lead, not the rows on screen', () => {
+    // 10 rows of 47 must still say 47, or the number means nothing.
+    renderList({ leads: LEADS, total: 47, pageCount: 5 })
     const summary = screen.getByRole('heading', { name: 'Leads' }).parentElement?.textContent ?? ''
-    expect(summary).toContain('4 leads')
-    // The follow-up count is commented out in LeadsPageClient along with the
-    // table column, the filter toggle and the top-bar pill.
-    expect(summary).not.toMatch(/follow-up/i)
+    expect(summary).toContain('47 leads')
   })
 
-  it('filters by search after the debounce', async () => {
+  it('puts the search term in the URL after the debounce', async () => {
     const user = userEvent.setup()
     renderList()
 
     await user.type(screen.getByLabelText('Search leads'), 'priya')
-    await waitFor(() => expect(visibleNames()).toEqual(['Priya Raman']))
+    await waitFor(() => expect(lastReplace()).toBe('/leads?q=priya'))
   })
 
-  it('searches phone numbers regardless of formatting', async () => {
+  it('does not navigate on every keystroke', async () => {
     const user = userEvent.setup()
     renderList()
 
-    await user.type(screen.getByLabelText('Search leads'), '0402 915')
-    await waitFor(() => expect(visibleNames()).toEqual(['Marcus Oyelaran']))
+    await user.type(screen.getByLabelText('Search leads'), 'priya')
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    // Five characters, one navigation — otherwise every letter is a query.
+    expect(replace).toHaveBeenCalledTimes(1)
   })
 
-  // Skipped while the follow-up toggle is commented out in LeadFilters. The
-  // rule itself stays covered by followUp.test.ts and filter.test.ts; unskip
-  // this when the toggle comes back.
-  it.skip('narrows to flagged leads with the follow-up toggle, excluding closed ones', async () => {
-    const user = userEvent.setup()
+  it('offers only the sources that can actually arrive', async () => {
+    // No live form posts as google_form, so offering it is a filter that can
+    // only ever return nothing. The other three stay.
     renderList()
+    const source = screen.getByLabelText('Filter by source')
+    const options = Array.from(source.querySelectorAll('option')).map((o) => o.textContent)
 
-    await user.click(screen.getByRole('switch', { name: /follow-up/i }))
-    await waitFor(() => expect(visibleNames()).toEqual(['Sasha Lorenz']))
+    expect(options).not.toContain('Google Form')
+    expect(options).toEqual(
+      expect.arrayContaining(['Facebook', 'Website', 'Added manually']),
+    )
   })
 
-  it('combines filters additively', async () => {
+  it('carries a filter into the URL', async () => {
     const user = userEvent.setup()
     renderList()
 
     await user.selectOptions(screen.getByLabelText('Filter by state'), 'NSW')
-    await waitFor(() => expect(visibleNames()).toEqual(['Priya Raman', 'Sasha Lorenz', 'Hugo Pemberton']))
-
-    await user.selectOptions(screen.getByLabelText('Filter by stage'), 'prospect')
-    await waitFor(() => expect(visibleNames()).toEqual(['Priya Raman']))
+    await waitFor(() => expect(lastReplace()).toBe('/leads?state=NSW'))
   })
 
-  it('offers a reset from the filtered empty state', async () => {
+  it('keeps existing filters when another one changes', async () => {
     const user = userEvent.setup()
-    renderList()
+    renderList({ filters: { state: 'NSW' } })
 
-    await user.type(screen.getByLabelText('Search leads'), 'nobody at all')
-    await waitFor(() => expect(screen.getByText('No leads match these filters')).toBeTruthy())
+    await user.selectOptions(screen.getByLabelText('Filter by stage'), 'prospect')
+    const href = lastReplace()
+    expect(href).toContain('state=NSW')
+    expect(href).toContain('stage=prospect')
+  })
 
+  it('returns to page 1 when a filter changes', async () => {
+    // Staying on page 7 of a result set that now has two pages shows an empty
+    // table for a filter that matched plenty.
+    const user = userEvent.setup()
+    renderList({ page: 7, pageCount: 9, total: 84 })
+
+    await user.selectOptions(screen.getByLabelText('Filter by state'), 'NSW')
+    expect(lastReplace()).not.toContain('page=')
+  })
+
+  it('clears everything back to a bare /leads', async () => {
+    const user = userEvent.setup()
+    renderList({ leads: [], total: 0, filters: { search: 'nobody at all' } })
+
+    expect(screen.getByText('No leads match these filters')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
-    await waitFor(() => expect(visibleNames()).toHaveLength(4))
+    expect(lastReplace()).toBe('/leads')
   })
 
   it('explains where leads come from when there are none at all', () => {
-    renderList([])
+    renderList({ leads: [], total: 0 })
     expect(screen.getByText(/They.ll arrive here from Facebook and the website/)).toBeTruthy()
     expect(screen.queryByText('No leads match these filters')).toBeNull()
   })
 
+  it('shows no pagination for a single page', () => {
+    renderList()
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull()
+  })
+
+  it('shows pagination once there is more than one page', () => {
+    renderList({ total: 47, page: 1, pageCount: 5 })
+    const { nav, wide } = inPagination()
+    expect(wide.getByRole('link', { name: 'Page 2' })).toBeTruthy()
+    expect(within(nav).getAllByText('1–10 of 47').length).toBeGreaterThan(0)
+  })
+
+  it('keeps the filters in every page link', () => {
+    // A page link that drops the filter silently widens the result set.
+    renderList({ total: 47, page: 2, pageCount: 5, filters: { state: 'NSW', search: 'civil' } })
+    const href = inPagination().wide.getByRole('link', { name: 'Page 3' }).getAttribute('href') ?? ''
+    expect(href).toContain('page=3')
+    expect(href).toContain('state=NSW')
+    expect(href).toContain('q=civil')
+  })
+
+  it('marks the current page for assistive tech, not just with colour', () => {
+    renderList({ total: 47, page: 2, pageCount: 5 })
+    expect(
+      inPagination().wide.getByRole('link', { name: 'Page 2' }).getAttribute('aria-current'),
+    ).toBe('page')
+  })
+
+  it('offers no Previous on the first page', () => {
+    renderList({ total: 47, page: 1, pageCount: 5 })
+    const nav = screen.getByRole('navigation', { name: 'Pagination' })
+    expect(within(nav).queryByRole('link', { name: 'Previous page' })).toBeNull()
+    expect(within(nav).getByRole('link', { name: 'Next page' })).toBeTruthy()
+  })
+
+  it('offers no Next on the last page', () => {
+    renderList({ total: 47, page: 5, pageCount: 5 })
+    const nav = screen.getByRole('navigation', { name: 'Pagination' })
+    expect(within(nav).getByRole('link', { name: 'Previous page' })).toBeTruthy()
+    expect(within(nav).queryByRole('link', { name: 'Next page' })).toBeNull()
+  })
+
   it('changes a stage from inside the row', async () => {
+    // The row renders from server data but reads through the store, so an
+    // optimistic edit has to show without a round trip.
     const user = userEvent.setup()
     renderList()
 
@@ -226,9 +341,12 @@ describe('LeadsPageClient', () => {
     expect(within(dialog).getByText('Choose a state.')).toBeTruthy()
   })
 
-  it('adds a valid lead to the top of the list as a manual source', async () => {
+  it('sends you to an unfiltered page 1 after adding a lead', async () => {
+    // The new row is optimistic and not in the page the server sent, so it
+    // would not appear where you are. Page 1 sorts newest first, which is
+    // where it belongs.
     const user = userEvent.setup()
-    renderList()
+    renderList({ filters: { state: 'NSW' }, page: 3, pageCount: 4, total: 34 })
 
     await user.click(screen.getByRole('button', { name: /add lead/i }))
     const dialog = await screen.findByRole('dialog')
@@ -239,166 +357,10 @@ describe('LeadsPageClient', () => {
     // "$150k – $250k" is index 7 in DEBT_PRESETS.
     await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
     await user.selectOptions(within(dialog).getByLabelText('State'), 'QLD')
-    await user.selectOptions(within(dialog).getByLabelText(/Business type/), 'trust')
-    await user.type(
-      within(dialog).getByLabelText(/Their message/),
-      'Civil contracting, mostly PAYG.',
-    )
     await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(visibleNames()[0]).toBe('Dean Whitlock')
-    // Debt is a typed figure in the row; the display carries the formatted range.
-    expect(inTable().getByLabelText('Edit debt for Dean Whitlock').textContent).toContain(
-      '$150k \u2013 $250k',
-    )
-    expect(inTable().getByText('Trust')).toBeTruthy()
-    expect(inTable().getByText('Civil contracting, mostly PAYG.')).toBeTruthy()
-  })
-
-  it('asks for confirmation before converting rather than changing stage outright', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    const select = inTable().getByLabelText('Stage for Marcus Oyelaran') as HTMLSelectElement
-    await user.selectOptions(select, 'client')
-
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/creates a client file for Marcus Oyelaran/)).toBeTruthy()
-    // Not committed until the dialog is confirmed.
-    expect(select.value).toBe('lead')
-  })
-})
-
-describe('editing debt in the row', () => {
-  /** Open the row's debt editor and return its input. */
-  async function openDebt(user: ReturnType<typeof userEvent.setup>, name: string) {
-    await user.click(inTable().getByLabelText(`Edit debt for ${name}`))
-    return inTable().getByLabelText(`Debt for ${name}`) as HTMLInputElement
-  }
-
-  it('shows the stored range until it is edited', () => {
-    renderList()
-    // Fixture 'a' is 50,000-74,999.
-    expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
-      '$100k \u2013 $125k',
-    )
-  })
-
-  it('accepts an exact figure and stores it as a point amount', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    await user.type(input, '63500')
-    await user.keyboard('{Enter}')
-
-    // min === max, so it renders as one amount rather than a range.
-    await waitFor(() =>
-      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
-        '$64k',
-      ),
-    )
-  })
-
-  it.each([
-    ['$120,000', '$120k'],
-    ['120k', '$120k'],
-    ['120000', '$120k'],
-  ])('accepts %s', async (typed, expected) => {
-    const user = userEvent.setup()
-    renderList()
-
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    await user.type(input, typed)
-    await user.keyboard('{Enter}')
-
-    await waitFor(() =>
-      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
-        expected,
-      ),
-    )
-  })
-
-  it('does not prefill the editor from a bracket, so Enter cannot silently pin it', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    // 'a' holds a bracket (100,000-124,999), not an exact figure.
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    expect(input.value).toBe('')
-    // The current range is offered as a placeholder for context only.
-    expect(input.placeholder).toContain('$100k')
-  })
-
-  it('prefills the editor when the stored value is already exact', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    let input = await openDebt(user, 'Marcus Oyelaran')
-    await user.type(input, '63500')
-    await user.keyboard('{Enter}')
-    await waitFor(() =>
-      expect(inTable().queryByLabelText('Debt for Marcus Oyelaran')).toBeNull(),
-    )
-
-    input = await openDebt(user, 'Marcus Oyelaran')
-    expect(input.value).toBe('63500')
-  })
-
-  it('clears the debt when the field is emptied', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    await user.clear(input)
-    await user.keyboard('{Enter}')
-
-    await waitFor(() =>
-      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
-        '\u2014',
-      ),
-    )
-  })
-
-  it.each([
-    ['not sure', /Enter an amount/],
-    ['50k to 100k', /one amount, not a range/],
-    ['3', /at least \$1,000/],
-  ])('refuses %s with a reason rather than guessing', async (typed, message) => {
-    const user = userEvent.setup()
-    renderList()
-
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    await user.type(input, typed)
-    await user.keyboard('{Enter}')
-
-    expect(inTable().getByText(message)).toBeTruthy()
-    // Still editing, and the stored value is untouched.
-    expect(inTable().getByLabelText('Debt for Marcus Oyelaran')).toBeTruthy()
-  })
-
-  it('abandons the edit on Escape', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    const input = await openDebt(user, 'Marcus Oyelaran')
-    await user.type(input, '999999')
-    await user.keyboard('{Escape}')
-
-    await waitFor(() =>
-      expect(inTable().getByLabelText('Edit debt for Marcus Oyelaran').textContent).toContain(
-        '$100k \u2013 $125k',
-      ),
-    )
-  })
-
-  it('does not open the record when the editor is used', async () => {
-    const user = userEvent.setup()
-    renderList()
-
-    // The row is clickable; the control inside it must not trigger that.
-    await user.click(inTable().getByLabelText('Edit debt for Marcus Oyelaran'))
-    expect(inTable().getByLabelText('Debt for Marcus Oyelaran')).toBeTruthy()
+    expect(push).toHaveBeenCalledWith('/leads')
+    expect(refresh).toHaveBeenCalled()
   })
 })

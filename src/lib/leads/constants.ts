@@ -45,6 +45,18 @@ export const STAGE_GROUPS: { label: string; stages: LeadStage[] }[] = [
 
 export const ALL_STAGES: LeadStage[] = [...OPEN_STAGES, ...CLOSED_STAGES]
 
+/**
+ * The stages a lead passes through when everything goes right, in order.
+ *
+ * This is the track the progress stepper draws. It is NOT every stage: the two
+ * below are exits, not steps, and putting them on a line implying progress
+ * would read as though "Do not contact" were something to work towards.
+ */
+export const STAGE_PATH: LeadStage[] = ['lead', 'prospect', 'client', 'converted']
+
+/** Terminal stages that end the track rather than advance it. */
+export const OFF_RAMP_STAGES: LeadStage[] = ['non_proceeding', 'do_not_contact']
+
 // ============================================================
 // Sources
 // ============================================================
@@ -57,6 +69,19 @@ export const SOURCE_META: Record<LeadSource, { label: string; short: string }> =
 }
 
 export const ALL_SOURCES = Object.keys(SOURCE_META) as LeadSource[]
+
+/**
+ * Sources offered in the list filter.
+ *
+ * Google Form is deliberately absent: no live form posts as that source, so
+ * offering it is a filter that can only ever return nothing. It stays in
+ * SOURCE_META and in the webhook's accepted sources — the column still has to
+ * render a label for any historical row, and the endpoint still has to accept
+ * one if a form is wired up again.
+ */
+export const FILTERABLE_SOURCES: LeadSource[] = ALL_SOURCES.filter(
+  (source) => source !== 'google_form',
+)
 
 // ============================================================
 // Lead-gen partners

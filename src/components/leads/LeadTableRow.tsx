@@ -6,6 +6,7 @@ import { StageSelect } from '@/components/leads/StageSelect'
 import { DebtInput } from '@/components/leads/DebtInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
+import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
@@ -23,24 +24,68 @@ interface LeadRowProps {
    */
   // flagged: boolean
   onRequestConvert: (lead: Lead) => void
+  selected: boolean
+  onToggleSelect: (leadId: string) => void
+  onRequestDelete: (lead: Lead) => void
+}
+
+/**
+ * The row's own controls sit inside a row that navigates on click, so every
+ * one of them has to stop the event. Without this, ticking a checkbox would
+ * also open the record.
+ */
+function swallow(event: React.MouseEvent) {
+  event.stopPropagation()
 }
 
 /**
  * Desktop table row. Opening the record deliberately does not clear the
  * follow-up flag — only a recorded action does that.
  */
-export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
+export function LeadTableRow({
+  lead,
+  onRequestConvert,
+  selected,
+  onToggleSelect,
+  onRequestDelete,
+}: LeadRowProps) {
   const router = useRouter()
 
   return (
     <tr
       onClick={() => router.push(`/leads/${lead.id}`)}
-      className="cursor-pointer bg-primary transition-colors hover:bg-surface/40"
+      className={`cursor-pointer transition-colors hover:bg-surface/40 ${
+        selected ? 'bg-accent/5' : 'bg-primary'
+      }`}
     >
-      <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
+      {/* Selection and delete lead the row. Both paired with their headers in
+          LeadTable's markup — the two must stay in step or the column counts
+          diverge. */}
+      <td className="w-9 px-2 py-3.5" onClick={swallow}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(lead.id)}
+          aria-label={`Select ${lead.name}`}
+          className="h-4 w-4 cursor-pointer accent-accent"
+        />
+      </td>
+      <td className="w-9 px-2 py-3.5" onClick={swallow}>
+        <button
+          type="button"
+          onClick={() => onRequestDelete(lead)}
+          aria-label={`Delete ${lead.name}`}
+          // Muted until hovered: a destructive control on every row of a dense
+          // table should not be the first thing the eye lands on.
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-foreground/30 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </td>
+      <td className="px-3 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
         {formatShortDate(lead.createdAt)}
       </td>
-      <td className="px-4 py-3.5">
+      <td className="px-3 py-3.5">
         <Link
           href={`/leads/${lead.id}`}
           onClick={(event) => event.stopPropagation()}
@@ -49,20 +94,23 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
           {lead.name}
         </Link>
       </td>
-      <td className="px-4 py-3.5 max-w-[180px] truncate text-foreground/50">{lead.email}</td>
-      <td className="px-4 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
+      {/* Paired with the Email header in LeadTable's COLUMNS. */}
+      <td className="hidden max-w-[180px] truncate px-3 py-3.5 text-foreground/50 xl:table-cell">
+        {lead.email}
+      </td>
+      <td className="px-3 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
         {formatPhone(lead.phone)}
       </td>
       {/* An exact figure, typed. The forms can only give a bracket; once the
           real number is known it should not have to be rounded to the nearest
           band. Left-aligned: a short single figure like "$150k" stranded on the
           right edge of the cell reads as misaligned against its neighbours. */}
-      <td className="px-4 py-3.5 w-[160px] min-w-[160px] whitespace-nowrap text-left">
+      <td className="px-3 py-3.5 w-[160px] min-w-[160px] whitespace-nowrap text-left">
         <DebtInput lead={lead} />
       </td>
       {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
           so it shouldn't take someone a phone call to find out. */}
-      <td className="px-4 py-3.5 whitespace-nowrap">
+      <td className="px-3 py-3.5 whitespace-nowrap">
         {lead.entityType ? (
           <Badge variant={ENTITY_TYPE_META[lead.entityType].badge}>
             {ENTITY_TYPE_META[lead.entityType].label}
@@ -71,12 +119,13 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
           <span className="text-foreground/25">&mdash;</span>
         )}
       </td>
-      <td className="px-4 py-3.5 text-foreground/50">
+      <td className="px-3 py-3.5 text-foreground/50">
         {lead.state ?? <span className="text-foreground/25">&mdash;</span>}
       </td>
       {/* The one column allowed to lose information — the record has it in
           full. Capped so a long message can't push Stage and Source off screen. */}
-      <td className="px-4 py-3.5 max-w-[12rem]">
+      {/* Paired with the Message header in LeadTable's COLUMNS. */}
+      <td className="hidden max-w-[12rem] px-3 py-3.5 2xl:table-cell">
         {lead.message ? (
           // Truncated in the row, in full on hover or focus — the column is the
           // one allowed to lose information, but not to hide it.
@@ -91,7 +140,7 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
           select's own padding and chevron they need ~150px of control, so a
           narrower cell clipped the selected label and forced you to open the
           dropdown to read it. */}
-      <td className="px-4 py-3.5 w-[188px] min-w-[188px]">
+      <td className="px-3 py-3.5 w-[188px] min-w-[188px]">
         {/* min-w on the control as well as the cell: a w-full <select> has a
             min-content width of zero, so without it auto table layout crushes
             this column to the chevron alone once the table overflows. */}
@@ -105,26 +154,42 @@ export function LeadTableRow({ lead, onRequestConvert }: LeadRowProps) {
           EPIC DM". Resolved from the campaign name captured at ingest, so it
           costs no request. Plain "Facebook" when the lead came from elsewhere,
           the campaign is unknown, or it is run in-house. */}
-      <td className="px-4 py-3.5 whitespace-nowrap text-foreground/50">
+      <td className="px-3 py-3.5 whitespace-nowrap text-foreground/50">
         {formatLeadSource(lead)}
       </td>
-      {/* <td className="px-4 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
+      {/* <td className="px-3 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
     </tr>
   )
 }
 
 /** Below md the same row stacks into a card. */
-export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
+export function LeadCard({
+  lead,
+  onRequestConvert,
+  selected,
+  onToggleSelect,
+  onRequestDelete,
+}: LeadRowProps) {
   const router = useRouter()
 
   return (
     <div
       onClick={() => router.push(`/leads/${lead.id}`)}
-      className="cursor-pointer space-y-3 border-b border-white/5 bg-primary p-4 last:border-b-0"
+      className={`cursor-pointer space-y-3 border-b border-white/5 p-4 last:border-b-0 ${
+        selected ? 'bg-accent/5' : 'bg-primary'
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(lead.id)}
+              onClick={swallow}
+              aria-label={`Select ${lead.name}`}
+              className="h-4 w-4 shrink-0 cursor-pointer accent-accent"
+            />
             <Link
               href={`/leads/${lead.id}`}
               onClick={(event) => event.stopPropagation()}
@@ -139,8 +204,21 @@ export function LeadCard({ lead, onRequestConvert }: LeadRowProps) {
             {formatPhone(lead.phone)}
           </p>
         </div>
-        <div className="w-[124px] shrink-0">
-          <DebtInput lead={lead} />
+        <div className="flex shrink-0 items-start gap-1">
+          <div className="w-[124px]">
+            <DebtInput lead={lead} />
+          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              swallow(event)
+              onRequestDelete(lead)
+            }}
+            aria-label={`Delete ${lead.name}`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground/30 transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </div>
 

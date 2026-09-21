@@ -15,11 +15,13 @@ import {
   formatIsoDate,
   formatAge,
   leadsToCsv,
+  formatLeadNotes,
+  countLeadNotes,
   partnerForCampaign,
   formatLeadSource,
 } from '../format'
 import { DEBT_PRESETS, PARTNERS } from '../constants'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadActivity } from '@/types/leads'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z') // midday in Sydney
 
@@ -434,10 +436,12 @@ describe('leadsToCsv', () => {
     const lines = csv.split('\r\n')
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe(
-      'Date added,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action',
+      'Date added,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action,Notes count,Notes',
     )
+    // No history passed, so the notes columns are an explicit 0 and a blank
+    // rather than absent — the header keeps its shape either way.
     expect(lines[1]).toBe(
-      '2026-08-26,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26',
+      '2026-08-26,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26,0,',
     )
   })
 
@@ -565,5 +569,147 @@ describe('formatLeadSource', () => {
     expect(formatLeadSource(makeLead({ metaCampaignName: 'C-COLD-MCR Q4' }))).toBe(
       'Facebook · TBC',
     )
+  })
+})
+
+// ============================================================
+// Notes in the CSV
+// ============================================================
+
+function act(overrides: Partial<LeadActivity>): LeadActivity {
+  return {
+    id: 'ac_1',
+    leadId: 'ld_test',
+    type: 'note',
+    body: 'Body',
+    author: 'Gabby',
+    createdAt: '2026-08-10T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+describe('formatLeadNotes', () => {
+  it('numbers the entries oldest first', () => {
+    // Numbering a list implies reading it in order, so the export is
+    // chronological even though the record's timeline is newest-first.
+    const text = formatLeadNotes([
+      act({ id: 'b', body: 'Second.', createdAt: '2026-08-12T00:00:00.000Z' }),
+      act({ id: 'a', body: 'First.', createdAt: '2026-08-10T00:00:00.000Z' }),
+    ])
+    expect(text.indexOf('1)')).toBeLessThan(text.indexOf('2)'))
+    expect(text.indexOf('First.')).toBeLessThan(text.indexOf('Second.'))
+  })
+
+  it('says when, what kind, and who, before the note', () => {
+    const text = formatLeadNotes([act({ id: 'a', type: 'call', body: 'Left a voicemail.' })])
+    expect(text).toBe('1) 10 Aug 2026, Call, Gabby: Left a voicemail.')
+  })
+
+  it('never puts a line break in the cell', () => {
+    // A newline is legal in a quoted cell and Excel does render it, but it
+    // also makes the row as tall as the note is long. One lead with five
+    // notes turns a scannable sheet into a column of paragraphs, which is a
+    // worse trade than the prettier layout was worth.
+    const text = formatLeadNotes([
+      act({ id: 'a', body: 'Tabs\tand\nnewlines\r\neverywhere.' }),
+      act({ id: 'b', body: 'Second.', createdAt: '2026-08-12T00:00:00.000Z' }),
+    ])
+    expect(text).not.toMatch(/[\r\n\t]/)
+    expect(text).toContain('Tabs and newlines everywhere.')
+  })
+
+  it('separates entries with a pipe, on the same line', () => {
+    const text = formatLeadNotes([
+      act({ id: 'a', body: 'First.', createdAt: '2026-08-10T00:00:00.000Z' }),
+      act({ id: 'b', body: 'Second.', createdAt: '2026-08-12T00:00:00.000Z' }),
+    ])
+    expect(text.split(' | ')).toHaveLength(2)
+    expect(text.split('\n')).toHaveLength(1)
+  })
+
+  it('keeps the separators ASCII', () => {
+    // Bodies are full of " - " already, and a non-ASCII separator is one
+    // more thing to survive a spreadsheet guessing at the encoding.
+    const text = formatLeadNotes([act({ id: 'a', body: 'Plain body.' })])
+    expect(/^[\x00-\x7F]*$/.test(text)).toBe(true)
+  })
+
+  it('leaves out stage changes', () => {
+    // They are the system's writing, not somebody's notes, and they have
+    // their own tab on the record for the same reason.
+    const text = formatLeadNotes([
+      act({ id: 'a', type: 'note', body: 'Real note.' }),
+      act({ id: 'b', type: 'stage_change', body: 'Stage changed from Lead to Prospect.' }),
+    ])
+    expect(text).toContain('Real note.')
+    expect(text).not.toContain('Stage changed')
+    expect(text.split(' | ')).toHaveLength(1)
+  })
+
+  it('is empty for a lead with nothing recorded', () => {
+    expect(formatLeadNotes([])).toBe('')
+    expect(formatLeadNotes([act({ type: 'stage_change' })])).toBe('')
+  })
+})
+
+describe('countLeadNotes', () => {
+  it('counts composed entries only', () => {
+    expect(
+      countLeadNotes([
+        act({ id: 'a', type: 'note' }),
+        act({ id: 'b', type: 'call' }),
+        act({ id: 'c', type: 'email' }),
+        act({ id: 'd', type: 'next_step' }),
+        act({ id: 'e', type: 'stage_change' }),
+      ]),
+    ).toBe(4)
+  })
+})
+
+describe('leadsToCsv with notes', () => {
+  it('adds the two notes columns to the header', () => {
+    const header = leadsToCsv([]).split('\r\n')[0]
+    expect(header.endsWith('Notes count,Notes')).toBe(true)
+  })
+
+  it('carries a lead’s notes into its row', () => {
+    const lead = makeLead({ id: 'ld_test' })
+    const csv = leadsToCsv(
+      [lead],
+      new Map([['ld_test', [act({ id: 'a', body: 'Spoke to the director.' })]]]),
+    )
+    expect(csv).toContain('Spoke to the director.')
+    // The count column is a bare number so a spreadsheet can sort on it.
+    expect(csv).toContain(',1,')
+  })
+
+  it('keeps every lead on exactly one row, however many notes it has', () => {
+    // The whole point of the single-line format: the grid stays one line per
+    // lead, exactly as it was before notes existed.
+    const csv = leadsToCsv(
+      [makeLead({ id: 'ld_test' })],
+      new Map([
+        [
+          'ld_test',
+          [
+            act({ id: 'a', body: 'First.', createdAt: '2026-08-10T00:00:00.000Z' }),
+            act({ id: 'b', body: 'Second.', createdAt: '2026-08-11T00:00:00.000Z' }),
+            act({ id: 'c', body: 'Third.', createdAt: '2026-08-12T00:00:00.000Z' }),
+          ],
+        ],
+      ]),
+    )
+    // Header plus one record. CRLF separates the rows, so the check is
+    // that no line carries a break of its own — that would be a cell
+    // spilling over.
+    const lines = csv.split('\r\n')
+    expect(lines).toHaveLength(2)
+    for (const line of lines) expect(line).not.toMatch(/[\r\n]/)
+  })
+
+  it('leaves the columns empty when no history was passed', () => {
+    // The header must not change shape depending on what the caller had.
+    const row = leadsToCsv([makeLead()]).split('\r\n')[1]
+    expect(row.endsWith(',0,')).toBe(true)
   })
 })

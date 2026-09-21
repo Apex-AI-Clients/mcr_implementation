@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import { Select } from '@/components/ui/Select'
 import {
   ALL_STAGES,
-  ALL_SOURCES,
+  FILTERABLE_SOURCES,
   AU_STATES,
   DATE_RANGES,
   DEBT_FLOORS,
@@ -26,7 +26,7 @@ const STAGE_OPTIONS = ALL_STAGES.map((stage) => ({
   label: STAGE_META[stage].label,
 }))
 const STATE_OPTIONS = AU_STATES.map((state) => ({ value: state, label: state }))
-const SOURCE_OPTIONS = ALL_SOURCES.map((source) => ({
+const SOURCE_OPTIONS = FILTERABLE_SOURCES.map((source) => ({
   value: source,
   label: SOURCE_META[source].label,
 }))

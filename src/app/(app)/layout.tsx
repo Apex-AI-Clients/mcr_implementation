@@ -4,7 +4,6 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { WorkspaceTopBar } from '@/components/admin/WorkspaceTopBar'
 import { LeadsStoreProvider } from '@/components/leads/LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
-import { getLeads, getAllLeadActivities } from '@/lib/leads/queries'
 import { leadsPersistence } from '@/lib/leads/persistence'
 import { firstNameFromMetadata } from '@/lib/utils'
 
@@ -26,19 +25,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/login')
   }
 
-  // Loaded here rather than in the leads routes so the sidebar and the list
-  // read the same state as Gabby works.
-  const [leads, activities] = await Promise.all([getLeads(), getAllLeadActivities()])
   const author = firstNameFromMetadata(user.user_metadata) ?? user.email?.split('@')[0] ?? 'You'
 
   return (
     <ToastProvider>
-      <LeadsStoreProvider
-        initialLeads={leads}
-        initialActivities={activities}
-        author={author}
-        persistence={leadsPersistence}
-      >
+      {/* Mounted empty. Each lead route reads its own rows server-side and
+          syncs them in, so the browser holds the page on screen rather than
+          every lead in the database — which is what makes the list's paging,
+          filtering and sorting able to live in Postgres at all. The provider
+          stays up here so an optimistic edit survives moving between the list
+          and a record. */}
+      <LeadsStoreProvider author={author} persistence={leadsPersistence}>
         {/* Fixed to the viewport rather than `h-screen`: the root layout leaves
             body as `min-h-full` with no overflow rule, so a 100vh shell still
             let the document keep a second scrollbar of its own next to

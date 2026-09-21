@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
@@ -66,6 +67,7 @@ const ENTITY_OPTIONS = ALL_ENTITY_TYPES.map((type) => ({
  * added on the record afterwards.
  */
 export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
+  const router = useRouter()
   const { addLead } = useLeads()
   const { toast } = useToast()
   const [form, setForm] = useState<FormState>(EMPTY)
@@ -114,6 +116,13 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
 
     toast('Lead added.')
     handleClose()
+
+    // The list renders the page the server sent, so an optimistic row that is
+    // not in it would not appear at all. Going to an unfiltered page 1 — which
+    // sorts newest first — puts the new lead at the top, and refresh re-reads
+    // it now that the insert has been sent.
+    router.push('/leads')
+    router.refresh()
   }
 
   function handleClose() {

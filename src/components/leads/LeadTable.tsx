@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { LeadTableRow, LeadCard } from '@/components/leads/LeadTableRow'
 import { Button } from '@/components/ui/Button'
 // Only the follow-up column is hidden; the rule still runs elsewhere.
@@ -12,12 +13,55 @@ interface LeadTableProps {
   filtered: boolean
   onResetFilters: () => void
   onRequestConvert: (lead: Lead) => void
+  /** Ids ticked on this page. Selection does not survive a page change. */
+  selectedIds: ReadonlySet<string>
+  onToggleLead: (leadId: string) => void
+  /** Tick or clear every row on this page. */
+  onToggleAll: () => void
+  onRequestDelete: (leads: Lead[]) => void
+}
+
+/**
+ * Header checkbox.
+ *
+ * `indeterminate` is a DOM property, not an attribute, so React cannot set it
+ * from JSX — it needs the ref. Without it a partial selection looks identical
+ * to an empty one.
+ */
+function SelectAllCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean
+  indeterminate: boolean
+  onChange: () => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate
+  }, [indeterminate])
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={checked ? 'Clear selection' : 'Select all leads on this page'}
+      className="h-4 w-4 cursor-pointer accent-accent"
+    />
+  )
 }
 
 const COLUMNS = [
   { label: 'Date', className: 'text-left' },
   { label: 'Name', className: 'text-left' },
-  { label: 'Email', className: 'text-left' },
+  // Hidden on narrower desktops so the table fits the window instead of
+  // scrolling. Email is on the record, one click away, and in the card layout
+  // below md. Keep in step with the matching <td> in LeadTableRow — the header
+  // and body column counts must never diverge.
+  { label: 'Email', className: 'text-left hidden xl:table-cell' },
   { label: 'Phone', className: 'text-left' },
   // Left-aligned to match the cell: a short single figure stranded on the
   // right edge reads as misaligned.
@@ -27,7 +71,9 @@ const COLUMNS = [
   // making every header row taller.
   { label: 'Business type', className: 'text-left whitespace-nowrap' },
   { label: 'State', className: 'text-left' },
-  { label: 'Message', className: 'text-left' },
+  // The widest column and the one already allowed to lose information, so it
+  // is the first to go. Same pairing rule as Email above.
+  { label: 'Message', className: 'text-left hidden 2xl:table-cell' },
   { label: 'Stage', className: 'text-left' },
   { label: 'Source', className: 'text-left' },
   // Follow-up flag column — hidden for now. Keep in step with the matching
@@ -40,7 +86,13 @@ export function LeadTable({
   filtered,
   onResetFilters,
   onRequestConvert,
+  selectedIds,
+  onToggleLead,
+  onToggleAll,
+  onRequestDelete,
 }: LeadTableProps) {
+  const selectedHere = leads.filter((lead) => selectedIds.has(lead.id)).length
+  const allSelected = leads.length > 0 && selectedHere === leads.length
   if (leads.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border py-16 text-center">
@@ -78,11 +130,23 @@ export function LeadTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/8 bg-surface/60">
+              {/* Selection and delete, ahead of the data columns. Paired with
+                  the matching <td>s in LeadTableRow. */}
+              <th scope="col" className="w-9 px-2 py-3">
+                <SelectAllCheckbox
+                  checked={allSelected}
+                  indeterminate={selectedHere > 0 && !allSelected}
+                  onChange={onToggleAll}
+                />
+              </th>
+              <th scope="col" className="w-9 px-2 py-3">
+                <span className="sr-only">Delete</span>
+              </th>
               {COLUMNS.map((column, index) => (
                 <th
                   key={column.label || `col-${index}`}
                   scope="col"
-                  className={`px-4 py-3 font-medium text-foreground/50 ${column.className}`}
+                  className={`px-3 py-3 font-medium text-foreground/50 ${column.className}`}
                 >
                   {column.label || <span className="sr-only">Follow-up</span>}
                 </th>
@@ -95,6 +159,9 @@ export function LeadTable({
                 key={lead.id}
                 lead={lead}
                 onRequestConvert={onRequestConvert}
+                selected={selectedIds.has(lead.id)}
+                onToggleSelect={onToggleLead}
+                onRequestDelete={(target) => onRequestDelete([target])}
               />
             ))}
           </tbody>
@@ -108,6 +175,9 @@ export function LeadTable({
             key={lead.id}
             lead={lead}
             onRequestConvert={onRequestConvert}
+            selected={selectedIds.has(lead.id)}
+            onToggleSelect={onToggleLead}
+            onRequestDelete={(target) => onRequestDelete([target])}
           />
         ))}
       </div>

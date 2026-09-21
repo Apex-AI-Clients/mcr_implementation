@@ -1,16 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Check, Pencil, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { LeadRecordHeader } from '@/components/leads/LeadRecordHeader'
 import { LeadActivityForm } from '@/components/leads/LeadActivityForm'
-import { LeadActivityTimeline } from '@/components/leads/LeadActivityTimeline'
+import { LeadHistory } from '@/components/leads/LeadHistory'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
+import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { Select } from '@/components/ui/Select'
 import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
 import {
@@ -22,17 +24,35 @@ import {
   isValidAuMobile,
   isValidEmail,
 } from '@/lib/leads/format'
-import type { EntityType, Lead } from '@/types/leads'
+import type { EntityType, Lead, LeadActivity } from '@/types/leads'
 
 interface LeadRecordClientProps {
   leadId: string
+  /** Read server-side. Null when no such lead exists in the database. */
+  initialLead: Lead | null
+  initialActivities: LeadActivity[]
 }
 
-export function LeadRecordClient({ leadId }: LeadRecordClientProps) {
-  const { getLead, activitiesFor } = useLeads()
+export function LeadRecordClient({
+  leadId,
+  initialLead,
+  initialActivities,
+}: LeadRecordClientProps) {
+  const router = useRouter()
+  const { getLead, activitiesFor, syncFromServer } = useLeads()
   const [convertTarget, setConvertTarget] = useState<Lead | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const lead = getLead(leadId)
+  // Hand the server's copy to the store, so edits made here apply to it and
+  // survive a move back to the list.
+  useEffect(() => {
+    if (initialLead) syncFromServer([initialLead], initialActivities)
+  }, [initialLead, initialActivities, syncFromServer])
+
+  // Store first: a lead added seconds ago is there before the database read
+  // can see it. The server copy covers everything else, including the first
+  // render, which happens before the sync effect runs.
+  const lead = getLead(leadId) ?? initialLead
   if (!lead) {
     return (
       <div className="mx-auto max-w-6xl p-6">
@@ -51,7 +71,15 @@ export function LeadRecordClient({ leadId }: LeadRecordClientProps) {
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <LeadRecordHeader lead={lead} />
+      <LeadRecordHeader
+        lead={lead}
+        actions={
+          <Button type="button" variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Left — history */}
@@ -72,7 +100,7 @@ export function LeadRecordClient({ leadId }: LeadRecordClientProps) {
             </div>
           )}
 
-          <LeadActivityTimeline activities={activities} />
+          <LeadHistory lead={lead} activities={activities} />
         </div>
 
         {/* Right — the record */}
@@ -203,6 +231,17 @@ export function LeadRecordClient({ leadId }: LeadRecordClientProps) {
       </div>
 
       <ConvertToClientDialog lead={convertTarget} onClose={() => setConvertTarget(null)} />
+      <DeleteLeadsDialog
+        leads={deleteOpen ? [lead] : null}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          // The record this page is built on no longer exists, so staying put
+          // would render the "no longer exists" state at a URL that used to
+          // work. Back to the list, refreshed so it re-reads without the row.
+          router.push('/leads')
+          router.refresh()
+        }}
+      />
     </div>
   )
 }
