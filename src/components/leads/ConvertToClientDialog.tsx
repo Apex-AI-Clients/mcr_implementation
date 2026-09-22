@@ -9,6 +9,9 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
+import { EntityNameInput } from '@/components/abr/EntityNameInput'
+import { prefillFor } from '@/lib/abr/prefill'
+import type { AbrPrefill } from '@/lib/abr/types'
 import { createClientFromLead } from '@/lib/leads/convert'
 import {
   emptyConversionForm,
@@ -65,6 +68,29 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
 
   function patch(change: Partial<ConversionForm>) {
     setForm((current) => ({ ...current, ...change }))
+  }
+
+  /**
+   * Apply a register match picked from one of the two name fields.
+   *
+   * Identical to typing the values in, deliberately: the fields stay editable,
+   * validation is untouched, and the errors on the fields it filled are cleared
+   * because those values have just changed. Nothing about the conversion itself
+   * knows this came from a register rather than a keyboard.
+   *
+   * `prefillFor` carries the one rule shared with the intake forms — the box
+   * that was searched is cleared when the register's answer went to the other
+   * name field.
+   */
+  function applyLookup(searchedIn: 'companyName' | 'trustName', prefill: AbrPrefill) {
+    const next = prefillFor(searchedIn, prefill)
+
+    patch(next)
+    setErrors((current) => {
+      const cleared = { ...current }
+      for (const key of Object.keys(next) as (keyof ConversionForm)[]) delete cleared[key]
+      return cleared
+    })
   }
 
   async function link(clientId: string) {
@@ -188,14 +214,19 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                 {/* Which of these is required follows the entity: an ACN
                     belongs to a company, a trust name to a trust. Both stay
                     visible either way, because a trust with a corporate
-                    trustee has all of them. */}
-                <Input
+                    trustee has all of them.
+
+                    Both name fields search the business register as they are
+                    typed in, and both are ordinary text fields when it has
+                    nothing to offer. */}
+                <EntityNameInput
                   id="convert-company-name"
                   label={isTrust ? 'Name of company (trustee, if any)' : 'Name of company'}
                   value={form.companyName}
                   error={errors.companyName}
                   disabled={working}
-                  onChange={(event) => patch({ companyName: event.target.value })}
+                  onChange={(companyName) => patch({ companyName })}
+                  onPick={(change) => applyLookup('companyName', change)}
                 />
                 <Input
                   id="convert-acn"
@@ -213,13 +244,14 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   disabled={working}
                   onChange={(event) => patch({ abnNumber: event.target.value })}
                 />
-                <Input
+                <EntityNameInput
                   id="convert-trust-name"
                   label={isTrust ? 'Name of trust' : 'Name of trust (if any)'}
                   value={form.trustName}
                   error={errors.trustName}
                   disabled={working}
-                  onChange={(event) => patch({ trustName: event.target.value })}
+                  onChange={(trustName) => patch({ trustName })}
+                  onPick={(change) => applyLookup('trustName', change)}
                 />
                 <Input
                   id="convert-phone"

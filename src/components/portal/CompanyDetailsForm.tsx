@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { EntityNameInput } from '@/components/abr/EntityNameInput'
+import { prefillFor } from '@/lib/abr/prefill'
+import type { AbrPrefill } from '@/lib/abr/types'
 import { CheckCircle, ExternalLink } from 'lucide-react'
 
 export interface CompanyDetails {
@@ -32,6 +35,33 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(!!initial)
   const [error, setError] = useState('')
+
+  /**
+   * Adopt a record that turned up after this form mounted.
+   *
+   * The six useState calls above read `initial` once, which is wrong the moment
+   * another step writes this record — intake step 1 now saves the ABN and ACN
+   * behind a picked company name, and the reload that follows arrives here as a
+   * changed prop, not a remount. Without this the form would keep showing the
+   * empty boxes it was born with while the database held the values.
+   *
+   * Keyed on the record's identity rather than its contents, so a routine
+   * reload of the same record never overwrites something half-typed. React
+   * sanctions adjusting state during render like this — same pattern as
+   * ClientsPageClient and ConvertToClientDialog, and no effect is needed.
+   */
+  const [adoptedId, setAdoptedId] = useState(initial?.id ?? null)
+  if ((initial?.id ?? null) !== adoptedId) {
+    setAdoptedId(initial?.id ?? null)
+    setCompanyName(initial?.companyName ?? '')
+    setAcnNumber(initial?.acnNumber ?? '')
+    setAbnNumber(initial?.abnNumber ?? '')
+    setTrustName(initial?.trustName ?? '')
+    setPhoneNumber(initial?.phoneNumber ?? '')
+    setEmailAddress(initial?.emailAddress ?? '')
+    setSaved(!!initial)
+    setError('')
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -65,6 +95,26 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
     setSaved(false)
   }
 
+  /**
+   * Fill from a register match picked in one of the two name fields.
+   *
+   * Every value it writes is one somebody can immediately type over — this form
+   * saves on its own button, so a wrong prefill is corrected before anything is
+   * stored. Absent keys are left alone rather than blanked: ABR has no ACN for a
+   * trust, and wiping one that was already typed would be a loss.
+   *
+   * Phone and email are untouched, because neither is on the public register.
+   */
+  function applyLookup(searchedIn: 'companyName' | 'trustName', prefill: AbrPrefill) {
+    const next = prefillFor(searchedIn, prefill)
+
+    if (next.companyName !== undefined) setCompanyName(next.companyName)
+    if (next.trustName !== undefined) setTrustName(next.trustName)
+    if (next.abnNumber) setAbnNumber(next.abnNumber)
+    if (next.acnNumber !== undefined) setAcnNumber(next.acnNumber)
+    markDirty()
+  }
+
   return (
     <div className="rounded-xl border border-border bg-surface/30 p-5">
       <div className="flex items-center justify-between mb-4">
@@ -77,11 +127,13 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
+        <EntityNameInput
           id="company-name"
           label="Name of Company"
           value={companyName}
-          onChange={(e) => { setCompanyName(e.target.value); markDirty() }}
+          disabled={saving}
+          onChange={(value) => { setCompanyName(value); markDirty() }}
+          onPick={(prefill) => applyLookup('companyName', prefill)}
         />
         <div>
           <Input
@@ -115,11 +167,13 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
             Look up your ABN number <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-        <Input
+        <EntityNameInput
           id="trust-name"
           label="Name of Trust"
           value={trustName}
-          onChange={(e) => { setTrustName(e.target.value); markDirty() }}
+          disabled={saving}
+          onChange={(value) => { setTrustName(value); markDirty() }}
+          onPick={(prefill) => applyLookup('trustName', prefill)}
         />
         <Input
           id="company-phone"

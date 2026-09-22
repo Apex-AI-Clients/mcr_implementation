@@ -1,0 +1,1 @@
+callback({"Abn":"53004085616","AbnStatus":"Active","AbnStatusEffectiveFrom":"1999-11-01","Acn":"004085616","AddressDate":"2025-02-14","AddressPostcode":"4000","AddressState":"QLD","BusinessName":["Whitlock Civil"],"EntityName":"WHITLOCK  CIVIL PTY LTD","EntityTypeCode":"PRV","EntityTypeName":"Australian Private Company","Gst":"2000-07-01","Message":""});

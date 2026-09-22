@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { EntityNameInput } from '@/components/abr/EntityNameInput'
+import type { AbrPrefill } from '@/lib/abr/types'
 import { CheckCircle } from 'lucide-react'
 
 interface ClientDetailsFormProps {
@@ -21,6 +23,17 @@ interface ClientDetailsFormProps {
  * In "new" mode (clientId === null) submitting creates the client record and
  * navigates to the client-scoped intake URL, where the rest of the wizard
  * continues. In "edit" mode it PATCHes the existing client.
+ *
+ * The name field searches the Australian Business Register, and what it finds
+ * is kept in both modes — the ABN and ACN behind a picked name are saved with
+ * the client, so the company step opens already filled rather than asking again
+ * for what the register just answered. Nothing is hidden: what will be saved is
+ * shown under the field before you save it.
+ *
+ * Creating sends them with the create call. Editing writes them separately,
+ * after the name save, as a partial update that leaves the phone number and
+ * email on that record alone — neither is on any register, so this step has no
+ * business having an opinion about them. See src/lib/clients/companyDetails.ts.
  */
 export function ClientDetailsForm({
   clientId,
@@ -34,6 +47,55 @@ export function ClientDetailsForm({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(Boolean(clientId && initialName && initialEmail))
   const [error, setError] = useState('')
+  /**
+   * The register details behind the name currently in the box, when it came
+   * from a pick. Dropped the moment the name is edited by hand: keeping it
+   * would file company A's ABN against a client somebody renamed to company B.
+   */
+  const [picked, setPicked] = useState<AbrPrefill | null>(null)
+
+  function handleNameChange(value: string) {
+    setName(value)
+    setPicked(null)
+    setSaved(false)
+  }
+
+  function handlePick(prefill: AbrPrefill) {
+    // One field, so whichever name the register answered with goes in it.
+    setName(prefill.companyName || prefill.trustName || '')
+    setPicked(prefill)
+    setSaved(false)
+  }
+
+  /**
+   * What the register answered, as the company_details fields.
+   *
+   * Only ever the keys ABR actually filled — an absent key means "leave that
+   * column alone", which is what keeps this safe to send against an existing
+   * record. Phone and email are never here.
+   */
+  function companyDetailsPayload() {
+    if (!picked) return undefined
+    const payload: Record<string, string> = { abnNumber: picked.abnNumber }
+    if (picked.companyName !== undefined) payload.companyName = picked.companyName
+    if (picked.trustName !== undefined) payload.trustName = picked.trustName
+    if (picked.acnNumber !== undefined) payload.acnNumber = picked.acnNumber
+    return payload
+  }
+
+  /** Partial write — only the register's own fields. Never phone or email. */
+  async function saveCompanyDetails(id: string, details: Record<string, string>) {
+    try {
+      const res = await fetch('/api/portal/company-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: id, ...details }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -55,14 +117,32 @@ export function ClientDetailsForm({
           setSaving(false)
           return
         }
+
+        // Second write, because the client row and the company record are two
+        // tables. The name is already saved by this point, so a failure here is
+        // reported without pretending the whole save failed — the numbers can
+        // be typed on the company step.
+        const details = companyDetailsPayload()
+        if (details) {
+          const ok = await saveCompanyDetails(clientId, details)
+          if (!ok) {
+            setError('Name saved. The ABN could not be saved — add it on the company step.')
+            setSaved(true)
+            setSaving(false)
+            onSaved?.({ id: clientId, name: data.name ?? payload.name, email: data.email ?? payload.email })
+            return
+          }
+        }
+
         setSaved(true)
         setSaving(false)
         onSaved?.({ id: clientId, name: data.name ?? payload.name, email: data.email ?? payload.email })
       } else {
+        const companyDetails = companyDetailsPayload()
         const res = await fetch('/api/admin/clients', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(companyDetails ? { ...payload, companyDetails } : payload),
         })
         const data = await res.json().catch(() => ({}))
         if (res.status === 409) {
@@ -91,6 +171,8 @@ export function ClientDetailsForm({
     }
   }
 
+  const carriedForward = picked
+
   return (
     <div className="rounded-xl border border-border bg-surface/30 p-5">
       <div className="mb-4 flex items-center justify-between">
@@ -106,16 +188,32 @@ export function ClientDetailsForm({
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
-          id="client-name"
-          label="Client / Company Name"
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value)
-            setSaved(false)
-          }}
-          required
-        />
+        <div className="space-y-1.5">
+          <EntityNameInput
+            id="client-name"
+            label="Client / Company Name"
+            value={name}
+            disabled={saving}
+            required
+            onChange={handleNameChange}
+            onPick={handlePick}
+          />
+          {/* A pick writes more than the field shows, so the field says so.
+              A silent side effect on a create is not something to discover
+              two steps later on the company form. */}
+          {carriedForward && (
+            <p className="text-xs text-foreground/50">
+              ABN <span className="tabular-nums">{picked.abnNumber}</span>
+              {picked.acnNumber ? (
+                <>
+                  {' '}
+                  and ACN <span className="tabular-nums">{picked.acnNumber}</span>
+                </>
+              ) : null}{' '}
+              will be saved with this client. Editable on the company step.
+            </p>
+          )}
+        </div>
         <Input
           id="client-email"
           label="Email Address"

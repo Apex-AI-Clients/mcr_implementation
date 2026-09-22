@@ -1,0 +1,1 @@
+callback({"Abn":"61604882436","AbnStatus":"Cancelled","AbnStatusEffectiveFrom":"2024-03-11","Acn":"604882436","AddressDate":"2023-06-30","AddressPostcode":"3121","AddressState":"VIC","BusinessName":[],"EntityName":"WHITLOCK CIVIL CONTRACTING PTY LTD","EntityTypeCode":"PRV","EntityTypeName":"Australian Private Company","Gst":"2015-01-12","Message":""});
