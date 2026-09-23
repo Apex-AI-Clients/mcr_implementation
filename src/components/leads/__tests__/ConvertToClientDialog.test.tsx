@@ -48,6 +48,8 @@ const LEAD: Lead = {
   metaCampaignName: null,
   metaAdName: null,
   metaAccountId: null,
+  metaStateRaw: null,
+  metaStateOptions: null,
   createdAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
   updatedAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
 }

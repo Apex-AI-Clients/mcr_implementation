@@ -377,6 +377,8 @@ export function LeadsStoreProvider({
         metaCampaignName: null,
         metaAdName: null,
         metaAccountId: null,
+        metaStateRaw: null,
+        metaStateOptions: null,
         createdAt: at,
         updatedAt: at,
       }

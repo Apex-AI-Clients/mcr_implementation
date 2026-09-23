@@ -48,6 +48,21 @@ export interface Lead {
    * still requires one.
    */
   state: AuState | null
+  /**
+   * What the lead said about their state when it did not come down to one.
+   * Only ever set when `state` is null:
+   *   - a grouped option ("NSW, VIC, ACT, TAS"), as display labels — some Meta
+   *     forms offer regions as single options, and a lead who picks one could
+   *     be in any of them;
+   *   - an answer that did not resolve, exactly as it arrived.
+   */
+  metaStateRaw: string | null
+  /**
+   * The states a grouped answer resolved to. Null unless there were several.
+   * The state filter matches on these, so a grouped lead appears under each of
+   * its states — shown with the group label, because the match is uncertain.
+   */
+  metaStateOptions: AuState[] | null
   /** Null when the form didn't ask, or posted its unselected sentinel. */
   entityType: EntityType | null
   /** What the lead wrote on the capture form. Their words, not ours. */

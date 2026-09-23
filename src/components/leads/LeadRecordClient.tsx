@@ -18,6 +18,7 @@ import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
 import {
   debtSelectOptions,
   decodeDebtRange,
+  describeUncertainState,
   formatAge,
   formatDebtRange,
   formatPhone,
@@ -68,6 +69,7 @@ export function LeadRecordClient({
 
   const activities = activitiesFor(lead.id)
   const nextStepSetAt = activities.find((activity) => activity.type === 'next_step')?.createdAt
+  const uncertainState = describeUncertainState(lead)
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -118,7 +120,13 @@ export function LeadRecordClient({
                 return { debtMin: min, debtMax: max }
               }}
             />
-            <p className="text-xs text-foreground/40">{lead.state ?? 'State not given'}</p>
+            {uncertainState ? (
+              // A grouping the form did not narrow down, or an answer that did
+              // not resolve — muted, so it never reads as a known state.
+              <p className="text-xs text-foreground/30">{uncertainState.description}</p>
+            ) : (
+              <p className="text-xs text-foreground/40">{lead.state ?? 'State not given'}</p>
+            )}
           </div>
 
           <div className="rounded-xl border border-border bg-card p-5">

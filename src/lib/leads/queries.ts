@@ -48,7 +48,7 @@ function escapeForOr(term: string): string {
  * the filter logic without either naming PostgrestFilterBuilder's type
  * parameters or widening to `any`.
  */
-interface LeadsFilterable<T> {
+export interface LeadsFilterable<T> {
   eq(column: string, value: unknown): T
   in(column: string, values: readonly unknown[]): T
   or(filters: string): T
@@ -58,7 +58,7 @@ interface LeadsFilterable<T> {
 }
 
 /** Apply every active filter. Shared by the page read and the export. */
-function withFilters<T extends LeadsFilterable<T>>(
+export function withFilters<T extends LeadsFilterable<T>>(
   query: T,
   filters: LeadFilterState,
   now: Date,
@@ -81,7 +81,12 @@ function withFilters<T extends LeadsFilterable<T>>(
   }
 
   if (filters.stage !== 'all') built = built.eq('stage', filters.stage)
-  if (filters.state !== 'all') built = built.eq('state', filters.state)
+  if (filters.state !== 'all') {
+    // mightBeInState() in SQL: the state itself, or a grouping containing it.
+    // filters.state is an AuState from searchParams' allow-list, so it is safe
+    // inside the filter string.
+    built = built.or(`state.eq.${filters.state},meta_state_options.cs.{${filters.state}}`)
+  }
   if (filters.source !== 'all') built = built.eq('source', filters.source)
 
   if (filters.debtFloor !== null) {

@@ -10,7 +10,12 @@ import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
-import { formatLeadSource, formatPhone, formatShortDate } from '@/lib/leads/format'
+import {
+  describeUncertainState,
+  formatLeadSource,
+  formatPhone,
+  formatShortDate,
+} from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -50,6 +55,7 @@ export function LeadTableRow({
   onRequestDelete,
 }: LeadRowProps) {
   const router = useRouter()
+  const uncertainState = describeUncertainState(lead)
 
   return (
     <tr
@@ -120,7 +126,16 @@ export function LeadTableRow({
         )}
       </td>
       <td className="px-3 py-3.5 text-foreground/50">
-        {lead.state ?? <span className="text-foreground/25">&mdash;</span>}
+        {lead.state ??
+          (uncertainState ? (
+            // Muted so a grouping reads as "one of these", not as a resolved
+            // state — it can appear under several state filters at once.
+            <span className="text-foreground/30" title={uncertainState.description}>
+              {uncertainState.label}
+            </span>
+          ) : (
+            <span className="text-foreground/25">&mdash;</span>
+          ))}
       </td>
       {/* The one column allowed to lose information — the record has it in
           full. Capped so a long message can't push Stage and Source off screen. */}
@@ -171,6 +186,7 @@ export function LeadCard({
   onRequestDelete,
 }: LeadRowProps) {
   const router = useRouter()
+  const uncertainState = describeUncertainState(lead)
 
   return (
     <div
@@ -237,7 +253,15 @@ export function LeadCard({
           </>
         )}
         <span aria-hidden="true">·</span>
-        {lead.state && <span>{lead.state}</span>}
+        {lead.state ? (
+          <span>{lead.state}</span>
+        ) : (
+          uncertainState && (
+            <span className="text-foreground/30" title={uncertainState.description}>
+              {uncertainState.label}
+            </span>
+          )
+        )}
         <span aria-hidden="true">·</span>
         <span>{formatLeadSource(lead, 'short')}</span>
       </div>

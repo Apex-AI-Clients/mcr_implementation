@@ -159,6 +159,26 @@ export function partnerForCampaign(campaignName: string | null): string | null {
 }
 
 /**
+ * What to show for a lead whose state did not come down to one, or null when
+ * it did (or nothing was said).
+ *
+ * `label` is the text itself; `description` says what kind of uncertainty it
+ * is, for a tooltip or the record. A resolved grouping ("NSW, VIC, ACT, TAS")
+ * reads as "One of …" — the lead is in one of those, and appears under each of
+ * them in the state filter. An answer that did not resolve is shown as given,
+ * and matches no state filter.
+ */
+export function describeUncertainState(
+  lead: Pick<Lead, 'state' | 'metaStateRaw' | 'metaStateOptions'>,
+): { label: string; description: string } | null {
+  if (lead.state || !lead.metaStateRaw) return null
+  if (lead.metaStateOptions && lead.metaStateOptions.length > 1) {
+    return { label: lead.metaStateRaw, description: `One of ${lead.metaStateRaw}` }
+  }
+  return { label: lead.metaStateRaw, description: `State as given: ${lead.metaStateRaw}` }
+}
+
+/**
  * How a lead's origin reads: "Facebook · EPIC DM", or plain "Facebook" when no
  * partner is known.
  *

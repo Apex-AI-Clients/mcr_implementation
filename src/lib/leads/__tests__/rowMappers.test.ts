@@ -36,6 +36,8 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
     meta_campaign_name: 'MCR26 | SBR | Prospecting',
     meta_ad_name: 'SBR_Verified_Static_A',
     meta_account_id: '1029384756',
+    meta_state_raw: null,
+    meta_state_options: null,
     created_at: '2026-08-01T00:00:00.000Z',
     updated_at: '2026-08-30T00:00:00.000Z',
     ...overrides,
@@ -71,6 +73,8 @@ describe('toLead', () => {
       metaCampaignName: 'MCR26 | SBR | Prospecting',
       metaAdName: 'SBR_Verified_Static_A',
       metaAccountId: '1029384756',
+      metaStateRaw: null,
+      metaStateOptions: null,
       createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-30T00:00:00.000Z',
     })

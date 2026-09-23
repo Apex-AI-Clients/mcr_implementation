@@ -106,6 +106,8 @@ export async function storeIngestedLead(lead: IngestedLead): Promise<IngestStore
       debt_min: lead.debtMin,
       debt_max: lead.debtMax,
       state: lead.state,
+      meta_state_raw: lead.metaStateRaw,
+      meta_state_options: lead.metaStateOptions,
       entity_type: lead.entityType,
       message: lead.message,
       preferred_call_time: lead.preferredCallTime,

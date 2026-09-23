@@ -33,6 +33,8 @@ export function toLead(row: LeadRow): Lead {
     debtMin: row.debt_min,
     debtMax: row.debt_max,
     state: row.state as AuState | null,
+    metaStateRaw: row.meta_state_raw,
+    metaStateOptions: row.meta_state_options as AuState[] | null,
     entityType: row.entity_type as EntityType | null,
     message: row.message,
     preferredCallTime: row.preferred_call_time,

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY_FILTERS, filterLeads, hasActiveFilters, type LeadFilterState } from '../filter'
+import {
+  EMPTY_FILTERS,
+  filterLeads,
+  hasActiveFilters,
+  mightBeInState,
+  type LeadFilterState,
+} from '../filter'
 import type { Lead } from '@/types/leads'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z')
@@ -36,6 +42,8 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     metaCampaignName: null,
     metaAdName: null,
     metaAccountId: null,
+    metaStateRaw: null,
+    metaStateOptions: null,
     createdAt: at(5),
     updatedAt: at(5),
     ...overrides,
@@ -199,5 +207,60 @@ describe('filterLeads', () => {
     const original = [...leads]
     filterLeads(leads, EMPTY_FILTERS, NOW)
     expect(leads).toEqual(original)
+  })
+})
+
+describe('filterLeads — grouped state answers', () => {
+  // A lead who picked "NSW, VIC, ACT, TAS" might be in any of those states, so
+  // each of those filters shows them — the row carries the group label, which
+  // is how staff see that the match is uncertain.
+  const grouped = makeLead({
+    id: 'g',
+    state: null,
+    metaStateRaw: 'NSW, VIC, ACT, TAS',
+    metaStateOptions: ['NSW', 'VIC', 'ACT', 'TAS'],
+  })
+  // Kept as given because a token did not resolve, so it names no state.
+  const unresolved = makeLead({
+    id: 'u',
+    state: null,
+    metaStateRaw: 'nsw,_auckland',
+    metaStateOptions: null,
+  })
+  const known = makeLead({ id: 'k', state: 'NSW' })
+
+  it.each(['NSW', 'VIC', 'ACT', 'TAS'] as const)('appears under %s, one of its states', (state) => {
+    expect(filterLeads([grouped], withFilters({ state }), NOW).map((lead) => lead.id)).toEqual(['g'])
+  })
+
+  it.each(['QLD', 'WA', 'SA', 'NT'] as const)('does not appear under %s', (state) => {
+    expect(filterLeads([grouped], withFilters({ state }), NOW)).toEqual([])
+  })
+
+  it('sits alongside leads known to be in the state', () => {
+    const result = filterLeads([known, grouped], withFilters({ state: 'NSW' }), NOW)
+    expect(result.map((lead) => lead.id).sort()).toEqual(['g', 'k'])
+  })
+
+  it('never matches an unresolved answer, even one that mentions the state', () => {
+    // "nsw,_auckland" did not resolve as a whole, so it claims nothing.
+    expect(filterLeads([unresolved], withFilters({ state: 'NSW' }), NOW)).toEqual([])
+  })
+
+  it('keeps both on the board when no state filter is applied', () => {
+    expect(filterLeads([grouped, unresolved], EMPTY_FILTERS, NOW)).toHaveLength(2)
+  })
+})
+
+describe('mightBeInState', () => {
+  it('matches the state itself, or a grouping containing it', () => {
+    expect(mightBeInState(makeLead({ state: 'NSW' }), 'NSW')).toBe(true)
+    expect(
+      mightBeInState(makeLead({ state: null, metaStateOptions: ['NT', 'SA'] }), 'SA'),
+    ).toBe(true)
+    expect(
+      mightBeInState(makeLead({ state: null, metaStateOptions: ['NT', 'SA'] }), 'WA'),
+    ).toBe(false)
+    expect(mightBeInState(makeLead({ state: null }), 'NSW')).toBe(false)
   })
 })

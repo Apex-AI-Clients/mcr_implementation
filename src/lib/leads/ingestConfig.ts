@@ -177,6 +177,15 @@ registerDebtLabel(
   '$500,000 or more',
 )
 
+// --- ATO Debt Aus-update-new, form 1220173909314387 ----------------------
+// A revived older form with its own third set of brackets. These are its
+// option keys verbatim. Its bottom bracket, '$100k_-_$250k', normalises to the
+// same key as MCR26_MAIN's '$100k-$250k' and is already registered above, so it
+// is not repeated here. The other two start a dollar past the round number
+// ($251k, $501k) and so are distinct from the $250k/$500k brackets above.
+registerDebtLabel({ min: 251_000, max: 500_000 }, '$251k_-_$500k')
+registerDebtLabel({ min: 501_000, max: null }, '$501k_+')
+
 /**
  * Below this, a figure typed into a free-text debt field is not a dollar
  * amount — it is a bracket number, a typo, or a stray keystroke. Treating "3"
@@ -191,6 +200,15 @@ export const MIN_PLAUSIBLE_DEBT = 1_000
  * explicitly or it ends up in the State column.
  */
 export const UNSELECTED_STATE_SENTINELS = new Set(['', 'state', 'select', 'select state'])
+
+/**
+ * Normalise a state answer for lookup. Meta sends the option key, so the
+ * single-state key 'qld' and a grouped key 'nsw,_vic,_act,_tas' both arrive with
+ * underscores standing in for the label's spaces.
+ */
+export function normaliseStateValue(raw: string): string {
+  return raw.toLowerCase().replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+}
 
 /** Free-text state to the AuState union. The website form has no NT option. */
 export const STATE_ALIASES: Record<string, AuState> = {
@@ -311,13 +329,20 @@ export const FIELD_MAPS: Record<'website' | 'google_form' | 'facebook', FieldMap
     phone: ['phone_number'],
     debt: [
       'what_is_the_amount_of_ato_debt_you_are_dealing_with?',
+      'how_much_is_your_ato_debt?', // ATO Debt Aus-update-new, 1220173909314387
       'debt_range',
       'how_much_debt',
       'what_is_your_approximate_debt',
     ],
-    state: ['which_state_are_you_from?', 'state', 'which_state_are_you_in'],
+    state: [
+      'which_state_are_you_from?',
+      'what_state_are_you_located_in?', // ATO Debt Aus-update-new, 1220173909314387
+      'state',
+      'which_state_are_you_in',
+    ],
     entityType: [
       'do_you_run_a_company_(pty_ltd)_or_trust?',
+      'what_structure_is_your_business?', // ATO Debt Aus-update-new, 1220173909314387
       'business_type',
       'company_or_trust',
     ],
@@ -331,6 +356,18 @@ export const FIELD_MAPS: Record<'website' | 'google_form' | 'facebook', FieldMap
     callTime: ['preferred_call_time', 'best_time_to_call'],
   },
 }
+
+/**
+ * Facebook questions we deliberately do not store. They are qualifying
+ * questions on the ad forms, not lead data, and listing them here stops them
+ * raising unmapped-key warnings — noise that would hide a real mapping gap.
+ * A key here must never also appear in a field map.
+ */
+export const FACEBOOK_IGNORED_QUESTION_KEYS = new Set([
+  // ATO Debt Aus-update-new, 1220173909314387
+  'are_you_looking_to_reduce_your_ato_debt?',
+  'have_you_had_any_professional_financial_advice_regarding_your_debt_previously?',
+])
 
 /** The honeypot input name. Any value in it means a bot filled the form. */
 export const HONEYPOT_FIELD = 'website_url'

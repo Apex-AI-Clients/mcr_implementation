@@ -5,6 +5,7 @@ import {
   DEBT_FIELD_FORMAT,
   DEBT_LABELS,
   ENTITY_TYPE_ALIASES,
+  FACEBOOK_IGNORED_QUESTION_KEYS,
   FIELD_MAPS,
   HONEYPOT_FIELD,
   MIN_PLAUSIBLE_DEBT,
@@ -13,6 +14,7 @@ import {
   WEBSITE_DEBT_CODES,
   normaliseDebtLabel,
   normaliseEntityValue,
+  normaliseStateValue,
   type DebtFieldFormat,
   type DebtRange,
   type FieldMap,
@@ -26,6 +28,11 @@ import {
  * whose default was left alone, becomes null. A field answered with something
  * we cannot map is a rejection, so the payload lands in lead_intake_log and
  * somebody can look at it, rather than junk being stored.
+ *
+ * State is the exception. An unreadable state answer is kept verbatim in
+ * metaStateRaw and the lead still lands, because forms group and word their
+ * state options freely and losing a real enquiry over that would be worse
+ * than a blank State column. See `mapState`.
  */
 
 /** The subset of a Lead that arrives from outside. */
@@ -36,6 +43,14 @@ export interface IngestedLead {
   debtMin: number | null
   debtMax: number | null
   state: AuState | null
+  /**
+   * Only set when state is null. For a resolved grouping, its display labels
+   * ("NSW, VIC, ACT, TAS"); for an answer that did not resolve, the value
+   * exactly as it arrived.
+   */
+  metaStateRaw: string | null
+  /** The states a grouped answer resolved to. Null unless there were several. */
+  metaStateOptions: AuState[] | null
   entityType: EntityType | null
   message: string | null
   preferredCallTime: string | null
@@ -77,20 +92,64 @@ function pick(payload: Payload, keys: string[]): string | null {
   return null
 }
 
+export type StateMapping =
+  /** Not answered, or left on the select's default. */
+  | { kind: 'absent' }
+  /** Exactly one state — including a "group" whose tokens all name it. */
+  | { kind: 'state'; state: AuState }
+  /**
+   * Several states: the lead is in one of them and the answer does not say
+   * which, so none of them is stored as the state.
+   */
+  | { kind: 'group'; states: AuState[]; label: string }
+  /** At least one token did not resolve. Nothing is inferred from the rest. */
+  | { kind: 'unresolved'; raw: string }
+
 /**
+ * Separators a form might group states with. Matched on the normalised value,
+ * so Meta's underscored keys ("nsw,_vic") have already become spaces.
+ */
+const STATE_SEPARATORS = /[,/|]|\band\b/
+
+/**
+ * A state answer, split into tokens and each resolved through STATE_ALIASES.
+ *
+ * Nothing here knows about any particular form's groupings: "NSW, VIC, ACT,
+ * TAS", "qld/wa", "NT | SA" and "Victoria and Tasmania" all go through the same
+ * path, in whatever order and size a form author chose.
+ *
+ * All or nothing. If any token fails, the whole answer is `unresolved` — a
+ * partial group would be claiming the lead picked a set of states they did
+ * not pick.
+ *
  * The form's select defaults to value="state", so an unselected state arrives
  * as the literal word. That is "not answered", not a value.
- *
- *   null    -> not answered
- *   AuState -> mapped
- *   'bad'   -> answered with something unmappable; the caller rejects
  */
-function mapState(raw: string | null): AuState | null | 'bad' {
-  if (raw === null) return null
-  const key = raw.trim().toLowerCase()
-  if (UNSELECTED_STATE_SENTINELS.has(key)) return null
-  return STATE_ALIASES[key] ?? 'bad'
+export function mapState(raw: string | null): StateMapping {
+  if (raw === null) return { kind: 'absent' }
+  const key = normaliseStateValue(raw)
+  if (UNSELECTED_STATE_SENTINELS.has(key)) return { kind: 'absent' }
+
+  const tokens = key
+    .split(STATE_SEPARATORS)
+    .map((token) => token.trim())
+    .filter(Boolean)
+  if (tokens.length === 0) return { kind: 'unresolved', raw: raw.trim() }
+
+  const states: AuState[] = []
+  for (const token of tokens) {
+    const state = STATE_ALIASES[token]
+    if (!state) return { kind: 'unresolved', raw: raw.trim() }
+    if (!states.includes(state)) states.push(state)
+  }
+
+  // A group of one is just a state.
+  if (states.length === 1) return { kind: 'state', state: states[0] }
+  return { kind: 'group', states, label: states.join(', ') }
 }
+
+/** Long enough to show any real option key, short enough not to flood a log. */
+const MAX_LOGGED_STATE_LENGTH = 80
 
 /** Unmapped or absent debt is null. Never a guess. */
 function mapDebt(raw: string | null): DebtRange {
@@ -202,16 +261,33 @@ export function isHoneypotTripped(payload: Payload): boolean {
 /**
  * Facebook delivers answers as `field_data: [{ name, values: [...] }]`.
  * Flattened to a plain object so one mapper serves every source.
+ *
+ * `values` is an array even for a single-select question. Should one ever
+ * carry more than one entry, taking the first would silently drop the rest, so
+ * they are joined with ", " instead — for a state question that reads as a
+ * grouping and lands in metaStateRaw. It is logged at warn level, key and count
+ * only, never the answers.
  */
-export function flattenFacebookFields(fieldData: unknown): Payload {
+export function flattenFacebookFields(fieldData: unknown, formId?: string | null): Payload {
   if (!Array.isArray(fieldData)) return {}
   const out: Payload = {}
   for (const entry of fieldData) {
     if (!entry || typeof entry !== 'object') continue
     const { name, values } = entry as { name?: unknown; values?: unknown }
     if (typeof name !== 'string') continue
-    const first = Array.isArray(values) ? values[0] : values
-    if (typeof first === 'string' || typeof first === 'number') out[name] = first
+    const answers = (Array.isArray(values) ? values : [values]).filter(
+      (value): value is string | number =>
+        (typeof value === 'string' && value.trim() !== '') || typeof value === 'number',
+    )
+    if (answers.length === 0) continue
+    if (answers.length > 1) {
+      console.warn(
+        `[webhooks/leads] facebook field key=${name} had ${answers.length} values, joined form_id=${formId ?? 'unknown'}`,
+      )
+      out[name] = answers.map(String).join(', ')
+    } else {
+      out[name] = answers[0]
+    }
   }
   return out
 }
@@ -245,7 +321,13 @@ function warnUnmappedFacebookFields(
 ): void {
   const mapped = new Set(Object.values(fieldMap).flat())
   for (const key of Object.keys(payload)) {
-    if (mapped.has(key) || FACEBOOK_NON_QUESTION_KEYS.has(key)) continue
+    if (
+      mapped.has(key) ||
+      FACEBOOK_NON_QUESTION_KEYS.has(key) ||
+      FACEBOOK_IGNORED_QUESTION_KEYS.has(key)
+    ) {
+      continue
+    }
     console.warn(`[webhooks/leads] unmapped facebook field key=${key} form_id=${formId}`)
   }
 }
@@ -304,12 +386,16 @@ export function mapLead(
   // real enquiry, and dropping it would lose a lead to a validation rule.
   if (!phone) return { ok: false, error: 'Missing phone' }
 
-  const state = mapState(pick(payload, fieldMap.state))
-  if (state === 'bad') {
-    return {
-      ok: false,
-      error: `Unrecognised state: ${pick(payload, fieldMap.state)}`,
-    }
+  const mappedState = mapState(pick(payload, fieldMap.state))
+  if (mappedState.kind === 'unresolved') {
+    // The value is logged, unlike other answers: a state option is the form's
+    // wording rather than anything about the lead, and without it there is no
+    // way to see which alias or separator is missing.
+    console.warn(
+      `[webhooks/leads] unresolved state value=${JSON.stringify(
+        mappedState.raw.slice(0, MAX_LOGGED_STATE_LENGTH),
+      )} source=${source} form_id=${options.formId ?? 'unknown'}`,
+    )
   }
 
   const rawDebt = pick(payload, fieldMap.debt)
@@ -340,6 +426,16 @@ export function mapLead(
     debt = mapDebt(rawDebt)
   }
 
+  // A grouping is never resolved to one of its states.
+  const state = mappedState.kind === 'state' ? mappedState.state : null
+  const metaStateOptions = mappedState.kind === 'group' ? mappedState.states : null
+  const metaStateRaw =
+    mappedState.kind === 'group'
+      ? mappedState.label
+      : mappedState.kind === 'unresolved'
+        ? mappedState.raw
+        : null
+
   const callTime = pick(payload, fieldMap.callTime)
 
   return {
@@ -351,6 +447,8 @@ export function mapLead(
       debtMin: debt.min,
       debtMax: debt.max,
       state,
+      metaStateRaw,
+      metaStateOptions,
       entityType: mapEntityType(pick(payload, fieldMap.entityType)),
       message: message ?? null,
       preferredCallTime: callTime ?? null,

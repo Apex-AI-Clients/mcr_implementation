@@ -48,4 +48,4 @@ ALTER TABLE public.leads
   ADD COLUMN IF NOT EXISTS meta_campaign_name text,
   ADD COLUMN IF NOT EXISTS meta_ad_name text,
   -- Meta returns this as `act_<digits>`; stored exactly as returned.
-  ADD COLUMN IF NOT EXISTS meta_account_id text;
+  ADD COLUMN IF NOT EXISTS meta_account_id te

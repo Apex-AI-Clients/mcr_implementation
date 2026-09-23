@@ -497,6 +497,8 @@ export type Database = {
           meta_campaign_name: string | null
           meta_form_id: string | null
           meta_page_id: string | null
+          meta_state_options: string[] | null
+          meta_state_raw: string | null
           name: string
           next_step: string | null
           phone: string
@@ -527,6 +529,8 @@ export type Database = {
           meta_campaign_name?: string | null
           meta_form_id?: string | null
           meta_page_id?: string | null
+          meta_state_options?: string[] | null
+          meta_state_raw?: string | null
           name: string
           next_step?: string | null
           phone: string
@@ -557,6 +561,8 @@ export type Database = {
           meta_campaign_name?: string | null
           meta_form_id?: string | null
           meta_page_id?: string | null
+          meta_state_options?: string[] | null
+          meta_state_raw?: string | null
           name?: string
           next_step?: string | null
           phone?: string

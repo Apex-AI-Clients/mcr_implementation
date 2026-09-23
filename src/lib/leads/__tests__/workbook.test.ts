@@ -43,6 +43,8 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     metaCampaignName: null,
     metaAdName: null,
     metaAccountId: null,
+    metaStateRaw: null,
+    metaStateOptions: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-30T00:00:00.000Z',
     ...overrides,

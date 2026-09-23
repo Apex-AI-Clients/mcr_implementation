@@ -45,6 +45,8 @@ function staleLead(overrides: Partial<Lead> = {}): Lead {
     metaCampaignName: null,
     metaAdName: null,
     metaAccountId: null,
+    metaStateRaw: null,
+    metaStateOptions: null,
     createdAt: at(40),
     updatedAt: at(40),
     ...overrides,

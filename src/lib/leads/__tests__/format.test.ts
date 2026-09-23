@@ -19,6 +19,7 @@ import {
   countLeadNotes,
   partnerForCampaign,
   formatLeadSource,
+  describeUncertainState,
 } from '../format'
 import { DEBT_PRESETS, PARTNERS } from '../constants'
 import type { Lead, LeadActivity } from '@/types/leads'
@@ -52,6 +53,8 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     metaCampaignName: null,
     metaAdName: null,
     metaAccountId: null,
+    metaStateRaw: null,
+    metaStateOptions: null,
     createdAt: '2026-08-26T00:00:00.000Z',
     updatedAt: '2026-08-26T00:00:00.000Z',
     ...overrides,
@@ -711,5 +714,32 @@ describe('leadsToCsv with notes', () => {
     // The header must not change shape depending on what the caller had.
     const row = leadsToCsv([makeLead()]).split('\r\n')[1]
     expect(row.endsWith(',0,')).toBe(true)
+  })
+})
+
+describe('describeUncertainState', () => {
+  it('is null for a known state, or when nothing was said', () => {
+    expect(describeUncertainState(makeLead({ state: 'NSW' }))).toBeNull()
+    expect(describeUncertainState(makeLead({ state: null, metaStateRaw: null }))).toBeNull()
+  })
+
+  it('reads a resolved grouping as "one of" its states', () => {
+    const lead = makeLead({
+      state: null,
+      metaStateRaw: 'NSW, VIC, ACT, TAS',
+      metaStateOptions: ['NSW', 'VIC', 'ACT', 'TAS'],
+    })
+    expect(describeUncertainState(lead)).toEqual({
+      label: 'NSW, VIC, ACT, TAS',
+      description: 'One of NSW, VIC, ACT, TAS',
+    })
+  })
+
+  it('shows an unresolved answer as given, without claiming it is a set of states', () => {
+    const lead = makeLead({ state: null, metaStateRaw: 'nsw,_auckland', metaStateOptions: null })
+    expect(describeUncertainState(lead)).toEqual({
+      label: 'nsw,_auckland',
+      description: 'State as given: nsw,_auckland',
+    })
   })
 })

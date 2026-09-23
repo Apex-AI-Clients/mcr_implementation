@@ -239,6 +239,9 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
       // though nothing reads them back yet.
       const adId = str(value.ad_id)
       const adgroupId = str(value.adgroup_id)
+      // The webhook names the form too. The Graph response is preferred, but
+      // this covers a response that comes back without it.
+      const webhookFormId = str(value.form_id)
 
       if (!leadgenId) {
         await logIntake({
@@ -273,8 +276,9 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
 
       // formId also names the form in an unmapped-question-key warning — there
       // are 19 of them on the Page.
-      const mapped = mapLead(flattenFacebookFields(lead.fieldData), source, leadgenId, {
-        formId: lead.formId,
+      const formId = lead.formId ?? webhookFormId
+      const mapped = mapLead(flattenFacebookFields(lead.fieldData, formId), source, leadgenId, {
+        formId,
         adId,
         adgroupId,
         pageId,
@@ -286,7 +290,7 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
           externalId: leadgenId,
           outcome: 'rejected',
           error: mapped.error,
-          rawBody: { field_data: lead.fieldData },
+          rawBody: { form_id: formId, field_data: lead.fieldData },
         })
         outcomes.push('rejected')
         continue
@@ -313,6 +317,10 @@ async function handleFacebook(body: Record<string, unknown>): Promise<NextRespon
  * in the response that says which of the Page's 19 forms a lead came from, an
  * unmapped question key is not actionable without it, and it is stored on the
  * lead because a second fetch cannot recover it later.
+ *
+ * `fields` has to be named explicitly: without it the Lead node returns only
+ * its defaults (id, created_time, field_data), form_id is silently absent, and
+ * every warning read form_id=unknown.
  */
 async function fetchLead(
   leadgenId: string,
@@ -325,7 +333,7 @@ async function fetchLead(
   }
 
   try {
-    const url = `https://graph.facebook.com/v21.0/${encodeURIComponent(leadgenId)}?access_token=${encodeURIComponent(token)}`
+    const url = `https://graph.facebook.com/v21.0/${encodeURIComponent(leadgenId)}?fields=id,created_time,form_id,field_data&access_token=${encodeURIComponent(token)}`
     const response = await fetch(url, { cache: 'no-store' })
     if (!response.ok) {
       console.error(`[webhooks/leads] Graph API returned ${response.status} for ${leadgenId}`)

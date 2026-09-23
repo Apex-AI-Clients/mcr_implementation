@@ -8,6 +8,7 @@ import {
   isHoneypotTripped,
   parseLooseDebt,
   mapDebtLabel,
+  mapState,
   RAW_DEBT_NOTE_PREFIX,
 } from '../ingest'
 import { formatDebtRange } from '../format'
@@ -16,6 +17,7 @@ import {
   DEBT_FIELD_FORMAT,
   DEBT_LABELS,
   ENTITY_TYPE_ALIASES,
+  FACEBOOK_IGNORED_QUESTION_KEYS,
   FIELD_MAPS,
   MIN_PLAUSIBLE_DEBT,
   normaliseDebtLabel,
@@ -57,6 +59,8 @@ describe('mapLead — website form', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaStateRaw: null,
+      metaStateOptions: null,
     })
   })
 
@@ -135,13 +139,26 @@ describe('mapLead — website form', () => {
   })
 })
 
-describe('mapLead — rejections', () => {
-  it('rejects a state answered with something unmappable rather than storing junk', () => {
-    const result = mapLead({ ...fixture('website_lead'), state: 'Auckland' }, 'website', 'x')
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.error).toMatch(/Unrecognised state/)
+describe('mapLead — an unrecognised state', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
+
+  it('keeps the lead, with the answer as given and no state', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = mapLead({ ...fixture('website_lead'), state: 'Auckland' }, 'website', 'x')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateRaw).toBe('Auckland')
+    expect(result.lead.metaStateOptions).toBeNull()
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+      '[webhooks/leads] unresolved state value="Auckland" source=website form_id=unknown',
+    ])
+  })
+})
+
+describe('mapLead — rejections', () => {
 
   it.each([
     ['name', { name: '' }, /Missing name/],
@@ -562,6 +579,8 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaStateRaw: null,
+      metaStateOptions: null,
     })
   })
 
@@ -809,6 +828,8 @@ describe('mapLead — MCR26_MAIN delivering option keys', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaStateRaw: null,
+      metaStateOptions: null,
     })
   })
 
@@ -1020,5 +1041,290 @@ describe('mapLead — Meta ad attribution', () => {
     expect(result.lead.metaFormId).toBeNull()
     expect(result.lead.metaPageId).toBeNull()
     warn.mockRestore()
+  })
+})
+
+// ============================================================
+// facebook — ATO Debt Aus-update-new, form 1220173909314387
+// ============================================================
+
+describe('mapLead — the ATO Debt Aus-update-new Facebook form', () => {
+  // A revived older form with its own question wording, a third set of debt
+  // option keys, and grouped state options. Keys are transcribed off the live
+  // form; the lead's details are invented.
+  const FORM_ID = '1220173909314387'
+  const STATE_KEY = 'what_state_are_you_located_in?'
+  const DEBT_KEY = 'how_much_is_your_ato_debt?'
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function map(patch: Record<string, unknown> = {}) {
+    const fields = {
+      ...flattenFacebookFields(fixture('facebook_ato_debt_aus_update').field_data),
+      ...patch,
+    }
+    return mapLead(fields, 'facebook', 'fb-ato-update', { formId: FORM_ID })
+  }
+
+  it('maps a complete submission, grouped state and all', () => {
+    const result = map()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.lead).toEqual({
+      name: 'Declan Voss',
+      email: 'declan@vossearthworks.com.au',
+      phone: '0423556108',
+      debtMin: 100_000,
+      debtMax: 250_000,
+      // The lead is in one of four states, and which one is unknown.
+      state: null,
+      entityType: 'company',
+      // No free-text question on this form, and the grouping has its own column.
+      message: null,
+      preferredCallTime: null,
+      source: 'facebook',
+      externalId: 'fb-ato-update',
+      metaFormId: FORM_ID,
+      metaAdId: null,
+      metaAdgroupId: null,
+      metaPageId: null,
+      metaCampaignId: null,
+      metaCampaignName: null,
+      metaAdName: null,
+      metaAccountId: null,
+      metaStateRaw: 'NSW, VIC, ACT, TAS',
+      metaStateOptions: ['NSW', 'VIC', 'ACT', 'TAS'],
+    })
+  })
+
+  it.each<[string, number, number | null]>([
+    ['$100k_-_$250k', 100_000, 250_000],
+    ['$251k_-_$500k', 251_000, 500_000],
+    ['$501k_+', 501_000, null],
+  ])('reads the debt option key %s', (key, min, max) => {
+    const result = map({ [DEBT_KEY]: key })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.debtMin).toBe(min)
+    expect(result.lead.debtMax).toBe(max)
+    // Matched, so no raw debt note — and nothing else writes to the message.
+    expect(result.lead.message).toBeNull()
+  })
+
+  it('resolves "$100k_-_$250k" through the normaliser, not a duplicate entry', () => {
+    // The same normalised key as MCR26_MAIN's "$100k-$250k": one entry serves both.
+    expect(normaliseDebtLabel('$100k_-_$250k')).toBe(normaliseDebtLabel('$100k-$250k'))
+    expect(normaliseDebtLabel('$251k_-_$500k')).toBe('251k-500k')
+    expect(normaliseDebtLabel('$501k_+')).toBe('501k+')
+  })
+
+  it('keeps "$501k_+" open-ended', () => {
+    const result = map({ [DEBT_KEY]: '$501k_+' })
+    expect(result.ok && formatDebtRange(result.lead.debtMin, result.lead.debtMax)).toBe('$501k+')
+  })
+
+  it("maps the business-structure key 'pty_ltd' to company", () => {
+    expect(map()).toMatchObject({ lead: { entityType: 'company' } })
+  })
+
+  it.each<[string, string[]]>([
+    ['nsw,_vic,_act,_tas', ['NSW', 'VIC', 'ACT', 'TAS']], // the option key Meta sends
+    ['NSW, VIC, ACT, TAS', ['NSW', 'VIC', 'ACT', 'TAS']], // the display label
+    ['nt,_sa', ['NT', 'SA']],
+    ['NT/SA', ['NT', 'SA']], // slash-separated, as another form might group
+  ])('never picks one state out of the grouping %s', (value, options) => {
+    const result = map({ [STATE_KEY]: value })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Labelling a Tasmanian lead NSW would send staff after the wrong state.
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateOptions).toEqual(options)
+    expect(result.lead.metaStateRaw).toBe(options.join(', '))
+    // The grouping lives in its own columns, not in the lead's words.
+    expect(result.lead.message).toBeNull()
+  })
+
+  it.each<[string, string]>([
+    ['nsw', 'NSW'],
+    ['qld', 'QLD'],
+    ['wa', 'WA'],
+  ])('maps the single-state key %s normally, with no raw value', (value, state) => {
+    const result = map({ [STATE_KEY]: value })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBe(state)
+    expect(result.lead.metaStateRaw).toBeNull()
+    expect(result.lead.metaStateOptions).toBeNull()
+  })
+
+  it('never partially resolves a grouping with a member it cannot read', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = map({ [STATE_KEY]: 'nsw,_auckland' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Not NSW, and not a one-state "group" of NSW either.
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateOptions).toBeNull()
+    expect(result.lead.metaStateRaw).toBe('nsw,_auckland')
+  })
+
+  it('raises no unmapped-key warnings for this form', () => {
+    // The two qualifying questions are ignored on purpose; the rest are mapped.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    map()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('stores neither qualifying question', () => {
+    for (const key of FACEBOOK_IGNORED_QUESTION_KEYS) {
+      for (const keys of Object.values(FIELD_MAPS.facebook)) expect(keys).not.toContain(key)
+    }
+  })
+
+  it('still warns about a genuinely new key on this form, naming the form', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    map({ 'how_many_employees_do_you_have?': '12' })
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+      `[webhooks/leads] unmapped facebook field key=how_many_employees_do_you_have? form_id=${FORM_ID}`,
+    ])
+  })
+})
+
+describe('mapState', () => {
+  it.each([null, 'state', 'State', 'select state'])('treats %s as not answered', (raw) => {
+    expect(mapState(raw)).toEqual({ kind: 'absent' })
+  })
+
+  it.each<[string, string]>([
+    ['nsw', 'NSW'],
+    ['New South Wales', 'NSW'],
+    ['new_south_wales', 'NSW'],
+  ])('resolves the single value %s', (raw, state) => {
+    expect(mapState(raw)).toEqual({ kind: 'state', state })
+  })
+
+  it.each<[string, string[]]>([
+    // Every separator it understands.
+    ['nsw,_vic', ['NSW', 'VIC']],
+    ['qld/wa', ['QLD', 'WA']],
+    ['NT | SA', ['NT', 'SA']],
+    ['Victoria and Tasmania', ['VIC', 'TAS']],
+    ['nsw, vic and act', ['NSW', 'VIC', 'ACT']],
+    // Order is the form's, not ours.
+    ['tas,_act,_vic,_nsw', ['TAS', 'ACT', 'VIC', 'NSW']],
+    // Five states, spelled out, mixed separators — no form does this; nothing
+    // needs to change when one does.
+    ['Queensland / WA, south australia | NT and tas', ['QLD', 'WA', 'SA', 'NT', 'TAS']],
+  ])('resolves the grouping %s', (raw, states) => {
+    expect(mapState(raw)).toEqual({ kind: 'group', states, label: states.join(', ') })
+  })
+
+  it('does not split inside a state name that happens to contain "and"', () => {
+    // "Queensland" contains the letters, not the word.
+    expect(mapState('queensland')).toEqual({ kind: 'state', state: 'QLD' })
+  })
+
+  it.each([
+    ['NSW, nsw', 'NSW'],
+    ['vic / Victoria', 'VIC'],
+  ])('treats a group of one, %s, as just a state', (raw, state) => {
+    expect(mapState(raw)).toEqual({ kind: 'state', state })
+  })
+
+  it.each(['Auckland', 'nsw,_auckland', 'nsw,_vic,_act,_tas,_nz'])(
+    'leaves %s unresolved, as given',
+    (raw) => {
+      expect(mapState(raw)).toEqual({ kind: 'unresolved', raw })
+    },
+  )
+
+  it('ignores an empty token from a trailing separator rather than failing on it', () => {
+    expect(mapState('qld/')).toEqual({ kind: 'state', state: 'QLD' })
+  })
+
+  it('leaves a value of separators alone unresolved', () => {
+    expect(mapState(', /')).toEqual({ kind: 'unresolved', raw: ', /' })
+  })
+})
+
+describe('grouped state values, end to end from field_data', () => {
+  // Each fixture is the ATO Debt Aus-update-new payload with a different answer
+  // to its state question, flattened exactly as the webhook route does.
+  const FORM_ID = '1220173909314387'
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function fromFixture(name: string) {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const fields = flattenFacebookFields(fixture(name).field_data, FORM_ID)
+    const result = mapLead(fields, 'facebook', name, { formId: FORM_ID })
+    return { result, warnings: warn.mock.calls.map((call) => String(call[0])) }
+  }
+
+  it.each<[string, string | null, string | null, string[] | null]>([
+    ['facebook_ato_state_nsw', 'NSW', null, null],
+    ['facebook_ato_state_nsw_vic_act_tas', null, 'NSW, VIC, ACT, TAS', ['NSW', 'VIC', 'ACT', 'TAS']],
+    ['facebook_ato_state_nt_sa', null, 'NT, SA', ['NT', 'SA']],
+    ['facebook_ato_state_qld_wa', null, 'QLD, WA', ['QLD', 'WA']],
+    ['facebook_ato_state_empty', null, null, null],
+  ])('%s -> state %s, raw %s', (name, state, raw, options) => {
+    const { result, warnings } = fromFixture(name)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBe(state)
+    expect(result.lead.metaStateRaw).toBe(raw)
+    expect(result.lead.metaStateOptions).toEqual(options)
+    expect(warnings).toEqual([])
+  })
+
+  it('keeps an unrecognised token as given, resolves nothing, and says what arrived', () => {
+    const { result, warnings } = fromFixture('facebook_ato_state_unrecognised')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateOptions).toBeNull()
+    expect(result.lead.metaStateRaw).toBe('nsw,_auckland')
+    expect(warnings).toEqual([
+      `[webhooks/leads] unresolved state value="nsw,_auckland" source=facebook form_id=${FORM_ID}`,
+    ])
+  })
+
+  it('caps the logged value, so a free-text answer cannot flood the log', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const long = 'x'.repeat(500)
+    mapLead({ ...fixture('website_lead'), state: long }, 'website', 'long')
+    const line = String(warn.mock.calls[0][0])
+    expect(line).toContain(`"${'x'.repeat(80)}"`)
+    expect(line).not.toContain('x'.repeat(81))
+  })
+
+  it('joins a values array with more than one entry instead of taking the first', () => {
+    const { result, warnings } = fromFixture('facebook_ato_state_two_values')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Neither entry wins: taking values[0] would have stored QLD.
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateRaw).toBe('QLD, WA')
+    expect(result.lead.metaStateOptions).toEqual(['QLD', 'WA'])
+    expect(warnings).toEqual([
+      `[webhooks/leads] facebook field key=what_state_are_you_located_in? had 2 values, joined form_id=${FORM_ID}`,
+    ])
+  })
+
+  it('names the key and count in that warning, never the answers', () => {
+    const { warnings } = fromFixture('facebook_ato_state_two_values')
+    for (const line of warnings) {
+      expect(line).not.toMatch(/\bqld\b|\bwa\b/i)
+    }
+  })
+
+  it('drops blank entries before deciding a field has several values', () => {
+    const fields = flattenFacebookFields([{ name: 'state', values: ['', 'vic', '  '] }])
+    expect(fields).toEqual({ state: 'vic' })
   })
 })

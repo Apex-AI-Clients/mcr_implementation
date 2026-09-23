@@ -64,6 +64,16 @@ function matchesSearch(lead: Lead, rawTerm: string): boolean {
   return lead.phone.toLowerCase().includes(term)
 }
 
+/**
+ * A lead matches a state filter when it is in that state, or when its form
+ * gave a grouping that includes it. "NSW, VIC, ACT, TAS" might be NSW, so it
+ * appears under NSW — and the row shows the group label, so the match reads
+ * as uncertain. Mirrored in SQL by withFilters() in queries.ts.
+ */
+export function mightBeInState(lead: Lead, state: AuState): boolean {
+  return lead.state === state || (lead.metaStateOptions?.includes(state) ?? false)
+}
+
 /** Filters are additive — every active one must pass. Newest first. */
 export function filterLeads(
   leads: Lead[],
@@ -78,7 +88,7 @@ export function filterLeads(
     .filter((lead) => {
       if (!matchesSearch(lead, filters.search)) return false
       if (filters.stage !== 'all' && lead.stage !== filters.stage) return false
-      if (filters.state !== 'all' && lead.state !== filters.state) return false
+      if (filters.state !== 'all' && !mightBeInState(lead, filters.state)) return false
       if (filters.source !== 'all' && lead.source !== filters.source) return false
       if (filters.debtFloor !== null && !overlapsFloor(lead, filters.debtFloor)) return false
       if (cutoff !== null && new Date(lead.createdAt).getTime() < cutoff) return false
