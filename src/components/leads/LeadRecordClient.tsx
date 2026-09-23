@@ -120,13 +120,11 @@ export function LeadRecordClient({
                 return { debtMin: min, debtMax: max }
               }}
             />
-            {uncertainState ? (
-              // A grouping the form did not narrow down, or an answer that did
-              // not resolve — muted, so it never reads as a known state.
-              <p className="text-xs text-foreground/30">{uncertainState.description}</p>
-            ) : (
-              <p className="text-xs text-foreground/40">{lead.state ?? 'State not given'}</p>
-            )}
+            {/* A grouping reads "One of NSW, VIC, ACT, TAS"; an answer that did
+                not resolve reads "State as given: …". Same style as a state. */}
+            <p className="text-xs text-foreground/40">
+              {uncertainState ? uncertainState.description : (lead.state ?? 'State not given')}
+            </p>
           </div>
 
           <div className="rounded-xl border border-border bg-card p-5">

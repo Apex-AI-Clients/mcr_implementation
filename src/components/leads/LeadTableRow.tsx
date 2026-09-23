@@ -128,11 +128,8 @@ export function LeadTableRow({
       <td className="px-3 py-3.5 text-foreground/50">
         {lead.state ??
           (uncertainState ? (
-            // Muted so a grouping reads as "one of these", not as a resolved
-            // state — it can appear under several state filters at once.
-            <span className="text-foreground/30" title={uncertainState.description}>
-              {uncertainState.label}
-            </span>
+            // Same colour as a resolved state; the tooltip says it is a grouping.
+            <span title={uncertainState.description}>{uncertainState.label}</span>
           ) : (
             <span className="text-foreground/25">&mdash;</span>
           ))}
@@ -256,11 +253,7 @@ export function LeadCard({
         {lead.state ? (
           <span>{lead.state}</span>
         ) : (
-          uncertainState && (
-            <span className="text-foreground/30" title={uncertainState.description}>
-              {uncertainState.label}
-            </span>
-          )
+          uncertainState && <span title={uncertainState.description}>{uncertainState.label}</span>
         )}
         <span aria-hidden="true">·</span>
         <span>{formatLeadSource(lead, 'short')}</span>
