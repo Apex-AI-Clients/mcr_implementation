@@ -5,7 +5,7 @@ import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
 import { DATE_RANGES } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
 import type { LeadFilterState } from '@/lib/leads/filter'
-import type { Lead, LeadActivity } from '@/types/leads'
+import type { ConvertedClientDetails, Lead, LeadActivity } from '@/types/leads'
 
 /**
  * Server-side reads for the CRM.
@@ -278,6 +278,52 @@ export async function getLeadById(id: string): Promise<Lead | null> {
     return null
   }
   return data ? toLead(data) : null
+}
+
+/**
+ * The client file a converted lead points at, with its company or trust
+ * details, or null when there is none (or it has since been deleted).
+ *
+ * Two reads rather than an embedded select: company_details is optional per
+ * client, and a missing row there must still return the client.
+ */
+export async function getConvertedClientDetails(
+  clientId: string,
+): Promise<ConvertedClientDetails | null> {
+  const supabase = getSupabaseServerClient()
+  const [clientRead, detailsRead] = await Promise.all([
+    supabase.from('clients').select('id, name, email, phone').eq('id', clientId).maybeSingle(),
+    supabase
+      .from('company_details')
+      .select('company_name, acn_number, abn_number, trust_name, phone_number, email_address')
+      .eq('client_id', clientId)
+      .maybeSingle(),
+  ])
+
+  if (clientRead.error) {
+    console.error('[getConvertedClientDetails] client', clientRead.error.message)
+    return null
+  }
+  if (!clientRead.data) return null
+  // The client is still worth showing without its company half.
+  if (detailsRead.error) {
+    console.error('[getConvertedClientDetails] company_details', detailsRead.error.message)
+  }
+
+  const client = clientRead.data
+  const details = detailsRead.data
+  return {
+    id: client.id,
+    name: client.name,
+    email: client.email,
+    phone: client.phone,
+    companyName: details?.company_name ?? null,
+    acnNumber: details?.acn_number ?? null,
+    abnNumber: details?.abn_number ?? null,
+    trustName: details?.trust_name ?? null,
+    companyPhone: details?.phone_number ?? null,
+    companyEmail: details?.email_address ?? null,
+  }
 }
 
 /** The timeline for one lead, newest first. */

@@ -1,5 +1,9 @@
 import { LeadRecordClient } from '@/components/leads/LeadRecordClient'
-import { getActivitiesForLead, getLeadById } from '@/lib/leads/queries'
+import {
+  getActivitiesForLead,
+  getConvertedClientDetails,
+  getLeadById,
+} from '@/lib/leads/queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +21,23 @@ interface Props {
  * A miss is passed through as null instead of calling notFound(). The store is
  * still consulted first on the client, which is what lets a lead created
  * moments ago open before its insert has come back.
+ *
+ * A converted lead also shows what its client file holds — the ABN, ACN and
+ * the rest collected at conversion and in intake — so that is read here too.
  */
 export default async function LeadRecordPage({ params }: Props) {
   const { id } = await params
   const [lead, activities] = await Promise.all([getLeadById(id), getActivitiesForLead(id)])
+  const convertedClient = lead?.convertedClientId
+    ? await getConvertedClientDetails(lead.convertedClientId)
+    : null
 
-  return <LeadRecordClient leadId={id} initialLead={lead} initialActivities={activities} />
+  return (
+    <LeadRecordClient
+      leadId={id}
+      initialLead={lead}
+      initialActivities={activities}
+      convertedClient={convertedClient}
+    />
+  )
 }

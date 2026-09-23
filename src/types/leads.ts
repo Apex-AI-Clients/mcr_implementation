@@ -112,3 +112,22 @@ export interface LeadActivity {
   author: string
   createdAt: string
 }
+
+/**
+ * What the client file a lead became holds about them, for the lead record.
+ * Read-only there — the client file is where these are edited. Every field
+ * but the id, name and email can be null: intake fills them in over time.
+ */
+export interface ConvertedClientDetails {
+  id: string
+  name: string
+  email: string
+  phone: string | null
+  companyName: string | null
+  acnNumber: string | null
+  abnNumber: string | null
+  trustName: string | null
+  /** The company or trust's own line — not the client's phone above. */
+  companyPhone: string | null
+  companyEmail: string | null
+}

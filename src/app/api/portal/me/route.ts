@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
     const { data: client, error } = await supabase
       .from('clients')
-      .select('id, name, email, status, ato_admin_confirmed, ato_admin_confirmed_at')
+      .select('id, name, email, phone, status, ato_admin_confirmed, ato_admin_confirmed_at')
       .eq('id', clientId)
       .single()
 
@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
       clientId: client.id,
       clientName: client.name,
       clientEmail: client.email,
+      clientPhone: client.phone,
       atoAdminConfirmed: client.ato_admin_confirmed,
       documents,
       accountantDetails,

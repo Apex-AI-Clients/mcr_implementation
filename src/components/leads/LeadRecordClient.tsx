@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
@@ -25,19 +25,22 @@ import {
   isValidAuMobile,
   isValidEmail,
 } from '@/lib/leads/format'
-import type { EntityType, Lead, LeadActivity } from '@/types/leads'
+import type { ConvertedClientDetails, EntityType, Lead, LeadActivity } from '@/types/leads'
 
 interface LeadRecordClientProps {
   leadId: string
   /** Read server-side. Null when no such lead exists in the database. */
   initialLead: Lead | null
   initialActivities: LeadActivity[]
+  /** The client file this lead became, read server-side. Null when not converted. */
+  convertedClient: ConvertedClientDetails | null
 }
 
 export function LeadRecordClient({
   leadId,
   initialLead,
   initialActivities,
+  convertedClient,
 }: LeadRecordClientProps) {
   const router = useRouter()
   const { getLead, activitiesFor, syncFromServer } = useLeads()
@@ -54,6 +57,19 @@ export function LeadRecordClient({
   // can see it. The server copy covers everything else, including the first
   // render, which happens before the sync effect runs.
   const lead = getLead(leadId) ?? initialLead
+
+  // Converting happens in a dialog on this page and only updates the store, so
+  // the client file's details were never read. Re-read the page once for each
+  // newly linked file — once, so a file that cannot be read cannot loop.
+  const linkedClientId = lead?.convertedClientId ?? null
+  const refreshedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!linkedClientId || linkedClientId === convertedClient?.id) return
+    if (refreshedFor.current === linkedClientId) return
+    refreshedFor.current = linkedClientId
+    router.refresh()
+  }, [linkedClientId, convertedClient?.id, router])
+
   if (!lead) {
     return (
       <div className="mx-auto max-w-6xl p-6">
@@ -210,6 +226,10 @@ export function LeadRecordClient({
             />
           </div>
 
+          {convertedClient && convertedClient.id === lead.convertedClientId && (
+            <ClientFileDetails client={convertedClient} />
+          )}
+
           <div className="rounded-xl border border-border bg-card p-5">
             <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
               Next step
@@ -248,6 +268,62 @@ export function LeadRecordClient({
           router.refresh()
         }}
       />
+    </div>
+  )
+}
+
+/**
+ * What the client file holds, read-only: the details typed at conversion and
+ * anything added in intake since. Only what is actually recorded is listed —
+ * an empty ACN on a trust is not worth a row. Edited on the client file, which
+ * the link opens.
+ */
+function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
+  const rows: { label: string; value: string | null; numeric?: boolean }[] = [
+    { label: 'Name', value: client.name },
+    { label: 'Email', value: client.email },
+    { label: 'Phone', value: client.phone ? formatPhone(client.phone) : null, numeric: true },
+    { label: 'Company name', value: client.companyName },
+    { label: 'Trust name', value: client.trustName },
+    { label: 'ABN', value: client.abnNumber, numeric: true },
+    { label: 'ACN', value: client.acnNumber, numeric: true },
+    {
+      label: 'Company phone',
+      value: client.companyPhone ? formatPhone(client.companyPhone) : null,
+      numeric: true,
+    },
+    { label: 'Company email', value: client.companyEmail },
+  ]
+  const recorded = rows.filter((row) => row.value && row.value.trim())
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
+          Client file
+        </p>
+        <Link
+          href={`/clients/${client.id}`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+        >
+          Open
+          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Link>
+      </div>
+      <dl className="space-y-2.5">
+        {recorded.map((row) => (
+          <div key={row.label}>
+            <dt className="text-xs text-foreground/40">{row.label}</dt>
+            <dd
+              className={`mt-0.5 break-words text-sm text-foreground/80 ${
+                row.numeric ? 'tabular-nums' : ''
+              }`}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }

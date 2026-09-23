@@ -30,6 +30,7 @@ export async function createClientFromLead(form: ConversionForm): Promise<Conver
       body: JSON.stringify({
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
         companyDetails: toCompanyDetails(form),
       }),
     })

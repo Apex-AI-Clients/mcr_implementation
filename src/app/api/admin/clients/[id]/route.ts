@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
+import { normaliseClientPhone } from '@/lib/clients/phone'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -55,6 +56,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const { id } = await params
     const body = await req.json()
+    // Stored in the same normalised shape the create route uses.
+    if (body && typeof body === 'object' && 'phone' in body) {
+      body.phone = normaliseClientPhone(body.phone)
+    }
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase

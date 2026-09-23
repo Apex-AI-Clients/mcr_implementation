@@ -20,6 +20,7 @@ interface Props {
   clientId: string | null
   initialName?: string
   initialEmail?: string
+  initialPhone?: string
 }
 
 type State =
@@ -30,6 +31,7 @@ type State =
       phase: 'ready'
       clientName: string
       clientEmail: string
+      clientPhone: string
       documents: DocumentRecord[]
       accountantDetails: AccountantDetails | null
       companyDetails: CompanyDetails | null
@@ -46,7 +48,12 @@ interface WizardStep extends StepDescriptor {
   kind: StepKind
 }
 
-export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: Props) {
+export function IntakeClient({
+  clientId,
+  initialName = '',
+  initialEmail = '',
+  initialPhone = '',
+}: Props) {
   const router = useRouter()
   const [state, setState] = useState<State>(clientId ? { phase: 'loading' } : { phase: 'new' })
   const [activeStepId, setActiveStepId] = useState<string>('details')
@@ -65,6 +72,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
         phase: 'ready',
         clientName: data.clientName,
         clientEmail: data.clientEmail,
+        clientPhone: data.clientPhone ?? '',
         documents: data.documents,
         accountantDetails: data.accountantDetails,
         companyDetails: data.companyDetails,
@@ -186,6 +194,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
   const ready = state.phase === 'ready' ? state : null
   const clientName = ready ? ready.clientName : initialName
   const clientEmail = ready ? ready.clientEmail : initialEmail
+  const clientPhone = ready ? ready.clientPhone : initialPhone
   const documents = ready ? ready.documents : []
   const accountantDetails = ready ? ready.accountantDetails : null
   const companyDetails = ready ? ready.companyDetails : null
@@ -268,6 +277,7 @@ export function IntakeClient({ clientId, initialName = '', initialEmail = '' }: 
                 clientId={clientId}
                 initialName={clientName}
                 initialEmail={clientEmail}
+                initialPhone={clientPhone}
                 onSaved={clientId ? handleStepComplete : undefined}
               />
             )}

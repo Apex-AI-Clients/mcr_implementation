@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { EMPTY_FILTERS, type LeadFilterState } from '../filter'
 
 vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 
-import { withFilters, type LeadsFilterable } from '../queries'
+import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { getConvertedClientDetails, withFilters, type LeadsFilterable } from '../queries'
 
 /**
  * The SQL side of the filters, checked against a builder that records what it
@@ -61,5 +62,90 @@ describe('withFilters — state', () => {
     const calls = callsFor({ state: 'VIC', debtFloor: 100_000 })
     expect(calls).toContainEqual(['or', 'state.eq.VIC,meta_state_options.cs.{VIC}'])
     expect(calls.filter(([method]) => method === 'or')).toHaveLength(2)
+  })
+})
+
+describe('getConvertedClientDetails', () => {
+  type Read = { data: unknown; error: { message: string } | null }
+
+  /** A client whose from(table)...maybeSingle() resolves to the given read. */
+  function mockTables(reads: Record<string, Read>) {
+    const from = vi.fn((table: string) => {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        maybeSingle: () => Promise.resolve(reads[table]),
+      }
+      return chain
+    })
+    vi.mocked(getSupabaseServerClient).mockReturnValue({ from } as never)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const CLIENT = {
+    id: 'cl_1',
+    name: 'Dean Whitlock',
+    email: 'dean@whitlockcivil.com.au',
+    phone: '0407552118',
+  }
+
+  it('joins the client to its company details', async () => {
+    mockTables({
+      clients: { data: CLIENT, error: null },
+      company_details: {
+        data: {
+          company_name: 'Whitlock Civil Pty Ltd',
+          acn_number: '004085616',
+          abn_number: '53004085616',
+          trust_name: null,
+          phone_number: '0745359847',
+          email_address: 'accounts@whitlockcivil.com.au',
+        },
+        error: null,
+      },
+    })
+
+    expect(await getConvertedClientDetails('cl_1')).toEqual({
+      id: 'cl_1',
+      name: 'Dean Whitlock',
+      email: 'dean@whitlockcivil.com.au',
+      phone: '0407552118',
+      companyName: 'Whitlock Civil Pty Ltd',
+      acnNumber: '004085616',
+      abnNumber: '53004085616',
+      trustName: null,
+      companyPhone: '0745359847',
+      companyEmail: 'accounts@whitlockcivil.com.au',
+    })
+  })
+
+  it('still returns the client when it has no company details yet', async () => {
+    mockTables({
+      clients: { data: CLIENT, error: null },
+      company_details: { data: null, error: null },
+    })
+    const result = await getConvertedClientDetails('cl_1')
+    expect(result?.name).toBe('Dean Whitlock')
+    expect(result?.abnNumber).toBeNull()
+  })
+
+  it('still returns the client when the company read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockTables({
+      clients: { data: CLIENT, error: null },
+      company_details: { data: null, error: { message: 'boom' } },
+    })
+    expect((await getConvertedClientDetails('cl_1'))?.id).toBe('cl_1')
+  })
+
+  it('is null when the client file no longer exists', async () => {
+    mockTables({
+      clients: { data: null, error: null },
+      company_details: { data: null, error: null },
+    })
+    expect(await getConvertedClientDetails('cl_gone')).toBeNull()
   })
 })

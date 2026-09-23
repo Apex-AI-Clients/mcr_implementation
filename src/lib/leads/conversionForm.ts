@@ -1,4 +1,4 @@
-import { isValidEmail } from './format'
+import { formatPhone, isValidEmail } from './format'
 import type { EntityType, Lead } from '@/types/leads'
 
 /**
@@ -13,6 +13,11 @@ export interface ConversionForm {
   /** Step 1 — the client record itself. */
   name: string
   email: string
+  /**
+   * The client's own number — the lead's phone, carried over. Optional, and
+   * not the company or trust line, which is `phoneNumber` below.
+   */
+  phone: string
   /** Decides which of the company and trust fields are required below. */
   entityType: EntityType
   /** Step 2 — company or trust details. */
@@ -39,6 +44,10 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
   return {
     name: lead?.name ?? '',
     email: lead?.email ?? '',
+    // Every captured lead has a phone, and it is this person's own number, so
+    // it carries straight over. Shown grouped ("0412 345 678"); the API stores
+    // it normalised, the same shape the lead held it in.
+    phone: lead?.phone ? formatPhone(lead.phone) : '',
     // The capture forms ask this, so it is usually already known. Defaults to
     // company because it is far the commoner of the two on this pipeline.
     entityType: lead?.entityType ?? 'company',
@@ -47,8 +56,9 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     abnNumber: '',
     trustName: '',
     // Deliberately not pre-filled from the lead's own phone: that is the
-    // director's mobile, which is not the same thing as the company's number,
-    // and a wrong default becomes wrong stored data.
+    // director's mobile — it goes in `phone` above — which is not the same
+    // thing as the company's number, and a wrong default becomes wrong stored
+    // data.
     phoneNumber: '',
     emailAddress: '',
   }
@@ -63,7 +73,7 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
  * somebody typing "N/A" into a field on every single conversion, and that
  * junk would then auto-fill the intake form.
  *
- * Company or trust phone and email are the two optional fields.
+ * The client's phone and the company or trust phone and email are optional.
  */
 export function validateConversion(form: ConversionForm): ConversionErrors {
   const errors: ConversionErrors = {}

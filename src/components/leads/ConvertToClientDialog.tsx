@@ -194,6 +194,15 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   disabled={working}
                   onChange={(event) => patch({ email: event.target.value })}
                 />
+                <Input
+                  id="convert-client-phone"
+                  label="Phone (optional)"
+                  type="tel"
+                  autoComplete="tel"
+                  value={form.phone}
+                  disabled={working}
+                  onChange={(event) => patch({ phone: event.target.value })}
+                />
               </Fieldset>
 
               <Fieldset legend="Company or trust">

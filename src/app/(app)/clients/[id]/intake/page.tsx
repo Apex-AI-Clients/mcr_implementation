@@ -14,13 +14,18 @@ export default async function ClientIntakePage({ params }: Props) {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name, email')
+    .select('id, name, email, phone')
     .eq('id', id)
     .maybeSingle()
 
   if (!client) notFound()
 
   return (
-    <IntakeClient clientId={client.id} initialName={client.name} initialEmail={client.email} />
+    <IntakeClient
+      clientId={client.id}
+      initialName={client.name}
+      initialEmail={client.email}
+      initialPhone={client.phone ?? ''}
+    />
   )
 }

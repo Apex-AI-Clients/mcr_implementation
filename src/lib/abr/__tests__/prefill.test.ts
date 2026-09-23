@@ -25,6 +25,7 @@ function form(overrides: Partial<ConversionForm> = {}): ConversionForm {
   return {
     name: 'Dean Whitlock',
     email: 'dean@whitlockcivil.com.au',
+    phone: '',
     entityType: 'company',
     companyName: '',
     acnNumber: '',

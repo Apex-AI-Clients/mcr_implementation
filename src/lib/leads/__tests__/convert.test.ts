@@ -73,6 +73,8 @@ describe('createClientFromLead', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       name: 'Dean Whitlock',
       email: 'dean@whitlockcivil.com.au',
+      // The lead's own number, carried over, in its grouped display form.
+      phone: '0407 552 118',
       companyDetails: {
         companyName: 'Whitlock Civil Pty Ltd',
         acnNumber: '123456789',

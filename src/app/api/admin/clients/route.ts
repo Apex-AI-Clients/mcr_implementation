@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { z } from 'zod'
+import { normaliseClientPhone } from '@/lib/clients/phone'
 
 /**
  * Step 2 of the intake, optionally supplied at creation.
@@ -23,6 +24,8 @@ const CompanyDetailsSchema = z.object({
 const CreateClientSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email(),
+  /** The contact's own number — not the company line in companyDetails. */
+  phone: z.string().max(40).optional(),
   companyDetails: CompanyDetailsSchema.optional(),
 })
 
@@ -78,6 +81,7 @@ export async function POST(req: NextRequest) {
 
     const name = parsed.data.name.trim()
     const email = parsed.data.email.trim().toLowerCase()
+    const phone = normaliseClientPhone(parsed.data.phone)
     const supabase = getSupabaseServerClient()
 
     const { data: existing } = await supabase
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const { data: client, error: insertError } = await supabase
       .from('clients')
-      .insert({ name, email, status: 'in_progress' })
+      .insert({ name, email, phone, status: 'in_progress' })
       .select()
       .single()
 

@@ -165,7 +165,23 @@ describe('ClientDetailsForm — creating a client', () => {
     expect(submittedBody(fetchMock)).toEqual({
       name: 'Whitlock Earthmoving',
       email: 'dean@whitlockcivil.com.au',
+      phone: '',
     })
+  })
+
+  it('sends the phone number under the email when one is typed', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(<ClientDetailsForm clientId={null} initialName="" initialEmail="" />)
+
+    await user.type(nameField(), 'Whitlock Earthmoving')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Phone Number'), '0407 552 118')
+    await user.click(screen.getByRole('button', { name: /create & continue/i }))
+
+    await waitFor(() => expect(replace).toHaveBeenCalled())
+    // Normalised by the API, not here.
+    expect(submittedBody(fetchMock).phone).toBe('0407 552 118')
   })
 
   it('puts a picked trust’s own name in the field, trustee prefix gone', async () => {
@@ -202,10 +218,11 @@ describe('ClientDetailsForm — editing an existing client', () => {
 
     await waitFor(() => expect(calledWith(fetchMock, '/api/portal/company-details')).toBe(true))
 
-    // The client row still only ever takes a name and an email.
+    // The client row takes a name, an email and the client's own phone.
     expect(bodySentTo(fetchMock, '/api/admin/clients/cl_1')).toEqual({
       name: 'Whitlock Civil Pty Ltd',
       email: 'dean@whitlock.com.au',
+      phone: '',
     })
 
     expect(bodySentTo(fetchMock, '/api/portal/company-details')).toEqual({

@@ -79,10 +79,24 @@ describe('emptyConversionForm', () => {
     expect(form.entityType).toBe('company')
   })
 
+  it("pre-fills the client's own phone from the lead, grouped for reading", () => {
+    expect(emptyConversionForm(lead()).phone).toBe('0407 552 118')
+  })
+
+  it('leaves the client phone blank when there is no lead', () => {
+    expect(emptyConversionForm(null).phone).toBe('')
+  })
+
   it('does not pre-fill the company phone from the lead', () => {
-    // That is the director's mobile. A wrong default becomes wrong stored
-    // data the moment somebody presses Convert without reading it.
+    // That is the director's mobile — it goes in `phone`. A wrong default
+    // becomes wrong stored data the moment somebody presses Convert without
+    // reading it.
     expect(emptyConversionForm(lead()).phoneNumber).toBe('')
+  })
+
+  it('does not require the client phone', () => {
+    const errors = validateConversion({ ...emptyConversionForm(lead()), phone: '' })
+    expect(errors.phone).toBeUndefined()
   })
 
   it('falls back to company when the lead never said', () => {

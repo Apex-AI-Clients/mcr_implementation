@@ -13,12 +13,15 @@ interface ClientDetailsFormProps {
   clientId: string | null
   initialName: string
   initialEmail: string
+  /** Optional — a client can be created before their number is known. */
+  initialPhone?: string
   /** Called after a successful save (existing client) with the saved values. */
-  onSaved?: (client: { id: string; name: string; email: string }) => void
+  onSaved?: (client: { id: string; name: string; email: string; phone: string | null }) => void
 }
 
 /**
- * Step 1 of the staff intake wizard — captures the client's name and email.
+ * Step 1 of the staff intake wizard — captures the client's name, email and
+ * phone. Phone is optional; name and email are what unlock the later steps.
  *
  * In "new" mode (clientId === null) submitting creates the client record and
  * navigates to the client-scoped intake URL, where the rest of the wizard
@@ -39,11 +42,13 @@ export function ClientDetailsForm({
   clientId,
   initialName,
   initialEmail,
+  initialPhone = '',
   onSaved,
 }: ClientDetailsFormProps) {
   const router = useRouter()
   const [name, setName] = useState(initialName)
   const [email, setEmail] = useState(initialEmail)
+  const [phone, setPhone] = useState(initialPhone)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(Boolean(clientId && initialName && initialEmail))
   const [error, setError] = useState('')
@@ -102,7 +107,12 @@ export function ClientDetailsForm({
     setError('')
     setSaving(true)
 
-    const payload = { name: name.trim(), email: email.trim().toLowerCase() }
+    const payload = {
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      // Always sent, so clearing the field on an edit clears the stored number.
+      phone: phone.trim(),
+    }
 
     try {
       if (clientId) {
@@ -129,14 +139,24 @@ export function ClientDetailsForm({
             setError('Name saved. The ABN could not be saved — add it on the company step.')
             setSaved(true)
             setSaving(false)
-            onSaved?.({ id: clientId, name: data.name ?? payload.name, email: data.email ?? payload.email })
+            onSaved?.({
+              id: clientId,
+              name: data.name ?? payload.name,
+              email: data.email ?? payload.email,
+              phone: data.phone ?? null,
+            })
             return
           }
         }
 
         setSaved(true)
         setSaving(false)
-        onSaved?.({ id: clientId, name: data.name ?? payload.name, email: data.email ?? payload.email })
+        onSaved?.({
+          id: clientId,
+          name: data.name ?? payload.name,
+          email: data.email ?? payload.email,
+          phone: data.phone ?? null,
+        })
       } else {
         const companyDetails = companyDetailsPayload()
         const res = await fetch('/api/admin/clients', {
@@ -163,7 +183,7 @@ export function ClientDetailsForm({
         // Continue the wizard at the client-scoped URL (keeps saving spinner
         // until the new page mounts).
         router.replace(`/clients/${data.id}/intake`)
-        onSaved?.({ id: data.id, name: data.name, email: data.email })
+        onSaved?.({ id: data.id, name: data.name, email: data.email, phone: data.phone ?? null })
       }
     } catch {
       setError('Failed to save. Please try again.')
@@ -184,7 +204,7 @@ export function ClientDetailsForm({
         )}
       </div>
       <p className="mb-4 text-xs text-foreground/50">
-        Enter the client&apos;s contact email and name to start their intake.
+        Enter the client&apos;s name, email and phone to start their intake.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -224,6 +244,17 @@ export function ClientDetailsForm({
             setSaved(false)
           }}
           required
+        />
+        <Input
+          id="client-phone"
+          label="Phone Number"
+          type="tel"
+          autoComplete="tel"
+          value={phone}
+          onChange={(e) => {
+            setPhone(e.target.value)
+            setSaved(false)
+          }}
         />
 
         {error && <p className="text-xs text-destructive">{error}</p>}
