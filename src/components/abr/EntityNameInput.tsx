@@ -5,7 +5,7 @@ import { Building2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
-import { abrConfigured, lookupAbn, searchAbr } from '@/lib/abr/browser'
+import { abrConfigured, lookupAbn, lookupAcns, searchAbr } from '@/lib/abr/browser'
 import { prefillFromAbr } from '@/lib/abr/prefill'
 import { tidyRegisterName } from '@/lib/abr/names'
 import {
@@ -99,6 +99,19 @@ export function EntityNameInput({
   const [pickError, setPickError] = useState('')
   /** Survives the list closing — see StatusNotice. */
   const [picked, setPicked] = useState<AbrEntityDetails | null>(null)
+  /**
+   * ACN by ABN, filled in behind the matches (the name search does not carry
+   * them). Kept across searches: an ACN does not change between keystrokes.
+   * '' means the register has none.
+   */
+  const [acns, setAcns] = useState<Record<string, string>>({})
+  /**
+   * ABNs whose ACN lookup has finished without an ACN coming back for them —
+   * the batch failed, or the register did not answer for that one in time. An
+   * ABN in neither this nor `acns` is still being looked up, and its row says
+   * so, rather than looking as though it has no ACN.
+   */
+  const [acnSettled, setAcnSettled] = useState<ReadonlySet<string>>(() => new Set())
 
   const inFlight = useRef<AbortController | null>(null)
 
@@ -162,6 +175,32 @@ export function EntityNameInput({
   const searching = available && ready && loadingTerm === term
   const shown = outcome && outcome.term === term ? outcome : null
   const matches = shown?.matches ?? []
+
+  // Fetch the ACNs for the rows on screen that are not known yet. Keyed on the
+  // outcome, so it runs once per finished search, and aborted when a newer
+  // search replaces it.
+  useEffect(() => {
+    if (!outcome || outcome.matches.length === 0) return
+    const missing = [...new Set(outcome.matches.map((match) => match.abn))].filter(
+      (abn) => !(abn in acns),
+    )
+    if (missing.length === 0) return
+
+    const controller = new AbortController()
+    void lookupAcns(missing, controller.signal).then((found) => {
+      if (controller.signal.aborted) return
+      if (found) setAcns((current) => ({ ...current, ...found }))
+      // Whatever did not come back is done too: stop showing it as loading.
+      const unanswered = missing.filter((abn) => !found || !(abn in found))
+      if (unanswered.length > 0) {
+        setAcnSettled((current) => new Set([...current, ...unanswered]))
+      }
+    })
+    return () => controller.abort()
+    // `acns` deliberately left out: it only ever grows, from this effect, and
+    // re-running on that would re-ask for whatever the register did not answer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outcome])
   const notice = pickError || (searching ? '' : (shown?.notice ?? ''))
   const listOpen = available && focused && ready && (searching || shown !== null || pickError !== '')
   const activeIndex = matches.length > 0 ? Math.min(highlight, matches.length - 1) : -1
@@ -281,6 +320,8 @@ export function EntityNameInput({
                     key={`${match.abn}-${match.entityName}`}
                     id={`${listId}-${index}`}
                     match={match}
+                    acn={acns[match.abn]}
+                    acnLoading={!(match.abn in acns) && !acnSettled.has(match.abn)}
                     active={index === activeIndex}
                     busy={pickingAbn === match.abn}
                     disabled={disabled || pickingAbn !== null}
@@ -307,6 +348,8 @@ export function EntityNameInput({
 function MatchRow({
   id,
   match,
+  acn,
+  acnLoading,
   active,
   busy,
   disabled,
@@ -315,6 +358,10 @@ function MatchRow({
 }: {
   id: string
   match: AbrNameMatch
+  /** Undefined while unknown; '' when the register has none. */
+  acn?: string
+  /** The lookup is still out — show a placeholder, not a missing ACN. */
+  acnLoading: boolean
   active: boolean
   busy: boolean
   disabled: boolean
@@ -352,6 +399,19 @@ function MatchRow({
           )}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-foreground/50">
             <span className="tabular-nums">ABN {match.abn}</span>
+            {acn ? (
+              <span className="tabular-nums">ACN {acn}</span>
+            ) : (
+              acnLoading && (
+                <span className="inline-flex items-center gap-1" aria-label="Looking up ACN">
+                  ACN
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3 w-16 animate-pulse rounded bg-border"
+                  />
+                </span>
+              )
+            )}
             {match.state && <span>{match.state}</span>}
             {match.postcode && <span className="tabular-nums">{match.postcode}</span>}
             {match.nameType && match.nameType !== 'Entity Name' && <span>{match.nameType}</span>}

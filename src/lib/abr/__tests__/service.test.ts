@@ -5,6 +5,7 @@ import {
   AbrTimeoutError,
   AbrUnavailableError,
   fetchAbnDetails,
+  fetchAcnsForAbns,
   resetAbrCache,
   searchAbrNames,
 } from '../service'
@@ -148,6 +149,87 @@ describe('fetchAbnDetails', () => {
       AbrTimeoutError,
     )
     expect(mock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('fetchAcnsForAbns', () => {
+  /** Answers AbnDetails with the fixture named for the ABN asked about. */
+  function stubDetails(byAbn: Record<string, string | Error>) {
+    return stubFetch(async (input) => {
+      const abn = new URL(String(input)).searchParams.get('abn') ?? ''
+      const answer = byAbn[abn]
+      if (answer instanceof Error) throw answer
+      return new Response(fixture(answer))
+    })
+  }
+
+  it('maps each ABN to its ACN, and a trust to none', async () => {
+    stubDetails({ '53004085616': 'abn_details_company', '74653091178': 'abn_details_trust' })
+    expect(await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')).toEqual({
+      '53004085616': '004085616',
+      '74653091178': '',
+    })
+  })
+
+  it('looks each ABN up once, however often it appears in the results', async () => {
+    const mock = stubDetails({ '53004085616': 'abn_details_company' })
+    await fetchAcnsForAbns(['53004085616', '53004085616', '53004085616'], 'test-guid')
+    expect(mock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves out an ABN whose lookup failed, and keeps the rest', async () => {
+    stubDetails({ '53004085616': 'abn_details_company', '74653091178': timeoutError() })
+    expect(await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')).toEqual({
+      '53004085616': '004085616',
+    })
+  })
+
+  it('starts every lookup at once rather than in rounds', async () => {
+    let inFlight = 0
+    let peak = 0
+    stubFetch(async () => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      inFlight -= 1
+      return new Response(fixture('abn_details_company'))
+    })
+    const abns = Array.from({ length: 12 }, (_, i) => String(10_000_000_000 + i))
+    await fetchAcnsForAbns(abns, 'test-guid')
+    expect(peak).toBe(12)
+  })
+
+  it(
+    'gives up on a lookup that hangs after about 3s, without holding the rest',
+    async () => {
+      stubFetch((input) => {
+        const abn = new URL(String(input)).searchParams.get('abn')
+        if (abn === '53004085616') return Promise.resolve(new Response(fixture('abn_details_company')))
+        // Never answers; only the timeout signal ends it.
+        return new Promise((_, reject) => {
+          const signal = (vi.mocked(fetch).mock.lastCall?.[1] as RequestInit | undefined)?.signal
+          signal?.addEventListener('abort', () => reject(signal.reason))
+        })
+      })
+
+      const started = Date.now()
+      const acns = await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')
+      const took = Date.now() - started
+
+      expect(acns).toEqual({ '53004085616': '004085616' })
+      // The 3s ACN cap, not the 10s a pick is allowed.
+      expect(took).toBeGreaterThanOrEqual(2_900)
+      expect(took).toBeLessThan(5_000)
+    },
+    10_000,
+  )
+
+  it('warms the cache the following pick reads from', async () => {
+    const mock = stubDetails({ '53004085616': 'abn_details_company' })
+    await fetchAcnsForAbns(['53004085616'], 'test-guid')
+    const pick = await fetchAbnDetails('53004085616', 'test-guid')
+    expect(pick.cached).toBe(true)
+    expect(mock).toHaveBeenCalledTimes(1)
   })
 })
 

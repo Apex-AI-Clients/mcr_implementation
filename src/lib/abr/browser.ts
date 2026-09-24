@@ -102,3 +102,27 @@ export async function lookupAbn(abn: string): Promise<AbrDetailsResult> {
     return { kind: 'failed', message: UNREACHABLE }
   }
 }
+
+/**
+ * The ACNs behind a page of search results — see GET /api/abr/acns.
+ *
+ * Null on any failure. The ACN is extra detail on a suggestion, so a failure
+ * just means the rows show without one; there is nothing to tell anyone.
+ */
+export async function lookupAcns(
+  abns: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, string> | null> {
+  if (abns.length === 0) return {}
+  try {
+    const response = await fetch(`/api/abr/acns?abns=${encodeURIComponent(abns.join(','))}`, {
+      headers: { Accept: 'application/json' },
+      signal,
+    })
+    if (!response.ok) return null
+    const body = (await response.json()) as { acns?: Record<string, string> }
+    return body.acns ?? null
+  } catch {
+    return null
+  }
+}

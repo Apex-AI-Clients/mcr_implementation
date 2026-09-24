@@ -70,11 +70,11 @@ export function isAbrConfigured(): boolean {
   return abrGuid() !== null
 }
 
-async function fetchJsonp(url: URL): Promise<string> {
+async function fetchJsonp(url: URL, timeoutMs: number = TIMEOUT_MS): Promise<string> {
   let response: Response
   try {
     response = await fetch(url, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { Accept: 'application/javascript, text/plain, */*' },
       cache: 'no-store',
     })
@@ -84,7 +84,7 @@ async function fetchJsonp(url: URL): Promise<string> {
     // some other reason, which from here amounts to the same outcome.
     const name = err instanceof Error ? err.name : ''
     if (name === 'TimeoutError' || name === 'AbortError') {
-      throw new AbrTimeoutError(`The ABR did not answer within ${TIMEOUT_MS / 1_000}s.`)
+      throw new AbrTimeoutError(`The ABR did not answer within ${timeoutMs / 1_000}s.`)
     }
 
     // DNS, TLS, connection refused — the register was not reachable at all.
@@ -170,6 +170,8 @@ export async function fetchAbnDetails(
   abn: string,
   guid: string,
   now: number = Date.now(),
+  /** Shorter for the ACN batch, where one slow answer must not hold the rest. */
+  timeoutMs: number = TIMEOUT_MS,
 ): Promise<{ details: AbrEntityDetails | null; cached: boolean }> {
   const cached = readCache(abn, now)
   if (cached) return { details: cached.details, cached: true }
@@ -178,7 +180,58 @@ export async function fetchAbnDetails(
   url.searchParams.set('abn', abn)
   url.searchParams.set('guid', guid)
 
-  const details = parseAbnDetails(await fetchJsonp(url))
+  const details = parseAbnDetails(await fetchJsonp(url, timeoutMs))
   writeCache(abn, details, now)
   return { details, cached: false }
+}
+
+// ============================================================
+// ACNs for a page of search results
+// ============================================================
+
+/** A search answers at most MAX_RESULTS rows, so this is never exceeded. */
+export const MAX_ACN_BATCH = MAX_RESULTS
+
+/**
+ * How long one ACN lookup may take. The batch answers only once every lookup
+ * has, so this is the ceiling on how long the ACNs take to appear. An ABN that
+ * misses it simply shows no ACN, and — timeouts not being cached — is tried
+ * again on the next search. A pick still gets the full TIMEOUT_MS.
+ */
+const ACN_TIMEOUT_MS = 3_000
+
+/**
+ * The ACN behind each ABN, for showing in the search results.
+ *
+ * MatchingNames does not carry ACNs — only AbnDetails does — so this runs one
+ * details lookup per distinct ABN, all at once, through the same day-long
+ * cache a pick uses. That means the pick that usually follows is served from
+ * the cache. All at once rather than a few at a time: the batch is at most
+ * MAX_ACN_BATCH, and waiting in rounds is what made the ACNs slow to appear.
+ *
+ *   ABN -> '123456789' : the register's ACN
+ *   ABN -> ''          : the register answered and has none (trust, sole trader)
+ *   ABN absent         : the lookup failed; nothing is claimed either way
+ *
+ * A failure for one ABN never fails the batch: a missing ACN on one row is
+ * not worth losing the rest over.
+ */
+export async function fetchAcnsForAbns(
+  abns: string[],
+  guid: string,
+): Promise<Record<string, string>> {
+  const unique = [...new Set(abns)].slice(0, MAX_ACN_BATCH)
+  const acns: Record<string, string> = {}
+
+  await Promise.all(
+    unique.map(async (abn) => {
+      try {
+        const { details } = await fetchAbnDetails(abn, guid, Date.now(), ACN_TIMEOUT_MS)
+        acns[abn] = details?.acn ?? ''
+      } catch {
+        // Left absent — see above.
+      }
+    }),
+  )
+  return acns
 }

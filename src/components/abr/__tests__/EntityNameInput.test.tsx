@@ -49,15 +49,20 @@ interface RouteOptions {
   configured?: boolean
   search?: () => Response
   abn?: () => Response
+  acns?: () => Response
 }
 
-/** Stands in for the three proxy routes. Returns the spy for call assertions. */
-function mockRoutes({ configured = true, search, abn }: RouteOptions = {}) {
+/** Stands in for the proxy routes. Returns the spy for call assertions. */
+function mockRoutes({ configured = true, search, abn, acns }: RouteOptions = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
     if (url.startsWith('/api/abr/status')) return json({ configured })
     if (url.startsWith('/api/abr/search')) {
       return search ? search() : json(parseMatchingNames(fixture('matching_names_multi')))
+    }
+    if (url.startsWith('/api/abr/acns')) {
+      // The company fixture's ACN, and the trust's lack of one.
+      return acns ? acns() : json({ acns: { '53004085616': '004085616', '74653091178': '' } })
     }
     if (url.startsWith('/api/abr/abn')) {
       return abn ? abn() : json({ details: parseAbnDetails(fixture('abn_details_company')) })
@@ -85,6 +90,9 @@ function Harness({ onPick = vi.fn() }: { onPick?: (prefill: AbrPrefill) => void 
     />
   )
 }
+
+/** Search, then the ACN batch, both behind the debounce — slower than one request. */
+const ACN_WAIT = { timeout: 4_000 }
 
 function field(): HTMLInputElement {
   return screen.getByLabelText('Name of company') as HTMLInputElement
@@ -153,6 +161,75 @@ describe('EntityNameInput — searching', () => {
     expect(screen.getByText('Whitlock Civil Pty Ltd')).not.toBeNull()
     // …and the raw register entry, which is what staff are checking.
     expect(screen.getByText('WHITLOCK CIVIL PTY LTD')).not.toBeNull()
+  })
+
+  it('shows the ACN next to the ABN once the register answers', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(<Harness />)
+
+    await user.type(field(), 'Whitlock')
+    // Two requests chained behind the typing debounce, so more than the default wait.
+    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
+    expect(screen.getByText('ABN 53004085616')).not.toBeNull()
+
+    // One batch for the whole page of results, not one request per row.
+    const batches = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/abr/acns'))
+    expect(batches).toHaveLength(1)
+  })
+
+  it('shows no ACN on a row the register has none for', async () => {
+    const user = userEvent.setup()
+    mockRoutes()
+    render(<Harness />)
+
+    await user.type(field(), 'Whitlock')
+    // Two requests chained behind the typing debounce, so more than the default wait.
+    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
+    // Only the company has one; the trust row (and the rest) show none.
+    expect(screen.getAllByText(/^ACN /)).toHaveLength(1)
+  })
+
+  it('marks each row as looking up its ACN until the answer arrives', async () => {
+    const user = userEvent.setup()
+    let answer: (response: Response) => void = () => {}
+    const held = new Promise<Response>((resolve) => {
+      answer = resolve
+    })
+    mockRoutes({ acns: () => held as unknown as Response })
+    render(<Harness />)
+
+    await user.type(field(), 'Whitlock')
+    // The rows are up straight away, each saying its ACN is on the way…
+    await waitFor(() => expect(screen.getByText('Whitlock Civil Pty Ltd')).not.toBeNull(), ACN_WAIT)
+    expect(screen.getAllByLabelText('Looking up ACN').length).toBeGreaterThan(0)
+
+    // …and once it lands, the placeholder becomes the ACN on the company row,
+    // and goes from every other row — the trust has none, and the rest were
+    // not answered, which is finished too.
+    answer(json({ acns: { '53004085616': '004085616', '74653091178': '' } }))
+    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
+    expect(screen.queryAllByLabelText('Looking up ACN')).toHaveLength(0)
+  })
+
+  it('stops showing the placeholder when the ACN lookup fails', async () => {
+    const user = userEvent.setup()
+    mockRoutes({ acns: () => json({ error: 'down' }, 502) })
+    render(<Harness />)
+
+    await user.type(field(), 'Whitlock')
+    await waitFor(() => expect(screen.getByText('Whitlock Civil Pty Ltd')).not.toBeNull(), ACN_WAIT)
+    await waitFor(() => expect(screen.queryAllByLabelText('Looking up ACN')).toHaveLength(0), ACN_WAIT)
+  })
+
+  it('still lists the matches when the ACN lookup fails', async () => {
+    const user = userEvent.setup()
+    mockRoutes({ acns: () => json({ error: 'down' }, 502) })
+    render(<Harness />)
+
+    await user.type(field(), 'Whitlock')
+    await waitFor(() => expect(screen.getByText('Whitlock Civil Pty Ltd')).not.toBeNull(), ACN_WAIT)
+    expect(screen.queryByText(/^ACN /)).toBeNull()
   })
 
   it('flags a cancelled ABN on the row it belongs to', async () => {
