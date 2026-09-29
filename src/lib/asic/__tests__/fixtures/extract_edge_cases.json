@@ -1,0 +1,126 @@
+{
+  "object": "extract",
+  "id": "ext_TEST0000000002",
+  "type": "current",
+  "purchasedAt": "2026-09-05T01:00:02Z",
+  "asOf": "2026-09-05T01:00:00Z",
+  "acn": "000000028",
+  "abn": "91000000028",
+  "name": "EXAMPLE HOLDINGS PTY LTD",
+  "status": { "code": "REGD", "label": "Registered" },
+  "addresses": {
+    "object": "list",
+    "data": [
+      {
+        "object": "address",
+        "type": { "code": "RG", "label": "Registered Office" },
+        "status": { "code": "C", "label": "Current" },
+        "from": "2020-01-01",
+        "to": null,
+        "address": {
+          "careOf": null,
+          "line1": null,
+          "street": "5 PLACEHOLDER LANE",
+          "locality": "SAMPLEVILLE",
+          "state": "NSW",
+          "postcode": "2000",
+          "country": "AUSTRALIA"
+        }
+      },
+      {
+        "object": "address",
+        "type": { "code": "PA", "label": "Principal Place of Business" },
+        "status": { "code": "C", "label": "Current" },
+        "from": "2020-01-01",
+        "to": null,
+        "address": {
+          "careOf": null,
+          "line1": null,
+          "street": "5 PLACEHOLDER LANE",
+          "locality": "SAMPLEVILLE",
+          "state": "NSW",
+          "postcode": "2000",
+          "country": "AUSTRALIA"
+        }
+      },
+      {
+        "object": "address",
+        "type": { "code": "ZZ", "label": "ZZ" },
+        "status": { "code": "C", "label": "Current" },
+        "from": "2020-01-01",
+        "to": null,
+        "address": {
+          "careOf": null,
+          "line1": null,
+          "street": "1 UNKNOWN TYPE ROAD",
+          "locality": "NOWHERE",
+          "state": "QLD",
+          "postcode": "4000",
+          "country": "AUSTRALIA"
+        }
+      }
+    ],
+    "hasMore": false,
+    "nextCursor": null
+  },
+  "officeholders": {
+    "object": "list",
+    "data": [
+      {
+        "object": "officeholder",
+        "role": { "code": "DR", "label": "Director" },
+        "status": { "code": "C", "label": "Current" },
+        "ceasedAt": null,
+        "party": {
+          "type": "person",
+          "person": { "familyName": "PLACEHOLDER", "givenNames": ["ALEX"], "formatted": null },
+          "birth": null,
+          "organisation": null
+        },
+        "address": null
+      },
+      {
+        "object": "officeholder",
+        "role": { "code": "DR", "label": "Director" },
+        "status": { "code": "C", "label": "Current" },
+        "ceasedAt": null,
+        "party": {
+          "type": "person",
+          "person": { "familyName": "EXAMPLE", "givenNames": ["SAM"], "formatted": "SAM EXAMPLE" },
+          "birth": { "date": "1990", "locality": null, "stateOrCountry": null },
+          "organisation": null
+        },
+        "address": null
+      },
+      {
+        "object": "officeholder",
+        "role": { "code": "XX", "label": "XX" },
+        "status": { "code": "C", "label": "Current" },
+        "ceasedAt": null,
+        "party": {
+          "type": "person",
+          "person": { "familyName": "ROLE", "givenNames": ["UNKNOWN"], "formatted": "UNKNOWN ROLE" },
+          "birth": { "date": "1980-01-01", "locality": null, "stateOrCountry": null },
+          "organisation": null
+        },
+        "address": null
+      },
+      {
+        "object": "officeholder",
+        "role": { "code": "DR", "label": "Director" },
+        "status": { "code": "Q", "label": "Q" },
+        "ceasedAt": null,
+        "party": {
+          "type": "person",
+          "person": { "familyName": "STATUS", "givenNames": ["UNKNOWN"], "formatted": "UNKNOWN STATUS" },
+          "birth": { "date": "1981-01-01", "locality": null, "stateOrCountry": null },
+          "organisation": null
+        },
+        "address": null
+      }
+    ],
+    "hasMore": false,
+    "nextCursor": null
+  },
+  "meta": { "billable": false, "product": null, "requestId": "req_TEST0003" }
+}

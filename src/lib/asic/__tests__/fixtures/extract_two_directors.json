@@ -1,0 +1,176 @@
+{
+  "object": "extract",
+  "extract": {
+    "id": "ext_TEST0000000001",
+    "type": "current",
+    "purchasedAt": "2026-09-04T03:12:44Z",
+    "asOf": "2026-09-04T03:12:41Z"
+  },
+  "company": {
+    "object": "company",
+    "acn": "000000019",
+    "abn": "89000000019",
+    "name": "SAMPLE TRADING PTY LTD",
+    "type": { "code": "APTY", "label": "Australian Proprietary Company" },
+    "status": { "code": "REGD", "label": "Registered" }
+  },
+  "addresses": [
+    {
+      "object": "address",
+      "type": { "code": "RG", "label": "Registered Office" },
+      "status": { "code": "C", "label": "Current" },
+      "from": "2018-01-15",
+      "to": null,
+      "address": {
+        "careOf": "C/- EXAMPLE ACCOUNTANTS",
+        "line1": "LEVEL 2",
+        "street": "1 SAMPLE STREET",
+        "locality": "NORTH MELBOURNE",
+        "state": "VIC",
+        "postcode": "3051",
+        "country": "AUSTRALIA"
+      },
+      "sourceDocument": { "documentNumber": "0E0000001", "qualifier": null }
+    },
+    {
+      "object": "address",
+      "type": { "code": "RG", "label": "Registered Office" },
+      "status": { "code": "E", "label": "Ceased" },
+      "from": "2012-01-01",
+      "to": "2018-01-15",
+      "address": {
+        "careOf": null,
+        "line1": null,
+        "street": "99 OLD SAMPLE ROAD",
+        "locality": "CARLTON",
+        "state": "VIC",
+        "postcode": "3053",
+        "country": "AUSTRALIA"
+      },
+      "sourceDocument": { "documentNumber": "0E0000002", "qualifier": null }
+    },
+    {
+      "object": "address",
+      "type": { "code": "PA", "label": "Principal Place of Business" },
+      "status": { "code": "C", "label": "Current" },
+      "from": "2019-06-01",
+      "to": null,
+      "address": {
+        "careOf": null,
+        "line1": "UNIT 4",
+        "street": "20 EXAMPLE ROAD",
+        "locality": "RICHMOND",
+        "state": "VIC",
+        "postcode": "3121",
+        "country": "AUSTRALIA"
+      },
+      "sourceDocument": { "documentNumber": "0E0000003", "qualifier": null }
+    },
+    {
+      "object": "address",
+      "type": { "code": "CC", "label": "Contact Address for ASIC use only" },
+      "status": { "code": "C", "label": "Current" },
+      "from": "2019-06-01",
+      "to": null,
+      "address": {
+        "careOf": null,
+        "line1": "PO BOX 000",
+        "street": null,
+        "locality": "RICHMOND",
+        "state": "VIC",
+        "postcode": "3121",
+        "country": "AUSTRALIA"
+      },
+      "sourceDocument": { "documentNumber": "0E0000004", "qualifier": null }
+    }
+  ],
+  "officeholders": [
+    {
+      "object": "officeholder",
+      "role": { "code": "DR", "label": "Director" },
+      "status": { "code": "C", "label": "Current" },
+      "appointedAt": "2015-02-01",
+      "ceasedAt": null,
+      "party": {
+        "type": "person",
+        "person": { "familyName": "SAMPLE", "givenNames": ["JANE", "MARY"], "formatted": "JANE MARY SAMPLE" },
+        "birth": { "date": "1970-05-01", "locality": "SAMPLEVILLE", "stateOrCountry": "VIC" },
+        "organisation": null
+      },
+      "address": {
+        "careOf": null,
+        "line1": null,
+        "street": "7 PRIVATE HOME STREET",
+        "locality": "KEW",
+        "state": "VIC",
+        "postcode": "3101",
+        "country": "AUSTRALIA"
+      }
+    },
+    {
+      "object": "officeholder",
+      "role": { "code": "DR", "label": "Director" },
+      "status": { "code": "C", "label": "Current" },
+      "appointedAt": "2016-07-01",
+      "ceasedAt": null,
+      "party": {
+        "type": "person",
+        "person": { "familyName": "EXAMPLE", "givenNames": ["JOHN"], "formatted": "JOHN EXAMPLE" },
+        "birth": { "date": "1982-11", "locality": "EXAMPLETOWN", "stateOrCountry": "NSW" },
+        "organisation": null
+      },
+      "address": null
+    },
+    {
+      "object": "officeholder",
+      "role": { "code": "SR", "label": "Secretary" },
+      "status": { "code": "C", "label": "Current" },
+      "appointedAt": "2015-02-01",
+      "ceasedAt": null,
+      "party": {
+        "type": "person",
+        "person": { "familyName": "SAMPLE", "givenNames": ["JANE", "MARY"], "formatted": "JANE MARY SAMPLE" },
+        "birth": { "date": "1970-05-01", "locality": "SAMPLEVILLE", "stateOrCountry": "VIC" },
+        "organisation": null
+      },
+      "address": null
+    },
+    {
+      "object": "officeholder",
+      "role": { "code": "DR", "label": "Director" },
+      "status": { "code": "E", "label": "Ceased/Former" },
+      "appointedAt": "2010-03-12",
+      "ceasedAt": "2021-06-30",
+      "party": {
+        "type": "person",
+        "person": { "familyName": "FORMER", "givenNames": ["PAT"], "formatted": "PAT FORMER" },
+        "birth": { "date": "1955-01-01", "locality": "SAMPLEVILLE", "stateOrCountry": "VIC" },
+        "organisation": null
+      },
+      "address": null
+    }
+  ],
+  "members": [
+    {
+      "object": "member",
+      "name": "JANE MARY SAMPLE",
+      "address": {
+        "street": "7 PRIVATE HOME STREET",
+        "locality": "KEW",
+        "state": "VIC",
+        "postcode": "3101",
+        "country": "AUSTRALIA"
+      },
+      "shares": [{ "classCode": "ORD", "number": "100", "beneficiallyHeld": true }]
+    }
+  ],
+  "shareCapital": [
+    {
+      "classCode": "ORD",
+      "classTitle": "ORDINARY",
+      "status": { "code": "C", "label": "Current" },
+      "sharesIssued": "100"
+    }
+  ],
+  "meta": { "billable": false, "product": null, "requestId": "req_TEST0002" }
+}

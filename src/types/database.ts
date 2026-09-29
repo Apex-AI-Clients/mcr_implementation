@@ -55,6 +55,63 @@ export type Database = {
           },
         ]
       }
+      asic_extracts: {
+        Row: {
+          acn: string
+          as_of: string | null
+          created_at: string
+          error_code: string | null
+          fee_cents: number
+          id: string
+          idempotency_key: string
+          mode: string
+          ordered_by: string | null
+          provider: string
+          provider_extract_id: string | null
+          purchased_at: string | null
+          raw: Json | null
+          status: string
+          summary: Json | null
+          updated_at: string
+        }
+        Insert: {
+          acn: string
+          as_of?: string | null
+          created_at?: string
+          error_code?: string | null
+          fee_cents: number
+          id?: string
+          idempotency_key: string
+          mode: string
+          ordered_by?: string | null
+          provider: string
+          provider_extract_id?: string | null
+          purchased_at?: string | null
+          raw?: Json | null
+          status?: string
+          summary?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          acn?: string
+          as_of?: string | null
+          created_at?: string
+          error_code?: string | null
+          fee_cents?: number
+          id?: string
+          idempotency_key?: string
+          mode?: string
+          ordered_by?: string | null
+          provider?: string
+          provider_extract_id?: string | null
+          purchased_at?: string | null
+          raw?: Json | null
+          status?: string
+          summary?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           ato_admin_confirmed: boolean
@@ -98,40 +155,59 @@ export type Database = {
         Row: {
           abn_number: string | null
           acn_number: string | null
+          asic_extract_id: string | null
           client_id: string
           company_name: string | null
           created_at: string
+          directors: Json | null
           email_address: string | null
           id: string
           phone_number: string | null
+          principal_place_of_business: string | null
+          registered_office_address: string | null
           trust_name: string | null
           updated_at: string
         }
         Insert: {
           abn_number?: string | null
           acn_number?: string | null
+          asic_extract_id?: string | null
           client_id: string
           company_name?: string | null
           created_at?: string
+          directors?: Json | null
           email_address?: string | null
           id?: string
           phone_number?: string | null
+          principal_place_of_business?: string | null
+          registered_office_address?: string | null
           trust_name?: string | null
           updated_at?: string
         }
         Update: {
           abn_number?: string | null
           acn_number?: string | null
+          asic_extract_id?: string | null
           client_id?: string
           company_name?: string | null
           created_at?: string
+          directors?: Json | null
           email_address?: string | null
           id?: string
           phone_number?: string | null
+          principal_place_of_business?: string | null
+          registered_office_address?: string | null
           trust_name?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "company_details_asic_extract_id_fkey"
+            columns: ["asic_extract_id"]
+            isOneToOne: false
+            referencedRelation: "asic_extracts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "company_details_client_id_fkey"
             columns: ["client_id"]

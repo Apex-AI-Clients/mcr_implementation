@@ -1,0 +1,21 @@
+{
+  "object": "company",
+  "id": "000000019",
+  "acn": "000000019",
+  "formatted": "000 000 019",
+  "numberType": { "code": "ACN", "label": "Australian Company Number" },
+  "abn": "89000000019",
+  "name": "SAMPLE TRADING PTY LTD",
+  "nameStartDate": "2010-03-12",
+  "type": { "code": "APTY", "label": "Australian Proprietary Company" },
+  "class": { "code": "LMSH", "label": "Limited By Shares" },
+  "subClass": { "code": "PROP", "label": "Proprietary Company" },
+  "status": { "code": "REGD", "label": "Registered" },
+  "registrationDate": "2010-03-12",
+  "reviewDate": "2027-03-12",
+  "deregistration": null,
+  "stateOfRegistration": { "code": "VIC", "label": "Victoria" },
+  "principalPlace": { "locality": "RICHMOND", "state": "VIC", "postcode": "3121" },
+  "formerNames": [],
+  "meta": { "billable": false, "product": null, "requestId": "req_TEST0001" }
+}
