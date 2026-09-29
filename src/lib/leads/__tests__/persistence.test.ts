@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { leadsPersistence } from '../persistence'
+import { DuplicateLeadError, leadsPersistence } from '../persistence'
 import type { Lead, LeadActivity } from '@/types/leads'
 
 /**
@@ -27,6 +27,12 @@ const LEAD: Lead = {
   nextStep: null,
   stageSince: '2026-08-01T00:00:00.000Z',
   lastActionAt: '2026-08-01T00:00:00.000Z',
+  lastEnquiryAt: '2026-08-01T00:00:00.000Z',
+  enquiryCount: 1,
+  latestEnquirySource: null,
+  reenquiredAfterCloseAt: null,
+  reenquiryDismissedAt: null,
+  reenquiryDismissedBy: null,
   convertedClientId: null,
   metaFormId: null,
   metaAdId: null,
@@ -76,6 +82,39 @@ describe('leadsPersistence', () => {
     expect((body.lead as Record<string, unknown>).id).toBe(LEAD.id)
     expect((body.lead as Record<string, unknown>).debtMin).toBe(150_000)
     expect((body.lead as Record<string, unknown>).debtMax).toBeNull()
+  })
+
+  it('turns a 409 on create into a DuplicateLeadError carrying the existing lead', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: 'A lead with this email already exists.', leadId: 'ld_existing' }),
+        { status: 409 },
+      ),
+    )
+    const failure = leadsPersistence.createLead!({ lead: LEAD, activity: null })
+    await expect(failure).rejects.toBeInstanceOf(DuplicateLeadError)
+    await expect(failure).rejects.toMatchObject({
+      leadId: 'ld_existing',
+      message: 'A lead with this email already exists.',
+    })
+  })
+
+  it('keeps any other failure a plain error', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'Failed to create lead' }), { status: 500 }),
+    )
+    const failure = leadsPersistence.createLead!({ lead: LEAD, activity: null })
+    await expect(failure).rejects.not.toBeInstanceOf(DuplicateLeadError)
+    await expect(failure).rejects.toThrow('Failed to create lead')
+  })
+
+  it('dismisses the enquired-again marker with no activity and no name', async () => {
+    // The server takes who dismissed it from the session, not the body.
+    await leadsPersistence.dismissReenquiry!({ leadId: LEAD.id })
+    const { url, method, body } = lastCall()
+    expect(url).toBe(`/api/admin/leads/${LEAD.id}`)
+    expect(method).toBe('PATCH')
+    expect(body).toEqual({ patch: { dismissReenquiry: true } })
   })
 
   it('sends a data correction with no activity, so the clock is untouched', async () => {

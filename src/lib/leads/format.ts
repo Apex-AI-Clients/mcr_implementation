@@ -483,6 +483,18 @@ export function formatFullDate(iso: string): string {
   }).format(new Date(iso))
 }
 
+/** "26 Aug 2026, 2:05 pm" — an enquiry, where the time of day matters. */
+export function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    timeZone: AU_TZ,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(iso))
+}
+
 /** ISO date for CSV, sortable in a spreadsheet. */
 export function formatIsoDate(iso: string): string {
   return sydneyYmd(new Date(iso))
@@ -503,6 +515,10 @@ export function formatAge(iso: string, now: Date = new Date()): string {
 
 const CSV_COLUMNS = [
   'Date added',
+  // The latest enquiry, which the list sorts on, and how many there were. Both
+  // equal "Date added" and 1 until the same person enquires again.
+  'Last enquiry',
+  'Enquiries',
   'Name',
   'Email',
   'Phone',
@@ -595,6 +611,8 @@ export function leadsToCsv(
   const rows = leads.map((lead) =>
     [
       formatIsoDate(lead.createdAt),
+      formatIsoDate(lead.lastEnquiryAt),
+      String(lead.enquiryCount),
       lead.name,
       lead.email,
       formatPhone(lead.phone),

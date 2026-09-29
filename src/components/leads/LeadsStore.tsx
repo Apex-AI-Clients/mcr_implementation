@@ -12,6 +12,7 @@ import type {
 import { needsFollowUp } from '@/lib/leads/followUp'
 import { STAGE_META } from '@/lib/leads/constants'
 import { useToast } from '@/components/ui/Toast'
+import { DuplicateLeadError } from '@/lib/leads/persistence'
 
 /**
  * CRM store.
@@ -61,6 +62,11 @@ export interface LeadsPersistence {
    * that has quietly lost a row the database still holds.
    */
   deleteLeads?: (input: { ids: string[] }) => Promise<void>
+  /**
+   * Hides the "enquired again" marker. Writes no activity: dismissing is not a
+   * logged action, so the follow-up clock is left where it was.
+   */
+  dismissReenquiry?: (input: { leadId: string }) => Promise<void>
   /**
    * Records the client file against the lead. If this throws, the client file
    * exists but the lead does not know about it — the caller must say so rather
@@ -148,6 +154,9 @@ export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState
                 stageSince: action.at,
                 lastActionAt: action.at,
                 updatedAt: action.at,
+                // Any stage change clears the "enquired again" marker — the
+                // database trigger does the same, so the two never disagree.
+                reenquiredAfterCloseAt: null,
               }
             : lead,
         ),
@@ -165,6 +174,7 @@ export function leadsReducer(state: LeadsState, action: LeadsAction): LeadsState
                 stageSince: action.at,
                 lastActionAt: action.at,
                 updatedAt: action.at,
+                reenquiredAfterCloseAt: null,
               }
             : lead,
         ),
@@ -282,6 +292,11 @@ interface LeadsContextValue {
   /** Remove a timeline entry. Rejects on failure, having changed nothing. */
   deleteActivity: (activityId: string) => Promise<void>
   /**
+   * Hide the "enquired again" marker, recording who and when. Optimistic, and
+   * not a logged action: the follow-up clock does not move.
+   */
+  dismissReenquiry: (leadId: string) => void
+  /**
    * Hand the store what the server just returned. Pages call this with their
    * own slice — the list with its ten rows, the record with its one — so the
    * store holds what is on screen plus anything optimistic, and no longer
@@ -368,6 +383,13 @@ export function LeadsStoreProvider({
         nextStep: null,
         stageSince: at,
         lastActionAt: at,
+        // A trigger gives the lead its first submission as it is inserted.
+        lastEnquiryAt: at,
+        enquiryCount: 1,
+        latestEnquirySource: 'manual',
+        reenquiredAfterCloseAt: null,
+        reenquiryDismissedAt: null,
+        reenquiryDismissedBy: null,
         convertedClientId: null,
         metaFormId: null,
         metaAdId: null,
@@ -397,8 +419,19 @@ export function LeadsStoreProvider({
 
       // Optimistic: the dialog closes straight away. If the write fails the row
       // is taken back out rather than left looking saved.
-      void persistence.createLead?.({ lead, activity })?.catch(() => {
+      void persistence.createLead?.({ lead, activity })?.catch((err: unknown) => {
         dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
+        // One lead per email. Offer the lead that already exists instead of
+        // merging into it: staff typing someone in is not an enquiry.
+        if (err instanceof DuplicateLeadError) {
+          toast(
+            `${lead.email} already has a lead.`,
+            err.leadId
+              ? { tone: 'error', href: `/leads/${err.leadId}`, linkLabel: 'Open existing lead' }
+              : { tone: 'error' },
+          )
+          return
+        }
         toast(`${lead.name} could not be saved. Please add them again.`, { tone: 'error' })
       })
 
@@ -421,6 +454,29 @@ export function LeadsStoreProvider({
       })
     },
     [state.leads, persistence, toast],
+  )
+
+  const dismissReenquiry = useCallback(
+    (leadId: string) => {
+      const previous = state.leads.find((lead) => lead.id === leadId)
+      const at = new Date().toISOString()
+      // UPDATE_LEAD, not an activity: lastActionAt is left alone. The server
+      // stamps its own time and name; these stand in until the next read.
+      dispatch({
+        type: 'UPDATE_LEAD',
+        leadId,
+        patch: { reenquiryDismissedAt: at, reenquiryDismissedBy: author },
+        at,
+      })
+
+      void persistence.dismissReenquiry?.({ leadId })?.catch(() => {
+        if (previous) {
+          dispatch({ type: 'ROLLBACK_LEAD', lead: previous, removeActivityId: NO_ACTIVITY })
+        }
+        toast("That didn't save. The marker has been put back.", { tone: 'error' })
+      })
+    },
+    [state.leads, author, persistence, toast],
   )
 
   const logActivity = useCallback(
@@ -610,6 +666,7 @@ export function LeadsStoreProvider({
       deleteLeads,
       editActivity,
       deleteActivity,
+      dismissReenquiry,
       syncFromServer,
     }),
     [
@@ -625,6 +682,7 @@ export function LeadsStoreProvider({
       deleteLeads,
       editActivity,
       deleteActivity,
+      dismissReenquiry,
       syncFromServer,
     ],
   )

@@ -11,6 +11,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
 import {
+  describeLatestEnquiry,
+  enquiryCountLabel,
+  reenquiryMarkerLabel,
+  showsReenquiryMarker,
+} from '@/lib/leads/enquiries'
+import {
   describeUncertainState,
   formatLeadSource,
   formatPhone,
@@ -88,8 +94,11 @@ export function LeadTableRow({
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </td>
+      {/* The latest enquiry, not the first: the list sorts on it, so the date
+          shown has to be the one the order follows. */}
       <td className="px-3 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
-        {formatShortDate(lead.createdAt)}
+        {formatShortDate(lead.lastEnquiryAt)}
+        <EnquiryCount lead={lead} />
       </td>
       <td className="px-3 py-3.5">
         <Link
@@ -99,6 +108,7 @@ export function LeadTableRow({
         >
           {lead.name}
         </Link>
+        <ReenquiryMarker lead={lead} className="mt-1" />
       </td>
       {/* Paired with the Email header in LeadTable's COLUMNS. */}
       <td className="hidden max-w-[180px] truncate px-3 py-3.5 text-foreground/50 xl:table-cell">
@@ -212,6 +222,7 @@ export function LeadCard({
             </Link>
             {/* {flagged && <FollowUpBadge compact />} */}
           </div>
+          <ReenquiryMarker lead={lead} className="mt-1.5" />
           <p className="mt-1 truncate text-xs text-foreground/50">{lead.email}</p>
           <p className="mt-0.5 text-xs tabular-nums text-foreground/50">
             {formatPhone(lead.phone)}
@@ -242,7 +253,13 @@ export function LeadCard({
       )}
 
       <div className="flex items-center gap-2 text-xs text-foreground/40">
-        <span className="tabular-nums">{formatShortDate(lead.createdAt)}</span>
+        <span className="tabular-nums">{formatShortDate(lead.lastEnquiryAt)}</span>
+        {lead.enquiryCount > 1 && (
+          <>
+            <span aria-hidden="true">&middot;</span>
+            <EnquiryCount lead={lead} inline />
+          </>
+        )}
         {lead.entityType && (
           <>
             <span aria-hidden="true">&middot;</span>
@@ -265,6 +282,38 @@ export function LeadCard({
         selectSize="md"
         className="w-full"
       />
+    </div>
+  )
+}
+
+/**
+ * "3 enquiries" under the date, with where and when the latest came from on
+ * hover or focus. Nothing for a lead with a single enquiry, which is most.
+ */
+function EnquiryCount({ lead, inline = false }: { lead: Lead; inline?: boolean }) {
+  if (lead.enquiryCount < 2) return null
+  return (
+    <Tooltip
+      content={describeLatestEnquiry(lead)}
+      className={`${inline ? 'inline' : 'mt-0.5 block w-fit'} cursor-help`}
+    >
+      <span className="text-xs text-accent">{enquiryCountLabel(lead.enquiryCount)}</span>
+    </Tooltip>
+  )
+}
+
+/**
+ * A converted or closed lead that has enquired again. Warning, not
+ * destructive: nothing is wrong, but somebody should look. Cleared by a stage
+ * change or a dismissal on the record.
+ */
+function ReenquiryMarker({ lead, className }: { lead: Lead; className?: string }) {
+  if (!showsReenquiryMarker(lead)) return null
+  return (
+    <div className={className}>
+      <Badge variant="warning" className="whitespace-nowrap">
+        {reenquiryMarkerLabel(lead)}
+      </Badge>
     </div>
   )
 }

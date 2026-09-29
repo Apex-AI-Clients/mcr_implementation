@@ -5,7 +5,7 @@ import { WorkspaceTopBar } from '@/components/admin/WorkspaceTopBar'
 import { LeadsStoreProvider } from '@/components/leads/LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
 import { leadsPersistence } from '@/lib/leads/persistence'
-import { firstNameFromMetadata } from '@/lib/utils'
+import { staffAuthorName } from '@/lib/auth/staff'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await getSupabaseAuthClient()
@@ -25,7 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/login')
   }
 
-  const author = firstNameFromMetadata(user.user_metadata) ?? user.email?.split('@')[0] ?? 'You'
+  const author = staffAuthorName(user)
 
   return (
     <ToastProvider>

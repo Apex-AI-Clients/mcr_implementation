@@ -10,6 +10,10 @@ import { requireStaffUser } from '@/lib/auth/staff'
  * lead_activities owns that column. Two writers to one clock is how it drifts.
  */
 
+/** Postgres unique-violation, and the index that makes emails unique. */
+const UNIQUE_VIOLATION = '23505'
+const EMAIL_KEY = 'leads_email_lower_key'
+
 const ActivitySchema = z.object({
   id: z.string().uuid(),
   type: z.enum(['note', 'call', 'email', 'next_step', 'stage_change']),
@@ -54,11 +58,14 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseServerClient()
+    const email = lead.email.trim().toLowerCase()
 
+    // A trigger adds the lead's first submission (source 'manual') in the same
+    // transaction, so there is nothing to write for it here.
     const { error: insertError } = await supabase.from('leads').insert({
       id: lead.id,
       name: lead.name.trim(),
-      email: lead.email.trim().toLowerCase(),
+      email,
       phone: lead.phone.trim(),
       debt_min: lead.debtMin,
       debt_max: lead.debtMax,
@@ -70,7 +77,22 @@ export async function POST(req: NextRequest) {
       company: lead.company,
       stage: 'lead',
     })
-    if (insertError) throw insertError
+    if (insertError) {
+      // One lead per email (migration 0020). Staff adding someone who already
+      // enquired get the existing record to open, never a silent merge.
+      if (insertError.code === UNIQUE_VIOLATION && insertError.message.includes(EMAIL_KEY)) {
+        const { data: existing } = await supabase
+          .from('leads')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle()
+        return NextResponse.json(
+          { error: 'A lead with this email already exists.', leadId: existing?.id ?? null },
+          { status: 409 },
+        )
+      }
+      throw insertError
+    }
 
     // Best effort: the lead exists either way, and losing an opening note is a
     // far smaller problem than losing the lead.

@@ -36,6 +36,12 @@ function staleLead(overrides: Partial<Lead> = {}): Lead {
     nextStep: null,
     stageSince: at(40),
     lastActionAt: at(40),
+    lastEnquiryAt: at(40),
+    enquiryCount: 1,
+    latestEnquirySource: null,
+    reenquiredAfterCloseAt: null,
+    reenquiryDismissedAt: null,
+    reenquiryDismissedBy: null,
     convertedClientId: null,
     metaFormId: null,
     metaAdId: null,
@@ -245,5 +251,40 @@ describe('leadsReducer', () => {
     const snapshot = structuredClone(before)
     leadsReducer(before, { type: 'LOG_ACTIVITY', activity: activity() })
     expect(before).toEqual(snapshot)
+  })
+})
+
+describe('"enquired again" marker', () => {
+  const marked = (): Lead => ({
+    ...staleLead(),
+    stage: 'non_proceeding',
+    reenquiredAfterCloseAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  it('clears on a stage change, as the database trigger does', () => {
+    const next = leadsReducer(stateWith(marked()), {
+      type: 'SET_STAGE',
+      leadId: 'ld_1',
+      stage: 'lead',
+      activity: activity({ type: 'stage_change' }),
+      at: NOW.toISOString(),
+    })
+    expect(next.leads[0].reenquiredAfterCloseAt).toBeNull()
+  })
+
+  it('clears on conversion, which is a stage change too', () => {
+    const next = leadsReducer(stateWith(marked()), {
+      type: 'SET_CONVERTED',
+      leadId: 'ld_1',
+      clientId: 'client-123',
+      activity: activity({ type: 'stage_change' }),
+      at: NOW.toISOString(),
+    })
+    expect(next.leads[0].reenquiredAfterCloseAt).toBeNull()
+  })
+
+  it('stays through a logged action — only a stage change or a dismissal clears it', () => {
+    const next = leadsReducer(stateWith(marked()), { type: 'LOG_ACTIVITY', activity: activity() })
+    expect(next.leads[0].reenquiredAfterCloseAt).toBe('2026-09-01T00:00:00.000Z')
   })
 })

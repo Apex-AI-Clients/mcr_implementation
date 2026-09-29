@@ -74,7 +74,13 @@ export function mightBeInState(lead: Lead, state: AuState): boolean {
   return lead.state === state || (lead.metaStateOptions?.includes(state) ?? false)
 }
 
-/** Filters are additive — every active one must pass. Newest first. */
+/**
+ * Filters are additive — every active one must pass. Newest enquiry first.
+ *
+ * "Newest" and the date range both mean the latest enquiry, not the first:
+ * someone who enquired again this week belongs in "last 7 days" and at the
+ * top of the list, however long ago their lead was created.
+ */
 export function filterLeads(
   leads: Lead[],
   filters: LeadFilterState,
@@ -91,14 +97,14 @@ export function filterLeads(
       if (filters.state !== 'all' && !mightBeInState(lead, filters.state)) return false
       if (filters.source !== 'all' && lead.source !== filters.source) return false
       if (filters.debtFloor !== null && !overlapsFloor(lead, filters.debtFloor)) return false
-      if (cutoff !== null && new Date(lead.createdAt).getTime() < cutoff) return false
+      if (cutoff !== null && new Date(lead.lastEnquiryAt).getTime() < cutoff) return false
       if (filters.followUpOnly && !needsFollowUp(lead, now)) return false
       return true
     })
     .sort((a, b) =>
       filters.sort === 'debt'
         ? // Ties keep the newest-first order, so the list is never arbitrary.
-          compareByDebtDesc(a, b) || b.createdAt.localeCompare(a.createdAt)
-        : b.createdAt.localeCompare(a.createdAt),
+          compareByDebtDesc(a, b) || b.lastEnquiryAt.localeCompare(a.lastEnquiryAt)
+        : b.lastEnquiryAt.localeCompare(a.lastEnquiryAt),
     )
 }

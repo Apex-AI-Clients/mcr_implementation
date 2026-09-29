@@ -7,6 +7,7 @@ import type {
   LeadActivityType,
   LeadSource,
   LeadStage,
+  LeadSubmission,
 } from '@/types/leads'
 
 /**
@@ -23,6 +24,7 @@ import type {
 
 export type LeadRow = Database['public']['Tables']['leads']['Row']
 export type LeadActivityRow = Database['public']['Tables']['lead_activities']['Row']
+export type LeadSubmissionRow = Database['public']['Tables']['lead_submissions']['Row']
 
 export function toLead(row: LeadRow): Lead {
   return {
@@ -44,6 +46,15 @@ export function toLead(row: LeadRow): Lead {
     nextStep: row.next_step,
     stageSince: row.stage_since,
     lastActionAt: row.last_action_at,
+    lastEnquiryAt: row.last_enquiry_at,
+    enquiryCount: row.enquiry_count,
+    // With one enquiry it can only be the lead's own source. With more, the
+    // latest one's source is in lead_submissions and has to be read from
+    // there — see getLeadsPage.
+    latestEnquirySource: row.enquiry_count <= 1 ? (row.source as LeadSource) : null,
+    reenquiredAfterCloseAt: row.reenquired_after_close_at,
+    reenquiryDismissedAt: row.reenquiry_dismissed_at,
+    reenquiryDismissedBy: row.reenquiry_dismissed_by,
     convertedClientId: row.converted_client_id,
     metaFormId: row.meta_form_id,
     metaAdId: row.meta_ad_id,
@@ -66,5 +77,35 @@ export function toLeadActivity(row: LeadActivityRow): LeadActivity {
     body: row.body,
     author: row.author,
     createdAt: row.created_at,
+  }
+}
+
+/**
+ * One enquiry. The same CHECKs as the leads row constrain these columns
+ * (migration 0020), so the same casts are safe. External and account ids are
+ * left off: nothing on the record shows them.
+ */
+export function toLeadSubmission(row: LeadSubmissionRow): LeadSubmission {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    receivedAt: row.received_at,
+    afterClose: row.after_close,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    debtMin: row.debt_min,
+    debtMax: row.debt_max,
+    state: row.state as AuState | null,
+    metaStateRaw: row.meta_state_raw,
+    metaStateOptions: row.meta_state_options as AuState[] | null,
+    entityType: row.entity_type as EntityType | null,
+    message: row.message,
+    preferredCallTime: row.preferred_call_time,
+    source: row.source as LeadSource,
+    metaFormId: row.meta_form_id,
+    metaAdId: row.meta_ad_id,
+    metaCampaignName: row.meta_campaign_name,
+    metaAdName: row.meta_ad_name,
   }
 }

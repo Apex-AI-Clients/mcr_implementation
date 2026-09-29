@@ -193,11 +193,15 @@ field values with `GET /{leadgen_id}?access_token={page_token}`. Store the
 ### Rules that will save you
 
 **Idempotency.** Meta retries on any non-200 and people double-submit forms. Unique
-constraint on `(source, external_id)`. Second delivery is a no-op returning 200.
+constraint on `(source, external_id)`, on `lead_submissions` since migration 0020
+(it used to sit on `leads`, which only held the *first* enquiry's id, so a retried
+repeat enquiry was appended twice). Second delivery is a no-op returning 200.
 
-**Known email.** Not a new lead — a new touch. Append an activity to the existing
-record and reset `lastActionAt` rather than creating a duplicate row for Gabby to
-reconcile.
+**Known email.** Still one lead per email — stage, follow-up and conversion stay on
+one record — but a repeat enquiry is no longer reduced to a timeline note. It is
+stored in full and the lead row takes its newest details. See **Repeat enquiries**
+below. *(Superseded 2026-09-29: this used to append a note and discard everything
+else the enquiry carried.)*
 
 **Malformed payloads.** Never drop silently. Write the raw body and the parse error
 to `lead_intake_log`, return 200 so Meta stops retrying, and surface the failure on
@@ -212,11 +216,131 @@ outside `lead_intake_log` — they carry names, phone numbers and financial posi
 - [ ] GET handshake returns the challenge as plain text; 403 on a bad token
 - [ ] Bad or missing secret returns 401 and writes nothing
 - [ ] Same `leadgen_id` twice creates one lead
-- [ ] Known email appends an activity instead of duplicating
+- [ ] Known email is recorded as a submission on the same lead, never a second lead (see Repeat enquiries)
 - [ ] Unmapped state rejected; unmapped debt range stored as null
 - [ ] Malformed payload logged, 200 returned
 - [ ] Source cannot be overridden from the body
 - [ ] Fixture tests for both Facebook and WordPress payload shapes
+
+---
+
+## Repeat enquiries (migration 0020)
+
+Added 2026-09-29 at Gabby's request. Code: `supabase/migrations/0020_lead_submissions.sql`,
+`src/lib/leads/ingestStore.ts`, `src/lib/leads/enquiries.ts`.
+
+### The rules
+
+- **One lead per email.** `leads_email_lower_key` is a unique index on
+  `lower(email)`. A known email never creates a second lead, whichever path it
+  arrives by.
+- **Every enquiry is kept.** `lead_submissions` holds one row per enquiry received,
+  with every field it carried and when (`received_at`). Nothing an earlier form said
+  is lost. A trigger gives every new lead its first submission — ingest, Add lead,
+  anything later.
+- **The lead row shows the newest details**, merged by group. A blank never wipes a
+  known value:
+
+  | Group | Replaced when |
+  |---|---|
+  | `name`, `phone` | non-blank (ingest requires both) |
+  | `debt_min` + `debt_max` | either is set. A null max alone means "or more", not blank |
+  | `state` + `meta_state_raw` + `meta_state_options` | any is set. The CHECK forbids state and options together |
+  | `entity_type`, `message`, `preferred_call_time` | each on its own, when non-blank |
+  | `source`, `external_id`, `meta_*` | never — first touch (see Attribution) |
+
+  So on a repeat lead, "Their message" on the record is the latest message anyone
+  gave, which may be from an older enquiry. The Enquiries list shows which said what.
+- **Stage and conversion are never touched.** A lead that is converted
+  (`converted_client_id` set) or closed (`converted`, `non_proceeding`,
+  `do_not_contact`) keeps its row exactly as it is. The enquiry is still stored,
+  with `after_close = true`, and `reenquired_after_close_at` is set. That shows the
+  "New enquiry after conversion/closure" marker in the table and on the record.
+- **The marker clears on any stage change** (a trigger on `leads`), or hides when
+  someone presses **Dismiss** on the record. Dismiss records who
+  (`reenquiry_dismissed_by`, taken from the session) and when, and writes **no
+  activity** — it is not a logged action, so it does not reset the follow-up clock.
+  The next enquiry brings the marker back.
+- **The timeline note is still added** on every repeat enquiry, so the follow-up
+  clock resets exactly as it did before.
+- **Retries are no-ops**, first enquiry or repeat, because `(source, external_id)` is
+  unique on `lead_submissions`.
+- **All of it happens in one transaction**, in `ingest_lead_submission()`, which
+  locks on the email first. Two deliveries for the same new email arriving together
+  produce one lead with two enquiries, not two leads. Execute is granted to
+  `service_role` only; anon and authenticated cannot call it through `/rpc`.
+- **Add lead with a known email** returns 409 with the existing lead's id. The UI
+  says so and offers **Open existing lead**. No silent merge: staff typing someone
+  in is not an enquiry.
+
+### What the table and record show
+
+- **"Last enquiry"** column (was "Date"): `leads.last_enquiry_at`. The default sort,
+  the debt sort's tie-break and the date filter all use it, so a lead who enquired
+  again this week is at the top and inside "Last 7 days".
+- **"N enquiries"** under the date when there is more than one, with the latest
+  enquiry's source and date on hover.
+- **Enquiries** section on the record: every enquiry newest first, each with date
+  and time, source (campaign, ad and form where known) and every field, with values
+  that differ from the enquiry before highlighted. Blanks show as "Not given" and
+  are never highlighted.
+- **Export**: "Last enquiry" and "Enquiries" columns after "Date added".
+
+### Attribution: first touch on the row, every touch in submissions
+
+The leads row keeps the attribution of the enquiry that **created** the lead:
+`source`, `external_id` and every `meta_*` column. A partner report for August then
+does not change when the same person enquires again in September. Every touch is in
+`lead_submissions`, so the dashboard can derive any view without another migration:
+
+```sql
+-- First touch: the lead row itself.
+select source, meta_campaign_name, count(*) as leads
+from leads group by 1, 2;
+
+-- Every touch: enquiries per campaign (a person counted once per enquiry).
+select source, meta_campaign_name, count(*) as enquiries,
+       count(distinct lead_id) as leads
+from lead_submissions group by 1, 2;
+
+-- Last touch: the newest submission per lead.
+select distinct on (lead_id) lead_id, source, meta_campaign_name, received_at
+from lead_submissions
+order by lead_id, received_at desc;
+```
+
+**Not yet confirmed by Gabby.** To switch the row to latest touch, change
+`ROW_ATTRIBUTION` in `src/lib/leads/ingestStore.ts` to `'latest_touch'`. The
+function then replaces `source`, `external_id` and every `meta_*` together, blanks
+included — a website repeat after a Facebook ad leaves no ad on the row. It applies
+to enquiries from then on. Rows already stored keep what they have; rewrite them
+from `lead_submissions` if that matters.
+
+The table's **Source filter** matches the row's source, i.e. first touch. A lead
+that first came from Facebook and later from the website is found under Facebook
+only.
+
+### Existing data
+
+The migration backfilled one submission per lead that existed at the time, copied
+from its row, with `received_at = created_at`. Every existing lead starts at
+`enquiry_count = 1` and `last_enquiry_at = created_at`.
+
+**Earlier repeat enquiries are not counted.** Before this change they were stored
+only as "New enquiry from the … form" timeline notes. Those notes are left as they
+are and not parsed back into submissions, so a lead that enquired three times before
+the migration shows as one enquiry. Accepted.
+
+### Tests
+
+- `src/lib/leads/__tests__/ingestStore.test.ts`: what is sent to the function and
+  how its answer is read.
+- `supabase/tests/ingest_lead_submission.test.ts`: the function against a real
+  database. Every merge group, blanks, retries of first and repeat enquiries, an
+  email with `_`, converted and closed leads, the marker, concurrent deliveries, and
+  that the anon key cannot call it. Run with `npm run test:db` and the
+  `SUPABASE_TEST_*` variables pointed at a **dev** project — it inserts and deletes
+  synthetic rows, so never production. Skipped when they are unset.
 
 ---
 

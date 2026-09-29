@@ -3,6 +3,7 @@ import {
   getActivitiesForLead,
   getConvertedClientDetails,
   getLeadById,
+  getSubmissionsForLead,
 } from '@/lib/leads/queries'
 
 export const dynamic = 'force-dynamic'
@@ -24,10 +25,17 @@ interface Props {
  *
  * A converted lead also shows what its client file holds — the ABN, ACN and
  * the rest collected at conversion and in intake — so that is read here too.
+ *
+ * So is every enquiry the lead has made (lead_submissions), for the Enquiries
+ * list: the lead row shows only the newest values.
  */
 export default async function LeadRecordPage({ params }: Props) {
   const { id } = await params
-  const [lead, activities] = await Promise.all([getLeadById(id), getActivitiesForLead(id)])
+  const [lead, activities, enquiries] = await Promise.all([
+    getLeadById(id),
+    getActivitiesForLead(id),
+    getSubmissionsForLead(id),
+  ])
   const convertedClient = lead?.convertedClientId
     ? await getConvertedClientDetails(lead.convertedClientId)
     : null
@@ -37,6 +45,7 @@ export default async function LeadRecordPage({ params }: Props) {
       leadId={id}
       initialLead={lead}
       initialActivities={activities}
+      enquiries={enquiries}
       convertedClient={convertedClient}
     />
   )

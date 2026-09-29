@@ -11,6 +11,20 @@ import type { LeadsPersistence } from '@/components/leads/LeadsStore'
  * that column.
  */
 
+/**
+ * The email already belongs to a lead (409 from POST /api/admin/leads). Carries
+ * that lead's id so the caller can offer to open it rather than merge.
+ */
+export class DuplicateLeadError extends Error {
+  constructor(
+    message: string,
+    readonly leadId: string | null,
+  ) {
+    super(message)
+    this.name = 'DuplicateLeadError'
+  }
+}
+
 async function send(
   url: string,
   method: 'POST' | 'PATCH' | 'DELETE',
@@ -30,9 +44,16 @@ async function send(
   if (!response.ok) {
     let detail = `${method} ${url} failed with ${response.status}`
     try {
-      const payload = (await response.json()) as { error?: unknown }
+      const payload = (await response.json()) as { error?: unknown; leadId?: unknown }
       if (typeof payload.error === 'string' && payload.error) detail = payload.error
-    } catch {
+      if (response.status === 409 && 'leadId' in payload) {
+        throw new DuplicateLeadError(
+          detail,
+          typeof payload.leadId === 'string' ? payload.leadId : null,
+        )
+      }
+    } catch (err) {
+      if (err instanceof DuplicateLeadError) throw err
       // Non-JSON error body — the status line is all we have.
     }
     throw new Error(detail)
@@ -58,6 +79,11 @@ export const leadsPersistence: LeadsPersistence = {
       },
       activity,
     }),
+
+  // Staff have seen the "enquired again" marker. No activity — this is not a
+  // logged action — and the server records who and when from the session.
+  dismissReenquiry: ({ leadId }) =>
+    send(`/api/admin/leads/${leadId}`, 'PATCH', { patch: { dismissReenquiry: true } }),
 
   // A data correction: no activity, so the trigger never fires and the
   // follow-up clock is left where it was.

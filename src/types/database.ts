@@ -479,6 +479,98 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_submissions: {
+        Row: {
+          after_close: boolean
+          debt_max: number | null
+          debt_min: number | null
+          email: string
+          entity_type: string | null
+          external_id: string | null
+          id: string
+          lead_id: string
+          message: string | null
+          meta_account_id: string | null
+          meta_ad_id: string | null
+          meta_ad_name: string | null
+          meta_adgroup_id: string | null
+          meta_campaign_id: string | null
+          meta_campaign_name: string | null
+          meta_form_id: string | null
+          meta_page_id: string | null
+          meta_state_options: string[] | null
+          meta_state_raw: string | null
+          name: string
+          phone: string
+          preferred_call_time: string | null
+          received_at: string
+          source: string
+          state: string | null
+        }
+        Insert: {
+          after_close?: boolean
+          debt_max?: number | null
+          debt_min?: number | null
+          email: string
+          entity_type?: string | null
+          external_id?: string | null
+          id?: string
+          lead_id: string
+          message?: string | null
+          meta_account_id?: string | null
+          meta_ad_id?: string | null
+          meta_ad_name?: string | null
+          meta_adgroup_id?: string | null
+          meta_campaign_id?: string | null
+          meta_campaign_name?: string | null
+          meta_form_id?: string | null
+          meta_page_id?: string | null
+          meta_state_options?: string[] | null
+          meta_state_raw?: string | null
+          name: string
+          phone: string
+          preferred_call_time?: string | null
+          received_at?: string
+          source: string
+          state?: string | null
+        }
+        Update: {
+          after_close?: boolean
+          debt_max?: number | null
+          debt_min?: number | null
+          email?: string
+          entity_type?: string | null
+          external_id?: string | null
+          id?: string
+          lead_id?: string
+          message?: string | null
+          meta_account_id?: string | null
+          meta_ad_id?: string | null
+          meta_ad_name?: string | null
+          meta_adgroup_id?: string | null
+          meta_campaign_id?: string | null
+          meta_campaign_name?: string | null
+          meta_form_id?: string | null
+          meta_page_id?: string | null
+          meta_state_options?: string[] | null
+          meta_state_raw?: string | null
+          name?: string
+          phone?: string
+          preferred_call_time?: string | null
+          received_at?: string
+          source?: string
+          state?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_submissions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           company: string | null
@@ -487,10 +579,12 @@ export type Database = {
           debt_max: number | null
           debt_min: number | null
           email: string
+          enquiry_count: number
           entity_type: string | null
           external_id: string | null
           id: string
           last_action_at: string
+          last_enquiry_at: string
           message: string | null
           meta_account_id: string | null
           meta_ad_id: string | null
@@ -506,6 +600,9 @@ export type Database = {
           next_step: string | null
           phone: string
           preferred_call_time: string | null
+          reenquired_after_close_at: string | null
+          reenquiry_dismissed_at: string | null
+          reenquiry_dismissed_by: string | null
           source: string
           stage: string
           stage_since: string
@@ -519,10 +616,12 @@ export type Database = {
           debt_max?: number | null
           debt_min?: number | null
           email: string
+          enquiry_count?: number
           entity_type?: string | null
           external_id?: string | null
           id?: string
           last_action_at?: string
+          last_enquiry_at?: string
           message?: string | null
           meta_account_id?: string | null
           meta_ad_id?: string | null
@@ -538,6 +637,9 @@ export type Database = {
           next_step?: string | null
           phone: string
           preferred_call_time?: string | null
+          reenquired_after_close_at?: string | null
+          reenquiry_dismissed_at?: string | null
+          reenquiry_dismissed_by?: string | null
           source: string
           stage?: string
           stage_since?: string
@@ -551,10 +653,12 @@ export type Database = {
           debt_max?: number | null
           debt_min?: number | null
           email?: string
+          enquiry_count?: number
           entity_type?: string | null
           external_id?: string | null
           id?: string
           last_action_at?: string
+          last_enquiry_at?: string
           message?: string | null
           meta_account_id?: string | null
           meta_ad_id?: string | null
@@ -570,6 +674,9 @@ export type Database = {
           next_step?: string | null
           phone?: string
           preferred_call_time?: string | null
+          reenquired_after_close_at?: string | null
+          reenquiry_dismissed_at?: string | null
+          reenquiry_dismissed_by?: string | null
           source?: string
           stage?: string
           stage_since?: string
@@ -761,6 +868,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ingest_lead_submission: {
+        Args: {
+          p_latest_touch?: boolean
+          p_note_author: string
+          p_note_body: string
+          p_submission: Json
+        }
+        Returns: {
+          lead_id: string
+          outcome: string
+        }[]
+      }
       match_document_chunks: {
         Args: {
           match_client_id: string

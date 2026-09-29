@@ -33,6 +33,11 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     nextStep: null,
     stageSince: at(5),
     lastActionAt: at(5),
+    enquiryCount: 1,
+    latestEnquirySource: null,
+    reenquiredAfterCloseAt: null,
+    reenquiryDismissedAt: null,
+    reenquiryDismissedBy: null,
     convertedClientId: null,
     metaFormId: null,
     metaAdId: null,
@@ -47,6 +52,9 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     createdAt: at(5),
     updatedAt: at(5),
     ...overrides,
+    // A lead with one enquiry was last enquired when it was created, so a
+    // test that only sets createdAt still means what it says.
+    lastEnquiryAt: overrides.lastEnquiryAt ?? overrides.createdAt ?? at(5),
   }
 }
 
@@ -150,8 +158,15 @@ describe('filterLeads', () => {
   })
 
   describe('sort', () => {
-    it('defaults to newest added first', () => {
+    it('defaults to newest enquiry first', () => {
       expect(ids(filterLeads(leads, EMPTY_FILTERS, NOW))).toEqual(['a', 'b', 'c', 'd'])
+    })
+
+    it('puts an old lead that enquired again above newer leads', () => {
+      // Created 60 days ago, but enquired again yesterday: the latest enquiry
+      // is what the list is ordered by.
+      const again = makeLead({ id: 'old', createdAt: at(60), lastEnquiryAt: at(1), enquiryCount: 2 })
+      expect(ids(filterLeads([...leads, again], EMPTY_FILTERS, NOW))[0]).toBe('old')
     })
 
     it('sorts by debt min descending with unknown debt last', () => {
@@ -161,6 +176,14 @@ describe('filterLeads', () => {
         'a', // 50k
         'c', // unknown
       ])
+    })
+
+    it('breaks debt ties by latest enquiry rather than date added', () => {
+      const tied = [
+        makeLead({ id: 'x', debtMin: 100_000, debtMax: 124_999, createdAt: at(1) }),
+        makeLead({ id: 'y', debtMin: 100_000, debtMax: 124_999, createdAt: at(30), lastEnquiryAt: at(0) }),
+      ]
+      expect(ids(filterLeads(tied, withFilters({ sort: 'debt' }), NOW))).toEqual(['y', 'x'])
     })
 
     it('breaks debt ties by newest first rather than arbitrarily', () => {
@@ -183,6 +206,12 @@ describe('filterLeads', () => {
     [{ dateRange: '30' }, ['a', 'b']],
   ])('applies %o', (patch, expected) => {
     expect(ids(filterLeads(leads, withFilters(patch), NOW))).toEqual(expected)
+  })
+
+  it('counts a recent repeat enquiry inside the date range', () => {
+    // Created long before the 30-day cutoff, enquired again inside it.
+    const again = makeLead({ id: 'old', createdAt: at(90), lastEnquiryAt: at(3), enquiryCount: 2 })
+    expect(ids(filterLeads([again], withFilters({ dateRange: '30' }), NOW))).toEqual(['old'])
   })
 
   it('shows only flagged leads when the follow-up toggle is on', () => {

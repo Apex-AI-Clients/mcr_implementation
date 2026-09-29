@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { requireStaffUser } from '@/lib/auth/staff'
+import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 import type { Database } from '@/types/database'
 
 /**
@@ -16,6 +16,11 @@ import type { Database } from '@/types/database'
  *    alone.
  *  - `stage_since` is set server-side when the stage actually changes, so the
  *    client cannot get it wrong or backdate it.
+ *
+ * Dismissing the "enquired again" marker is a patch here too, and deliberately
+ * carries no activity: staff having looked at it is not a logged action, so it
+ * must not reset the follow-up clock. Who and when are set server-side from
+ * the session.
  */
 
 type LeadUpdate = Database['public']['Tables']['leads']['Update']
@@ -41,6 +46,7 @@ const PatchSchema = z.object({
     .enum(['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact'])
     .optional(),
   convertedClientId: z.string().uuid().nullable().optional(),
+  dismissReenquiry: z.literal(true).optional(),
 })
 
 const BodySchema = z.object({
@@ -84,6 +90,10 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (patch.nextStep !== undefined) update.next_step = patch.nextStep
     if (patch.convertedClientId !== undefined) {
       update.converted_client_id = patch.convertedClientId
+    }
+    if (patch.dismissReenquiry) {
+      update.reenquiry_dismissed_at = new Date().toISOString()
+      update.reenquiry_dismissed_by = staffAuthorName(staff)
     }
     if (patch.stage !== undefined) {
       update.stage = patch.stage

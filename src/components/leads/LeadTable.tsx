@@ -55,7 +55,8 @@ function SelectAllCheckbox({
 }
 
 const COLUMNS = [
-  { label: 'Date', className: 'text-left' },
+  // The latest enquiry's date, which is also what the list is sorted by.
+  { label: 'Last enquiry', className: 'text-left whitespace-nowrap' },
   { label: 'Name', className: 'text-left' },
   // Hidden on narrower desktops so the table fits the window instead of
   // scrolling. Email is on the record, one click away, and in the card layout

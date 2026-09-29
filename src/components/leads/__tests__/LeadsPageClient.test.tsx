@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LeadsPageClient } from '../LeadsPageClient'
-import { LeadsStoreProvider } from '../LeadsStore'
+import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
+import { DuplicateLeadError } from '@/lib/leads/persistence'
 import { ToastProvider } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, type LeadFilterState } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
@@ -56,6 +57,12 @@ function makeLead(overrides: Partial<Lead>): Lead {
     nextStep: null,
     stageSince: daysAgo(5),
     lastActionAt: daysAgo(5),
+    lastEnquiryAt: daysAgo(5),
+    enquiryCount: 1,
+    latestEnquirySource: null,
+    reenquiredAfterCloseAt: null,
+    reenquiryDismissedAt: null,
+    reenquiryDismissedBy: null,
     convertedClientId: null,
     metaFormId: null,
     metaAdId: null,
@@ -86,13 +93,14 @@ interface RenderOptions {
   total?: number
   page?: number
   pageCount?: number
+  persistence?: LeadsPersistence
 }
 
 function renderList(options: RenderOptions = {}) {
   const leads = options.leads ?? LEADS
   return render(
     <ToastProvider>
-      <LeadsStoreProvider author="Gabby">
+      <LeadsStoreProvider author="Gabby" persistence={options.persistence}>
         <LeadsPageClient
           filters={{ ...EMPTY_FILTERS, ...options.filters }}
           leads={leads}
@@ -364,5 +372,94 @@ describe('LeadsPageClient', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(push).toHaveBeenCalledWith('/leads')
     expect(refresh).toHaveBeenCalled()
+  })
+
+  describe('repeat enquiries', () => {
+    it('heads the date column with the latest enquiry, which the list sorts on', () => {
+      renderList()
+      expect(inTable().getByRole('columnheader', { name: 'Last enquiry' })).toBeTruthy()
+    })
+
+    it('shows how many enquiries a lead has made, and the latest one on hover', async () => {
+      const user = userEvent.setup()
+      renderList({
+        leads: [
+          makeLead({
+            id: 'r',
+            name: 'Repeat Person',
+            enquiryCount: 3,
+            latestEnquirySource: 'website',
+            lastEnquiryAt: '2026-09-10T02:00:00.000Z',
+          }),
+          makeLead({ id: 's', name: 'Single Person' }),
+        ],
+      })
+
+      const [repeatRow, singleRow] = inTable().getAllByRole('row').slice(1)
+      expect(within(repeatRow).getByText('10 Sept')).toBeTruthy()
+      await user.hover(within(repeatRow).getByText('3 enquiries'))
+      expect(await screen.findByRole('tooltip')).toHaveProperty(
+        'textContent',
+        'Latest from Website, 10 Sept 2026',
+      )
+      // One enquiry is the normal case and gets no indicator.
+      expect(within(singleRow).queryByText(/enquiries/)).toBeNull()
+    })
+
+    it('marks a converted lead that has enquired again', () => {
+      renderList({
+        leads: [
+          makeLead({
+            id: 'cv',
+            name: 'Converted Person',
+            stage: 'client',
+            convertedClientId: 'client-1',
+            reenquiredAfterCloseAt: '2026-09-10T00:00:00.000Z',
+          }),
+          makeLead({
+            id: 'cl',
+            name: 'Closed Person',
+            stage: 'non_proceeding',
+            reenquiredAfterCloseAt: '2026-09-10T00:00:00.000Z',
+          }),
+          makeLead({
+            id: 'dm',
+            name: 'Dismissed Person',
+            stage: 'non_proceeding',
+            reenquiredAfterCloseAt: '2026-09-10T00:00:00.000Z',
+            reenquiryDismissedAt: '2026-09-11T00:00:00.000Z',
+            reenquiryDismissedBy: 'Gabby',
+          }),
+        ],
+      })
+      const [converted, closed, dismissed] = inTable().getAllByRole('row').slice(1)
+      expect(within(converted).getByText('New enquiry after conversion')).toBeTruthy()
+      expect(within(closed).getByText('New enquiry after closure')).toBeTruthy()
+      expect(within(dismissed).queryByText(/New enquiry after/)).toBeNull()
+    })
+
+    it('offers the existing lead when an added email already has one', async () => {
+      const user = userEvent.setup()
+      const createLead = vi.fn(async () => {
+        throw new DuplicateLeadError('A lead with this email already exists.', 'ld_existing')
+      })
+      renderList({ persistence: { createLead } })
+
+      await user.click(screen.getByRole('button', { name: /add lead/i }))
+      const dialog = await screen.findByRole('dialog')
+      await user.type(within(dialog).getByLabelText('Name'), 'Test Person')
+      await user.type(within(dialog).getByLabelText('Email'), 'known@example.test')
+      await user.type(within(dialog).getByLabelText('Phone'), '0400 000 001')
+      await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
+      await user.selectOptions(within(dialog).getByLabelText('State'), 'QLD')
+      await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
+
+      const open = await screen.findByRole('link', { name: 'Open existing lead' })
+      expect(open.getAttribute('href')).toBe('/leads/ld_existing')
+      expect(screen.getByText('known@example.test already has a lead.')).toBeTruthy()
+      // No merge, and the optimistic row is taken back out.
+      expect(createLead).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText('Test Person')).toBeNull()
+    })
   })
 })

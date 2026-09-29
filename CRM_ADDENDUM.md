@@ -175,6 +175,13 @@ numeric mapping for anything already captured.
 **Message is required** on this form, so website leads will nearly always have one.
 Facebook leads may not. Keep the field nullable.
 
+**A double-submit is two enquiries.** The handler generates `external_id` with
+`random_bytes` on every POST, so two clicks on Submit arrive with different ids
+and are not de-duplicated. Since migration 0020 (CRM_CHANGES.md, Repeat
+enquiries) that shows as two enquiries seconds apart on the same lead — one lead,
+a count of two, and two timeline notes. Accepted as honest rather than fixed; a
+retry of the *same* POST is still a no-op.
+
 **No spam protection.** No captcha, no honeypot. Whatever junk currently arrives by
 email will start arriving in the CRM. The endpoint needs a honeypot field and
 per-IP rate limiting from the first deploy.

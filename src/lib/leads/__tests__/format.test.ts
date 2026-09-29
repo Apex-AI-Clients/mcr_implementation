@@ -44,6 +44,12 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     nextStep: null,
     stageSince: '2026-08-26T00:00:00.000Z',
     lastActionAt: '2026-08-26T00:00:00.000Z',
+    lastEnquiryAt: '2026-08-26T00:00:00.000Z',
+    enquiryCount: 1,
+    latestEnquirySource: null,
+    reenquiredAfterCloseAt: null,
+    reenquiryDismissedAt: null,
+    reenquiryDismissedBy: null,
     convertedClientId: null,
     metaFormId: null,
     metaAdId: null,
@@ -439,12 +445,12 @@ describe('leadsToCsv', () => {
     const lines = csv.split('\r\n')
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe(
-      'Date added,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action,Notes count,Notes',
+      'Date added,Last enquiry,Enquiries,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action,Notes count,Notes',
     )
     // No history passed, so the notes columns are an explicit 0 and a blank
     // rather than absent — the header keeps its shape either way.
     expect(lines[1]).toBe(
-      '2026-08-26,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26,0,',
+      '2026-08-26,2026-08-26,1,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26,0,',
     )
   })
 

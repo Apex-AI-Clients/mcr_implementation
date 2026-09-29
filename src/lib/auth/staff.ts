@@ -1,5 +1,6 @@
 import { getSupabaseAuthClient } from '@/lib/supabase/server'
 import type { User } from '@supabase/supabase-js'
+import { firstNameFromMetadata } from '@/lib/utils'
 
 /**
  * Resolve the authenticated staff user from the request session.
@@ -24,4 +25,13 @@ export async function requireStaffUser(): Promise<User | null> {
     return null
   }
   return user ?? null
+}
+
+/**
+ * The name a staff member's actions are recorded under — timeline authorship,
+ * and who dismissed an "enquired again" marker. Worked out from the session on
+ * the server, so a request body cannot claim to be somebody else.
+ */
+export function staffAuthorName(user: Pick<User, 'user_metadata' | 'email'>): string {
+  return firstNameFromMetadata(user.user_metadata) ?? user.email?.split('@')[0] ?? 'You'
 }

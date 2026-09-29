@@ -38,6 +38,11 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
     meta_account_id: '1029384756',
     meta_state_raw: null,
     meta_state_options: null,
+    enquiry_count: 1,
+    last_enquiry_at: '2026-08-01T00:00:00.000Z',
+    reenquired_after_close_at: null,
+    reenquiry_dismissed_at: null,
+    reenquiry_dismissed_by: null,
     created_at: '2026-08-01T00:00:00.000Z',
     updated_at: '2026-08-30T00:00:00.000Z',
     ...overrides,
@@ -64,6 +69,12 @@ describe('toLead', () => {
       nextStep: 'Book director meeting',
       stageSince: '2026-08-20T00:00:00.000Z',
       lastActionAt: '2026-08-30T00:00:00.000Z',
+      lastEnquiryAt: '2026-08-01T00:00:00.000Z',
+      enquiryCount: 1,
+      latestEnquirySource: 'website',
+      reenquiredAfterCloseAt: null,
+      reenquiryDismissedAt: null,
+      reenquiryDismissedBy: null,
       convertedClientId: null,
       metaFormId: '1785284235823017',
       metaAdId: '23859402118830412',
@@ -80,6 +91,28 @@ describe('toLead', () => {
     })
     // external_id is a Stage 5 idempotency key, deliberately not on the model.
     expect('externalId' in lead).toBe(false)
+  })
+
+  it('knows the latest source of a single enquiry, and leaves it to be loaded for several', () => {
+    // One enquiry: it can only be the lead's own source. Several: the latest
+    // may differ, and only lead_submissions knows — so null, not a guess.
+    expect(toLead(row({ enquiry_count: 1 })).latestEnquirySource).toBe('website')
+    expect(toLead(row({ enquiry_count: 3 })).latestEnquirySource).toBeNull()
+  })
+
+  it('carries the enquiry marker and its dismissal through', () => {
+    const lead = toLead(
+      row({
+        reenquired_after_close_at: '2026-09-02T00:00:00.000Z',
+        reenquiry_dismissed_at: '2026-09-03T00:00:00.000Z',
+        reenquiry_dismissed_by: 'Test Staff',
+      }),
+    )
+    expect(lead).toMatchObject({
+      reenquiredAfterCloseAt: '2026-09-02T00:00:00.000Z',
+      reenquiryDismissedAt: '2026-09-03T00:00:00.000Z',
+      reenquiryDismissedBy: 'Test Staff',
+    })
   })
 
   it('carries nulls through rather than coercing them', () => {

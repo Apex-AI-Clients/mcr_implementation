@@ -43,6 +43,12 @@ export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
         {formatLeadSource(lead)}
         <span aria-hidden="true"> · </span>
         Added {formatFullDate(lead.createdAt)}
+        {lead.enquiryCount > 1 && (
+          <>
+            <span aria-hidden="true"> · </span>
+            {lead.enquiryCount} enquiries, latest {formatFullDate(lead.lastEnquiryAt)}
+          </>
+        )}
       </p>
     </div>
   )

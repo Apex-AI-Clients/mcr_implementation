@@ -53,6 +53,9 @@ interface ColumnSpec {
  */
 const COLUMNS: ColumnSpec[] = [
   { header: 'Date added', width: 12, value: (lead) => formatIsoDate(lead.createdAt) },
+  // The latest enquiry, which the list sorts on, and how many there were.
+  { header: 'Last enquiry', width: 12, value: (lead) => formatIsoDate(lead.lastEnquiryAt) },
+  { header: 'Enquiries', width: 10, numeric: true, value: (lead) => lead.enquiryCount },
   { header: 'Name', width: 22, value: (lead) => lead.name },
   { header: 'Email', width: 30, value: (lead) => lead.email },
   { header: 'Phone', width: 16, value: (lead) => formatPhone(lead.phone) },

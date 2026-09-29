@@ -3,35 +3,46 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { LeadRecordHeader } from '@/components/leads/LeadRecordHeader'
 import { LeadActivityForm } from '@/components/leads/LeadActivityForm'
 import { LeadHistory } from '@/components/leads/LeadHistory'
+import { LeadEnquiries } from '@/components/leads/LeadEnquiries'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { Select } from '@/components/ui/Select'
 import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
 import {
   debtSelectOptions,
   decodeDebtRange,
   describeUncertainState,
   formatAge,
   formatDebtRange,
+  formatFullDate,
   formatPhone,
   isValidAuMobile,
   isValidEmail,
 } from '@/lib/leads/format'
-import type { ConvertedClientDetails, EntityType, Lead, LeadActivity } from '@/types/leads'
+import type {
+  ConvertedClientDetails,
+  EntityType,
+  Lead,
+  LeadActivity,
+  LeadSubmission,
+} from '@/types/leads'
 
 interface LeadRecordClientProps {
   leadId: string
   /** Read server-side. Null when no such lead exists in the database. */
   initialLead: Lead | null
   initialActivities: LeadActivity[]
+  /** Every enquiry, newest first, read server-side. */
+  enquiries: LeadSubmission[]
   /** The client file this lead became, read server-side. Null when not converted. */
   convertedClient: ConvertedClientDetails | null
 }
@@ -40,10 +51,11 @@ export function LeadRecordClient({
   leadId,
   initialLead,
   initialActivities,
+  enquiries,
   convertedClient,
 }: LeadRecordClientProps) {
   const router = useRouter()
-  const { getLead, activitiesFor, syncFromServer } = useLeads()
+  const { getLead, activitiesFor, syncFromServer, dismissReenquiry } = useLeads()
   const [convertTarget, setConvertTarget] = useState<Lead | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -99,6 +111,10 @@ export function LeadRecordClient({
         }
       />
 
+      {showsReenquiryMarker(lead) && (
+        <ReenquiryNotice lead={lead} onDismiss={() => dismissReenquiry(lead.id)} />
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Left — history */}
         <div className="space-y-4 lg:order-1">
@@ -117,6 +133,8 @@ export function LeadRecordClient({
               </p>
             </div>
           )}
+
+          <LeadEnquiries lead={lead} enquiries={enquiries} />
 
           <LeadHistory lead={lead} activities={activities} />
         </div>
@@ -268,6 +286,36 @@ export function LeadRecordClient({
           router.refresh()
         }}
       />
+    </div>
+  )
+}
+
+/**
+ * A converted or closed lead has enquired again. Its stage and details were
+ * left alone — the enquiry is in the list below — so this is the prompt to
+ * look. Changing the stage clears it; Dismiss hides it without changing
+ * anything, and is not a logged action, so the follow-up clock does not move.
+ */
+function ReenquiryNotice({ lead, onDismiss }: { lead: Lead; onDismiss: () => void }) {
+  return (
+    <div
+      role="status"
+      className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4"
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+        <div className="text-sm leading-relaxed text-foreground/80">
+          <p className="font-medium text-foreground">{reenquiryMarkerLabel(lead)}</p>
+          <p>
+            {lead.name} enquired again on {formatFullDate(lead.reenquiredAfterCloseAt!)}. The
+            stage and details were left as they were; the new enquiry is under Enquiries.
+            Changing the stage also clears this.
+          </p>
+        </div>
+      </div>
+      <Button type="button" variant="ghost" size="sm" onClick={onDismiss}>
+        Dismiss
+      </Button>
     </div>
   )
 }

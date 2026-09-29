@@ -1,11 +1,17 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { toLead, toLeadActivity } from '@/lib/leads/rowMappers'
+import { toLead, toLeadActivity, toLeadSubmission } from '@/lib/leads/rowMappers'
 import { normalisePhone } from '@/lib/leads/format'
 import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
 import { DATE_RANGES } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
 import type { LeadFilterState } from '@/lib/leads/filter'
-import type { ConvertedClientDetails, Lead, LeadActivity } from '@/types/leads'
+import type {
+  ConvertedClientDetails,
+  Lead,
+  LeadActivity,
+  LeadSource,
+  LeadSubmission,
+} from '@/types/leads'
 
 /**
  * Server-side reads for the CRM.
@@ -99,7 +105,9 @@ export function withFilters<T extends LeadsFilterable<T>>(
 
   const days = DATE_RANGES.find((range) => range.value === filters.dateRange)?.days ?? null
   if (days !== null) {
-    built = built.gte('created_at', new Date(now.getTime() - days * DAY_MS).toISOString())
+    // The latest enquiry, as in filterLeads(): a repeat enquiry this week puts
+    // an old lead back inside "last 7 days".
+    built = built.gte('last_enquiry_at', new Date(now.getTime() - days * DAY_MS).toISOString())
   }
 
   if (filters.followUpOnly) {
@@ -113,15 +121,18 @@ export function withFilters<T extends LeadsFilterable<T>>(
   return built
 }
 
-/** Sort, matching filterLeads(): ties fall back to newest first. */
-function withSort<T extends LeadsFilterable<T>>(query: T, sort: LeadFilterState['sort']): T {
+/**
+ * Sort, matching filterLeads(): latest enquiry first, and ties in the debt sort
+ * fall back to the same. idx_leads_last_enquiry_at (migration 0020) serves it.
+ */
+export function withSort<T extends LeadsFilterable<T>>(query: T, sort: LeadFilterState['sort']): T {
   if (sort === 'debt') {
     // Unknown debt last, which is the order idx_leads_debt_min is built for.
     return query
       .order('debt_min', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
+      .order('last_enquiry_at', { ascending: false })
   }
-  return query.order('created_at', { ascending: false })
+  return query.order('last_enquiry_at', { ascending: false })
 }
 
 export interface LeadsPage {
@@ -175,10 +186,48 @@ export async function getLeadsPage(input: {
       console.error('[getLeadsPage] retry', retry.error.message)
       return { leads: [], total, page, pageCount, pageSize }
     }
-    return { leads: (retry.data ?? []).map(toLead), total, page, pageCount, pageSize }
+    const leads = await withLatestEnquirySources((retry.data ?? []).map(toLead))
+    return { leads, total, page, pageCount, pageSize }
   }
 
-  return { leads: (first.data ?? []).map(toLead), total, page, pageCount, pageSize }
+  const leads = await withLatestEnquirySources((first.data ?? []).map(toLead))
+  return { leads, total, page, pageCount, pageSize }
+}
+
+/**
+ * Fill in where the latest enquiry came from, for the "N enquiries" tooltip.
+ *
+ * Only leads with more than one enquiry need it — toLead already knows the
+ * answer for the rest — so on most pages this makes no request at all. One
+ * page's submissions are a few dozen rows, newest first, and the first row
+ * seen for each lead is its latest.
+ *
+ * A failure leaves the source unknown rather than failing the page: the
+ * tooltip then gives the date alone.
+ */
+export async function withLatestEnquirySources(leads: Lead[]): Promise<Lead[]> {
+  const ids = leads.filter((lead) => lead.latestEnquirySource === null).map((lead) => lead.id)
+  if (ids.length === 0) return leads
+
+  const supabase = getSupabaseServerClient()
+  const { data, error } = await supabase
+    .from('lead_submissions')
+    .select('lead_id, source')
+    .in('lead_id', ids)
+    .order('received_at', { ascending: false })
+
+  if (error) {
+    console.error('[withLatestEnquirySources]', error.message)
+    return leads
+  }
+
+  const latest = new Map<string, LeadSource>()
+  for (const row of data ?? []) {
+    if (!latest.has(row.lead_id)) latest.set(row.lead_id, row.source as LeadSource)
+  }
+  return leads.map((lead) =>
+    latest.has(lead.id) ? { ...lead, latestEnquirySource: latest.get(lead.id)! } : lead,
+  )
 }
 
 /**
@@ -278,6 +327,25 @@ export async function getLeadById(id: string): Promise<Lead | null> {
     return null
   }
   return data ? toLead(data) : null
+}
+
+/**
+ * Every enquiry a lead has made, newest first — the record's Enquiries list.
+ * Empty on a failed read, like the timeline: the record still renders.
+ */
+export async function getSubmissionsForLead(leadId: string): Promise<LeadSubmission[]> {
+  const supabase = getSupabaseServerClient()
+  const { data, error } = await supabase
+    .from('lead_submissions')
+    .select('*')
+    .eq('lead_id', leadId)
+    .order('received_at', { ascending: false })
+
+  if (error) {
+    console.error('[getSubmissionsForLead]', error.message)
+    return []
+  }
+  return (data ?? []).map(toLeadSubmission)
 }
 
 /**

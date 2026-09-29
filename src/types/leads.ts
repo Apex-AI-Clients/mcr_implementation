@@ -78,6 +78,28 @@ export interface Lead {
   stageSince: string
   /** ISO — the follow-up clock. Reset only by a recorded human action. */
   lastActionAt: string
+  /**
+   * ISO — when the latest enquiry arrived. The table's date and its "recent"
+   * sort. Equal to createdAt until the same person enquires again.
+   */
+  lastEnquiryAt: string
+  /** Enquiries received from this email, this lead's first included. */
+  enquiryCount: number
+  /**
+   * Where the latest enquiry came from, when it is known. Only read for the
+   * "N enquiries" tooltip, so it is null wherever it was not loaded — on a
+   * lead with several enquiries it needs its own query (getLeadsPage makes it).
+   */
+  latestEnquirySource: LeadSource | null
+  /**
+   * ISO — set when a converted or closed lead enquired again, cleared by any
+   * stage change. The "New enquiry after conversion/closure" marker shows
+   * while it is set and later than any dismissal: see showsReenquiryMarker.
+   */
+  reenquiredAfterCloseAt: string | null
+  /** Who dismissed that marker, and when. A dismissal is not a logged action. */
+  reenquiryDismissedAt: string | null
+  reenquiryDismissedBy: string | null
   convertedClientId: string | null
   /**
    * Meta ad attribution, captured at delivery because it cannot be recovered
@@ -102,6 +124,35 @@ export interface Lead {
   metaAccountId: string | null
   createdAt: string
   updatedAt: string
+}
+
+/**
+ * One enquiry, exactly as it arrived — a row of lead_submissions. A lead has
+ * one per form it filled in; the lead row itself shows the newest values.
+ */
+export interface LeadSubmission {
+  id: string
+  leadId: string
+  /** ISO — when the enquiry arrived. */
+  receivedAt: string
+  /** The lead was converted or closed when this arrived. */
+  afterClose: boolean
+  name: string
+  email: string
+  phone: string
+  debtMin: number | null
+  debtMax: number | null
+  state: AuState | null
+  metaStateRaw: string | null
+  metaStateOptions: AuState[] | null
+  entityType: EntityType | null
+  message: string | null
+  preferredCallTime: string | null
+  source: LeadSource
+  metaFormId: string | null
+  metaAdId: string | null
+  metaCampaignName: string | null
+  metaAdName: string | null
 }
 
 export interface LeadActivity {

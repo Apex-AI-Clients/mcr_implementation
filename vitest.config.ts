@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
@@ -14,6 +14,9 @@ export default defineConfig({
     testTimeout: 20_000,
     hookTimeout: 20_000,
     pool: 'vmThreads',
+    // Database tests write to a real Supabase project; they run only through
+    // `npm run test:db` (vitest.db.config.ts), never as part of `npm run test`.
+    exclude: [...configDefaults.exclude, 'supabase/tests/**'],
     coverage: {
       reporter: ['text', 'lcov'],
       include: ['src/lib/**', 'src/components/**'],
