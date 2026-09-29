@@ -188,6 +188,32 @@ describe('ConvertToClientDialog', () => {
     expect(within(dialog).queryByText('Enter the company name.')).toBeNull()
   })
 
+  it('links to the ACN and ABN registers in a new tab, opening a typed ABN directly', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    const asic = within(dialog).getByRole('link', {
+      name: 'Check or find an ACN (opens in a new tab)',
+    })
+    const abr = within(dialog).getByRole('link', {
+      name: 'Check or find an ABN (opens in a new tab)',
+    })
+
+    expect(asic.getAttribute('href')).toBe(
+      'https://connectonline.asic.gov.au/RegistrySearch/faces/landing/SearchRegisters.jspx',
+    )
+    expect(abr.getAttribute('href')).toBe('https://abr.business.gov.au/')
+    for (const link of [asic, abr]) {
+      expect(link.getAttribute('target')).toBe('_blank')
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    }
+
+    await user.type(within(dialog).getByLabelText('ABN number'), '51 824 753 556')
+    expect(abr.getAttribute('href')).toBe('https://abr.business.gov.au/ABN/View?abn=51824753556')
+  })
+
   it('sends the details with the client so intake opens filled in', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch(201, { id: 'client-1' })

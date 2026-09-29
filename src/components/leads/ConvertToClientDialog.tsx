@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { EntityNameInput } from '@/components/abr/EntityNameInput'
+import { RegisterLookupLink } from '@/components/abr/RegisterLookupLink'
 import { prefillFor } from '@/lib/abr/prefill'
 import type { AbrPrefill } from '@/lib/abr/types'
 import { createClientFromLead } from '@/lib/leads/convert'
@@ -242,6 +243,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   label={isTrust ? 'ACN number (if there is one)' : 'ACN number'}
                   value={form.acnNumber}
                   error={errors.acnNumber}
+                  hint={<RegisterLookupLink register="asic" />}
                   disabled={working}
                   onChange={(event) => patch({ acnNumber: event.target.value })}
                 />
@@ -250,6 +252,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   label="ABN number"
                   value={form.abnNumber}
                   error={errors.abnNumber}
+                  hint={<RegisterLookupLink register="abr" value={form.abnNumber} />}
                   disabled={working}
                   onChange={(event) => patch({ abnNumber: event.target.value })}
                 />
