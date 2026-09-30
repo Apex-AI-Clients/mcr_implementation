@@ -226,3 +226,10 @@ export const DATE_RANGES: { value: string; label: string; days: number | null }[
   { value: '30', label: 'Last 30 days', days: 30 },
   { value: '90', label: 'Last 90 days', days: 90 },
 ]
+
+/**
+ * The timeline entry a conversion leaves. One wording, because it is written
+ * from two places: the create-client route, which links the lead in the same
+ * request, and the store, which links a lead to a file that already existed.
+ */
+export const CONVERSION_ACTIVITY_BODY = 'Converted to a client file in the restructuring workspace.'

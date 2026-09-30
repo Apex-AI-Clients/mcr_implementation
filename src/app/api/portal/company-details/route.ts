@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import {
+  CompanyDetailsSchema,
+  readDirectors,
   companyDetailsInsert,
   companyDetailsUpdate,
   hasCompanyDetails,
@@ -32,6 +34,11 @@ export async function GET(req: NextRequest) {
     trustName: data.trust_name,
     phoneNumber: data.phone_number,
     emailAddress: data.email_address,
+    registeredOfficeAddress: data.registered_office_address,
+    principalPlaceOfBusiness: data.principal_place_of_business,
+    directors: readDirectors(data.directors),
+    asicExtractDate: data.asic_extract_date,
+    companyDetailsSource: data.company_details_source,
   })
 }
 
@@ -39,8 +46,24 @@ export async function POST(req: NextRequest) {
   const user = await requireStaffUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { clientId, ...details } = await req.json()
-  if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const { clientId, ...rest } = (body ?? {}) as Record<string, unknown>
+  if (typeof clientId !== 'string' || !clientId) {
+    return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
+  }
+
+  // This used to take the JSON as it came. directors is stored as jsonb, so
+  // whatever gets past here is what the column holds.
+  const parsed = CompanyDetailsSchema.safeParse(rest)
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 })
+  }
+  const details = parsed.data
 
   if (!hasCompanyDetails(details)) {
     return NextResponse.json({ error: 'Nothing to save' }, { status: 400 })

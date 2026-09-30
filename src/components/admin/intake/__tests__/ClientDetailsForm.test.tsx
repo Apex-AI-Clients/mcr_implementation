@@ -252,6 +252,32 @@ describe('ClientDetailsForm — editing an existing client', () => {
     expect(body).not.toHaveProperty('trustName')
   })
 
+  it('never sends directors or addresses on that write — an absent array is not an empty one', async () => {
+    // The company record may hold directors that came off an ASIC extract.
+    // This step knows nothing about them, and `directors: []` here would
+    // remove every one of them each time somebody corrected a company name.
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+    )
+
+    await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
+    await user.click(screen.getByRole('button', { name: /save details/i }))
+
+    await waitFor(() => expect(calledWith(fetchMock, '/api/portal/company-details')).toBe(true))
+    const body = bodySentTo(fetchMock, '/api/portal/company-details')
+    for (const key of [
+      'directors',
+      'registeredOfficeAddress',
+      'principalPlaceOfBusiness',
+      'asicExtractDate',
+      'companyDetailsSource',
+    ]) {
+      expect(body).not.toHaveProperty(key)
+    }
+  })
+
   it('touches the company record only when the register was actually used', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()

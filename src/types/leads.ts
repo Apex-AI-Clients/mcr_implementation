@@ -1,3 +1,5 @@
+import type { Director } from '@/lib/asic/types'
+
 /**
  * CRM lead types.
  *
@@ -181,4 +183,10 @@ export interface ConvertedClientDetails {
   /** The company or trust's own line — not the client's phone above. */
   companyPhone: string | null
   companyEmail: string | null
+  /** From the ASIC company extract, or typed by hand. Directors are never the lead. */
+  registeredOfficeAddress: string | null
+  principalPlaceOfBusiness: string | null
+  directors: Director[]
+  asicExtractDate: string | null
+  companyDetailsSource: string | null
 }

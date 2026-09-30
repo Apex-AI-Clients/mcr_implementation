@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readDirectors } from '@/lib/clients/companyDetails'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
@@ -85,6 +86,11 @@ export async function GET(req: NextRequest) {
           trustName: rawCompany.trust_name,
           phoneNumber: rawCompany.phone_number,
           emailAddress: rawCompany.email_address,
+          registeredOfficeAddress: rawCompany.registered_office_address,
+          principalPlaceOfBusiness: rawCompany.principal_place_of_business,
+          directors: readDirectors(rawCompany.directors),
+          asicExtractDate: rawCompany.asic_extract_date,
+          companyDetailsSource: rawCompany.company_details_source,
         }
       : null
 

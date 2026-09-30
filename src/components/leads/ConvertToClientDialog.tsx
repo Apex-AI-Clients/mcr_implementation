@@ -11,10 +11,15 @@ import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { EntityNameInput } from '@/components/abr/EntityNameInput'
 import { RegisterLookupLink } from '@/components/abr/RegisterLookupLink'
+import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
+import { DirectorsFieldset } from '@/components/asic/DirectorsFieldset'
+import { applyExtract } from '@/lib/asic/fill'
+import type { AsicExtract } from '@/lib/asic/types'
 import { prefillFor } from '@/lib/abr/prefill'
 import type { AbrPrefill } from '@/lib/abr/types'
 import { createClientFromLead } from '@/lib/leads/convert'
 import {
+  asicFieldsOf,
   emptyConversionForm,
   hasErrors,
   validateConversion,
@@ -51,7 +56,7 @@ type Phase =
  * restructuring workspace — so it never happens on a stray select change.
  */
 export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogProps) {
-  const { markConverted } = useLeads()
+  const { markConverted, applyConverted } = useLeads()
   const { toast } = useToast()
   const [phase, setPhase] = useState<Phase>({ kind: 'form' })
   const [form, setForm] = useState<ConversionForm>(() => emptyConversionForm(lead))
@@ -94,6 +99,30 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
     })
   }
 
+  /**
+   * Fill from an uploaded ASIC extract: the two addresses and the directors,
+   * and nothing else. The lead's name, the company name, the ACN and the ABN
+   * are never touched by it. What was there before is kept, so the fill can be
+   * undone.
+   */
+  function applyAsicExtract(extract: AsicExtract) {
+    setForm((current) => {
+      const fill = applyExtract(asicFieldsOf(current), extract)
+      return { ...current, ...fill.filled, asicFill: fill }
+    })
+    setErrors((current) => {
+      const cleared = { ...current }
+      delete cleared.directors
+      return cleared
+    })
+  }
+
+  function undoAsicFill() {
+    setForm((current) =>
+      current.asicFill ? { ...current, ...current.asicFill.previous, asicFill: null } : current,
+    )
+  }
+
   async function link(clientId: string) {
     if (!lead) return
     setPhase({ kind: 'working' })
@@ -121,7 +150,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
     }
 
     setPhase({ kind: 'working' })
-    const result = await createClientFromLead(form)
+    const result = await createClientFromLead(form, lead.id)
 
     if (result.kind === 'failed') {
       setPhase({ kind: 'failed', message: result.message })
@@ -132,13 +161,19 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       return
     }
 
-    // The client file now exists. From here a failure is an inconsistency to
-    // report, not something to retry — retrying would create a second file.
-    try {
-      await markConverted(lead.id, result.clientId)
-    } catch {
-      setPhase({ kind: 'orphaned', clientId: result.clientId })
-      return
+    if (result.leadLinked) {
+      // The route marked the lead converted in the same request as the file,
+      // so there is nothing left to send — and nothing a reload can interrupt.
+      applyConverted(lead.id, result.clientId, result.activity)
+    } else {
+      // The client file now exists. From here a failure is an inconsistency to
+      // report, not something to retry — retrying would create a second file.
+      try {
+        await markConverted(lead.id, result.clientId)
+      } catch {
+        setPhase({ kind: 'orphaned', clientId: result.clientId })
+        return
+      }
     }
 
     toast('Client file created.', {
@@ -177,10 +212,25 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                 void handleConvert()
               }}
             >
+              {/* First thing in the form, because it is the quickest way to
+                  fill it: the two addresses and the directors, further down.
+                  It fills nothing else — not the lead's name, the company
+                  name, the ACN or the ABN — and the ACN typed below is only
+                  ever compared with the extract's. */}
+              <AsicExtractUpload
+                id="convert-asic-extract"
+                layout="centered"
+                acnNumber={form.acnNumber}
+                fill={form.asicFill}
+                disabled={working}
+                onFill={applyAsicExtract}
+                onUndo={undoAsicFill}
+              />
+
               <Fieldset legend="Client">
                 <Input
                   id="convert-name"
-                  label="Name"
+                  label="Lead name"
                   value={form.name}
                   error={errors.name}
                   disabled={working}
@@ -255,6 +305,32 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   hint={<RegisterLookupLink register="abr" value={form.abnNumber} />}
                   disabled={working}
                   onChange={(event) => patch({ abnNumber: event.target.value })}
+                />
+                {/* Filled by the ASIC extract upload at the top of the form, or
+                    typed. The directors are their own section, separate from
+                    "Lead name" above on purpose:
+                    the lead is the person who enquired, and stays exactly as they
+                    came in. */}
+                <Input
+                  id="convert-registered-office"
+                  label="Registered office address (optional)"
+                  value={form.registeredOfficeAddress}
+                  disabled={working}
+                  onChange={(event) => patch({ registeredOfficeAddress: event.target.value })}
+                />
+                <Input
+                  id="convert-principal-place"
+                  label="Principal place of business (optional)"
+                  value={form.principalPlaceOfBusiness}
+                  disabled={working}
+                  onChange={(event) => patch({ principalPlaceOfBusiness: event.target.value })}
+                />
+                <DirectorsFieldset
+                  idPrefix="convert"
+                  rows={form.directors}
+                  disabled={working}
+                  showErrors={Boolean(errors.directors)}
+                  onChange={(directors) => patch({ directors })}
                 />
                 <EntityNameInput
                   id="convert-trust-name"

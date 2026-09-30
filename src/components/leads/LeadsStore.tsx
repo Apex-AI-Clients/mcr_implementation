@@ -10,7 +10,7 @@ import type {
   LeadStage,
 } from '@/types/leads'
 import { needsFollowUp } from '@/lib/leads/followUp'
-import { STAGE_META } from '@/lib/leads/constants'
+import { CONVERSION_ACTIVITY_BODY, STAGE_META } from '@/lib/leads/constants'
 import { useToast } from '@/components/ui/Toast'
 import { DuplicateLeadError } from '@/lib/leads/persistence'
 
@@ -285,6 +285,12 @@ interface LeadsContextValue {
   changeStage: (leadId: string, stage: LeadStage) => Promise<void>
   /** Rejects when the client file exists but the lead could not be updated. */
   markConverted: (leadId: string, clientId: string) => Promise<void>
+  /**
+   * Show a conversion the server has already written — the create-client
+   * request links the lead itself. Nothing is sent; `activity` is the timeline
+   * entry the server wrote, when it handed one back.
+   */
+  applyConverted: (leadId: string, clientId: string, activity: LeadActivity | null) => void
   /** Permanent, and confirmed by the database before anything leaves the list. */
   deleteLeads: (ids: string[]) => Promise<void>
   /** Correct the wording of a timeline entry. Rejects on failure. */
@@ -541,7 +547,7 @@ export function LeadsStoreProvider({
         id: newId(),
         leadId,
         type: 'stage_change',
-        body: 'Converted to a client file in the restructuring workspace.',
+        body: CONVERSION_ACTIVITY_BODY,
         author,
         createdAt: at,
       }
@@ -553,6 +559,29 @@ export function LeadsStoreProvider({
       dispatch({ type: 'SET_CONVERTED', leadId, clientId, activity, at })
     },
     [author, persistence],
+  )
+
+  const applyConverted = useCallback(
+    (leadId: string, clientId: string, activity: LeadActivity | null) => {
+      const at = activity?.createdAt ?? new Date().toISOString()
+      dispatch({
+        type: 'SET_CONVERTED',
+        leadId,
+        clientId,
+        // Without the server's entry, a stand-in for this screen only; the
+        // next read from the server replaces it.
+        activity: activity ?? {
+          id: newId(),
+          leadId,
+          type: 'stage_change',
+          body: CONVERSION_ACTIVITY_BODY,
+          author,
+          createdAt: at,
+        },
+        at,
+      })
+    },
+    [author],
   )
 
   const deleteLeads = useCallback(
@@ -663,6 +692,7 @@ export function LeadsStoreProvider({
       logActivity,
       changeStage,
       markConverted,
+      applyConverted,
       deleteLeads,
       editActivity,
       deleteActivity,
@@ -679,6 +709,7 @@ export function LeadsStoreProvider({
       logActivity,
       changeStage,
       markConverted,
+      applyConverted,
       deleteLeads,
       editActivity,
       deleteActivity,

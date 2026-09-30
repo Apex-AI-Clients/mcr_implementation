@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { describeDirector } from '@/lib/asic/fill'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
@@ -234,14 +235,14 @@ export function LeadRecordClient({
                 isValidAuMobile(value) ? null : 'Enter an Australian mobile.'
               }
             />
-            <InlineField
+            {/* <InlineField
               label="Company"
               value={lead.company ?? ''}
               placeholder="Not recorded"
               leadId={lead.id}
               field="company"
               allowEmpty
-            />
+            /> */}
           </div>
 
           {convertedClient && convertedClient.id === lead.convertedClientId && (
@@ -341,6 +342,8 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
       numeric: true,
     },
     { label: 'Company email', value: client.companyEmail },
+    { label: 'Registered office', value: client.registeredOfficeAddress },
+    { label: 'Principal place of business', value: client.principalPlaceOfBusiness },
   ]
   const recorded = rows.filter((row) => row.value && row.value.trim())
 
@@ -371,6 +374,22 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
             </dd>
           </div>
         ))}
+        {/* Their own entry, below the rest: the directors are not the lead,
+            whose name is the "Name" row above and stays as it came in. */}
+        {client.directors.length > 0 && (
+          <div>
+            <dt className="text-xs text-foreground/40">
+              {client.directors.length > 1 ? 'Directors' : 'Director'}
+            </dt>
+            <dd className="mt-0.5 space-y-0.5 text-sm text-foreground/80">
+              {client.directors.map((director, index) => (
+                <p key={index} className="break-words tabular-nums">
+                  {describeDirector(director)}
+                </p>
+              ))}
+            </dd>
+          </div>
+        )}
       </dl>
     </div>
   )

@@ -1,4 +1,12 @@
 import { formatPhone, isValidEmail } from './format'
+import {
+  directorRowErrors,
+  directorsForSave,
+  sourceFor,
+  type AsicFields,
+  type AsicFill,
+  type DirectorRow,
+} from '@/lib/asic/fill'
 import type { EntityType, Lead } from '@/types/leads'
 
 /**
@@ -28,6 +36,17 @@ export interface ConversionForm {
   /** Optional, both of them. Everything else has to be known. */
   phoneNumber: string
   emailAddress: string
+  /**
+   * What Gabby used to re-type from the ASIC company extract. All optional:
+   * typed by hand, or filled from an uploaded extract PDF. Conversion never
+   * depends on the upload.
+   */
+  registeredOfficeAddress: string
+  principalPlaceOfBusiness: string
+  /** Separate from `name` above — the lead's own name is never overwritten by a director. */
+  directors: DirectorRow[]
+  /** The fill currently applied from an extract, if any. Not a field; it rides along for undo and for the saved source. */
+  asicFill: AsicFill | null
 }
 
 export type ConversionErrors = Partial<Record<keyof ConversionForm, string>>
@@ -61,6 +80,19 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     // data.
     phoneNumber: '',
     emailAddress: '',
+    registeredOfficeAddress: '',
+    principalPlaceOfBusiness: '',
+    directors: [],
+    asicFill: null,
+  }
+}
+
+/** The three fields an ASIC extract fills, as the form holds them now. */
+export function asicFieldsOf(form: ConversionForm): AsicFields {
+  return {
+    registeredOfficeAddress: form.registeredOfficeAddress,
+    principalPlaceOfBusiness: form.principalPlaceOfBusiness,
+    directors: form.directors,
   }
 }
 
@@ -111,6 +143,11 @@ export function validateConversion(form: ConversionForm): ConversionErrors {
     errors.emailAddress = 'That email address does not look right.'
   }
 
+  // Optional, every one of them — but a row somebody started has to be usable.
+  if (directorRowErrors(form.directors).some(Boolean)) {
+    errors.directors = 'Check the directors below.'
+  }
+
   return errors
 }
 
@@ -127,5 +164,12 @@ export function toCompanyDetails(form: ConversionForm) {
     trustName: form.trustName.trim(),
     phoneNumber: form.phoneNumber.trim(),
     emailAddress: form.emailAddress.trim().toLowerCase(),
+    registeredOfficeAddress: form.registeredOfficeAddress.trim(),
+    principalPlaceOfBusiness: form.principalPlaceOfBusiness.trim(),
+    directors: directorsForSave(form.directors),
+    // The extract's date is kept for as long as the fill is — edited or not —
+    // and the source says which of those it was.
+    asicExtractDate: form.asicFill?.extractedAt ?? null,
+    companyDetailsSource: sourceFor(form.asicFill, asicFieldsOf(form)),
   }
 }

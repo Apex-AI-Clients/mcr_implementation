@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { readDirectors } from '@/lib/clients/companyDetails'
 import { toLead, toLeadActivity, toLeadSubmission } from '@/lib/leads/rowMappers'
 import { normalisePhone } from '@/lib/leads/format'
 import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
@@ -363,7 +364,9 @@ export async function getConvertedClientDetails(
     supabase.from('clients').select('id, name, email, phone').eq('id', clientId).maybeSingle(),
     supabase
       .from('company_details')
-      .select('company_name, acn_number, abn_number, trust_name, phone_number, email_address')
+      .select(
+        'company_name, acn_number, abn_number, trust_name, phone_number, email_address, registered_office_address, principal_place_of_business, directors, asic_extract_date, company_details_source',
+      )
       .eq('client_id', clientId)
       .maybeSingle(),
   ])
@@ -391,6 +394,11 @@ export async function getConvertedClientDetails(
     trustName: details?.trust_name ?? null,
     companyPhone: details?.phone_number ?? null,
     companyEmail: details?.email_address ?? null,
+    registeredOfficeAddress: details?.registered_office_address ?? null,
+    principalPlaceOfBusiness: details?.principal_place_of_business ?? null,
+    directors: readDirectors(details?.directors),
+    asicExtractDate: details?.asic_extract_date ?? null,
+    companyDetailsSource: details?.company_details_source ?? null,
   }
 }
 

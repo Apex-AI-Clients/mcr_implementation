@@ -33,6 +33,10 @@ function form(overrides: Partial<ConversionForm> = {}): ConversionForm {
     trustName: '',
     phoneNumber: '',
     emailAddress: '',
+    registeredOfficeAddress: '',
+    principalPlaceOfBusiness: '',
+    directors: [],
+    asicFill: null,
     ...overrides,
   }
 }

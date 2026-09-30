@@ -6,6 +6,9 @@ import { ClientActions } from '@/components/admin/ClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { getLeadIdForClient } from '@/lib/leads/queries'
+import { formatPhone } from '@/lib/leads/format'
+import { readDirectors } from '@/lib/clients/companyDetails'
+import { describeDirector } from '@/lib/asic/fill'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -77,6 +80,11 @@ export default async function ClientDetailPage({ params }: Props) {
         trustName: rawCompany.trust_name,
         phoneNumber: rawCompany.phone_number,
         emailAddress: rawCompany.email_address,
+        registeredOfficeAddress: rawCompany.registered_office_address,
+        principalPlaceOfBusiness: rawCompany.principal_place_of_business,
+        directors: readDirectors(rawCompany.directors),
+        asicExtractDate: rawCompany.asic_extract_date,
+        companyDetailsSource: rawCompany.company_details_source,
       }
     : null
 
@@ -105,6 +113,13 @@ export default async function ClientDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-foreground">{client.name}</h1>
           <p className="mt-0.5 text-sm text-foreground/50">{client.email}</p>
+          {/* The client's own number, carried over from the lead — not the
+              company or trust line, which is in the card below. */}
+          {client.phone && (
+            <p className="mt-0.5 text-sm tabular-nums text-foreground/50">
+              {formatPhone(client.phone)}
+            </p>
+          )}
           <LeadOriginLink leadId={originLeadId} />
         </div>
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
@@ -171,6 +186,30 @@ export default async function ClientDetailPage({ params }: Props) {
             <div>
               <p className="text-foreground/30 mb-0.5">Email</p>
               <p className="text-foreground/70">{companyDetails.emailAddress || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">Registered Office</p>
+              <p className="text-foreground/70">{companyDetails.registeredOfficeAddress || '—'}</p>
+            </div>
+            <div>
+              <p className="text-foreground/30 mb-0.5">Principal Place of Business</p>
+              <p className="text-foreground/70">{companyDetails.principalPlaceOfBusiness || '—'}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-foreground/30 mb-0.5">
+                {companyDetails.directors.length > 1 ? 'Directors' : 'Director'}
+              </p>
+              {companyDetails.directors.length > 0 ? (
+                <ul className="space-y-0.5 text-foreground/70">
+                  {companyDetails.directors.map((director, index) => (
+                    <li key={index} className="tabular-nums">
+                      {describeDirector(director)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-foreground/70">—</p>
+              )}
             </div>
           </div>
         ) : (

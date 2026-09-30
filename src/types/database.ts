@@ -98,36 +98,51 @@ export type Database = {
         Row: {
           abn_number: string | null
           acn_number: string | null
+          asic_extract_date: string | null
           client_id: string
+          company_details_source: string | null
           company_name: string | null
           created_at: string
+          directors: Json
           email_address: string | null
           id: string
           phone_number: string | null
+          principal_place_of_business: string | null
+          registered_office_address: string | null
           trust_name: string | null
           updated_at: string
         }
         Insert: {
           abn_number?: string | null
           acn_number?: string | null
+          asic_extract_date?: string | null
           client_id: string
+          company_details_source?: string | null
           company_name?: string | null
           created_at?: string
+          directors?: Json
           email_address?: string | null
           id?: string
           phone_number?: string | null
+          principal_place_of_business?: string | null
+          registered_office_address?: string | null
           trust_name?: string | null
           updated_at?: string
         }
         Update: {
           abn_number?: string | null
           acn_number?: string | null
+          asic_extract_date?: string | null
           client_id?: string
+          company_details_source?: string | null
           company_name?: string | null
           created_at?: string
+          directors?: Json
           email_address?: string | null
           id?: string
           phone_number?: string | null
+          principal_place_of_business?: string | null
+          registered_office_address?: string | null
           trust_name?: string | null
           updated_at?: string
         }

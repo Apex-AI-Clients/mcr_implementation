@@ -88,13 +88,62 @@ describe('createClientFromLead', () => {
         trustName: '',
         phoneNumber: '',
         emailAddress: '',
+        // Nothing typed and no extract uploaded: blank, with no source to claim.
+        registeredOfficeAddress: '',
+        principalPlaceOfBusiness: '',
+        directors: [],
+        asicExtractDate: null,
+        companyDetailsSource: null,
       },
     })
   })
 
   it('returns the new client id on 201', async () => {
     mockFetch(201, { id: 'client-1' })
-    expect(await createClientFromLead(FORM)).toEqual({ kind: 'created', clientId: 'client-1' })
+    expect(await createClientFromLead(FORM)).toEqual({
+      kind: 'created',
+      clientId: 'client-1',
+      leadLinked: false,
+      activity: null,
+    })
+  })
+
+  it('sends the lead id, so the route links the lead in the same request', async () => {
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    await createClientFromLead(FORM, 'ld_1')
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).leadId).toBe('ld_1')
+  })
+
+  it('sends no lead id when there is no lead', async () => {
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    await createClientFromLead(FORM)
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).not.toHaveProperty('leadId')
+  })
+
+  it('reports that the lead was linked, with the timeline entry the route wrote', async () => {
+    const leadActivity = {
+      id: '22222222-2222-4222-8222-222222222222',
+      leadId: 'ld_1',
+      type: 'stage_change',
+      body: 'Converted to a client file in the restructuring workspace.',
+      author: 'Gabby',
+      createdAt: '2026-09-30T09:06:07.000Z',
+    }
+    mockFetch(201, { id: 'client-1', leadLinked: true, leadActivity })
+    expect(await createClientFromLead(FORM, 'ld_1')).toEqual({
+      kind: 'created',
+      clientId: 'client-1',
+      leadLinked: true,
+      activity: leadActivity,
+    })
+  })
+
+  it('ignores a timeline entry that is not one', async () => {
+    mockFetch(201, { id: 'client-1', leadLinked: true, leadActivity: { id: 7 } })
+    const result = await createClientFromLead(FORM, 'ld_1')
+    expect(result).toMatchObject({ kind: 'created', leadLinked: true, activity: null })
   })
 
   it('reports a 409 as a duplicate carrying the existing file id', async () => {

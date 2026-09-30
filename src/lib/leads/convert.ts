@@ -1,4 +1,5 @@
 import { toCompanyDetails, type ConversionForm } from './conversionForm'
+import type { LeadActivity } from '@/types/leads'
 
 /**
  * Creating a client file from a lead.
@@ -9,19 +10,51 @@ import { toCompanyDetails, type ConversionForm } from './conversionForm'
  * flow is meant to rule out. The route rolls the client back if the details
  * cannot be written.
  *
+ * The lead goes with it for the same reason. Marking the lead converted used to
+ * be a second request from the browser, and a page reload between the two left
+ * a client file whose lead still said "lead". The route now links the lead in
+ * the same request and says so (`leadLinked`), handing back the timeline entry
+ * it wrote so the screen can show it without asking again.
+ *
  * It answers 409 with the id of the client that already owns the email, which
  * is not an error to show raw — it's an opportunity to link the two records.
  */
 
 export type ConvertResult =
-  | { kind: 'created'; clientId: string }
+  | {
+      kind: 'created'
+      clientId: string
+      /** The server marked the lead converted in the same request. */
+      leadLinked: boolean
+      /** The timeline entry it wrote, when it wrote one. */
+      activity: LeadActivity | null
+    }
   /** The email already belongs to a client file; offer to link to it. */
   | { kind: 'duplicate'; clientId: string }
   | { kind: 'failed'; message: string }
 
 const GENERIC_FAILURE = "That didn't work. No client file was created."
 
-export async function createClientFromLead(form: ConversionForm): Promise<ConvertResult> {
+function readActivity(value: unknown): LeadActivity | null {
+  if (!value || typeof value !== 'object') return null
+  const a = value as Record<string, unknown>
+  if (
+    typeof a.id !== 'string' ||
+    typeof a.leadId !== 'string' ||
+    typeof a.body !== 'string' ||
+    typeof a.author !== 'string' ||
+    typeof a.createdAt !== 'string' ||
+    a.type !== 'stage_change'
+  ) {
+    return null
+  }
+  return { id: a.id, leadId: a.leadId, type: a.type, body: a.body, author: a.author, createdAt: a.createdAt }
+}
+
+export async function createClientFromLead(
+  form: ConversionForm,
+  leadId?: string,
+): Promise<ConvertResult> {
   let response: Response
   try {
     response = await fetch('/api/admin/clients', {
@@ -32,6 +65,7 @@ export async function createClientFromLead(form: ConversionForm): Promise<Conver
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         companyDetails: toCompanyDetails(form),
+        ...(leadId ? { leadId } : {}),
       }),
     })
   } catch {
@@ -44,7 +78,13 @@ export async function createClientFromLead(form: ConversionForm): Promise<Conver
   } catch {
     body = null
   }
-  const payload = (body ?? {}) as { id?: unknown; clientId?: unknown; error?: unknown }
+  const payload = (body ?? {}) as {
+    id?: unknown
+    clientId?: unknown
+    error?: unknown
+    leadLinked?: unknown
+    leadActivity?: unknown
+  }
 
   if (response.status === 409) {
     // Only useful if the route told us which file it collided with.
@@ -64,5 +104,10 @@ export async function createClientFromLead(form: ConversionForm): Promise<Conver
     return { kind: 'failed', message: GENERIC_FAILURE }
   }
 
-  return { kind: 'created', clientId: payload.id }
+  return {
+    kind: 'created',
+    clientId: payload.id,
+    leadLinked: payload.leadLinked === true,
+    activity: readActivity(payload.leadActivity),
+  }
 }

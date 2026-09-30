@@ -7,6 +7,21 @@ import { EntityNameInput } from '@/components/abr/EntityNameInput'
 import { RegisterLookupLink } from '@/components/abr/RegisterLookupLink'
 import { prefillFor } from '@/lib/abr/prefill'
 import type { AbrPrefill } from '@/lib/abr/types'
+import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
+import { DirectorsFieldset } from '@/components/asic/DirectorsFieldset'
+import { formatExtractDate } from '@/lib/asic/dates'
+import {
+  applyExtract,
+  directorRowErrors,
+  directorRows,
+  directorsForSave,
+  resolveOrigin,
+  sourceLabel,
+  type AsicFields,
+  type AsicFill,
+  type SavedAsicOrigin,
+} from '@/lib/asic/fill'
+import type { AsicExtract, Director } from '@/lib/asic/types'
 import { CheckCircle } from 'lucide-react'
 
 export interface CompanyDetails {
@@ -18,6 +33,34 @@ export interface CompanyDetails {
   trustName: string
   phoneNumber: string
   emailAddress: string
+  /**
+   * From the ASIC company extract, or typed by hand. Optional on the type
+   * because a record saved before migration 0022 was read without them.
+   */
+  registeredOfficeAddress?: string | null
+  principalPlaceOfBusiness?: string | null
+  directors?: Director[]
+  asicExtractDate?: string | null
+  companyDetailsSource?: string | null
+}
+
+/** The three ASIC fields of a loaded record, as the form holds them. */
+function asicFieldsOf(record: CompanyDetails | null): AsicFields {
+  return {
+    registeredOfficeAddress: record?.registeredOfficeAddress ?? '',
+    principalPlaceOfBusiness: record?.principalPlaceOfBusiness ?? '',
+    directors: directorRows(record?.directors ?? []),
+  }
+}
+
+/** Where a loaded record says those fields came from. */
+function originOf(record: CompanyDetails | null): SavedAsicOrigin | null {
+  if (!record) return null
+  return {
+    source: record.companyDetailsSource ?? null,
+    extractedAt: record.asicExtractDate ?? null,
+    fields: asicFieldsOf(record),
+  }
 }
 
 interface CompanyDetailsFormProps {
@@ -33,6 +76,14 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
   const [trustName, setTrustName] = useState(initial?.trustName ?? '')
   const [phoneNumber, setPhoneNumber] = useState(initial?.phoneNumber ?? '')
   const [emailAddress, setEmailAddress] = useState(initial?.emailAddress ?? '')
+  // The fields an ASIC extract fills. Editable here for every client, which is
+  // how one converted before the upload existed gets them at all.
+  const [asicFields, setAsicFields] = useState<AsicFields>(() => asicFieldsOf(initial))
+  /** A fill made in this sitting, undoable until it is saved. */
+  const [asicFill, setAsicFill] = useState<AsicFill | null>(null)
+  /** What the saved record says about where those fields came from. */
+  const [origin, setOrigin] = useState<SavedAsicOrigin | null>(() => originOf(initial))
+  const [showDirectorErrors, setShowDirectorErrors] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(!!initial)
   const [error, setError] = useState('')
@@ -40,7 +91,7 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
   /**
    * Adopt a record that turned up after this form mounted.
    *
-   * The six useState calls above read `initial` once, which is wrong the moment
+   * The useState calls above read `initial` once, which is wrong the moment
    * another step writes this record — intake step 1 now saves the ABN and ACN
    * behind a picked company name, and the reload that follows arrives here as a
    * changed prop, not a remount. Without this the form would keep showing the
@@ -60,20 +111,49 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
     setTrustName(initial?.trustName ?? '')
     setPhoneNumber(initial?.phoneNumber ?? '')
     setEmailAddress(initial?.emailAddress ?? '')
+    setAsicFields(asicFieldsOf(initial))
+    setAsicFill(null)
+    setOrigin(originOf(initial))
+    setShowDirectorErrors(false)
     setSaved(!!initial)
     setError('')
   }
 
+  // The source and date this save would record, worked out from what is on
+  // screen now — so the line under the fields says ", edited" as soon as it is.
+  const resolved = resolveOrigin(asicFill, origin, asicFields)
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+
+    if (directorRowErrors(asicFields.directors).some(Boolean)) {
+      setShowDirectorErrors(true)
+      setError('Check the directors above.')
+      return
+    }
     setSaving(true)
 
     try {
       const res = await fetch('/api/portal/company-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, companyName, acnNumber, abnNumber, trustName, phoneNumber, emailAddress }),
+        // Every field this form renders, so a cleared box clears its column —
+        // including directors, where an empty list means they were all removed.
+        body: JSON.stringify({
+          clientId,
+          companyName,
+          acnNumber,
+          abnNumber,
+          trustName,
+          phoneNumber,
+          emailAddress,
+          registeredOfficeAddress: asicFields.registeredOfficeAddress.trim(),
+          principalPlaceOfBusiness: asicFields.principalPlaceOfBusiness.trim(),
+          directors: directorsForSave(asicFields.directors),
+          asicExtractDate: resolved.extractedAt,
+          companyDetailsSource: resolved.source,
+        }),
       })
 
       if (!res.ok) {
@@ -83,6 +163,11 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
         return
       }
 
+      // What was just saved is now the record's own origin; the fill is no
+      // longer something to undo.
+      setOrigin({ source: resolved.source, extractedAt: resolved.extractedAt, fields: asicFields })
+      setAsicFill(null)
+      setShowDirectorErrors(false)
       setSaved(true)
       setSaving(false)
       onComplete?.()
@@ -115,6 +200,36 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
     if (next.acnNumber !== undefined) setAcnNumber(next.acnNumber)
     markDirty()
   }
+
+  function patchAsic(change: Partial<AsicFields>) {
+    setAsicFields((current) => ({ ...current, ...change }))
+    markDirty()
+  }
+
+  /**
+   * Fill from an uploaded ASIC extract: the two addresses and the directors,
+   * and nothing else. The company name, ACN and ABN stay with the register
+   * lookup above and the keyboard.
+   */
+  function applyAsicExtract(extract: AsicExtract) {
+    const fill = applyExtract(asicFields, extract)
+    setAsicFields(fill.filled)
+    setAsicFill(fill)
+    setShowDirectorErrors(false)
+    markDirty()
+  }
+
+  function undoAsicFill() {
+    if (!asicFill) return
+    setAsicFields(asicFill.previous)
+    setAsicFill(null)
+    markDirty()
+  }
+
+  // Once saved, the banner gives way to a quiet line saying where these came from.
+  const savedSource = asicFill
+    ? null
+    : sourceLabel(resolved.source, formatExtractDate(resolved.extractedAt))
 
   return (
     <div className="rounded-xl border border-border bg-surface/30 p-5">
@@ -150,6 +265,34 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
           hint={<RegisterLookupLink register="abr" value={abnNumber} />}
           onChange={(e) => { setAbnNumber(e.target.value); markDirty() }}
         />
+        <AsicExtractUpload
+          id="company-asic-extract"
+          acnNumber={acnNumber}
+          fill={asicFill}
+          disabled={saving}
+          onFill={applyAsicExtract}
+          onUndo={undoAsicFill}
+        />
+        <Input
+          id="company-registered-office"
+          label="Registered Office Address"
+          value={asicFields.registeredOfficeAddress}
+          onChange={(e) => patchAsic({ registeredOfficeAddress: e.target.value })}
+        />
+        <Input
+          id="company-principal-place"
+          label="Principal Place of Business"
+          value={asicFields.principalPlaceOfBusiness}
+          onChange={(e) => patchAsic({ principalPlaceOfBusiness: e.target.value })}
+        />
+        <DirectorsFieldset
+          idPrefix="company"
+          rows={asicFields.directors}
+          disabled={saving}
+          showErrors={showDirectorErrors}
+          onChange={(directors) => patchAsic({ directors })}
+        />
+        {savedSource && <p className="text-xs text-foreground/40">{savedSource}</p>}
         <EntityNameInput
           id="trust-name"
           label="Name of Trust"

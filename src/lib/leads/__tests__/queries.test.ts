@@ -185,6 +185,14 @@ describe('getConvertedClientDetails', () => {
           trust_name: null,
           phone_number: '0745359847',
           email_address: 'accounts@whitlockcivil.com.au',
+          registered_office_address: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
+          principal_place_of_business: 'Level 2, 20 Example Street, Sampleton NSW 2000',
+          directors: [
+            { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
+            { name: 'Raj Example', dateOfBirth: null },
+          ],
+          asic_extract_date: '2026-09-23T04:07:38+00:00',
+          company_details_source: 'asic_pdf',
         },
         error: null,
       },
@@ -201,7 +209,38 @@ describe('getConvertedClientDetails', () => {
       trustName: null,
       companyPhone: '0745359847',
       companyEmail: 'accounts@whitlockcivil.com.au',
+      registeredOfficeAddress: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
+      principalPlaceOfBusiness: 'Level 2, 20 Example Street, Sampleton NSW 2000',
+      directors: [
+        { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
+        { name: 'Raj Example', dateOfBirth: null },
+      ],
+      asicExtractDate: '2026-09-23T04:07:38+00:00',
+      companyDetailsSource: 'asic_pdf',
     })
+  })
+
+  it('reads no directors, and no addresses, from a record saved before they existed', async () => {
+    mockTables({
+      clients: { data: CLIENT, error: null },
+      company_details: { data: { company_name: 'Whitlock Civil Pty Ltd' }, error: null },
+    })
+    expect(await getConvertedClientDetails('cl_1')).toMatchObject({
+      name: 'Dean Whitlock',
+      registeredOfficeAddress: null,
+      principalPlaceOfBusiness: null,
+      directors: [],
+      asicExtractDate: null,
+      companyDetailsSource: null,
+    })
+  })
+
+  it('reads directors that are not a list of people as none, rather than failing the page', async () => {
+    mockTables({
+      clients: { data: CLIENT, error: null },
+      company_details: { data: { directors: 'Jane Sample' }, error: null },
+    })
+    expect((await getConvertedClientDetails('cl_1'))?.directors).toEqual([])
   })
 
   it('still returns the client when it has no company details yet', async () => {
@@ -212,6 +251,7 @@ describe('getConvertedClientDetails', () => {
     const result = await getConvertedClientDetails('cl_1')
     expect(result?.name).toBe('Dean Whitlock')
     expect(result?.abnNumber).toBeNull()
+    expect(result?.directors).toEqual([])
   })
 
   it('still returns the client when the company read fails', async () => {

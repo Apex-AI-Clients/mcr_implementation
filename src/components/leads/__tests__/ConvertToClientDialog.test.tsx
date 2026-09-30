@@ -343,3 +343,54 @@ describe('ConvertToClientDialog', () => {
     expect(stageSelect().value).toBe('prospect')
   })
 })
+
+/**
+ * The route now links the lead in the same request that creates the file. A
+ * second request from the browser used to do it, and a page reload between the
+ * two left a client file whose lead still said "lead" and still offered to
+ * convert.
+ */
+describe('ConvertToClientDialog: the lead is linked by the create request', () => {
+  it('sends the lead id with the create request, and nothing after it', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, {
+      id: 'client-1',
+      leadLinked: true,
+      leadActivity: {
+        id: '22222222-2222-4222-8222-222222222222',
+        leadId: 'ld_1',
+        type: 'stage_change',
+        body: 'Converted to a client file in the restructuring workspace.',
+        author: 'Gabby',
+        createdAt: new Date().toISOString(),
+      },
+    })
+    const conversion = vi.fn(async () => {})
+    renderList({ conversion })
+
+    const dialog = await openAndFill(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/admin/clients')
+    expect(JSON.parse(init.body as string).leadId).toBe('ld_1')
+    // No second write for a reload to get between.
+    expect(conversion).not.toHaveBeenCalled()
+    expect(stageSelect().value).toBe('client')
+  })
+
+  it('still marks the lead itself when an older route did not', async () => {
+    const user = userEvent.setup()
+    mockFetch(201, { id: 'client-1' })
+    const conversion = vi.fn(async () => {})
+    renderList({ conversion })
+
+    const dialog = await openAndFill(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    expect(conversion).toHaveBeenCalledTimes(1)
+    expect(stageSelect().value).toBe('client')
+  })
+})
