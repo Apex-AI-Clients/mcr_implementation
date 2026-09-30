@@ -59,6 +59,9 @@ export function Dialog({
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        // An open dropdown inside the dialog takes the first Escape: it closes
+        // itself, and only the next one closes the dialog.
+        if (event.target instanceof Element && event.target.closest('[data-popover-open]')) return
         event.stopPropagation()
         onClose()
         return

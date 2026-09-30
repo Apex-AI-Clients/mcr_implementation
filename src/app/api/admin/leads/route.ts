@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
+import { stateColumns } from '@/lib/leads/format'
 
 /**
  * Create a lead, optionally with its first activity.
@@ -22,6 +23,8 @@ const ActivitySchema = z.object({
   createdAt: z.string(),
 })
 
+const StateSchema = z.enum(['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'])
+
 const LeadSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(200),
@@ -29,7 +32,10 @@ const LeadSchema = z.object({
   phone: z.string().min(1).max(40),
   debtMin: z.number().int().min(0).nullable(),
   debtMax: z.number().int().min(0).nullable(),
-  state: z.enum(['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']),
+  /** The one state, or null when several were chosen (see stateOptions). */
+  state: StateSchema.nullable(),
+  /** Two or more states ticked in Add lead. Exactly one of this and `state` is set. */
+  stateOptions: z.array(StateSchema).min(2).max(8).nullable().optional(),
   entityType: z.enum(['company', 'trust']).nullable(),
   message: z.string().nullable(),
   preferredCallTime: z.string().nullable(),
@@ -57,6 +63,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Debt range is inverted' }, { status: 400 })
     }
 
+    // One state, or a list of them — never both and never neither. The columns
+    // (and the text shown for a list) are worked out here from the states
+    // themselves, so the request cannot store a label that disagrees with them.
+    const states = lead.state ? [lead.state] : (lead.stateOptions ?? [])
+    if (lead.state && lead.stateOptions?.length) {
+      return NextResponse.json({ error: 'Send one state or a list, not both' }, { status: 400 })
+    }
+    const stateFields = stateColumns(states)
+    if (!stateFields.state && !stateFields.metaStateOptions) {
+      return NextResponse.json({ error: 'Choose a state' }, { status: 400 })
+    }
+
     const supabase = getSupabaseServerClient()
     const email = lead.email.trim().toLowerCase()
 
@@ -69,7 +87,9 @@ export async function POST(req: NextRequest) {
       phone: lead.phone.trim(),
       debt_min: lead.debtMin,
       debt_max: lead.debtMax,
-      state: lead.state,
+      state: stateFields.state,
+      meta_state_raw: stateFields.metaStateRaw,
+      meta_state_options: stateFields.metaStateOptions,
       entity_type: lead.entityType,
       message: lead.message,
       preferred_call_time: lead.preferredCallTime,

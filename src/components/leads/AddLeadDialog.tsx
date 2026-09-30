@@ -6,6 +6,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
+import { MultiSelect } from '@/components/ui/MultiSelect'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import {
@@ -29,7 +30,8 @@ interface FormState {
   phone: string
   /** Index into DEBT_PRESETS. */
   debt: string
-  state: string
+  /** One or more. A business can trade in several states. */
+  states: AuState[]
   entityType: string
   message: string
   note: string
@@ -40,13 +42,14 @@ const EMPTY: FormState = {
   email: '',
   phone: '',
   debt: '',
-  state: '',
+  states: [],
   entityType: '',
   message: '',
   note: '',
 }
 
 type FieldErrors = Partial<Record<keyof FormState, string>>
+type TextField = Exclude<keyof FormState, 'states'>
 
 const STATE_OPTIONS = AU_STATES.map((state) => ({ value: state, label: state }))
 // Skip "Not given" — a human typing the lead in knows roughly what it is.
@@ -73,9 +76,14 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<FieldErrors>({})
 
-  function set(field: keyof FormState, value: string) {
+  function set(field: TextField, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
     setErrors((prev) => ({ ...prev, [field]: undefined }))
+  }
+
+  function setStates(states: string[]) {
+    setForm((prev) => ({ ...prev, states: states as AuState[] }))
+    setErrors((prev) => ({ ...prev, states: undefined }))
   }
 
   function validate(): FieldErrors {
@@ -90,7 +98,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
     // Still required by hand: if a human is typing the lead in, they know
     // roughly what it is.
     if (!form.debt) next.debt = 'Choose a debt range.'
-    if (!form.state) next.state = 'Choose a state.'
+    if (form.states.length === 0) next.states = 'Choose a state.'
     return next
   }
 
@@ -110,7 +118,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
         phone: form.phone.trim(),
         debtMin: preset.min,
         debtMax: preset.max,
-        state: form.state as AuState,
+        states: form.states,
         entityType: (form.entityType || null) as EntityType | null,
         message: form.message,
         note: form.note,
@@ -191,14 +199,16 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
             options={DEBT_OPTIONS}
             error={errors.debt}
           />
-          <Select
+          {/* More than one can be ticked: a business can trade in several
+              states. The lead then shows under each of them in the state filter. */}
+          <MultiSelect
             id="lead-state"
             label="State"
             placeholder="Select"
-            value={form.state}
-            onChange={(event) => set('state', event.target.value)}
             options={STATE_OPTIONS}
-            error={errors.state}
+            value={form.states}
+            onChange={setStates}
+            error={errors.states}
           />
         </div>
 

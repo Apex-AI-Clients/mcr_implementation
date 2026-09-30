@@ -44,7 +44,8 @@ async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, dialog: H
   await user.type(within(dialog).getByLabelText('Email'), 'test.person@example.test')
   await user.type(within(dialog).getByLabelText('Phone'), '0400 000 001')
   await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
-  await user.selectOptions(within(dialog).getByLabelText('State'), 'NSW')
+  await user.click(within(dialog).getByLabelText('State'))
+  await user.click(within(dialog).getByRole('checkbox', { name: 'NSW' }))
   await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 }
 

@@ -11,6 +11,7 @@ import type {
 } from '@/types/leads'
 import { needsFollowUp } from '@/lib/leads/followUp'
 import { CONVERSION_ACTIVITY_BODY, STAGE_META } from '@/lib/leads/constants'
+import { stateColumns } from '@/lib/leads/format'
 import { useToast } from '@/components/ui/Toast'
 import { DuplicateLeadError } from '@/lib/leads/persistence'
 
@@ -265,7 +266,8 @@ export interface NewLeadInput {
   /** Whole dollars. Null max is open-ended. */
   debtMin: number | null
   debtMax: number | null
-  state: AuState
+  /** One or more. Several are stored as a list — see `stateColumns`. */
+  states: AuState[]
   entityType?: EntityType | null
   /** The lead's own words from the capture form. Not an activity. */
   message?: string
@@ -382,7 +384,7 @@ export function LeadsStoreProvider({
         phone: input.phone.trim(),
         debtMin: input.debtMin,
         debtMax: input.debtMax,
-        state: input.state,
+        ...stateColumns(input.states),
         entityType: input.entityType ?? null,
         message: input.message?.trim() || null,
         preferredCallTime: null,
@@ -409,8 +411,6 @@ export function LeadsStoreProvider({
         metaCampaignName: null,
         metaAdName: null,
         metaAccountId: null,
-        metaStateRaw: null,
-        metaStateOptions: null,
         createdAt: at,
         updatedAt: at,
       }

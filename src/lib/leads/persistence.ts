@@ -71,6 +71,9 @@ export const leadsPersistence: LeadsPersistence = {
         debtMin: lead.debtMin,
         debtMax: lead.debtMax,
         state: lead.state,
+        // Set instead of `state` when several were ticked. The route rebuilds
+        // the display text from these itself.
+        stateOptions: lead.metaStateOptions,
         entityType: lead.entityType,
         message: lead.message,
         preferredCallTime: lead.preferredCallTime,

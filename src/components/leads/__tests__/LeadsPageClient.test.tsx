@@ -384,7 +384,8 @@ describe('LeadsPageClient', () => {
     await user.type(within(dialog).getByLabelText('Phone'), '0407 552 118')
     // "$150k – $250k" is index 7 in DEBT_PRESETS.
     await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
-    await user.selectOptions(within(dialog).getByLabelText('State'), 'QLD')
+    await user.click(within(dialog).getByLabelText('State'))
+    await user.click(within(dialog).getByRole('checkbox', { name: 'QLD' }))
     await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -469,7 +470,8 @@ describe('LeadsPageClient', () => {
       await user.type(within(dialog).getByLabelText('Email'), 'known@example.test')
       await user.type(within(dialog).getByLabelText('Phone'), '0400 000 001')
       await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
-      await user.selectOptions(within(dialog).getByLabelText('State'), 'QLD')
+      await user.click(within(dialog).getByLabelText('State'))
+    await user.click(within(dialog).getByRole('checkbox', { name: 'QLD' }))
       await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
       const open = await screen.findByRole('link', { name: 'Open existing lead' })

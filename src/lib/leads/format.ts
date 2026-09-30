@@ -1,5 +1,6 @@
-import type { Lead, LeadActivity, LeadActivityType } from '@/types/leads'
+import type { AuState, Lead, LeadActivity, LeadActivityType } from '@/types/leads'
 import {
+  AU_STATES,
   STAGE_META,
   SOURCE_META,
   ENTITY_TYPE_META,
@@ -159,6 +160,28 @@ export function partnerForCampaign(campaignName: string | null): string | null {
 }
 
 /**
+ * The states ticked in Add lead -> the three columns that hold a lead's state.
+ *
+ * One state is just that state. Two or more go where a form's grouped answer
+ * already goes: `metaStateOptions` holds them, `metaStateRaw` is the text
+ * shown ("NSW, VIC"), and `state` is null — the database does not allow a state
+ * and a list of states together. That is what makes the lead appear under each
+ * of its states in the state filter, with no new column.
+ *
+ * Always in the fixed order of AU_STATES, whatever order they were ticked in,
+ * and de-duplicated.
+ */
+export function stateColumns(states: readonly AuState[]): Pick<
+  Lead,
+  'state' | 'metaStateRaw' | 'metaStateOptions'
+> {
+  const chosen = AU_STATES.filter((state) => states.includes(state))
+  if (chosen.length === 0) return { state: null, metaStateRaw: null, metaStateOptions: null }
+  if (chosen.length === 1) return { state: chosen[0], metaStateRaw: null, metaStateOptions: null }
+  return { state: null, metaStateRaw: chosen.join(', '), metaStateOptions: chosen }
+}
+
+/**
  * What to show for a lead whose state did not come down to one, or null when
  * it did (or nothing was said).
  *
@@ -169,10 +192,15 @@ export function partnerForCampaign(campaignName: string | null): string | null {
  * and matches no state filter.
  */
 export function describeUncertainState(
-  lead: Pick<Lead, 'state' | 'metaStateRaw' | 'metaStateOptions'>,
+  lead: Pick<Lead, 'state' | 'metaStateRaw' | 'metaStateOptions'> & { source?: Lead['source'] },
 ): { label: string; description: string } | null {
   if (lead.state || !lead.metaStateRaw) return null
   if (lead.metaStateOptions && lead.metaStateOptions.length > 1) {
+    // Staff ticked these themselves in Add lead: every one applies. A form's
+    // grouped answer is the other case — the lead is in one of them.
+    if (lead.source === 'manual') {
+      return { label: lead.metaStateRaw, description: `States: ${lead.metaStateRaw}` }
+    }
     return { label: lead.metaStateRaw, description: `One of ${lead.metaStateRaw}` }
   }
   return { label: lead.metaStateRaw, description: `State as given: ${lead.metaStateRaw}` }
