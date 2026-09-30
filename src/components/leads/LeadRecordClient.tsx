@@ -26,7 +26,7 @@ import {
   formatDebtRange,
   formatFullDate,
   formatPhone,
-  isValidAuMobile,
+  isValidPhone,
   isValidEmail,
 } from '@/lib/leads/format'
 import type {
@@ -232,7 +232,7 @@ export function LeadRecordClient({
               leadId={lead.id}
               field="phone"
               validate={(value) =>
-                isValidAuMobile(value) ? null : 'Enter an Australian mobile.'
+                isValidPhone(value) ? null : 'Enter a phone number using digits only.'
               }
             />
             {/* <InlineField

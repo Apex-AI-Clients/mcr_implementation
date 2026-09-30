@@ -278,7 +278,11 @@ interface LeadsContextValue {
   getLead: (leadId: string) => Lead | undefined
   activitiesFor: (leadId: string) => LeadActivity[]
   followUpCount: number
-  addLead: (input: NewLeadInput) => Lead
+  /**
+   * Optimistic: the lead is in the store at once. `onSaved` runs once the
+   * database has it — the moment a re-read of the list can actually find it.
+   */
+  addLead: (input: NewLeadInput, options?: { onSaved?: () => void }) => Lead
   updateLead: (leadId: string, patch: Partial<Lead>) => void
   logActivity: (leadId: string, type: LeadActivityType, body: string) => void
   /** Optimistic — applies immediately and rolls back if persistence fails. */
@@ -367,7 +371,7 @@ export function LeadsStoreProvider({
   )
 
   const addLead = useCallback(
-    (input: NewLeadInput) => {
+    (input: NewLeadInput, options?: { onSaved?: () => void }) => {
       const at = new Date().toISOString()
       const lead: Lead = {
         id: newId(),
@@ -425,7 +429,12 @@ export function LeadsStoreProvider({
 
       // Optimistic: the dialog closes straight away. If the write fails the row
       // is taken back out rather than left looking saved.
-      void persistence.createLead?.({ lead, activity })?.catch((err: unknown) => {
+      const write = persistence.createLead?.({ lead, activity })
+      // Nothing to wait for without a backend (tests, stories).
+      if (!write) options?.onSaved?.()
+      // then(saved, failed) rather than then().catch(): a throw inside onSaved
+      // must not be mistaken for a failed save and take the lead back out.
+      void write?.then(() => options?.onSaved?.(), (err: unknown) => {
         dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
         // One lead per email. Offer the lead that already exists instead of
         // merging into it: staff typing someone in is not an enquiry.

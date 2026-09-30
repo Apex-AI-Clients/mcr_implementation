@@ -333,6 +333,24 @@ describe('LeadsPageClient', () => {
     expect(within(dialog).queryByLabelText(/^Company$/i)).toBeNull()
   })
 
+  it('accepts a landline, a 1300 number or an overseas number as the phone', async () => {
+    const user = userEvent.setup()
+    renderList()
+
+    await user.click(screen.getByRole('button', { name: /add lead/i }))
+    const dialog = await screen.findByRole('dialog')
+
+    for (const number of ['03 9123 4567', '1300 123 456', '8077335703', '+91 80773 35703']) {
+      const phone = within(dialog).getByLabelText('Phone')
+      await user.clear(phone)
+      await user.type(phone, number)
+      await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
+      // Other fields are still empty, so the form stays open — but not because of the phone.
+      expect(within(dialog).getByText('Enter a name.')).toBeTruthy()
+      expect(within(dialog).queryByText(/Enter a phone number/)).toBeNull()
+    }
+  })
+
   it('reports validation errors under the fields, not in a banner', async () => {
     const user = userEvent.setup()
     renderList()
@@ -341,12 +359,12 @@ describe('LeadsPageClient', () => {
     const dialog = await screen.findByRole('dialog')
 
     await user.type(within(dialog).getByLabelText('Email'), 'not-an-email')
-    await user.type(within(dialog).getByLabelText('Phone'), '0312345678')
+    await user.type(within(dialog).getByLabelText('Phone'), 'call me')
     await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
     expect(within(dialog).getByText('Enter a name.')).toBeTruthy()
     expect(within(dialog).getByText('That email address does not look right.')).toBeTruthy()
-    expect(within(dialog).getByText(/Australian mobile/)).toBeTruthy()
+    expect(within(dialog).getByText(/Enter a phone number using digits only/)).toBeTruthy()
     expect(within(dialog).getByText('Choose a debt range.')).toBeTruthy()
     expect(within(dialog).getByText('Choose a state.')).toBeTruthy()
   })

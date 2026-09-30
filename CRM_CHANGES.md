@@ -344,6 +344,182 @@ the migration shows as one enquiry. Accepted.
 
 ---
 
+## ASIC extract upload (migrations 0021, 0022)
+
+Added 2026-09-30 at Gabby's request (23 September meeting). He buys the ASIC Current
+Company Extract PDF for each new client and re-typed it; he can now upload it and
+have the form fill itself. Code: `src/lib/asic/`, `src/app/api/asic/extract-pdf/`,
+`src/components/asic/`, `src/lib/clients/companyDetails.ts`.
+
+### What the upload fills, and what it never fills
+
+- **Fills:** registered office address, principal place of business, and the
+  directors (name and date of birth, one row each).
+- **Never fills:** company name, ACN or ABN, even when those boxes are empty. They
+  come from the business register lookup on the name fields, or from typing, exactly
+  as before. Decided 2026-09-30; it replaces the original brief, which had the PDF
+  filling them too.
+- **The extract's ACN is a safety check only.** If the form has a whole ACN and the
+  extract's differs, nothing is filled until staff answer "This extract is for
+  <name>, ACN <acn>. Use it anyway?". If the ACN is typed *after* the fill and
+  differs, a warning shows under the fill banner. The typed ACN is never changed.
+- **The lead's own name is never touched.** It is labelled "Lead name" in the
+  convert dialog. Directors are a separate section.
+- Everything is optional and editable. Conversion never depends on an upload.
+- After a fill: "Filled from ASIC extract dated <date>. Check the fields below.",
+  the extract's warnings, and **Undo fill**, which restores what was there before.
+
+### Where it appears
+
+| Place | What |
+|---|---|
+| Convert to client dialog | Upload at the top, centred. Below the ABN: registered office, principal place, directors, then trust name, phone, email |
+| Intake company step (`CompanyDetailsForm`) | Upload under the ABN, same fields, same order. How a client converted before this gets them. Shows "From ASIC extract as at <date>[, edited]" under the directors |
+| Lead record, Client file card | Both addresses and each director, read-only |
+| SBR client page | Both addresses and the directors in Company / Trust Details; the client's own phone in the header |
+
+### Privacy rules — do not relax these
+
+- **Parsed on our own server.** The PDF is never sent to OpenRouter, Gemini or any
+  other service. `src/lib/financials/extractFromPdf.ts` does send PDFs to a model;
+  this feature shares no code with it.
+- **Not stored.** The file is read into memory, parsed and dropped. If Gabby wants
+  it kept he uploads it through the normal document flow.
+- **Not logged.** The route logs one line: the outcome and the page count. No text,
+  no name, no ACN, no filename (it usually names the company). Errors are logged by
+  class name only. The route tests fail if any log line contains document content.
+- **Never read:** the Contact Address, and Share Information / Members, which list
+  shareholders with residential addresses. Parsing stops at those headings.
+- **Never stored about a director:** anything but name and date of birth. No place
+  of birth, address or appointment date. Extra keys are dropped on the way in.
+- **No real extract in the repo.** Fixtures are synthetic ("SAMPLE TRADING PTY
+  LTD", "JANE SAMPLE"). `/*.pdf` is in `.gitignore` so an extract dropped in the
+  repo root for local testing cannot be staged.
+
+### The route: `POST /api/asic/extract-pdf`
+
+Staff session required. Multipart form data, field `file`.
+
+| Check | Answer |
+|---|---|
+| No session | 401 |
+| Over 4 MB (declared length, then actual size) | 413, JSON |
+| Content type not `application/pdf`, or bytes not starting `%PDF-` | 415. Both are required |
+| Over 60 pages, damaged, or password-protected | 422 |
+| No text layer (a scan) | 422, "This PDF has no readable text. Fill the fields in by hand." No OCR |
+| Not an ASIC extract; ACN or ABN fails its check digit; ABN does not belong to the ACN | 422, with a `reason` tag |
+| Read | 200 `{ extract }`, `Cache-Control: no-store` |
+
+4 MB, not 5: Vercel rejects a body over 4.5 MB before the route runs, and its answer
+is not JSON. The browser checks size and type first with the same rules
+(`src/lib/asic/upload.ts`).
+
+Text extraction uses `unpdf` 1.8.1 (MIT; bundles Mozilla pdf.js, Apache-2.0). No
+network calls: pdf.js only fetches when given a URL, and none are. It builds under
+`next build --webpack` without `serverExternalPackages` and adds about 1.3 MB to
+that one function, nothing to the client bundle.
+
+### The parser (`src/lib/asic/parse.ts`)
+
+Pure: text lines in, result out. `extractText.ts` is the only module that touches
+the PDF. The result shape (`AsicExtract` in `types.ts`) does not depend on the
+source, so a future ASIC API can return the same thing.
+
+Layout it handles, all from a real extract:
+
+- Section headings share a line with a column header: "Organisation Details
+  Document Number".
+- Document numbers on the same line as a value ("Name: JANE SAMPLE 7EBH40554"),
+  including beside the **first** line of an address that carries on underneath.
+- The "Principal Place Of / Business address:" label split around its own address.
+- A header on every page (title plus company name, then "ACN …" with no colon) and
+  a footer (date and time plus page number), which can land mid-block.
+- One person as both Director and Secretary: Director blocks only, de-duplicated by
+  name and date of birth.
+- "Born:" carries a place and country after the date. Only the date is kept.
+- A Current & Historical extract: current data only, with a warning.
+
+**Known gap.** The headings for previous and ceased entries in a Current &
+Historical extract are a guess ("Previous…", "Former…", "Ceased…", or a cease/end
+date). Only a Current extract with one director has been checked against a real
+file. An unrecognised heading means missing data and a warning, not wrong data.
+
+Dates of birth are stored as ISO at the precision known: `1970-03-14`, `1970-03` or
+`1970`. The form shows and accepts `DD/MM/YYYY`, `MM/YYYY` and `YYYY`, because ASIC
+is consulting on showing only the year of birth from July 2027.
+
+### Schema
+
+**0021 `drop_open_service_policies`** — a security fix, applied first. Migrations
+0004, 0005, 0009, 0010 and 0013 created "Service role full access" policies as
+`FOR ALL USING (true) WITH CHECK (true)` with no `TO` clause, which applies to
+everyone. The publishable key, which ships in the browser, could read and write
+seven tables: `company_details`, `lodgement_analyses`, `financial_statements`,
+`financial_comparisons`, `sbr_historical_cases`, `sbr_outcome_predictions`,
+`financial_comparison_jobs`. The policies are dropped; the service role bypasses RLS
+and every read and write goes through a service-role API route. Verified on the live
+project with the publishable key, counts only: rows visible before, zero after.
+**Do not write a policy without a `TO` clause or an `auth.role()` check again.**
+
+**0022 `company_details_asic_fields`** adds to `company_details`:
+
+| Column | Notes |
+|---|---|
+| `registered_office_address` text | |
+| `principal_place_of_business` text | Often identical to the above; both are stored |
+| `directors` jsonb NOT NULL DEFAULT `[]` | Array of `{ name, dateOfBirth }`. CHECK that it is an array; elements validated by Zod in the routes |
+| `asic_extract_date` timestamptz | The extract's own date, for "as at" |
+| `company_details_source` text | `asic_pdf`, `asic_pdf_edited`, `manual`, or null |
+
+`company_details_source` is decided by the browser, which knows what the fill
+contained; the routes check the enum.
+
+- `asic_pdf`: filled from an extract and saved as filled.
+- `asic_pdf_edited`: an address or a director was changed after the fill, at
+  conversion or later in intake. The extract date is kept. It never goes back to
+  `asic_pdf` without a new upload.
+- `manual`: typed by hand.
+- null: none of these fields has anything in it.
+
+### Writing the record
+
+`src/lib/clients/companyDetails.ts` owns the column mapping and the shared Zod
+schema; both `POST /api/admin/clients` and `POST /api/portal/company-details` use
+it. The portal route used to accept any JSON and now validates.
+
+**Absent is not empty, including for directors.** An absent `directors` array leaves
+the stored directors alone; `[]` removes them. Intake step 1 saves only what the
+business register answered and must never send `directors`; a test proves it.
+
+### Conversion is one request now
+
+Found while testing this. Conversion was two browser requests: create the client,
+then mark the lead converted. A page reload between them left a client file whose
+lead still said "lead" and still offered to convert. `POST /api/admin/clients` now
+takes `leadId` and does both: it creates the client and details, sets the lead to
+`client`, links it, and writes the timeline entry with the author taken from the
+session. If the lead cannot be updated the client is rolled back. "Link to existing
+file" still uses the lead PATCH route, since the file already exists there.
+
+### Tests
+
+- `src/lib/asic/__tests__/`: the parser against synthetic text in both the simple
+  layout and the real one (`fixtures/realLayout.ts`), identifiers, dates, address
+  tidying, fill and source rules, and PDF to text to parse on PDFs built with pdf-lib.
+- `src/app/api/asic/extract-pdf/__tests__/route.test.ts`: the route end to end on
+  synthetic PDFs. Auth, size, type, magic bytes, every rejection, and no logging of
+  content. `fetch` is stubbed to fail, to prove nothing leaves the server.
+- `src/components/leads/__tests__/ConvertAsicExtract.test.tsx`,
+  `src/components/portal/__tests__/CompanyDetailsForm.test.tsx`: what is filled and
+  what is never touched, the ACN question, undo, directors, and what is sent.
+- `supabase/tests/anon_rls.test.ts`: the anon key sees nothing in the seven tables.
+  Read-only. Run it on its own —
+  `npx vitest run --config vitest.db.config.ts supabase/tests/anon_rls.test.ts` —
+  because `npm run test:db` also runs the lead-ingest test, which writes rows, and
+  there is only one Supabase project.
+
+---
+
 ## Account setup (no code — run in parallel)
 
 ### Facebook test environment

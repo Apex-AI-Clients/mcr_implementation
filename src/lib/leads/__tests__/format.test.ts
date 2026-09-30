@@ -5,6 +5,7 @@ import {
   compareByDebtDesc,
   normalisePhone,
   isValidAuMobile,
+  isValidPhone,
   formatPhone,
   describePhone,
   isRecognisedPhone,
@@ -184,6 +185,27 @@ describe('phone', () => {
     'rejects %s',
     (input) => {
       expect(isValidAuMobile(input)).toBe(false)
+    },
+  )
+
+  // What a lead typed in by hand has to pass: any number that could be called.
+  it.each([
+    '0402 915 338',
+    '+61 402 915 338',
+    '03 9123 4567', // landline
+    '1300 123 456',
+    '13 12 34',
+    '8077335703', // ten digits, no leading 0 — not Australian, still a number
+    '+91 80773 35703',
+    '+1 (415) 555-0100',
+  ])('isValidPhone accepts %s', (input) => {
+    expect(isValidPhone(input)).toBe(true)
+  })
+
+  it.each(['', '12345', '1234567890123456', 'not a phone', '0412-abc-999', '04 12 x', '++61402915338'])(
+    'isValidPhone rejects %s',
+    (input) => {
+      expect(isValidPhone(input)).toBe(false)
     },
   )
 

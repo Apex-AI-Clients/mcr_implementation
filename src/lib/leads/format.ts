@@ -214,6 +214,24 @@ export function isValidAuMobile(raw: string): boolean {
 }
 
 /**
+ * A number somebody could be called on: 6 to 15 digits, with an optional
+ * leading "+", once spaces, brackets, hyphens and dots are taken out.
+ *
+ * This is what a lead typed in by hand has to pass. It used to be
+ * `isValidAuMobile`, which turned away landlines, 1300 numbers and anything
+ * from overseas — real numbers a lead can have. The forms that feed the CRM
+ * accept all of those already, so the hand-typed path was the only strict one.
+ *
+ * Deliberately not a judgement on whether the number is Australian or even
+ * real: `describePhone` does that for display, and dims what it does not
+ * recognise. This only stops letters, a stray word or three digits being saved
+ * as a phone number. 15 is the longest a number can be under E.164.
+ */
+export function isValidPhone(raw: string): boolean {
+  return /^\+?\d{6,15}$/.test(normalisePhone(raw))
+}
+
+/**
  * Country calling codes, for splitting the code off an international number.
  *
  * A code is one to three digits and nothing in the number itself says which,

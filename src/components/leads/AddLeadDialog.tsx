@@ -15,7 +15,7 @@ import {
   ENTITY_TYPE_META,
   SOURCE_META,
 } from '@/lib/leads/constants'
-import { isValidAuMobile, isValidEmail } from '@/lib/leads/format'
+import { isValidEmail, isValidPhone } from '@/lib/leads/format'
 import type { AuState, EntityType } from '@/types/leads'
 
 interface AddLeadDialogProps {
@@ -84,8 +84,9 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
     if (!form.email.trim()) next.email = 'Enter an email address.'
     else if (!isValidEmail(form.email)) next.email = 'That email address does not look right.'
     if (!form.phone.trim()) next.phone = 'Enter a phone number.'
-    else if (!isValidAuMobile(form.phone))
-      next.phone = 'Enter an Australian mobile, e.g. 0412 345 678.'
+    // Any number that could be called — mobile, landline, 1300 or overseas.
+    else if (!isValidPhone(form.phone))
+      next.phone = 'Enter a phone number using digits only, e.g. 0412 345 678.'
     // Still required by hand: if a human is typing the lead in, they know
     // roughly what it is.
     if (!form.debt) next.debt = 'Choose a debt range.'
@@ -102,27 +103,33 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
     }
 
     const preset = DEBT_PRESETS[Number(form.debt)]
-    addLead({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      debtMin: preset.min,
-      debtMax: preset.max,
-      state: form.state as AuState,
-      entityType: (form.entityType || null) as EntityType | null,
-      message: form.message,
-      note: form.note,
-    })
+    addLead(
+      {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        debtMin: preset.min,
+        debtMax: preset.max,
+        state: form.state as AuState,
+        entityType: (form.entityType || null) as EntityType | null,
+        message: form.message,
+        note: form.note,
+      },
+      // Re-read the list only once the insert has landed. Refreshing at the
+      // same moment as sending it raced the write: the list was usually read
+      // first, came back without the new lead, and showed it only after a
+      // manual reload.
+      { onSaved: () => router.refresh() },
+    )
 
     toast('Lead added.')
     handleClose()
 
     // The list renders the page the server sent, so an optimistic row that is
     // not in it would not appear at all. Going to an unfiltered page 1 — which
-    // sorts newest first — puts the new lead at the top, and refresh re-reads
-    // it now that the insert has been sent.
+    // sorts newest first — is where the new lead will be; the refresh that
+    // brings it in is onSaved, above.
     router.push('/leads')
-    router.refresh()
   }
 
   function handleClose() {
