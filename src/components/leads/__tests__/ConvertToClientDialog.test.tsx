@@ -119,9 +119,11 @@ async function fillRequired(
   user: ReturnType<typeof userEvent.setup>,
   dialog: HTMLElement,
 ) {
-  await user.type(within(dialog).getByLabelText('Name of company'), 'Whitlock Civil Pty Ltd')
-  await user.type(within(dialog).getByLabelText('ACN number'), '123456789')
-  await user.type(within(dialog).getByLabelText('ABN number'), '12345678901')
+  // Synthetic numbers that pass their check digits: the company's own ABN is
+  // 11 + its ACN.
+  await user.type(within(dialog).getByLabelText('Company name'), 'Whitlock Civil Pty Ltd')
+  await user.type(within(dialog).getByLabelText('ACN'), '123456780')
+  await user.type(within(dialog).getByLabelText('Company ABN'), '11123456780')
 }
 
 /** Open the dialog and complete it, for the cases that are about what
@@ -173,14 +175,14 @@ describe('ConvertToClientDialog', () => {
 
     expect(within(dialog).getByText('Enter the company name.')).toBeTruthy()
     expect(within(dialog).getByText('Enter the ACN.')).toBeTruthy()
-    expect(within(dialog).getByText('Enter the ABN.')).toBeTruthy()
+    expect(within(dialog).getByText("Enter the company's ABN.")).toBeTruthy()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(stageSelect().value).toBe('prospect')
   })
 
-  it('asks a trust for its name instead of an ACN', async () => {
-    // Demanding both of every client would mean "N/A" on every conversion,
-    // and that junk would auto-fill the intake form.
+  it('asks a trustee for the company and the trust, but not the company ABN', async () => {
+    // The trustee company has an ACN and may have no ABN of its own; the trust
+    // has its own ABN.
     const user = userEvent.setup()
     vi.stubGlobal('fetch', vi.fn())
     renderList()
@@ -189,9 +191,141 @@ describe('ConvertToClientDialog', () => {
     await user.selectOptions(within(dialog).getByLabelText('Entity type'), 'trust')
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
+    expect(within(dialog).getByText('Enter the company name.')).toBeTruthy()
+    expect(within(dialog).getByText('Enter the ACN.')).toBeTruthy()
     expect(within(dialog).getByText('Enter the trust name.')).toBeTruthy()
-    expect(within(dialog).queryByText('Enter the ACN.')).toBeNull()
-    expect(within(dialog).queryByText('Enter the company name.')).toBeNull()
+    expect(within(dialog).getByText("Enter the trust's ABN.")).toBeTruthy()
+    expect(within(dialog).queryByText("Enter the company's ABN.")).toBeNull()
+  })
+
+  it('offers Company and Trust, and shows the Trust section for both — optional for a company', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    const select = within(dialog).getByLabelText('Entity type') as HTMLSelectElement
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Company', 'Trust'])
+    expect(within(dialog).getByLabelText('Trust name')).toBeTruthy()
+    expect(within(dialog).getByLabelText('Trust ABN')).toBeTruthy()
+    expect(within(dialog).getByText(/Optional for a company/)).toBeTruthy()
+
+    await user.selectOptions(select, 'trust')
+    expect(within(dialog).getByLabelText('Trust name')).toBeTruthy()
+    expect(within(dialog).queryByText(/Optional for a company/)).toBeNull()
+  })
+
+  it('converts a Company with no trust, and sends a trust typed for one', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    renderList()
+
+    const dialog = await openAndFill(user)
+    await user.type(within(dialog).getByLabelText('Trust name'), 'Whitlock Family Trust')
+    await user.type(within(dialog).getByLabelText('Trust ABN'), '51824753556')
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    const calls = () => fetchMock.mock.calls as unknown as [string, RequestInit][]
+    await waitFor(() => expect(calls().some(([url]) => url === '/api/admin/clients')).toBe(true))
+    const [, init] = calls().find(([url]) => url === '/api/admin/clients')!
+    expect(JSON.parse(init.body as string).companyDetails).toMatchObject({
+      entityType: 'company',
+      abnNumber: '11123456780',
+      trustName: 'Whitlock Family Trust',
+      trustAbnNumber: '51824753556',
+    })
+  })
+
+  it("still checks a trust ABN typed for a Company — it can't be the company's own", async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    renderList()
+
+    const dialog = await openAndFill(user)
+    await user.type(within(dialog).getByLabelText('Trust ABN'), '11123456780')
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    expect(within(dialog).getByText(/That's the company's own ABN/)).toBeTruthy()
+    expect(within(dialog).queryByText('Enter the trust name.')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('puts the trust straight under the company ABN, before the registered office', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const companyAbn = within(dialog).getByLabelText('Company ABN')
+    const trust = within(dialog).getByRole('group', { name: 'Trust' })
+    const registered = within(dialog).getByLabelText('Registered office (optional)')
+
+    expect(follows(companyAbn, trust)).toBe(true)
+    expect(follows(trust, registered)).toBe(true)
+    expect(within(trust).getByLabelText('Trust name')).toBeTruthy()
+    expect(within(trust).getByLabelText('Trust ABN')).toBeTruthy()
+  })
+
+  it('has an "Enter manually" checkbox for each section', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    await user.selectOptions(within(dialog).getByLabelText('Entity type'), 'trust')
+    const boxes = within(dialog).getAllByLabelText("Enter manually (don’t search ABN Lookup)")
+    expect(boxes).toHaveLength(2)
+    await user.click(boxes[1])
+    expect((boxes[0] as HTMLInputElement).checked).toBe(false)
+    expect((boxes[1] as HTMLInputElement).checked).toBe(true)
+  })
+
+  it("moves a trust's ABN out of the company ABN, and offers the trustee type", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    await user.type(within(dialog).getByLabelText('ACN'), '123456780')
+    await user.type(within(dialog).getByLabelText('Company ABN'), '51824753556')
+    await user.click(within(dialog).getByRole('button', { name: 'Move to trust ABN' }))
+
+    expect((within(dialog).getByLabelText('Company ABN') as HTMLInputElement).value).toBe('')
+    expect(within(dialog).getByText(/Moved to the trust ABN/)).toBeTruthy()
+
+    await user.click(within(dialog).getByRole('button', { name: /^Switch to/ }))
+    expect((within(dialog).getByLabelText('Trust ABN') as HTMLInputElement).value).toBe(
+      '51824753556',
+    )
+  })
+
+  it('sends a trustee with both ABNs kept apart', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    renderList()
+
+    const dialog = await openConversion(user)
+    await user.selectOptions(within(dialog).getByLabelText('Entity type'), 'trust')
+    await user.type(within(dialog).getByLabelText('Company name'), 'Whitlock Holdings Pty Ltd')
+    await user.type(within(dialog).getByLabelText('ACN'), '123456780')
+    await user.type(within(dialog).getByLabelText('Trust name'), 'Whitlock Family Trust')
+    await user.type(within(dialog).getByLabelText('Trust ABN'), '51824753556')
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    const calls = () => fetchMock.mock.calls as unknown as [string, RequestInit][]
+    await waitFor(() => expect(calls().some(([url]) => url === '/api/admin/clients')).toBe(true))
+    const [, init] = calls().find(([url]) => url === '/api/admin/clients')!
+    expect(JSON.parse(init.body as string).companyDetails).toMatchObject({
+      entityType: 'trust',
+      companyName: 'Whitlock Holdings Pty Ltd',
+      acnNumber: '123456780',
+      abnNumber: '',
+      trustName: 'Whitlock Family Trust',
+      trustAbnNumber: '51824753556',
+    })
   })
 
   it('links to the ACN and ABN registers in a new tab, opening a typed ABN directly', async () => {
@@ -203,7 +337,8 @@ describe('ConvertToClientDialog', () => {
     const asic = within(dialog).getByRole('link', {
       name: 'Check or find an ACN (opens in a new tab)',
     })
-    const abr = within(dialog).getByRole('link', {
+    // The company ABN's link; the trust ABN has its own further down.
+    const [abr] = within(dialog).getAllByRole('link', {
       name: 'Check or find an ABN (opens in a new tab)',
     })
 
@@ -216,7 +351,7 @@ describe('ConvertToClientDialog', () => {
       expect(link.getAttribute('rel')).toBe('noopener noreferrer')
     }
 
-    await user.type(within(dialog).getByLabelText('ABN number'), '51 824 753 556')
+    await user.type(within(dialog).getByLabelText('Company ABN'), '51 824 753 556')
     expect(abr.getAttribute('href')).toBe('https://abr.business.gov.au/ABN/View?abn=51824753556')
   })
 
@@ -232,9 +367,11 @@ describe('ConvertToClientDialog', () => {
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     const sent = JSON.parse(init.body as string)
     expect(sent.companyDetails).toMatchObject({
+      entityType: 'company',
       companyName: 'Whitlock Civil Pty Ltd',
-      acnNumber: '123456789',
-      abnNumber: '12345678901',
+      acnNumber: '123456780',
+      abnNumber: '11123456780',
+      trustAbnNumber: '',
     })
   })
 

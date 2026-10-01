@@ -179,10 +179,12 @@ describe('getConvertedClientDetails', () => {
       clients: { data: CLIENT, error: null },
       company_details: {
         data: {
+          entity_type: 'trust',
           company_name: 'Whitlock Civil Pty Ltd',
           acn_number: '004085616',
           abn_number: '53004085616',
-          trust_name: null,
+          trust_name: 'Whitlock Family Trust',
+          trust_abn_number: '51824753556',
           phone_number: '0745359847',
           email_address: 'accounts@whitlockcivil.com.au',
           registered_office_address: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
@@ -203,10 +205,13 @@ describe('getConvertedClientDetails', () => {
       name: 'Dean Whitlock',
       email: 'dean@whitlockcivil.com.au',
       phone: '0407552118',
+      // The company's ABN and the trust's, read from their own columns.
+      entityType: 'trust',
       companyName: 'Whitlock Civil Pty Ltd',
       acnNumber: '004085616',
       abnNumber: '53004085616',
-      trustName: null,
+      trustName: 'Whitlock Family Trust',
+      trustAbnNumber: '51824753556',
       companyPhone: '0745359847',
       companyEmail: 'accounts@whitlockcivil.com.au',
       registeredOfficeAddress: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',

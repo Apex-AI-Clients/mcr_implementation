@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 import type { DocCategory } from '@/lib/constants'
+import { IdentitySummary } from '@/components/identity/IdentitySummary'
 
 interface Props {
   /** null = adding a new client (later steps are locked until created). */
@@ -130,7 +131,7 @@ export function IntakeClient({
       },
       {
         id: 'company',
-        title: 'Company or Trust Details',
+        title: 'Company and Trust Details',
         subtitle: 'Business information',
         isComplete: !!ready?.companyDetails,
         kind: { kind: 'company' },
@@ -311,6 +312,7 @@ export function IntakeClient({
             {activeStep.kind.kind === 'review' && (
               <ReviewSummary
                 clientName={clientName}
+                companyDetails={companyDetails}
                 steps={steps}
                 allRequiredComplete={allRequiredComplete}
                 onJumpTo={selectStep}
@@ -340,12 +342,19 @@ export function IntakeClient({
 
 interface ReviewSummaryProps {
   clientName: string
+  companyDetails: CompanyDetails | null
   steps: WizardStep[]
   allRequiredComplete: boolean
   onJumpTo: (id: string) => void
 }
 
-function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: ReviewSummaryProps) {
+function ReviewSummary({
+  clientName,
+  companyDetails,
+  steps,
+  allRequiredComplete,
+  onJumpTo,
+}: ReviewSummaryProps) {
   const actionableSteps = steps.filter((s) => s.kind.kind !== 'review')
   const requiredMissing = actionableSteps.filter((s) => !s.isOptional && !s.isComplete)
 
@@ -395,6 +404,10 @@ function ReviewSummary({ clientName, steps, allRequiredComplete, onJumpTo }: Rev
             ))}
           </div>
         </div>
+      )}
+
+      {companyDetails && (
+        <IdentitySummary details={companyDetails} onEdit={() => onJumpTo('company')} />
       )}
 
       <div>

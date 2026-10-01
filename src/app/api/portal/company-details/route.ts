@@ -28,10 +28,12 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     id: data.id,
     clientId: data.client_id,
+    entityType: data.entity_type,
     companyName: data.company_name,
     acnNumber: data.acn_number,
     abnNumber: data.abn_number,
     trustName: data.trust_name,
+    trustAbnNumber: data.trust_abn_number,
     phoneNumber: data.phone_number,
     emailAddress: data.email_address,
     registeredOfficeAddress: data.registered_office_address,

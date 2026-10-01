@@ -12,8 +12,9 @@ import type { Lead } from '@/types/leads'
  * The ASIC extract upload on the Convert to client dialog.
  *
  * The route is mocked with a SYNTHETIC extract — nobody real. What is under
- * test is what the dialog does with one: which fields it fills, which it must
- * never touch, the ACN question, undo, and what conversion then sends.
+ * test is what the dialog does with one: which fields it fills (the company's
+ * only into empty boxes), which it must never touch (the lead's name, the
+ * trust), the ACN question, undo, and what conversion then sends.
  */
 
 vi.mock('next/navigation', () => ({
@@ -52,7 +53,7 @@ const EXTRACT: AsicExtract = {
   warnings: [],
 }
 
-const REGISTERED = 'Registered office address (optional)'
+const REGISTERED = 'Registered office (optional)'
 const PRINCIPAL = 'Principal place of business (optional)'
 const UPLOAD = 'Upload ASIC extract (PDF)'
 
@@ -118,7 +119,8 @@ describe('Convert to client — labels', () => {
     expect(within(dialog).queryByLabelText('Name')).toBeNull()
     expect(within(dialog).getAllByLabelText('Phone (optional)')).toHaveLength(1)
     // Exact, because other tests and staff both look for it by this name.
-    expect(field(dialog, 'ACN number')).toBeTruthy()
+    expect(field(dialog, 'ACN')).toBeTruthy()
+    expect(field(dialog, 'Company ABN')).toBeTruthy()
   })
 
   it('offers the upload, the two addresses and an empty director section', () => {
@@ -153,7 +155,7 @@ describe('Convert to client — filling from an extract', () => {
     )
   })
 
-  it('never fills the lead name, company name, ACN or ABN — even when they are empty', async () => {
+  it('fills an empty company name, ACN and ABN — and never the lead name', async () => {
     const user = userEvent.setup()
     mockRoutes()
     const dialog = renderDialog()
@@ -162,9 +164,87 @@ describe('Convert to client — filling from an extract', () => {
     await waitFor(() => expect(field(dialog, REGISTERED).value).not.toBe(''))
 
     expect(field(dialog, 'Lead name').value).toBe('Dean Whitlock')
-    expect(field(dialog, 'Name of company').value).toBe('')
-    expect(field(dialog, 'ACN number').value).toBe('')
-    expect(field(dialog, 'ABN number').value).toBe('')
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Pty Ltd')
+    expect(field(dialog, 'ACN').value).toBe('123456780')
+    expect(field(dialog, 'Company ABN').value).toBe('11123456780')
+    expect(within(dialog).getAllByText('Matches ASIC extract')).toHaveLength(3)
+  })
+
+  it('asks per field instead of overwriting a filled one — Use ASIC or Keep', async () => {
+    const user = userEvent.setup()
+    mockRoutes()
+    const dialog = renderDialog()
+    await user.type(field(dialog, 'Company name'), 'Sample Trading Co')
+    await user.type(field(dialog, 'ACN'), '123456780')
+
+    await uploadExtract(user, dialog)
+    await waitFor(() => expect(field(dialog, REGISTERED).value).not.toBe(''))
+
+    // Untouched until somebody chooses.
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Co')
+    const question = within(dialog).getByRole('group', {
+      name: 'The ASIC extract has a different value',
+    })
+    expect(question.textContent).toContain('ASIC: Sample Trading Pty Ltd / Form: Sample Trading Co')
+
+    await user.click(within(question).getByRole('button', { name: 'Use ASIC' }))
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Pty Ltd')
+
+    // Undo puts back what was typed, including the value Use ASIC replaced.
+    await user.click(within(dialog).getByRole('button', { name: 'Undo fill' }))
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Co')
+  })
+
+  it("keeps the form's value when told to", async () => {
+    const user = userEvent.setup()
+    mockRoutes()
+    const dialog = renderDialog()
+    await user.type(field(dialog, 'Company name'), 'Sample Trading Co')
+
+    await uploadExtract(user, dialog)
+    const question = await within(dialog).findByRole('group', {
+      name: 'The ASIC extract has a different value',
+    })
+    await user.click(within(question).getByRole('button', { name: 'Keep' }))
+
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Co')
+    expect(within(dialog).getByText(/ASIC extract has/).textContent).toContain('Sample Trading Pty Ltd')
+  })
+
+  it('never fills the trust', async () => {
+    const user = userEvent.setup()
+    mockRoutes()
+    const dialog = renderDialog()
+    await user.selectOptions(field(dialog, 'Entity type'), 'trust')
+    await user.type(field(dialog, 'Trust name'), 'Sample Family Trust')
+
+    await uploadExtract(user, dialog)
+    await waitFor(() => expect(field(dialog, REGISTERED).value).not.toBe(''))
+
+    expect(field(dialog, 'Trust name').value).toBe('Sample Family Trust')
+    expect(field(dialog, 'Trust ABN').value).toBe('')
+  })
+
+  it('an extract with no ABN leaves the company ABN alone and offers the trustee type', async () => {
+    const user = userEvent.setup()
+    mockRoutes({ status: 200, body: { extract: { ...EXTRACT, abn: null } } })
+    const dialog = renderDialog()
+    await user.type(field(dialog, 'Company ABN'), '51824753556')
+
+    await uploadExtract(user, dialog)
+
+    expect(
+      await within(dialog).findByText(
+        'No ABN on this extract. If this company is a trustee, add the trust below.',
+      ),
+    ).toBeTruthy()
+    expect(field(dialog, 'Company ABN').value).toBe('51824753556')
+    // Offered, not switched.
+    expect(field(dialog, 'Entity type').value).toBe('company')
+
+    await user.click(within(dialog).getByRole('button', { name: /^Switch to/ }))
+    expect(field(dialog, 'Entity type').value).toBe('trust')
+    expect(within(dialog).queryByText(/No ABN on this extract/)).toBeNull()
   })
 
   it('leaves every filled field editable', async () => {
@@ -209,6 +289,10 @@ describe('Convert to client — filling from an extract', () => {
     expect(field(dialog, REGISTERED).value).toBe('1 Typed Street')
     expect(field(dialog, PRINCIPAL).value).toBe('')
     expect(field(dialog, 'Director 1 name').value).toBe('Typed Person')
+    // The identity fields it filled go back to empty too.
+    expect(field(dialog, 'Company name').value).toBe('')
+    expect(field(dialog, 'ACN').value).toBe('')
+    expect(field(dialog, 'Company ABN').value).toBe('')
     expect(within(dialog).queryByLabelText('Director 2 name')).toBeNull()
     expect(within(dialog).queryByRole('status')).toBeNull()
   })
@@ -219,46 +303,55 @@ describe('Convert to client — an extract for a different ACN', () => {
     const user = userEvent.setup()
     mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'ACN number'), '000 000 019')
+    await user.type(field(dialog, 'ACN'), '000 000 019')
 
     await uploadExtract(user, dialog)
 
     const question = await within(dialog).findByRole('alertdialog')
     expect(question.textContent).toContain(
-      'This extract is for Sample Trading Pty Ltd, ACN 123 456 780. Use it anyway?',
+      'This extract is for Sample Trading Pty Ltd, ACN 123 456 780 — not the ACN on this form.',
     )
     expect(field(dialog, REGISTERED).value).toBe('')
     expect(within(dialog).queryByLabelText('Director 1 name')).toBeNull()
   })
 
-  it('fills nothing when told not to use it', async () => {
+  it('fills nothing on Cancel', async () => {
     const user = userEvent.setup()
     mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'ACN number'), '000000019')
+    await user.type(field(dialog, 'ACN'), '000000019')
     await uploadExtract(user, dialog)
 
     const question = await within(dialog).findByRole('alertdialog')
-    await user.click(within(question).getByRole('button', { name: /use it$/i }))
+    await user.click(within(question).getByRole('button', { name: 'Cancel' }))
 
     expect(within(dialog).queryByRole('alertdialog')).toBeNull()
     expect(field(dialog, REGISTERED).value).toBe('')
     expect(within(dialog).queryByRole('status')).toBeNull()
   })
 
-  it('fills when told to use it anyway, and still leaves the ACN as typed', async () => {
+  it("replaces the company details with the extract's when told to, and undo puts them back", async () => {
     const user = userEvent.setup()
     mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'ACN number'), '000000019')
+    await user.type(field(dialog, 'Company name'), 'Other Co Pty Ltd')
+    await user.type(field(dialog, 'ACN'), '000000019')
     await uploadExtract(user, dialog)
 
     const question = await within(dialog).findByRole('alertdialog')
-    await user.click(within(question).getByRole('button', { name: 'Use it anyway' }))
+    await user.click(
+      within(question).getByRole('button', { name: /Replace company details with the extract/ }),
+    )
 
     expect(field(dialog, REGISTERED).value).toBe(EXTRACT.registeredOffice)
     expect(field(dialog, 'Director 1 name').value).toBe('Jane Sample')
-    expect(field(dialog, 'ACN number').value).toBe('000000019')
+    expect(field(dialog, 'Company name').value).toBe('Sample Trading Pty Ltd')
+    expect(field(dialog, 'ACN').value).toBe('123456780')
+    expect(field(dialog, 'Company ABN').value).toBe('11123456780')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Undo fill' }))
+    expect(field(dialog, 'Company name').value).toBe('Other Co Pty Ltd')
+    expect(field(dialog, 'ACN').value).toBe('000000019')
   })
 
   it('warns when a different ACN is typed after the extract went in', async () => {
@@ -271,13 +364,15 @@ describe('Convert to client — an extract for a different ACN', () => {
     await waitFor(() => expect(field(dialog, REGISTERED).value).toBe(EXTRACT.registeredOffice))
     expect(within(dialog).queryByRole('alert')).toBeNull()
 
-    await user.type(field(dialog, 'ACN number'), '000 000 019')
+    // The extract filled the empty ACN; somebody then changes it.
+    await user.clear(field(dialog, 'ACN'))
+    await user.type(field(dialog, 'ACN'), '000 000 019')
 
     expect(within(dialog).getByRole('alert').textContent).toContain(
       'This extract is for Sample Trading Pty Ltd, ACN 123 456 780, which is not the ACN on this form.',
     )
     // Still the typed ACN, and the fill is still there to check or undo.
-    expect(field(dialog, 'ACN number').value).toBe('000 000 019')
+    expect(field(dialog, 'ACN').value).toBe('000 000 019')
     expect(field(dialog, REGISTERED).value).toBe(EXTRACT.registeredOffice)
   })
 
@@ -288,7 +383,8 @@ describe('Convert to client — an extract for a different ACN', () => {
     await uploadExtract(user, dialog)
     await waitFor(() => expect(field(dialog, REGISTERED).value).toBe(EXTRACT.registeredOffice))
 
-    await user.type(field(dialog, 'ACN number'), '123 456 780')
+    await user.clear(field(dialog, 'ACN'))
+    await user.type(field(dialog, 'ACN'), '123 456 780')
 
     expect(within(dialog).queryByRole('alert')).toBeNull()
   })
@@ -307,7 +403,7 @@ describe('Convert to client — an extract for a different ACN', () => {
     const user = userEvent.setup()
     mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'ACN number'), '123 456 780')
+    await user.type(field(dialog, 'ACN'), '123 456 780')
 
     await uploadExtract(user, dialog)
 
@@ -385,9 +481,9 @@ describe('Convert to client — directors by hand', () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'Name of company'), 'Sample Trading Pty Ltd')
-    await user.type(field(dialog, 'ACN number'), '123456780')
-    await user.type(field(dialog, 'ABN number'), '11123456780')
+    await user.type(field(dialog, 'Company name'), 'Sample Trading Pty Ltd')
+    await user.type(field(dialog, 'ACN'), '123456780')
+    await user.type(field(dialog, 'Company ABN'), '11123456780')
     await user.click(within(dialog).getByRole('button', { name: 'Add director' }))
     await user.type(field(dialog, 'Director 1 name'), 'Jane Sample')
     await user.type(field(dialog, 'Director 1 date of birth'), '14 March 1970')
@@ -405,9 +501,14 @@ describe('Convert to client — what conversion sends', () => {
     dialog: HTMLElement,
     fetchMock: ReturnType<typeof mockRoutes>,
   ) {
-    await user.type(field(dialog, 'Name of company'), 'Sample Trading Pty Ltd')
-    await user.type(field(dialog, 'ACN number'), '123456780')
-    await user.type(field(dialog, 'ABN number'), '11123456780')
+    // Only into empty boxes: after an upload the extract has filled them.
+    for (const [label, value] of [
+      ['Company name', 'Sample Trading Pty Ltd'],
+      ['ACN', '123456780'],
+      ['Company ABN', '11123456780'],
+    ]) {
+      if (!field(dialog, label).value) await user.type(field(dialog, label), value)
+    }
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
     await waitFor(() => expect(callsTo(fetchMock, '/api/admin/clients')).toHaveLength(1))
     const [, init] = callsTo(fetchMock, '/api/admin/clients')[0]

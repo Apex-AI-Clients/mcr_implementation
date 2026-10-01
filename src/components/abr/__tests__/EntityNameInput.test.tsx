@@ -62,7 +62,7 @@ function mockRoutes({ configured = true, search, abn, acns }: RouteOptions = {})
     }
     if (url.startsWith('/api/abr/acns')) {
       // The company fixture's ACN, and the trust's lack of one.
-      return acns ? acns() : json({ acns: { '53004085616': '004085616', '74653091178': '' } })
+      return acns ? acns() : json({ acns: { '53004085616': '004085616', '82653091178': '' } })
     }
     if (url.startsWith('/api/abr/abn')) {
       return abn ? abn() : json({ details: parseAbnDetails(fixture('abn_details_company')) })
@@ -74,7 +74,13 @@ function mockRoutes({ configured = true, search, abn, acns }: RouteOptions = {})
 }
 
 /** Mirrors how the conversion dialog holds the value: state the field edits. */
-function Harness({ onPick = vi.fn() }: { onPick?: (prefill: AbrPrefill) => void }) {
+function Harness({
+  onPick = vi.fn(),
+  searchDisabled = false,
+}: {
+  onPick?: (prefill: AbrPrefill) => void
+  searchDisabled?: boolean
+}) {
   const [value, setValue] = useState('')
   return (
     <EntityNameInput
@@ -82,6 +88,7 @@ function Harness({ onPick = vi.fn() }: { onPick?: (prefill: AbrPrefill) => void 
       label="Name of company"
       value={value}
       disabled={false}
+      searchDisabled={searchDisabled}
       onChange={setValue}
       onPick={(prefill) => {
         if (typeof prefill.companyName === 'string') setValue(prefill.companyName)
@@ -207,7 +214,7 @@ describe('EntityNameInput — searching', () => {
     // …and once it lands, the placeholder becomes the ACN on the company row,
     // and goes from every other row — the trust has none, and the rest were
     // not answered, which is finished too.
-    answer(json({ acns: { '53004085616': '004085616', '74653091178': '' } }))
+    answer(json({ acns: { '53004085616': '004085616', '82653091178': '' } }))
     await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
     expect(screen.queryAllByLabelText('Looking up ACN')).toHaveLength(0)
   })
@@ -312,7 +319,7 @@ describe('EntityNameInput — picking a match', () => {
     await waitFor(() => expect(onPick).toHaveBeenCalled())
     expect(onPick.mock.calls[0][0]).toEqual({
       trustName: 'Smith Family Trust',
-      abnNumber: '74653091178',
+      abnNumber: '82653091178',
       entityType: 'trust',
     })
   })
@@ -383,5 +390,37 @@ describe('EntityNameInput — when the register is no help', () => {
     await waitFor(() => expect(screen.getByText(/enter the details by hand/i)).not.toBeNull())
     expect(field().value).toBe('Whitlock')
     expect(onPick).not.toHaveBeenCalled()
+  })
+})
+
+describe('EntityNameInput — "Enter manually" ticked', () => {
+  it('offers no suggestions and never searches, with the register available', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(<Harness searchDisabled />)
+
+    await user.type(field(), 'Whitlock Civil')
+    // Longer than the debounce, so a search would have gone out by now.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+
+    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/abr/search'))).toBe(
+      false,
+    )
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(field().getAttribute('role')).toBeNull()
+    expect(field().value).toBe('Whitlock Civil')
+  })
+
+  it('searches again once it is unticked, keeping what was typed', async () => {
+    const user = userEvent.setup()
+    mockRoutes()
+    const { rerender } = render(<Harness searchDisabled />)
+    await user.type(field(), 'Whitlock Civil')
+
+    rerender(<Harness />)
+    await user.type(field(), ' P')
+
+    await waitFor(() => expect(screen.getByRole('listbox')).not.toBeNull(), ACN_WAIT)
+    expect(field().value).toBe('Whitlock Civil P')
   })
 })

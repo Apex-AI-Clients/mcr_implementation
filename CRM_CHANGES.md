@@ -353,30 +353,35 @@ have the form fill itself. Code: `src/lib/asic/`, `src/app/api/asic/extract-pdf/
 
 ### What the upload fills, and what it never fills
 
+> **Revised 2026-10-01** by the company / trust rework below, which replaced the
+> 30 September rule that the PDF never fills the company name, ACN or ABN.
+
 - **Fills:** registered office address, principal place of business, and the
   directors (name and date of birth, one row each).
-- **Never fills:** company name, ACN or ABN, even when those boxes are empty. They
-  come from the business register lookup on the name fields, or from typing, exactly
-  as before. Decided 2026-09-30; it replaces the original brief, which had the PDF
-  filling them too.
-- **The extract's ACN is a safety check only.** If the form has a whole ACN and the
-  extract's differs, nothing is filled until staff answer "This extract is for
-  <name>, ACN <acn>. Use it anyway?". If the ACN is typed *after* the fill and
-  differs, a warning shows under the fill banner. The typed ACN is never changed.
+- **Fills only into empty boxes:** company name, ACN and the company's own ABN. A box
+  that already holds a value is compared instead — "✓ Matches ASIC extract" when
+  equal, "ASIC: X / Form: Y — Use ASIC / Keep" when not. See the rework section.
+- **Never fills the trust.** Trusts are not registered with ASIC.
+- **A different ACN asks first.** If the form has a whole ACN and the extract's
+  differs, nothing is filled until staff answer: "This extract is for <name>, ACN
+  <acn> — not the ACN on this form." [Replace company details with the extract's] /
+  [Cancel]. If the ACN is typed *after* the fill and differs, a warning shows under
+  the fill banner.
 - **The lead's own name is never touched.** It is labelled "Lead name" in the
   convert dialog. Directors are a separate section.
 - Everything is optional and editable. Conversion never depends on an upload.
 - After a fill: "Filled from ASIC extract dated <date>. Check the fields below.",
-  the extract's warnings, and **Undo fill**, which restores what was there before.
+  the extract's warnings, and **Undo fill**, which restores every field the fill
+  changed — the company name, ACN and ABN included.
 
 ### Where it appears
 
 | Place | What |
 |---|---|
-| Convert to client dialog | Upload at the top, centred. Below the ABN: registered office, principal place, directors, then trust name, phone, email |
-| Intake company step (`CompanyDetailsForm`) | Upload under the ABN, same fields, same order. How a client converted before this gets them. Shows "From ASIC extract as at <date>[, edited]" under the directors |
-| Lead record, Client file card | Both addresses and each director, read-only |
-| SBR client page | Both addresses and the directors in Company / Trust Details; the client's own phone in the header |
+| Convert to client dialog | Upload at the top, centred. The fields below it are the shared Company and Trust sections (see the rework section) |
+| Intake company step (`CompanyDetailsForm`) | Upload after the company ABN and the trust, same sections. How a client converted before this gets them. Shows "From ASIC extract as at <date>[, edited]" under the directors |
+| Lead record, Client file card | Both addresses and each director, read-only, in the Company group |
+| SBR client page | Both addresses and the directors in Company and Trust Details; the client's own phone in the header |
 
 ### Privacy rules — do not relax these
 
@@ -520,6 +525,153 @@ file" still uses the lead PATCH route, since the file already exists there.
 
 ---
 
+## Company and trust identity (migration 0023)
+
+Added 2026-10-01 at Gabby's request. Code: `src/lib/clients/identity.ts`,
+`identityForm.ts`, `identityDisplay.ts`, `identityBackfill.ts`,
+`src/lib/abr/acnAbn.ts`, `src/components/identity/`.
+
+### The problem
+
+`company_details` had one ABN column and the forms had one ABN field. A company
+acting as trustee of a trust has two identities that never share a number:
+
+- **the company** has an ACN, and may or may not have its own ABN. Its ABN, when it
+  has one, is two check digits plus its ACN (`abnMatchesAcn` in
+  `src/lib/asic/identifiers.ts`).
+- **the trust** has its own ABN, and never an ACN.
+
+A trust picked in ABN Lookup wrote the trust's ABN over the company's. Now they are
+kept apart, and "does this ABN end with the ACN?" is how one is told from the other.
+
+### Schema — 0023 `company_details_trust_abn`
+
+| Column | Notes |
+|---|---|
+| `abn_number` (existing) | Now the **company's own** ABN only |
+| `trust_abn_number` text | The trust's ABN |
+| `entity_type` text NOT NULL DEFAULT `'company'` | `company` or `trust` (CHECK). `trust` means a company acting as trustee of a trust — the company fields are still asked |
+
+`entity_type` was backfilled from the linked lead's `entity_type`, else `trust`
+when `trust_name` was set, else `company`. It lives here as well as on `leads` on
+purpose: the lead keeps what the enquiry said, and nothing writes back to it.
+
+**No ABN was moved.** The rule for older rows (trust name set and an ABN that does
+not end with the ACN → it is the trust's) is `classifyAbnForBackfill`, tested, but
+the dry run on 2026-10-01 found no row it applies to, so no script was written.
+
+### Rules (`src/lib/clients/identity.ts`)
+
+- **Company, both entity types:** name and ACN required; the ACN must pass its check
+  digit.
+- **Company ABN:** required for "Company", optional for a trustee. When given: 11
+  digits, ABN checksum, and it must end with the ACN. If it doesn't, the error offers
+  **[Move to trust ABN]**. The button is never shown when it would overwrite a
+  different trust ABN.
+- **Trust name and trust ABN:** required for "Trust", optional for "Company". A
+  trust ABN, whenever one is typed, must pass the ABN checksum and must not end with
+  the ACN ("That's the company's own ABN").
+- Both entity types save whatever trust details were typed.
+- **The entity type is never switched silently.** An extract with no ABN, a trust
+  picked from the company box, or a moved ABN shows an offer to switch to Trust,
+  with [Switch to "Trust"] / [Not a trustee].
+
+### The forms
+
+The convert dialog and the intake company step render the same
+`CompanyTrustSections`:
+
+- **Company:** entity type ("Company" / "Trust", the same labels as everywhere
+  else), "Enter manually (don't search ABN Lookup)", company name (an ABN Lookup
+  search), ACN, company ABN, then the Trust box, then registered office, principal
+  place of business, directors, company phone and email.
+- **Trust** — a box straight under the company ABN, so the two ABNs are read
+  together. Always shown; for a Company it says "Optional for a company": its own
+  "Enter manually" checkbox, trust name (an ABN Lookup search), trust ABN. The old
+  trust name field below the directors is gone.
+
+Changed 2026-10-01 at the user's request: the first version labelled the second
+option "Company acting as trustee of a trust" and showed the Trust section only for
+it, saving a Company's trust fields blank.
+
+Each "Enter manually" checkbox affects only its own section: no name suggestions,
+and for the company no ABN-by-ACN check. Validation is the same either way.
+
+ABN Lookup picks:
+
+| Where | Result | Fills |
+|---|---|---|
+| Company box | A company | Company name, company ABN, ACN |
+| Company box | A trust ("The Trustee for …") | Trust name and trust ABN; the searched text is cleared; the trustee type is offered |
+| Trust box | Anything | Trust name and trust ABN only |
+| Intake step 1 (one name field) | A company | Company name, company ABN, ACN |
+| Intake step 1 | A trust | Trust name, trust ABN and `entity_type = 'trust'` — said in the note under the field before saving. Never `abn_number` |
+
+**The intake company step now validates.** It used to save with no required fields;
+it now applies the rules above, so a record with no ACN can no longer be saved there.
+
+### ABN Lookup by ACN (`src/lib/abr/acnAbn.ts`)
+
+With a valid ACN, an empty company ABN and the company's manual mode off, the form
+asks the register — once per ACN, debounced — whether the company has an ABN of its
+own. No new endpoint: the candidate ABN(s) are worked out from the ACN (one, or two
+when the checksum allows both 10 and 99) and checked with the existing
+`/api/abr/abn`. A result only counts when the register's record carries the same
+ACN.
+
+| Answer | Shown |
+|---|---|
+| Active (or an unrecognised status) | [Use ABN 11 123 456 780] |
+| Cancelled | "ABN … was cancelled on <date>." [Use it anyway] — common in insolvency work, so staff decide |
+| No such ABN | "No ABN registered for this ACN (normal for trustee companies)" |
+| Lookup failed | Nothing — no claim either way |
+
+`lookupAbn` now marks a 404 as `notFound`, to tell "no such ABN" from an outage.
+
+### Display
+
+The lead record card, the SBR client page and the intake review all use
+`identityDisplay`: Company (name, ACN, company ABN — or **"No ABN of its own"** for a
+Trust) and Trust (name, ABN) as separate groups. The Trust group shows for a Trust,
+and for a Company that has trust details recorded.
+
+### Which ABN downstream code should use
+
+Nothing downstream reads `abn_number` today — SBR, lodgement and DPN analysis,
+financials, AI, email and the exports do not touch `company_details`.
+`atoAbnFor(details)` (trust ABN if present, else company ABN) is written and tested
+but **not used anywhere yet.** For a trading trust the ATO debt and lodgements
+usually sit under the trust's ABN, but **Gabby has to confirm** this before any ATO
+tool uses it (see "Confirm with the client").
+
+### Deploy order
+
+Apply 0023 **before** deploying this code. The forms write `entity_type` and
+`trust_abn_number`, and the lead card's query names them; without the migration,
+conversion and intake saves fail and the card loses its company half.
+
+### Tests
+
+All synthetic: ACN 123 456 780 with its own ABN 11 123 456 780, ASIC's example ACN
+000 000 019, and the ATO's example ABN 51 824 753 556 for a trust. Two ABR fixtures
+whose numbers failed their own checksums were replaced with ones that pass.
+
+- `src/lib/leads/__tests__/identityScenarios.test.ts`: every combination end to end —
+  PDF then ABR and ABR then PDF; a company with its own ABN; trustees with and
+  without one; a trust picked from the company box; a trust ABN typed in the company
+  field and moved; an ACN mismatch replaced, undone and cancelled; an extract with no
+  ABN; manual mode; undo after an identity fill; the trustee offer.
+- `src/lib/clients/__tests__/identity.test.ts`: validation for both entity types,
+  both checksums, ABN-ends-with-ACN both ways, the move, pick routing, the saved
+  shape, `atoAbnFor`.
+- `src/lib/abr/__tests__/acnAbn.test.ts`, `src/lib/asic/__tests__/fill.test.ts`,
+  `src/lib/clients/__tests__/identityBackfill.test.ts`, `identityDisplay.test.ts`.
+- Components: `src/components/identity/__tests__/` (ABN Lookup by ACN, the review
+  summary), the convert dialog, ASIC upload, intake company step and step 1 suites,
+  and the lead card and client page.
+
+---
+
 ## Account setup (no code — run in parallel)
 
 ### Facebook test environment
@@ -586,3 +738,7 @@ then it fails silently.
 3. **Which WordPress form plugin**, and who has admin on the site.
 4. **His live Facebook form's exact question labels**, once he can share them. Needed
    for the mapping config regardless of when access lands.
+5. **Which ABN the ATO tools should use for a trading trust.** `atoAbnFor()` takes
+   the trust's ABN when there is one, else the company's — usually right for a
+   trading trust, where the debt and lodgements sit under the trust. Not used
+   anywhere until Gabby confirms.

@@ -82,10 +82,13 @@ describe('createClientFromLead', () => {
       // The lead's own number, carried over, in its grouped display form.
       phone: '0407 552 118',
       companyDetails: {
+        entityType: 'company',
         companyName: 'Whitlock Civil Pty Ltd',
         acnNumber: '123456789',
         abnNumber: '12345678901',
         trustName: '',
+        // A Company has no trust: saved blank, apart from the company's ABN.
+        trustAbnNumber: '',
         phoneNumber: '',
         emailAddress: '',
         // Nothing typed and no extract uploaded: blank, with no source to claim.

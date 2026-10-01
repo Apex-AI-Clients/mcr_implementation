@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { abnMatchesAcn, isValidAbn, isValidAcn } from '../identifiers'
+import {
+  abnMatchesAcn,
+  candidateAbnsForAcn,
+  formatAbn,
+  isValidAbn,
+  isValidAcn,
+} from '../identifiers'
 
 // Synthetic numbers that pass their check digits (000 000 019 is ASIC's own
 // published example). Not any company we deal with.
@@ -39,5 +45,39 @@ describe('abnMatchesAcn', () => {
 
   it('is false for another company', () => {
     expect(abnMatchesAcn('89000000019', '123456780')).toBe(false)
+  })
+})
+
+describe('candidateAbnsForAcn', () => {
+  it('gives the one ABN a company with this ACN would have', () => {
+    expect(candidateAbnsForAcn('123 456 780')).toEqual(['11123456780'])
+  })
+
+  it('gives both when the checksum allows 10 and 99', () => {
+    expect(candidateAbnsForAcn('100000682')).toEqual(['10100000682', '99100000682'])
+  })
+
+  it('every candidate passes the ABN check and ends with the ACN', () => {
+    for (const abn of candidateAbnsForAcn('000000019')) {
+      expect(isValidAbn(abn)).toBe(true)
+      expect(abnMatchesAcn(abn, '000000019')).toBe(true)
+    }
+  })
+
+  it('gives nothing for an ACN that fails its own check, or is not 9 digits', () => {
+    expect(candidateAbnsForAcn('123456789')).toEqual([])
+    expect(candidateAbnsForAcn('1234')).toEqual([])
+    expect(candidateAbnsForAcn('')).toEqual([])
+  })
+})
+
+describe('formatAbn', () => {
+  it('groups 2-3-3-3 the way the ATO prints it', () => {
+    expect(formatAbn('11123456780')).toBe('11 123 456 780')
+    expect(formatAbn('11 123456780')).toBe('11 123 456 780')
+  })
+
+  it('leaves anything that is not 11 digits as given', () => {
+    expect(formatAbn('123')).toBe('123')
   })
 })

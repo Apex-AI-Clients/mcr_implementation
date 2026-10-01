@@ -85,10 +85,12 @@ describe('companyDetailsInsert', () => {
     // make the database defaults the real definition of a blank field.
     expect(companyDetailsInsert('cl_1', { companyName: 'Whitlock Civil Pty Ltd' })).toEqual({
       client_id: 'cl_1',
+      entity_type: 'company',
       company_name: 'Whitlock Civil Pty Ltd',
       acn_number: null,
       abn_number: null,
       trust_name: null,
+      trust_abn_number: null,
       phone_number: null,
       email_address: null,
       registered_office_address: null,
@@ -226,5 +228,33 @@ describe('CompanyDetailsSchema', () => {
     ['an extract date that is not a timestamp', { asicExtractDate: '23 September 2026' }],
   ])('rejects %s', (_, value) => {
     expect(parse(value).success).toBe(false)
+  })
+})
+
+describe('trust ABN and entity type (migration 0023)', () => {
+  it('maps the trust ABN to its own column, apart from the company ABN', () => {
+    expect(
+      companyDetailsUpdate({ abnNumber: '11123456780', trustAbnNumber: '51824753556' }),
+    ).toEqual({ abn_number: '11123456780', trust_abn_number: '51824753556' })
+  })
+
+  it('writes the entity type only when it is sent', () => {
+    expect(companyDetailsUpdate({ entityType: 'trust' })).toEqual({ entity_type: 'trust' })
+    expect(companyDetailsUpdate({ companyName: 'Sample Pty Ltd' })).not.toHaveProperty('entity_type')
+  })
+
+  it('inserts company unless told otherwise', () => {
+    expect(companyDetailsInsert('client-1', {}).entity_type).toBe('company')
+    expect(companyDetailsInsert('client-1', { entityType: 'trust' }).entity_type).toBe('trust')
+    expect(companyDetailsInsert('client-1', {}).trust_abn_number).toBeNull()
+  })
+
+  it('counts an entity type alone as something to write', () => {
+    expect(hasCompanyDetails({ entityType: 'trust' })).toBe(true)
+  })
+
+  it('accepts only the two entity types', () => {
+    expect(CompanyDetailsSchema.safeParse({ entityType: 'trust' }).success).toBe(true)
+    expect(CompanyDetailsSchema.safeParse({ entityType: 'sole_trader' }).success).toBe(false)
   })
 })

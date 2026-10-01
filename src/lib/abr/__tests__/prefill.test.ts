@@ -2,17 +2,19 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { parseAbnDetails } from '../parse'
-import { prefillFor, prefillFromAbr, resolveEntityType } from '../prefill'
-import { validateConversion } from '@/lib/leads/conversionForm'
-import type { AbrEntityDetails } from '../types'
+import { prefillFromAbr, resolveEntityType } from '../prefill'
+import { emptyConversionForm, validateConversion } from '@/lib/leads/conversionForm'
+import { identityPatchForPick } from '@/lib/clients/identity'
+import type { AbrEntityDetails, AbrPrefill } from '../types'
 import type { ConversionForm } from '@/lib/leads/conversionForm'
 
 /**
- * A picked register entity -> the conversion fields it fills.
+ * A picked register entity -> what the register says about it.
  *
  * Two things are load-bearing and both are asserted below: what it fills has to
- * pass the existing validation unchanged, and what it does not know it must
- * leave alone rather than blank out.
+ * pass validation unchanged once routed to the right section
+ * (identityPatchForPick), and what it does not know it must leave alone rather
+ * than blank out.
  */
 
 function details(name: string): AbrEntityDetails {
@@ -23,22 +25,17 @@ function details(name: string): AbrEntityDetails {
 
 function form(overrides: Partial<ConversionForm> = {}): ConversionForm {
   return {
+    ...emptyConversionForm(null),
     name: 'Dean Whitlock',
     email: 'dean@whitlockcivil.com.au',
-    phone: '',
-    entityType: 'company',
-    companyName: '',
-    acnNumber: '',
-    abnNumber: '',
-    trustName: '',
-    phoneNumber: '',
-    emailAddress: '',
-    registeredOfficeAddress: '',
-    principalPlaceOfBusiness: '',
-    directors: [],
-    asicFill: null,
     ...overrides,
   }
+}
+
+/** A pick made in the company box, applied to a form. */
+function picked(prefill: AbrPrefill, overrides: Partial<ConversionForm> = {}): ConversionForm {
+  const base = form(overrides)
+  return { ...base, ...identityPatchForPick('company', prefill, base).patch }
 }
 
 describe('prefillFromAbr — company', () => {
@@ -69,14 +66,8 @@ describe('prefillFromAbr — company', () => {
     expect(patch).not.toHaveProperty('emailAddress')
   })
 
-  it('produces values the existing validation accepts unchanged', () => {
-    expect(validateConversion(form(patch))).toEqual({})
-  })
-
-  it('passes the 9-digit ACN and 11-digit ABN checks', () => {
-    const errors = validateConversion(form({ ...patch, acnNumber: patch.acnNumber }))
-    expect(errors.acnNumber).toBeUndefined()
-    expect(errors.abnNumber).toBeUndefined()
+  it('produces values validation accepts unchanged — the ABN ends with the ACN', () => {
+    expect(validateConversion(picked(patch))).toEqual({})
   })
 })
 
@@ -97,12 +88,23 @@ describe('prefillFromAbr — trust', () => {
 
   it('omits the ACN rather than blanking one already typed', () => {
     expect(patch).not.toHaveProperty('acnNumber')
-    const existing = form({ entityType: 'trust', acnNumber: '123456789' })
-    expect({ ...existing, ...patch }.acnNumber).toBe('123456789')
+    const existing = picked(patch, { entityType: 'trust', acnNumber: '123456780' })
+    expect(existing.acnNumber).toBe('123456780')
   })
 
-  it('produces values the existing validation accepts unchanged', () => {
-    expect(validateConversion(form({ entityType: 'trust', ...patch }))).toEqual({})
+  it('lands in the trust fields, and validates once the trustee company is typed', () => {
+    const filledIn = picked(patch, {
+      entityType: 'trust',
+      companyName: 'Smith Holdings Pty Ltd',
+      acnNumber: '123456780',
+    })
+    // The pick cleared the searched company box; put the trustee back.
+    expect(filledIn.companyName).toBe('')
+    expect(filledIn.trustAbnNumber).toBe('82653091178')
+    expect(filledIn.abnNumber).toBe('')
+    expect(
+      validateConversion({ ...filledIn, companyName: 'Smith Holdings Pty Ltd' }),
+    ).toEqual({})
   })
 })
 
@@ -112,8 +114,8 @@ describe('prefillFromAbr — cancelled ABN', () => {
     const patch = prefillFromAbr(source)
     expect(source.abnStatus).toBe('Cancelled')
     expect(patch.companyName).toBe('Whitlock Civil Contracting Pty Ltd')
-    expect(patch.abnNumber).toBe('61604882436')
-    expect(validateConversion(form(patch))).toEqual({})
+    expect(patch.abnNumber).toBe('30604882439')
+    expect(validateConversion(picked(patch))).toEqual({})
   })
 })
 
@@ -162,47 +164,5 @@ describe('resolveEntityType', () => {
     )
     expect(patch).not.toHaveProperty('entityType')
     expect({ ...form({ entityType: 'trust' }), ...patch }.entityType).toBe('trust')
-  })
-})
-
-describe('prefillFor', () => {
-  const company = prefillFromAbr(details('abn_details_company'))
-  const trust = prefillFromAbr(details('abn_details_trust'))
-
-  it('leaves the searched box alone when the register filled it', () => {
-    expect(prefillFor('companyName', company).companyName).toBe('Whitlock Civil Pty Ltd')
-  })
-
-  it('clears the company box when the search landed on a trust', () => {
-    // What is left in it is a search term, not a trustee company.
-    expect(prefillFor('companyName', trust).companyName).toBe('')
-    expect(prefillFor('companyName', trust).trustName).toBe('Smith Family Trust')
-  })
-
-  it('clears the trust box when the search landed on a company', () => {
-    expect(prefillFor('trustName', company).trustName).toBe('')
-    expect(prefillFor('trustName', company).companyName).toBe('Whitlock Civil Pty Ltd')
-  })
-
-  it('touches nothing else — a trustee company survives a pick in the trust box', () => {
-    const patch = prefillFor('trustName', trust)
-    expect(patch).not.toHaveProperty('companyName')
-    expect({ companyName: 'Smith Holdings Pty Ltd', ...patch }.companyName).toBe(
-      'Smith Holdings Pty Ltd',
-    )
-  })
-
-  it('never invents a phone or email, whichever box was searched', () => {
-    for (const box of ['companyName', 'trustName'] as const) {
-      const patch = prefillFor(box, company)
-      expect(patch).not.toHaveProperty('phoneNumber')
-      expect(patch).not.toHaveProperty('emailAddress')
-    }
-  })
-
-  it('does not mutate what it was given', () => {
-    const before = { ...trust }
-    prefillFor('companyName', trust)
-    expect(trust).toEqual(before)
   })
 })

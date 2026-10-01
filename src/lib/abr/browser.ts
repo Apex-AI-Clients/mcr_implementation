@@ -16,7 +16,11 @@ export type AbrSearchResult =
 
 export type AbrDetailsResult =
   | { kind: 'ok'; details: AbrEntityDetails }
-  | { kind: 'failed'; message: string }
+  /**
+   * `notFound` is the register answering "no such ABN" (404) — an answer, not
+   * an outage. The ABN-by-ACN check needs to tell the two apart.
+   */
+  | { kind: 'failed'; message: string; notFound?: boolean }
 
 const UNREACHABLE = "Couldn't reach the lookup service. Enter the details by hand."
 
@@ -91,7 +95,10 @@ export async function lookupAbn(abn: string): Promise<AbrDetailsResult> {
   }
 
   if (!response.ok) {
-    return { kind: 'failed', message: await errorMessage(response, UNREACHABLE) }
+    const message = await errorMessage(response, UNREACHABLE)
+    return response.status === 404
+      ? { kind: 'failed', message, notFound: true }
+      : { kind: 'failed', message }
   }
 
   try {

@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   acnDiffers,
   applyExtract,
+  chooseAsicValue,
   describeDirector,
+  fillIdentity,
+  keepFormValue,
+  pendingIdentityChoices,
+  undoFill,
   directorRowErrors,
   directorsForSave,
   formatAcn,
@@ -31,6 +36,7 @@ const EXTRACT: AsicExtract = {
 }
 
 const EMPTY: AsicFields = { registeredOfficeAddress: '', principalPlaceOfBusiness: '', directors: [] }
+const NO_IDENTITY = { companyName: '', acnNumber: '', abnNumber: '' }
 
 describe('applyExtract', () => {
   it('fills the two addresses and the directors, with dates as they are typed', () => {
@@ -47,8 +53,8 @@ describe('applyExtract', () => {
     expect(fill.warnings).toEqual(EXTRACT.warnings)
   })
 
-  it('has no company name, ACN or ABN in what it fills', () => {
-    const fill = applyExtract(EMPTY, EXTRACT)
+  it('keeps the company name, ACN and ABN out of the three ASIC fields', () => {
+    const fill = applyExtract(EMPTY, EXTRACT, { current: NO_IDENTITY })
     const text = JSON.stringify(fill.filled)
     expect(Object.keys(fill.filled).sort()).toEqual([
       'directors',
@@ -57,7 +63,10 @@ describe('applyExtract', () => {
     ])
     expect(text).not.toContain('Sample Trading')
     expect(text).not.toContain('123456780')
-    expect(text).not.toContain('11123456780')
+  })
+
+  it('fills no identity at all unless the form passes its identity in', () => {
+    expect(applyExtract(EMPTY, EXTRACT).identity).toBeNull()
   })
 
   it('keeps what was there before, for undo', () => {
@@ -82,6 +91,78 @@ describe('applyExtract', () => {
       directors: [],
     })
     expect(fill.filled).toEqual(typed)
+  })
+})
+
+describe('fillIdentity', () => {
+  it('fills empty boxes, tidying the name and keeping numbers as digits', () => {
+    const identity = fillIdentity(NO_IDENTITY, { ...EXTRACT, companyName: 'SAMPLE TRADING PTY LTD' })
+    expect(identity.filled).toEqual({
+      companyName: 'Sample Trading Pty Ltd',
+      acnNumber: '123456780',
+      abnNumber: '11123456780',
+    })
+    expect(identity.previous).toEqual({ companyName: '', acnNumber: '', abnNumber: '' })
+    expect(identity.noAbn).toBe(false)
+  })
+
+  it('records "previous" only for what it changed', () => {
+    const identity = fillIdentity(
+      { companyName: 'Sample Trading Pty Ltd', acnNumber: '', abnNumber: '' },
+      EXTRACT,
+    )
+    expect(identity.fields.companyName.status).toBe('matches')
+    expect(identity.previous).not.toHaveProperty('companyName')
+  })
+
+  it('compares rather than overwrites in merge mode', () => {
+    const identity = fillIdentity(
+      { companyName: 'Different Pty Ltd', acnNumber: '000000019', abnNumber: '' },
+      EXTRACT,
+    )
+    expect(identity.fields.companyName.status).toBe('differs')
+    expect(identity.fields.acnNumber.status).toBe('differs')
+    expect(identity.filled).toEqual({ abnNumber: '11123456780' })
+  })
+
+  it('overwrites in replace mode, and clears an ABN the extract lacks', () => {
+    const current = { companyName: 'Different Pty Ltd', acnNumber: '000000019', abnNumber: '99000000019' }
+    expect(fillIdentity(current, EXTRACT, 'replace').filled).toEqual({
+      companyName: 'Sample Trading Pty Ltd',
+      acnNumber: '123456780',
+      abnNumber: '11123456780',
+    })
+    const noAbn = fillIdentity(current, { ...EXTRACT, abn: null }, 'replace')
+    expect(noAbn.filled.abnNumber).toBe('')
+    expect(noAbn.previous.abnNumber).toBe('99000000019')
+  })
+
+  it('leaves the ABN alone and flags it when the extract has none', () => {
+    const identity = fillIdentity({ ...NO_IDENTITY, abnNumber: '51824753556' }, { ...EXTRACT, abn: null })
+    expect(identity.noAbn).toBe(true)
+    expect(identity.fields.abnNumber.status).toBe('not_on_extract')
+    expect(identity.filled).not.toHaveProperty('abnNumber')
+  })
+})
+
+describe('chooseAsicValue / keepFormValue / undoFill', () => {
+  const current = { companyName: 'Different Pty Ltd', acnNumber: '123456780', abnNumber: '' }
+  const fill = applyExtract(EMPTY, EXTRACT, { current })
+
+  it('only acts on a field that differs', () => {
+    expect(chooseAsicValue(fill, 'acnNumber', current)).toEqual({ patch: {}, fill })
+    expect(keepFormValue(fill, 'acnNumber')).toBe(fill)
+  })
+
+  it('Use ASIC returns the patch and remembers what it replaced', () => {
+    const { patch, fill: next } = chooseAsicValue(fill, 'companyName', current)
+    expect(patch).toEqual({ companyName: 'Sample Trading Pty Ltd' })
+    expect(next.identity!.previous.companyName).toBe('Different Pty Ltd')
+    expect(pendingIdentityChoices(next)).toEqual([])
+  })
+
+  it('undo restores the ASIC fields and the identity fields the fill changed', () => {
+    expect(undoFill(fill)).toEqual({ ...EMPTY, abnNumber: '' })
   })
 })
 

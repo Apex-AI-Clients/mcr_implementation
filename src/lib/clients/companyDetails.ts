@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { isIsoDob } from '@/lib/asic/dates'
 import type { Director } from '@/lib/asic/types'
 import type { Database, Json } from '@/types/database'
+import type { EntityType } from '@/types/leads'
 
 /**
  * Writing to company_details without flattening what is already there.
@@ -36,6 +37,10 @@ export interface CompanyDetailsInput {
   acnNumber?: string
   abnNumber?: string
   trustName?: string
+  /** The trust's own ABN. abnNumber is only ever the company's. */
+  trustAbnNumber?: string
+  /** 'trust' = a company acting as trustee. Absent leaves it; a new row defaults to 'company'. */
+  entityType?: EntityType
   phoneNumber?: string
   emailAddress?: string
   registeredOfficeAddress?: string
@@ -70,6 +75,8 @@ export const CompanyDetailsSchema = z.object({
   acnNumber: z.string().max(40).optional(),
   abnNumber: z.string().max(40).optional(),
   trustName: z.string().max(200).optional(),
+  trustAbnNumber: z.string().max(40).optional(),
+  entityType: z.enum(['company', 'trust']).optional(),
   phoneNumber: z.string().max(40).optional(),
   emailAddress: z.string().max(200).optional(),
   registeredOfficeAddress: z.string().max(500).optional(),
@@ -101,6 +108,7 @@ const TEXT_COLUMNS = {
   acnNumber: 'acn_number',
   abnNumber: 'abn_number',
   trustName: 'trust_name',
+  trustAbnNumber: 'trust_abn_number',
   phoneNumber: 'phone_number',
   emailAddress: 'email_address',
   registeredOfficeAddress: 'registered_office_address',
@@ -129,6 +137,7 @@ export function companyDetailsUpdate(input: CompanyDetailsInput): CompanyDetails
     const value = input[field]
     if (typeof value === 'string') update[TEXT_COLUMNS[field]] = value
   }
+  if (input.entityType !== undefined) update.entity_type = input.entityType
   if (Array.isArray(input.directors)) update.directors = directorsJson(input.directors)
   // null is a value for these two — it clears the column — so only undefined is absent.
   if (input.asicExtractDate !== undefined) update.asic_extract_date = input.asicExtractDate
@@ -152,6 +161,9 @@ export function companyDetailsInsert(
 ): CompanyDetailsInsert {
   const row: CompanyDetailsInsert = {
     client_id: clientId,
+    // Written out rather than left to the column default, like every other
+    // column here: the default should not be the real definition of "unsaid".
+    entity_type: input.entityType ?? 'company',
     directors: directorsJson(Array.isArray(input.directors) ? input.directors : []),
     asic_extract_date: input.asicExtractDate ?? null,
     company_details_source: input.companyDetailsSource ?? null,
@@ -167,6 +179,7 @@ export function companyDetailsInsert(
 export function hasCompanyDetails(input: CompanyDetailsInput): boolean {
   return (
     TEXT_FIELDS.some((field) => typeof input[field] === 'string') ||
+    input.entityType !== undefined ||
     Array.isArray(input.directors) ||
     input.asicExtractDate !== undefined ||
     input.companyDetailsSource !== undefined

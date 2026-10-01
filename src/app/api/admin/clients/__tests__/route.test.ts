@@ -107,10 +107,13 @@ describe('POST /api/admin/clients — company details from conversion', () => {
     expect(response.status).toBe(201)
     expect(detailsInsert).toHaveBeenCalledWith({
       client_id: 'cl_1',
+      // Not sent by this body, so a new row is a company (migration 0023).
+      entity_type: 'company',
       company_name: 'Sample Trading Pty Ltd',
       acn_number: '123456780',
       abn_number: '11123456780',
       trust_name: '',
+      trust_abn_number: null,
       phone_number: '',
       email_address: '',
       registered_office_address: '1 Sample Road',

@@ -80,10 +80,12 @@ export async function GET(req: NextRequest) {
       ? {
           id: rawCompany.id,
           clientId: rawCompany.client_id,
+          entityType: rawCompany.entity_type,
           companyName: rawCompany.company_name,
           acnNumber: rawCompany.acn_number,
           abnNumber: rawCompany.abn_number,
           trustName: rawCompany.trust_name,
+          trustAbnNumber: rawCompany.trust_abn_number,
           phoneNumber: rawCompany.phone_number,
           emailAddress: rawCompany.email_address,
           registeredOfficeAddress: rawCompany.registered_office_address,

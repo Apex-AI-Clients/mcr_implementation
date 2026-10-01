@@ -1,12 +1,12 @@
 import { formatPhone, isValidEmail } from './format'
+import { directorRowErrors, directorsForSave, sourceFor, type DirectorRow } from '@/lib/asic/fill'
+import { identityForSave, validateIdentity } from '@/lib/clients/identity'
 import {
-  directorRowErrors,
-  directorsForSave,
-  sourceFor,
-  type AsicFields,
-  type AsicFill,
-  type DirectorRow,
-} from '@/lib/asic/fill'
+  asicFieldsOf,
+  identityOf,
+  type IdentityFormState,
+  type TrusteeOfferReason,
+} from '@/lib/clients/identityForm'
 import type { EntityType, Lead } from '@/types/leads'
 
 /**
@@ -17,7 +17,7 @@ import type { EntityType, Lead } from '@/types/leads'
  * created half-known: what used to be a two-field confirmation now collects
  * everything intake needs, and intake opens pre-filled from it.
  */
-export interface ConversionForm {
+export interface ConversionForm extends IdentityFormState {
   /** Step 1 — the client record itself. */
   name: string
   email: string
@@ -26,13 +26,25 @@ export interface ConversionForm {
    * not the company or trust line, which is `phoneNumber` below.
    */
   phone: string
-  /** Decides which of the company and trust fields are required below. */
+  /**
+   * 'company', or 'trust' meaning "a company acting as trustee of a trust".
+   * Decides whether the trust fields are shown and which ABN is required.
+   */
   entityType: EntityType
-  /** Step 2 — company or trust details. */
+  /** Step 2 — the company, and the trust when it is a trustee. See src/lib/clients/identity.ts. */
   companyName: string
   acnNumber: string
+  /** The company's OWN ABN — never the trust's. Optional for a trustee. */
   abnNumber: string
   trustName: string
+  trustAbnNumber: string
+  /**
+   * "Enter manually (don't search ABN Lookup)", one per section. Ticked: no
+   * name suggestions in that section and — for the company — no ABN-by-ACN
+   * check. Validation is the same either way. Not saved.
+   */
+  companyManual: boolean
+  trustManual: boolean
   /** Optional, both of them. Everything else has to be known. */
   phoneNumber: string
   emailAddress: string
@@ -46,18 +58,12 @@ export interface ConversionForm {
   /** Separate from `name` above — the lead's own name is never overwritten by a director. */
   directors: DirectorRow[]
   /** The fill currently applied from an extract, if any. Not a field; it rides along for undo and for the saved source. */
-  asicFill: AsicFill | null
+  asicFill: IdentityFormState['asicFill']
+  /** Offering the Trust entity type, and why. Not saved. */
+  trusteeOffer: TrusteeOfferReason | null
 }
 
 export type ConversionErrors = Partial<Record<keyof ConversionForm, string>>
-
-/** Fixed-length by definition, whatever spacing somebody types. */
-const ACN_DIGITS = 9
-const ABN_DIGITS = 11
-
-function digits(value: string): string {
-  return value.replace(/\D/g, '')
-}
 
 export function emptyConversionForm(lead: Lead | null): ConversionForm {
   return {
@@ -74,6 +80,9 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     acnNumber: '',
     abnNumber: '',
     trustName: '',
+    trustAbnNumber: '',
+    companyManual: false,
+    trustManual: false,
     // Deliberately not pre-filled from the lead's own phone: that is the
     // director's mobile — it goes in `phone` above — which is not the same
     // thing as the company's number, and a wrong default becomes wrong stored
@@ -84,28 +93,21 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     principalPlaceOfBusiness: '',
     directors: [],
     asicFill: null,
+    trusteeOffer: null,
   }
 }
 
-/** The three fields an ASIC extract fills, as the form holds them now. */
-export function asicFieldsOf(form: ConversionForm): AsicFields {
-  return {
-    registeredOfficeAddress: form.registeredOfficeAddress,
-    principalPlaceOfBusiness: form.principalPlaceOfBusiness,
-    directors: form.directors,
-  }
-}
+// Shared with the intake company step; re-exported for this form's callers.
+export { asicFieldsOf, identityOf }
 
 /**
  * What is missing.
  *
- * Required-ness follows the entity, not a flat list. An ACN belongs to a
- * company and a trust does not have one; a trust name belongs to a trust and
- * a company does not have one. Demanding all of them at once would mean
- * somebody typing "N/A" into a field on every single conversion, and that
- * junk would then auto-fill the intake form.
+ * The company and trust rules are src/lib/clients/identity.ts, shared with the
+ * intake forms: a company name and ACN for both entity types, the company's
+ * own ABN for a Company, and a trust name and trust ABN for a trustee.
  *
- * The client's phone and the company or trust phone and email are optional.
+ * The client's phone and the company phone and email are optional.
  */
 export function validateConversion(form: ConversionForm): ConversionErrors {
   const errors: ConversionErrors = {}
@@ -115,28 +117,7 @@ export function validateConversion(form: ConversionForm): ConversionErrors {
   if (!form.email.trim()) errors.email = 'Enter an email address.'
   else if (!isValidEmail(form.email)) errors.email = 'That email address does not look right.'
 
-  // Both kinds of entity have one.
-  if (!form.abnNumber.trim()) errors.abnNumber = 'Enter the ABN.'
-  else if (digits(form.abnNumber).length !== ABN_DIGITS) {
-    errors.abnNumber = `An ABN is ${ABN_DIGITS} digits.`
-  }
-
-  if (form.entityType === 'company') {
-    if (!form.companyName.trim()) errors.companyName = 'Enter the company name.'
-    if (!form.acnNumber.trim()) errors.acnNumber = 'Enter the ACN.'
-    else if (digits(form.acnNumber).length !== ACN_DIGITS) {
-      errors.acnNumber = `An ACN is ${ACN_DIGITS} digits.`
-    }
-  }
-
-  if (form.entityType === 'trust') {
-    if (!form.trustName.trim()) errors.trustName = 'Enter the trust name.'
-    // A corporate trustee still has an ACN, so the field stays available —
-    // but only checked for shape when something was actually typed.
-    if (form.acnNumber.trim() && digits(form.acnNumber).length !== ACN_DIGITS) {
-      errors.acnNumber = `An ACN is ${ACN_DIGITS} digits.`
-    }
-  }
+  Object.assign(errors, validateIdentity(identityOf(form)))
 
   // Optional, but if given it has to be usable.
   if (form.emailAddress.trim() && !isValidEmail(form.emailAddress)) {
@@ -158,10 +139,7 @@ export function hasErrors(errors: ConversionErrors): boolean {
 /** The company-details half, trimmed, as the API wants it. */
 export function toCompanyDetails(form: ConversionForm) {
   return {
-    companyName: form.companyName.trim(),
-    acnNumber: form.acnNumber.trim(),
-    abnNumber: form.abnNumber.trim(),
-    trustName: form.trustName.trim(),
+    ...identityForSave(identityOf(form)),
     phoneNumber: form.phoneNumber.trim(),
     emailAddress: form.emailAddress.trim().toLowerCase(),
     registeredOfficeAddress: form.registeredOfficeAddress.trim(),

@@ -9,6 +9,7 @@ import { getLeadIdForClient } from '@/lib/leads/queries'
 import { formatPhone } from '@/lib/leads/format'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { describeDirector } from '@/lib/asic/fill'
+import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -75,9 +76,11 @@ export default async function ClientDetailPage({ params }: Props) {
         id: rawCompany.id,
         clientId: rawCompany.client_id,
         companyName: rawCompany.company_name,
+        entityType: rawCompany.entity_type,
         acnNumber: rawCompany.acn_number,
         abnNumber: rawCompany.abn_number,
         trustName: rawCompany.trust_name,
+        trustAbnNumber: rawCompany.trust_abn_number,
         phoneNumber: rawCompany.phone_number,
         emailAddress: rawCompany.email_address,
         registeredOfficeAddress: rawCompany.registered_office_address,
@@ -87,6 +90,7 @@ export default async function ClientDetailPage({ params }: Props) {
         companyDetailsSource: rawCompany.company_details_source,
       }
     : null
+  const identity = identityDisplay(companyDetails ?? {})
 
   const STATUS_LABELS: Record<
     string,
@@ -158,33 +162,29 @@ export default async function ClientDetailPage({ params }: Props) {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Landmark className="h-4 w-4 text-foreground/50" />
-            <CardTitle>Company / Trust Details</CardTitle>
+            <CardTitle>Company and Trust Details</CardTitle>
           </div>
         </CardHeader>
         {companyDetails ? (
           <div className="grid grid-cols-2 gap-3 text-xs">
+            {/* The company and the trust apart, each with its own ABN. */}
+            <p className="col-span-2 text-[11px] font-medium uppercase tracking-wide text-foreground/40">
+              Company
+            </p>
+            {identity.company.map((row) => (
+              <div key={row.label}>
+                <p className="text-foreground/30 mb-0.5">{row.label}</p>
+                <p className={`text-foreground/70 ${row.numeric ? 'tabular-nums' : ''}`}>
+                  {row.value || '—'}
+                </p>
+              </div>
+            ))}
             <div>
-              <p className="text-foreground/30 mb-0.5">Company Name</p>
-              <p className="text-foreground/70">{companyDetails.companyName || '—'}</p>
-            </div>
-            <div>
-              <p className="text-foreground/30 mb-0.5">ACN Number</p>
-              <p className="text-foreground/70">{companyDetails.acnNumber || '—'}</p>
-            </div>
-            <div>
-              <p className="text-foreground/30 mb-0.5">ABN Number</p>
-              <p className="text-foreground/70">{companyDetails.abnNumber || '—'}</p>
-            </div>
-            <div>
-              <p className="text-foreground/30 mb-0.5">Trust Name</p>
-              <p className="text-foreground/70">{companyDetails.trustName || '—'}</p>
-            </div>
-            <div>
-              <p className="text-foreground/30 mb-0.5">Phone</p>
+              <p className="text-foreground/30 mb-0.5">Company Phone</p>
               <p className="text-foreground/70">{companyDetails.phoneNumber || '—'}</p>
             </div>
             <div>
-              <p className="text-foreground/30 mb-0.5">Email</p>
+              <p className="text-foreground/30 mb-0.5">Company Email</p>
               <p className="text-foreground/70">{companyDetails.emailAddress || '—'}</p>
             </div>
             <div>
@@ -211,6 +211,21 @@ export default async function ClientDetailPage({ params }: Props) {
                 <p className="text-foreground/70">—</p>
               )}
             </div>
+            {identity.trust && (
+              <>
+                <p className="col-span-2 mt-2 border-t border-border pt-3 text-[11px] font-medium uppercase tracking-wide text-foreground/40">
+                  Trust
+                </p>
+                {identity.trust.map((row) => (
+                  <div key={row.label}>
+                    <p className="text-foreground/30 mb-0.5">{row.label}</p>
+                    <p className={`text-foreground/70 ${row.numeric ? 'tabular-nums' : ''}`}>
+                      {row.value || '—'}
+                    </p>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         ) : (
           <p className="text-xs text-foreground/30 italic">Not yet provided by client</p>

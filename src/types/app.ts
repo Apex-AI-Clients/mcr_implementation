@@ -52,10 +52,15 @@ export interface ClientDetail {
 export interface CompanyDetails {
   id: string
   clientId: string
+  /** 'company', or 'trust' for a company acting as trustee (migration 0023). */
+  entityType: string
   companyName: string
   acnNumber: string
+  /** The company's own ABN. */
   abnNumber: string
   trustName: string
+  /** The trust's own ABN (migration 0023). */
+  trustAbnNumber: string | null
   phoneNumber: string
   emailAddress: string
   /** From the ASIC company extract, or typed by hand (migration 0022). */

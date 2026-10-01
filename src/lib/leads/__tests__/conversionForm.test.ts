@@ -58,21 +58,31 @@ function lead(overrides: Partial<Lead> = {}): Lead {
   }
 }
 
+// Synthetic numbers that pass their check digits. ACN 123 456 780; the
+// company's own ABN is 11 + that ACN; 51 824 753 556 (the ATO's published
+// example) stands in for a trust's ABN.
+const ACN = '123 456 780'
+const COMPANY_ABN = '11 123 456 780'
+const TRUST_ABN = '51 824 753 556'
+
 function company(overrides: Partial<ConversionForm> = {}): ConversionForm {
   return {
     ...emptyConversionForm(lead()),
     companyName: 'Whitlock Civil Pty Ltd',
-    acnNumber: '123 456 789',
-    abnNumber: '12 345 678 901',
+    acnNumber: ACN,
+    abnNumber: COMPANY_ABN,
     ...overrides,
   }
 }
 
-function trust(overrides: Partial<ConversionForm> = {}): ConversionForm {
+/** A company acting as trustee, with no ABN of its own. */
+function trustee(overrides: Partial<ConversionForm> = {}): ConversionForm {
   return {
     ...emptyConversionForm(lead({ entityType: 'trust' })),
+    companyName: 'Whitlock Holdings Pty Ltd',
+    acnNumber: ACN,
     trustName: 'Whitlock Family Trust',
-    abnNumber: '12345678901',
+    trustAbnNumber: TRUST_ABN,
     ...overrides,
   }
 }
@@ -115,7 +125,7 @@ describe('validateConversion — a company', () => {
     expect(hasErrors(validateConversion(company()))).toBe(false)
   })
 
-  it('requires the name, email, company name, ACN and ABN', () => {
+  it('requires the name, email, company name, ACN and company ABN', () => {
     const errors = validateConversion(
       company({ name: '', email: '', companyName: '', acnNumber: '', abnNumber: '' }),
     )
@@ -126,37 +136,54 @@ describe('validateConversion — a company', () => {
     expect(errors.abnNumber).toBeTruthy()
   })
 
-  it('does not require a trust name', () => {
-    // A Pty Ltd does not have one, and forcing the field would fill it with
-    // noise on every conversion.
-    expect(validateConversion(company({ trustName: '' })).trustName).toBeUndefined()
+  it('does not require the trust fields, but checks a trust ABN that is typed', () => {
+    expect(hasErrors(validateConversion(company({ trustName: '', trustAbnNumber: '' })))).toBe(false)
+    const errors = validateConversion(company({ trustName: '', trustAbnNumber: 'junk' }))
+    expect(errors.trustName).toBeUndefined()
+    expect(errors.trustAbnNumber).toBeTruthy()
   })
 
-  it('checks the ACN and ABN are the right length, spacing aside', () => {
-    expect(validateConversion(company({ acnNumber: '123 456 789' })).acnNumber).toBeUndefined()
+  it('checks length and checksum, spacing aside', () => {
     expect(validateConversion(company({ acnNumber: '12345' })).acnNumber).toBeTruthy()
-    expect(validateConversion(company({ abnNumber: '12 345 678 901' })).abnNumber).toBeUndefined()
+    expect(validateConversion(company({ acnNumber: '123 456 789' })).acnNumber).toMatch(/check digit/)
     expect(validateConversion(company({ abnNumber: '123456789' })).abnNumber).toBeTruthy()
+    expect(validateConversion(company({ abnNumber: '12 345 678 901' })).abnNumber).toMatch(
+      /check digits/,
+    )
+  })
+
+  it("rejects a company ABN that doesn't end with the ACN", () => {
+    expect(validateConversion(company({ abnNumber: TRUST_ABN })).abnNumber).toMatch(
+      /move it to the trust ABN/,
+    )
   })
 })
 
-describe('validateConversion — a trust', () => {
-  it('accepts one with no ACN and no company', () => {
-    // A trust has neither unless there is a corporate trustee.
-    expect(hasErrors(validateConversion(trust()))).toBe(false)
+describe('validateConversion — a company acting as trustee', () => {
+  it('accepts one whose company has no ABN of its own', () => {
+    expect(hasErrors(validateConversion(trustee()))).toBe(false)
   })
 
-  it('requires the trust name', () => {
-    expect(validateConversion(trust({ trustName: '' })).trustName).toBeTruthy()
+  it('accepts one whose company has its own ABN as well', () => {
+    expect(hasErrors(validateConversion(trustee({ abnNumber: COMPANY_ABN })))).toBe(false)
   })
 
-  it('still requires an ABN', () => {
-    expect(validateConversion(trust({ abnNumber: '' })).abnNumber).toBeTruthy()
+  it('still requires the company name and ACN', () => {
+    const errors = validateConversion(trustee({ companyName: '', acnNumber: '' }))
+    expect(errors.companyName).toBeTruthy()
+    expect(errors.acnNumber).toBeTruthy()
   })
 
-  it('checks a corporate trustee ACN only when one was typed', () => {
-    expect(validateConversion(trust({ acnNumber: '' })).acnNumber).toBeUndefined()
-    expect(validateConversion(trust({ acnNumber: '999' })).acnNumber).toBeTruthy()
+  it('requires the trust name and trust ABN', () => {
+    const errors = validateConversion(trustee({ trustName: '', trustAbnNumber: '' }))
+    expect(errors.trustName).toBeTruthy()
+    expect(errors.trustAbnNumber).toBeTruthy()
+  })
+
+  it("rejects a trust ABN that is the company's own", () => {
+    expect(validateConversion(trustee({ trustAbnNumber: COMPANY_ABN })).trustAbnNumber).toMatch(
+      /company's own ABN/,
+    )
   })
 })
 
@@ -193,6 +220,28 @@ describe('toCompanyDetails', () => {
   it('carries the numbers through exactly as typed, spacing included', () => {
     // The intake form shows these back and staff recognise their own
     // formatting; normalising them here would be a silent edit.
-    expect(toCompanyDetails(company()).acnNumber).toBe('123 456 789')
+    expect(toCompanyDetails(company()).acnNumber).toBe(ACN)
+  })
+
+  it('saves the entity type and both ABNs separately', () => {
+    const details = toCompanyDetails(trustee({ abnNumber: COMPANY_ABN }))
+    expect(details.entityType).toBe('trust')
+    expect(details.abnNumber).toBe(COMPANY_ABN)
+    expect(details.trustAbnNumber).toBe(TRUST_ABN)
+  })
+
+  it('saves a trust typed for a Company', () => {
+    const details = toCompanyDetails(
+      company({ trustName: 'Whitlock Family Trust', trustAbnNumber: TRUST_ABN }),
+    )
+    expect(details.entityType).toBe('company')
+    expect(details.trustName).toBe('Whitlock Family Trust')
+    expect(details.trustAbnNumber).toBe(TRUST_ABN)
+  })
+
+  it('never saves the manual-mode checkboxes', () => {
+    const details = toCompanyDetails(company({ companyManual: true, trustManual: true }))
+    expect(details).not.toHaveProperty('companyManual')
+    expect(details).not.toHaveProperty('trustManual')
   })
 })

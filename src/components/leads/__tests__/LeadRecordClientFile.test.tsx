@@ -52,10 +52,12 @@ const CLIENT: ConvertedClientDetails = {
   name: 'Dean Whitlock',
   email: 'dean@example.test',
   phone: '0400000001',
+  entityType: 'company',
   companyName: 'Sample Trading Pty Ltd',
   acnNumber: '123456780',
   abnNumber: '11123456780',
   trustName: null,
+  trustAbnNumber: null,
   companyPhone: null,
   companyEmail: null,
   registeredOfficeAddress: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
@@ -144,5 +146,46 @@ describe('Client file card on the lead record', () => {
     expect(within(card).queryByText('Registered office')).toBeNull()
     expect(within(card).queryByText(/^Directors?$/)).toBeNull()
     expect(within(card).queryByText(/From ASIC extract/)).toBeNull()
+  })
+})
+
+describe('Client file card — company and trust', () => {
+  it('a Company: its own ABN under Company, and no Trust group', () => {
+    const card = renderRecord(CLIENT)
+    const company = within(card).getByRole('region', { name: 'Company' })
+    expect(valueOf(company, 'Company name')).toBe('Sample Trading Pty Ltd')
+    expect(valueOf(company, 'ACN')).toBe('123456780')
+    expect(valueOf(company, 'Company ABN')).toBe('11123456780')
+    expect(within(card).queryByRole('region', { name: 'Trust' })).toBeNull()
+  })
+
+  it('a trustee with no ABN of its own: says so, and shows the trust with its ABN', () => {
+    const card = renderRecord({
+      ...CLIENT,
+      entityType: 'trust',
+      abnNumber: '',
+      trustName: 'Sample Family Trust',
+      trustAbnNumber: '51824753556',
+    })
+    const company = within(card).getByRole('region', { name: 'Company' })
+    const trust = within(card).getByRole('region', { name: 'Trust' })
+    expect(valueOf(company, 'Company ABN')).toBe('No ABN of its own')
+    expect(valueOf(trust, 'Trust name')).toBe('Sample Family Trust')
+    expect(valueOf(trust, 'Trust ABN')).toBe('51824753556')
+  })
+
+  it('a trustee with its own ABN: both ABNs, each in its own group', () => {
+    const card = renderRecord({
+      ...CLIENT,
+      entityType: 'trust',
+      trustName: 'Sample Family Trust',
+      trustAbnNumber: '51824753556',
+    })
+    expect(valueOf(within(card).getByRole('region', { name: 'Company' }), 'Company ABN')).toBe(
+      '11123456780',
+    )
+    expect(valueOf(within(card).getByRole('region', { name: 'Trust' }), 'Trust ABN')).toBe(
+      '51824753556',
+    )
   })
 })

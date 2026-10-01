@@ -20,7 +20,7 @@ import ClientDetailPage from '../page'
 
 /**
  * The SBR client page: the client's phone in the header, and the ASIC fields in
- * the Company / Trust Details card. Synthetic data only.
+ * the Company and Trust Details card. Synthetic data only.
  */
 
 afterEach(() => cleanup())
@@ -38,10 +38,12 @@ const CLIENT = {
 const COMPANY = {
   id: 'cd_1',
   client_id: 'cl_1',
+  entity_type: 'company',
   company_name: 'Sample Trading Pty Ltd',
   acn_number: '123456780',
   abn_number: '11123456780',
   trust_name: null,
+  trust_abn_number: null,
   phone_number: '0390000000',
   email_address: 'accounts@example.test',
   registered_office_address: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
@@ -77,7 +79,7 @@ function mockDb(client: Record<string, unknown>, company: Record<string, unknown
 
 async function renderPage() {
   render(await ClientDetailPage({ params: Promise.resolve({ id: 'cl_1' }) }))
-  return screen.getByText('Company / Trust Details').closest('div.mb-6') as HTMLElement
+  return screen.getByText('Company and Trust Details').closest('div.mb-6') as HTMLElement
 }
 
 /** The value under a label in the card's grid. */
@@ -120,8 +122,8 @@ describe('Client detail page', () => {
     ])
     // Where they came from is shown on the intake form, not here.
     expect(within(card).queryByText(/From ASIC extract/)).toBeNull()
-    // The company's own line is still the card's Phone — not the client's.
-    expect(valueOf(card, 'Phone')).toBe('0390000000')
+    // The company's own line — not the client's.
+    expect(valueOf(card, 'Company Phone')).toBe('0390000000')
   })
 
   it('shows dashes for a record saved before these existed', async () => {
@@ -139,5 +141,34 @@ describe('Client detail page', () => {
     expect(valueOf(card, 'Principal Place of Business')).toBe('—')
     expect(valueOf(card, 'Director')).toBe('—')
     expect(within(card).queryByText(/From ASIC extract/)).toBeNull()
+  })
+})
+
+describe('Client detail page — company and trust', () => {
+  it('a Company: its own ABN, and no Trust section', async () => {
+    mockDb(CLIENT, COMPANY)
+    const card = await renderPage()
+
+    expect(valueOf(card, 'Company name')).toBe('Sample Trading Pty Ltd')
+    expect(valueOf(card, 'ACN')).toBe('123456780')
+    expect(valueOf(card, 'Company ABN')).toBe('11123456780')
+    expect(within(card).queryByText('Trust')).toBeNull()
+    expect(within(card).queryByText('Trust ABN')).toBeNull()
+  })
+
+  it('a trustee with no ABN of its own: says so, and shows the trust and its ABN', async () => {
+    mockDb(CLIENT, {
+      ...COMPANY,
+      entity_type: 'trust',
+      abn_number: '',
+      trust_name: 'Sample Family Trust',
+      trust_abn_number: '51824753556',
+    })
+    const card = await renderPage()
+
+    expect(valueOf(card, 'Company ABN')).toBe('No ABN of its own')
+    expect(within(card).getByText('Trust')).toBeTruthy()
+    expect(valueOf(card, 'Trust name')).toBe('Sample Family Trust')
+    expect(valueOf(card, 'Trust ABN')).toBe('51824753556')
   })
 })

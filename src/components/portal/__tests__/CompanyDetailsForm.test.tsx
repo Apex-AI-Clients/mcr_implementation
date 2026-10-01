@@ -57,8 +57,8 @@ const FROM_EXTRACT: CompanyDetails = {
   companyDetailsSource: 'asic_pdf',
 }
 
-const REGISTERED = 'Registered Office Address'
-const PRINCIPAL = 'Principal Place of Business'
+const REGISTERED = 'Registered office (optional)'
+const PRINCIPAL = 'Principal place of business (optional)'
 const UPLOAD = 'Upload ASIC extract (PDF)'
 
 function json(status: number, body: unknown) {
@@ -113,7 +113,7 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
     expect(screen.queryByText(/From ASIC extract/)).toBeNull()
   })
 
-  it('fills from the extract without touching the name, ACN, ABN, phone or email', async () => {
+  it('fills the addresses and directors, asks about a different company name, and leaves phone and email alone', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(<CompanyDetailsForm clientId="cl_1" initial={BEFORE} />)
@@ -122,15 +122,22 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
     await waitFor(() => expect(field(REGISTERED).value).toBe(EXTRACT.registeredOffice))
 
     expect(field('Director 2 name').value).toBe('Raj Example')
-    expect(field('Name of Company').value).toBe('Older Client Pty Ltd')
+    // A filled box is compared, never overwritten without asking.
+    expect(field('Company name').value).toBe('Older Client Pty Ltd')
+    expect(
+      screen.getByRole('group', { name: 'The ASIC extract has a different value' }).textContent,
+    ).toContain('ASIC: Sample Trading Pty Ltd / Form: Older Client Pty Ltd')
+    expect(screen.getAllByText('Matches ASIC extract')).toHaveLength(2)
     expect(screen.getByText(/Filled from ASIC extract dated 23 September 2026/)).toBeTruthy()
 
     expect(await save(user, fetchMock)).toEqual({
       clientId: 'cl_1',
+      entityType: 'company',
       companyName: 'Older Client Pty Ltd',
       acnNumber: '123456780',
       abnNumber: '11123456780',
       trustName: '',
+      trustAbnNumber: '',
       phoneNumber: '0390000000',
       emailAddress: 'accounts@example.test',
       registeredOfficeAddress: EXTRACT.registeredOffice,
@@ -152,10 +159,10 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
     await user.upload(field(UPLOAD), pdf())
 
     expect((await screen.findByRole('alertdialog')).textContent).toContain(
-      'This extract is for Sample Trading Pty Ltd, ACN 123 456 780. Use it anyway?',
+      'This extract is for Sample Trading Pty Ltd, ACN 123 456 780 — not the ACN on this form.',
     )
     expect(field(REGISTERED).value).toBe('')
-    expect(field('ACN Number').value).toBe('000000019')
+    expect(field('ACN').value).toBe('000000019')
   })
 
   it("saves fields typed by hand as 'manual', with a year-only date of birth", async () => {
@@ -211,8 +218,8 @@ describe('CompanyDetailsForm — a record that came from an extract', () => {
     const fetchMock = mockRoutes()
     render(<CompanyDetailsForm clientId="cl_1" initial={FROM_EXTRACT} />)
 
-    await user.clear(field('Phone Number'))
-    await user.type(field('Phone Number'), '0391111111')
+    await user.clear(field('Company phone'))
+    await user.type(field('Company phone'), '0391111111')
 
     expect(await save(user, fetchMock)).toMatchObject({
       phoneNumber: '0391111111',
@@ -260,5 +267,65 @@ describe('CompanyDetailsForm — a record that came from an extract', () => {
 
     expect(field(REGISTERED).value).toBe(EXTRACT.registeredOffice)
     expect(field('Director 2 name').value).toBe('Raj Example')
+  })
+})
+
+describe('CompanyDetailsForm — company and trust', () => {
+  /** A company acting as trustee, with no ABN of its own. Synthetic. */
+  const TRUSTEE: CompanyDetails = {
+    ...BEFORE,
+    entityType: 'trust',
+    abnNumber: '',
+    trustName: 'Sample Family Trust',
+    trustAbnNumber: '51824753556',
+  }
+
+  it('opens a trustee record with its Trust section filled', () => {
+    mockRoutes()
+    render(<CompanyDetailsForm clientId="cl_1" initial={TRUSTEE} />)
+
+    expect((screen.getByLabelText('Entity type') as HTMLSelectElement).value).toBe('trust')
+    expect(field('Trust name').value).toBe('Sample Family Trust')
+    expect(field('Trust ABN').value).toBe('51824753556')
+    expect(field('Company ABN (if the company has its own)').value).toBe('')
+  })
+
+  it('opens an older record, saved before entity types, as a Company with an empty, optional Trust section', () => {
+    mockRoutes()
+    render(<CompanyDetailsForm clientId="cl_1" initial={BEFORE} />)
+
+    expect((screen.getByLabelText('Entity type') as HTMLSelectElement).value).toBe('company')
+    expect(field('Trust name').value).toBe('')
+    expect(screen.getByText(/Optional for a company/)).toBeTruthy()
+  })
+
+  it('saves both ABNs apart, with the entity type', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(<CompanyDetailsForm clientId="cl_1" initial={TRUSTEE} />)
+
+    await user.clear(field('Company phone'))
+    expect(await save(user, fetchMock)).toMatchObject({
+      entityType: 'trust',
+      abnNumber: '',
+      trustName: 'Sample Family Trust',
+      trustAbnNumber: '51824753556',
+    })
+  })
+
+  it('applies the same validation as conversion, and sends nothing until it passes', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockRoutes()
+    render(<CompanyDetailsForm clientId="cl_1" initial={TRUSTEE} />)
+
+    // The company's own ABN (11 + its ACN) typed as the trust's.
+    await user.clear(field('Trust ABN'))
+    await user.type(field('Trust ABN'), '11123456780')
+    await user.click(screen.getByRole('button', { name: 'Save Details' }))
+
+    expect(screen.getByText(/That's the company's own ABN/)).toBeTruthy()
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/portal/company-details')),
+    ).toBe(false)
   })
 })

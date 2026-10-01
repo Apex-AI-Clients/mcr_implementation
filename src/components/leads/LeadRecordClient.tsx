@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { describeDirector } from '@/lib/asic/fill'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -17,6 +17,7 @@ import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { Select } from '@/components/ui/Select'
 import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
 import {
   debtSelectOptions,
@@ -321,21 +322,28 @@ function ReenquiryNotice({ lead, onDismiss }: { lead: Lead; onDismiss: () => voi
   )
 }
 
+type DetailRow = { label: string; value: string | null; numeric?: boolean }
+
+function recordedOnly(rows: DetailRow[]): DetailRow[] {
+  return rows.filter((row) => row.value && row.value.trim())
+}
+
 /**
  * What the client file holds, read-only: the details typed at conversion and
- * anything added in intake since. Only what is actually recorded is listed —
- * an empty ACN on a trust is not worth a row. Edited on the client file, which
- * the link opens.
+ * anything added in intake since. Only what is actually recorded is listed.
+ * The company and the trust are their own groups, each with its own ABN — a
+ * trustee company with no ABN says "No ABN of its own" rather than leaving a
+ * gap. Edited on the client file, which the link opens.
  */
 function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
-  const rows: { label: string; value: string | null; numeric?: boolean }[] = [
+  const contact = recordedOnly([
     { label: 'Name', value: client.name },
     { label: 'Email', value: client.email },
     { label: 'Phone', value: client.phone ? formatPhone(client.phone) : null, numeric: true },
-    { label: 'Company name', value: client.companyName },
-    { label: 'Trust name', value: client.trustName },
-    { label: 'ABN', value: client.abnNumber, numeric: true },
-    { label: 'ACN', value: client.acnNumber, numeric: true },
+  ])
+  const identity = identityDisplay(client)
+  const company = recordedOnly([
+    ...identity.company,
     {
       label: 'Company phone',
       value: client.companyPhone ? formatPhone(client.companyPhone) : null,
@@ -344,8 +352,8 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
     { label: 'Company email', value: client.companyEmail },
     { label: 'Registered office', value: client.registeredOfficeAddress },
     { label: 'Principal place of business', value: client.principalPlaceOfBusiness },
-  ]
-  const recorded = rows.filter((row) => row.value && row.value.trim())
+  ])
+  const trust = identity.trust ? recordedOnly(identity.trust) : []
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
@@ -361,38 +369,65 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
           <ArrowRight className="h-3 w-3" aria-hidden="true" />
         </Link>
       </div>
-      <dl className="space-y-2.5">
-        {recorded.map((row) => (
-          <div key={row.label}>
-            <dt className="text-xs text-foreground/40">{row.label}</dt>
-            <dd
-              className={`mt-0.5 break-words text-sm text-foreground/80 ${
-                row.numeric ? 'tabular-nums' : ''
-              }`}
-            >
-              {row.value}
-            </dd>
-          </div>
-        ))}
-        {/* Their own entry, below the rest: the directors are not the lead,
-            whose name is the "Name" row above and stays as it came in. */}
-        {client.directors.length > 0 && (
-          <div>
-            <dt className="text-xs text-foreground/40">
-              {client.directors.length > 1 ? 'Directors' : 'Director'}
-            </dt>
-            <dd className="mt-0.5 space-y-0.5 text-sm text-foreground/80">
-              {client.directors.map((director, index) => (
-                <p key={index} className="break-words tabular-nums">
-                  {describeDirector(director)}
-                </p>
-              ))}
-            </dd>
-          </div>
+      <div className="space-y-2.5">
+        <dl className="space-y-2.5">
+          <DetailRows rows={contact} />
+        </dl>
+        {(company.length > 0 || client.directors.length > 0) && (
+          <DetailGroup heading="Company">
+            <DetailRows rows={company} />
+            {/* Their own entry, under the company: the directors are not the
+                lead, whose name is the "Name" row above and stays as it came in. */}
+            {client.directors.length > 0 && (
+              <div>
+                <dt className="text-xs text-foreground/40">
+                  {client.directors.length > 1 ? 'Directors' : 'Director'}
+                </dt>
+                <dd className="mt-0.5 space-y-0.5 text-sm text-foreground/80">
+                  {client.directors.map((director, index) => (
+                    <p key={index} className="break-words tabular-nums">
+                      {describeDirector(director)}
+                    </p>
+                  ))}
+                </dd>
+              </div>
+            )}
+          </DetailGroup>
         )}
-      </dl>
+        {trust.length > 0 && (
+          <DetailGroup heading="Trust">
+            <DetailRows rows={trust} />
+          </DetailGroup>
+        )}
+      </div>
     </div>
   )
+}
+
+function DetailGroup({ heading, children }: { heading: string; children: ReactNode }) {
+  return (
+    <section aria-label={heading} className="space-y-2.5 border-t border-border pt-2.5">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-foreground/40">
+        {heading}
+      </h3>
+      <dl className="space-y-2.5">{children}</dl>
+    </section>
+  )
+}
+
+function DetailRows({ rows }: { rows: DetailRow[] }) {
+  return rows.map((row) => (
+    <div key={row.label}>
+      <dt className="text-xs text-foreground/40">{row.label}</dt>
+      <dd
+        className={`mt-0.5 break-words text-sm text-foreground/80 ${
+          row.numeric ? 'tabular-nums' : ''
+        }`}
+      >
+        {row.value}
+      </dd>
+    </div>
+  ))
 }
 
 /** The join between the two halves of the product. Reads as a destination. */

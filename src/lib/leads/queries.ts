@@ -365,7 +365,7 @@ export async function getConvertedClientDetails(
     supabase
       .from('company_details')
       .select(
-        'company_name, acn_number, abn_number, trust_name, phone_number, email_address, registered_office_address, principal_place_of_business, directors, asic_extract_date, company_details_source',
+        'entity_type, company_name, acn_number, abn_number, trust_name, trust_abn_number, phone_number, email_address, registered_office_address, principal_place_of_business, directors, asic_extract_date, company_details_source',
       )
       .eq('client_id', clientId)
       .maybeSingle(),
@@ -388,10 +388,12 @@ export async function getConvertedClientDetails(
     name: client.name,
     email: client.email,
     phone: client.phone,
+    entityType: details?.entity_type ?? null,
     companyName: details?.company_name ?? null,
     acnNumber: details?.acn_number ?? null,
     abnNumber: details?.abn_number ?? null,
     trustName: details?.trust_name ?? null,
+    trustAbnNumber: details?.trust_abn_number ?? null,
     companyPhone: details?.phone_number ?? null,
     companyEmail: details?.email_address ?? null,
     registeredOfficeAddress: details?.registered_office_address ?? null,

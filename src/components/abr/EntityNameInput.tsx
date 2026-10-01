@@ -43,6 +43,12 @@ interface EntityNameInputProps {
   disabled: boolean
   /** Passed straight through — the field this wraps is an ordinary input. */
   required?: boolean
+  /**
+   * "Enter manually (don't search ABN Lookup)" is ticked: no suggestions and no
+   * register calls — the plain Input it wraps. The input itself is the same
+   * element either way, so ticking it mid-word loses nothing.
+   */
+  searchDisabled?: boolean
   onChange: (value: string) => void
   /** Fields the picked register entity can fill. Applied by the parent form. */
   onPick: (prefill: AbrPrefill) => void
@@ -80,6 +86,7 @@ export function EntityNameInput({
   error,
   disabled,
   required,
+  searchDisabled = false,
   onChange,
   onPick,
 }: EntityNameInputProps) {
@@ -127,11 +134,13 @@ export function EntityNameInput({
 
   const term = query.trim()
   const ready = term.length >= MIN_TERM_LENGTH
+  /** Searching as typed: the register is there, and nobody asked to type by hand. */
+  const searchOn = available && !searchDisabled
 
   // Debounced search. The cleanup cancels both the pending timer and any
   // request already away, so each keystroke supersedes the one before it.
   useEffect(() => {
-    if (!available || !ready) return
+    if (!searchOn || !ready) return
 
     const timer = setTimeout(() => {
       const controller = new AbortController()
@@ -170,9 +179,9 @@ export function EntityNameInput({
       clearTimeout(timer)
       inFlight.current?.abort()
     }
-  }, [term, ready, available])
+  }, [term, ready, searchOn])
 
-  const searching = available && ready && loadingTerm === term
+  const searching = searchOn && ready && loadingTerm === term
   const shown = outcome && outcome.term === term ? outcome : null
   const matches = shown?.matches ?? []
 
@@ -202,7 +211,7 @@ export function EntityNameInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outcome])
   const notice = pickError || (searching ? '' : (shown?.notice ?? ''))
-  const listOpen = available && focused && ready && (searching || shown !== null || pickError !== '')
+  const listOpen = searchOn && focused && ready && (searching || shown !== null || pickError !== '')
   const activeIndex = matches.length > 0 ? Math.min(highlight, matches.length - 1) : -1
   const listId = `${id}-abr-matches`
 
@@ -263,9 +272,9 @@ export function EntityNameInput({
       disabled={disabled}
       required={required}
       onChange={(event) => handleChange(event.target.value)}
-      onKeyDown={available ? handleKeyDown : undefined}
+      onKeyDown={searchOn ? handleKeyDown : undefined}
       autoComplete="off"
-      {...(available
+      {...(searchOn
         ? {
             role: 'combobox',
             'aria-expanded': listOpen,

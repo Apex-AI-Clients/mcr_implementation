@@ -184,7 +184,7 @@ describe('ClientDetailsForm — creating a client', () => {
     expect(submittedBody(fetchMock).phone).toBe('0407 552 118')
   })
 
-  it('puts a picked trust’s own name in the field, trustee prefix gone', async () => {
+  it('puts a picked trust’s own name in the field and its ABN in the trust ABN', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes('abn_details_trust')
     render(<ClientDetailsForm clientId={null} initialName="" initialEmail="" />)
@@ -193,14 +193,21 @@ describe('ClientDetailsForm — creating a client', () => {
     await waitFor(() => expect(screen.getByRole('listbox')).not.toBeNull())
     await user.click(screen.getByText('Whitlock Civil Pty Ltd'))
     await waitFor(() => expect(nameField().value).toBe('Smith Family Trust'))
+    // Says where the trust's ABN is going before anything is saved.
+    expect(screen.getByText(/Trust ABN/).textContent).toContain(
+      'as a company acting as trustee of this trust',
+    )
 
     await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalled())
+    // The trust's ABN goes to the trust, never to abnNumber — that is only ever
+    // the company's own.
     expect(submittedBody(fetchMock).companyDetails).toEqual({
       trustName: 'Smith Family Trust',
-      abnNumber: '74653091178',
+      trustAbnNumber: '82653091178',
+      entityType: 'trust',
     })
   })
 })

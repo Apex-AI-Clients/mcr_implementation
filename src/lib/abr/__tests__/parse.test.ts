@@ -64,7 +64,7 @@ describe('parseMatchingNames', () => {
     // Staff need to see it in the list — that is the whole point of showing
     // status on the row.
     const { matches } = parseMatchingNames(fixture('matching_names_multi'))
-    const cancelled = matches.find((m) => m.abn === '61604882436')
+    const cancelled = matches.find((m) => m.abn === '30604882439')
     expect(cancelled?.status).toBe('cancelled')
   })
 

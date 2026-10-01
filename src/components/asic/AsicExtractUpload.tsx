@@ -5,12 +5,15 @@ import { AlertTriangle, CheckCircle, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { uploadAsicExtract } from '@/lib/asic/browser'
 import { formatExtractDate } from '@/lib/asic/dates'
-import { acnDiffers, formatAcn, type AsicFill } from '@/lib/asic/fill'
+import { acnDiffers, formatAcn, type AsicFill, type IdentityFillMode } from '@/lib/asic/fill'
 import type { AsicExtract } from '@/lib/asic/types'
 
 interface AsicExtractUploadProps {
   id: string
-  /** The form's ACN as typed. Only ever compared with the extract's, never replaced by it. */
+  /**
+   * The form's ACN as typed. An extract for a different ACN is confirmed before
+   * anything fills; confirming replaces the company details with the extract's.
+   */
   acnNumber: string
   /** The fill currently applied, if any — shown with its date and an undo. */
   fill: AsicFill | null
@@ -20,7 +23,8 @@ interface AsicExtractUploadProps {
    * a form: the button in the middle of its own panel, its hint underneath.
    */
   layout?: 'inline' | 'centered'
-  onFill: (extract: AsicExtract) => void
+  /** 'merge' fills empty boxes; 'replace' after a confirmed ACN mismatch. */
+  onFill: (extract: AsicExtract, mode: IdentityFillMode) => void
   onUndo: () => void
 }
 
@@ -32,12 +36,13 @@ type Status =
   | { kind: 'confirm'; extract: AsicExtract }
 
 /**
- * "Upload ASIC extract (PDF)": fills the registered office, the principal place
- * of business and the directors from an ASIC Current Company Extract.
+ * "Upload ASIC extract (PDF)": fills from an ASIC Current Company Extract — the
+ * company name, ACN and ABN into empty boxes, and the registered office, the
+ * principal place of business and the directors. Never the trust: trusts are
+ * not registered with ASIC. See src/lib/asic/fill.ts for the rules.
  *
- * It does not fill the company name, ACN or ABN — those stay with the business
- * register lookup and the keyboard. The extract's ACN is used only to ask
- * before filling a form that is for a different company.
+ * An extract for a different ACN than the form's asks first, and confirming
+ * replaces the company details with the extract's.
  *
  * Optional everywhere it appears: every field it fills stays editable, and the
  * form works exactly the same with no upload at all. The PDF is read on our own
@@ -69,7 +74,7 @@ export function AsicExtractUpload({
       return
     }
     setStatus({ kind: 'idle' })
-    onFill(result.extract)
+    onFill(result.extract, 'merge')
   }
 
   const asAt = formatExtractDate(fill?.extractedAt)
@@ -118,7 +123,8 @@ export function AsicExtractUpload({
           {reading ? 'Reading the extract…' : 'Upload ASIC extract (PDF)'}
         </Button>
         <p className="text-xs text-foreground/50">
-          Fills the registered office, principal place of business and directors. Optional.
+          Fills the company name, ACN and ABN where empty, the registered office, principal place
+          of business and directors. Optional.
         </p>
       </div>
 
@@ -142,23 +148,23 @@ export function AsicExtractUpload({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
             <span>
               This extract is for {status.extract.companyName ?? 'another company'}, ACN{' '}
-              {formatAcn(status.extract.acn)}. Use it anyway?
+              {formatAcn(status.extract.acn)} — not the ACN on this form.
             </span>
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               size="sm"
               onClick={() => {
                 const { extract } = status
                 setStatus({ kind: 'idle' })
-                onFill(extract)
+                onFill(extract, 'replace')
               }}
             >
-              Use it anyway
+              Replace company details with the extract&rsquo;s
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setStatus({ kind: 'idle' })}>
-              Don&rsquo;t use it
+              Cancel
             </Button>
           </div>
         </div>

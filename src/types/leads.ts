@@ -176,10 +176,15 @@ export interface ConvertedClientDetails {
   name: string
   email: string
   phone: string | null
+  /** 'company', or 'trust' for a company acting as trustee. null with no company record. */
+  entityType: string | null
   companyName: string | null
   acnNumber: string | null
+  /** The company's own ABN. */
   abnNumber: string | null
   trustName: string | null
+  /** The trust's own ABN. */
+  trustAbnNumber: string | null
   /** The company or trust's own line — not the client's phone above. */
   companyPhone: string | null
   companyEmail: string | null

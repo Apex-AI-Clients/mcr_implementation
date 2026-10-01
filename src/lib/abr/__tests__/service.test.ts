@@ -164,10 +164,10 @@ describe('fetchAcnsForAbns', () => {
   }
 
   it('maps each ABN to its ACN, and a trust to none', async () => {
-    stubDetails({ '53004085616': 'abn_details_company', '74653091178': 'abn_details_trust' })
-    expect(await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')).toEqual({
+    stubDetails({ '53004085616': 'abn_details_company', '82653091178': 'abn_details_trust' })
+    expect(await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')).toEqual({
       '53004085616': '004085616',
-      '74653091178': '',
+      '82653091178': '',
     })
   })
 
@@ -178,8 +178,8 @@ describe('fetchAcnsForAbns', () => {
   })
 
   it('leaves out an ABN whose lookup failed, and keeps the rest', async () => {
-    stubDetails({ '53004085616': 'abn_details_company', '74653091178': timeoutError() })
-    expect(await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')).toEqual({
+    stubDetails({ '53004085616': 'abn_details_company', '82653091178': timeoutError() })
+    expect(await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')).toEqual({
       '53004085616': '004085616',
     })
   })
@@ -213,7 +213,7 @@ describe('fetchAcnsForAbns', () => {
       })
 
       const started = Date.now()
-      const acns = await fetchAcnsForAbns(['53004085616', '74653091178'], 'test-guid')
+      const acns = await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')
       const took = Date.now() - started
 
       expect(acns).toEqual({ '53004085616': '004085616' })

@@ -105,11 +105,13 @@ export type Database = {
           created_at: string
           directors: Json
           email_address: string | null
+          entity_type: string
           id: string
           phone_number: string | null
           principal_place_of_business: string | null
           registered_office_address: string | null
           trust_name: string | null
+          trust_abn_number: string | null
           updated_at: string
         }
         Insert: {
@@ -122,11 +124,13 @@ export type Database = {
           created_at?: string
           directors?: Json
           email_address?: string | null
+          entity_type?: string
           id?: string
           phone_number?: string | null
           principal_place_of_business?: string | null
           registered_office_address?: string | null
           trust_name?: string | null
+          trust_abn_number?: string | null
           updated_at?: string
         }
         Update: {
@@ -139,11 +143,13 @@ export type Database = {
           created_at?: string
           directors?: Json
           email_address?: string | null
+          entity_type?: string
           id?: string
           phone_number?: string | null
           principal_place_of_business?: string | null
           registered_office_address?: string | null
           trust_name?: string | null
+          trust_abn_number?: string | null
           updated_at?: string
         }
         Relationships: [

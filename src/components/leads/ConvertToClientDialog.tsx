@@ -6,28 +6,20 @@ import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
-import { EntityNameInput } from '@/components/abr/EntityNameInput'
-import { RegisterLookupLink } from '@/components/abr/RegisterLookupLink'
 import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
-import { DirectorsFieldset } from '@/components/asic/DirectorsFieldset'
-import { applyExtract } from '@/lib/asic/fill'
-import type { AsicExtract } from '@/lib/asic/types'
-import { prefillFor } from '@/lib/abr/prefill'
-import type { AbrPrefill } from '@/lib/abr/types'
+import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections'
+import { changedKeys, commitChange, withExtract, withoutExtract } from '@/lib/clients/identityForm'
 import { createClientFromLead } from '@/lib/leads/convert'
 import {
-  asicFieldsOf,
   emptyConversionForm,
   hasErrors,
   validateConversion,
   type ConversionErrors,
   type ConversionForm,
 } from '@/lib/leads/conversionForm'
-import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
-import type { EntityType, Lead } from '@/types/leads'
+import type { Lead } from '@/types/leads'
 
 interface ConvertToClientDialogProps {
   lead: Lead | null
@@ -77,50 +69,18 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   }
 
   /**
-   * Apply a register match picked from one of the two name fields.
-   *
-   * Identical to typing the values in, deliberately: the fields stay editable,
-   * validation is untouched, and the errors on the fields it filled are cleared
-   * because those values have just changed. Nothing about the conversion itself
-   * knows this came from a register rather than a keyboard.
-   *
-   * `prefillFor` carries the one rule shared with the intake forms — the box
-   * that was searched is cleared when the register's answer went to the other
-   * name field.
+   * Take the next form state, clearing the errors on whatever it changed —
+   * those values have just been typed, picked or filled, and are judged again
+   * on Convert.
    */
-  function applyLookup(searchedIn: 'companyName' | 'trustName', prefill: AbrPrefill) {
-    const next = prefillFor(searchedIn, prefill)
-
-    patch(next)
+  function update(next: ConversionForm, changed: (keyof ConversionForm)[] = changedKeys(form, next)) {
+    setForm(next)
+    if (changed.length === 0) return
     setErrors((current) => {
       const cleared = { ...current }
-      for (const key of Object.keys(next) as (keyof ConversionForm)[]) delete cleared[key]
+      for (const key of changed) delete cleared[key]
       return cleared
     })
-  }
-
-  /**
-   * Fill from an uploaded ASIC extract: the two addresses and the directors,
-   * and nothing else. The lead's name, the company name, the ACN and the ABN
-   * are never touched by it. What was there before is kept, so the fill can be
-   * undone.
-   */
-  function applyAsicExtract(extract: AsicExtract) {
-    setForm((current) => {
-      const fill = applyExtract(asicFieldsOf(current), extract)
-      return { ...current, ...fill.filled, asicFill: fill }
-    })
-    setErrors((current) => {
-      const cleared = { ...current }
-      delete cleared.directors
-      return cleared
-    })
-  }
-
-  function undoAsicFill() {
-    setForm((current) =>
-      current.asicFill ? { ...current, ...current.asicFill.previous, asicFill: null } : current,
-    )
   }
 
   async function link(clientId: string) {
@@ -185,7 +145,6 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
 
   const working = phase.kind === 'working'
   const showForm = phase.kind === 'form' || working || phase.kind === 'failed'
-  const isTrust = form.entityType === 'trust'
 
   return (
     <Dialog
@@ -213,18 +172,19 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
               }}
             >
               {/* First thing in the form, because it is the quickest way to
-                  fill it: the two addresses and the directors, further down.
-                  It fills nothing else — not the lead's name, the company
-                  name, the ACN or the ABN — and the ACN typed below is only
-                  ever compared with the extract's. */}
+                  fill it: the company name, ACN and ABN where empty, the two
+                  addresses and the directors. Never the lead's own name, and
+                  never the trust — trusts are not registered with ASIC. */}
               <AsicExtractUpload
                 id="convert-asic-extract"
                 layout="centered"
                 acnNumber={form.acnNumber}
                 fill={form.asicFill}
                 disabled={working}
-                onFill={applyAsicExtract}
-                onUndo={undoAsicFill}
+                onFill={(extract, mode) =>
+                  update(commitChange(withExtract(form, extract, mode), 'no_abn'))
+                }
+                onUndo={() => update(withoutExtract(form))}
               />
 
               <Fieldset legend="Client">
@@ -256,108 +216,37 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                 />
               </Fieldset>
 
-              <Fieldset legend="Company or trust">
-                <Select
-                  id="convert-entity-type"
-                  label="Entity type"
-                  value={form.entityType}
-                  disabled={working}
-                  onChange={(event) =>
-                    patch({ entityType: event.target.value as EntityType })
-                  }
-                  options={ALL_ENTITY_TYPES.map((type) => ({
-                    value: type,
-                    label: ENTITY_TYPE_META[type].label,
-                  }))}
-                />
-
-                {/* Which of these is required follows the entity: an ACN
-                    belongs to a company, a trust name to a trust. Both stay
-                    visible either way, because a trust with a corporate
-                    trustee has all of them.
-
-                    Both name fields search the business register as they are
-                    typed in, and both are ordinary text fields when it has
-                    nothing to offer. */}
-                <EntityNameInput
-                  id="convert-company-name"
-                  label={isTrust ? 'Name of company (trustee, if any)' : 'Name of company'}
-                  value={form.companyName}
-                  error={errors.companyName}
-                  disabled={working}
-                  onChange={(companyName) => patch({ companyName })}
-                  onPick={(change) => applyLookup('companyName', change)}
-                />
-                <Input
-                  id="convert-acn"
-                  label={isTrust ? 'ACN number (if there is one)' : 'ACN number'}
-                  value={form.acnNumber}
-                  error={errors.acnNumber}
-                  hint={<RegisterLookupLink register="asic" />}
-                  disabled={working}
-                  onChange={(event) => patch({ acnNumber: event.target.value })}
-                />
-                <Input
-                  id="convert-abn"
-                  label="ABN number"
-                  value={form.abnNumber}
-                  error={errors.abnNumber}
-                  hint={<RegisterLookupLink register="abr" value={form.abnNumber} />}
-                  disabled={working}
-                  onChange={(event) => patch({ abnNumber: event.target.value })}
-                />
-                {/* Filled by the ASIC extract upload at the top of the form, or
-                    typed. The directors are their own section, separate from
-                    "Lead name" above on purpose:
-                    the lead is the person who enquired, and stays exactly as they
-                    came in. */}
-                <Input
-                  id="convert-registered-office"
-                  label="Registered office address (optional)"
-                  value={form.registeredOfficeAddress}
-                  disabled={working}
-                  onChange={(event) => patch({ registeredOfficeAddress: event.target.value })}
-                />
-                <Input
-                  id="convert-principal-place"
-                  label="Principal place of business (optional)"
-                  value={form.principalPlaceOfBusiness}
-                  disabled={working}
-                  onChange={(event) => patch({ principalPlaceOfBusiness: event.target.value })}
-                />
-                <DirectorsFieldset
-                  idPrefix="convert"
-                  rows={form.directors}
-                  disabled={working}
-                  showErrors={Boolean(errors.directors)}
-                  onChange={(directors) => patch({ directors })}
-                />
-                <EntityNameInput
-                  id="convert-trust-name"
-                  label={isTrust ? 'Name of trust' : 'Name of trust (if any)'}
-                  value={form.trustName}
-                  error={errors.trustName}
-                  disabled={working}
-                  onChange={(trustName) => patch({ trustName })}
-                  onPick={(change) => applyLookup('trustName', change)}
-                />
-                <Input
-                  id="convert-phone"
-                  label="Company or trust phone (optional)"
-                  value={form.phoneNumber}
-                  disabled={working}
-                  onChange={(event) => patch({ phoneNumber: event.target.value })}
-                />
-                <Input
-                  id="convert-entity-email"
-                  label="Company or trust email (optional)"
-                  type="email"
-                  value={form.emailAddress}
-                  error={errors.emailAddress}
-                  disabled={working}
-                  onChange={(event) => patch({ emailAddress: event.target.value })}
-                />
-              </Fieldset>
+              {/* The company, and the trust when it is a trustee. The lead's
+                  own name above is never overwritten by a director or a
+                  register pick: the lead is the person who enquired. */}
+              <CompanyTrustSections
+                idPrefix="convert"
+                value={form}
+                errors={errors}
+                showDirectorErrors={Boolean(errors.directors)}
+                disabled={working}
+                onChange={(next, changed) => update(next, changed)}
+                companyExtras={
+                  <>
+                    <Input
+                      id="convert-phone"
+                      label="Company phone (optional)"
+                      value={form.phoneNumber}
+                      disabled={working}
+                      onChange={(event) => patch({ phoneNumber: event.target.value })}
+                    />
+                    <Input
+                      id="convert-entity-email"
+                      label="Company email (optional)"
+                      type="email"
+                      value={form.emailAddress}
+                      error={errors.emailAddress}
+                      disabled={working}
+                      onChange={(event) => patch({ emailAddress: event.target.value })}
+                    />
+                  </>
+                }
+              />
             </form>
           )}
 

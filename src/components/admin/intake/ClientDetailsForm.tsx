@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { EntityNameInput } from '@/components/abr/EntityNameInput'
 import type { AbrPrefill } from '@/lib/abr/types'
+import { identityPatchForPick } from '@/lib/clients/identity'
 import { CheckCircle } from 'lucide-react'
 
 interface ClientDetailsFormProps {
@@ -73,18 +74,31 @@ export function ClientDetailsForm({
   }
 
   /**
+   * The register's answer, routed the way every form routes it
+   * (identityPatchForPick): a company to the company name, company ABN and
+   * ACN; a trust to the trust name and trust ABN — never to abnNumber, which is
+   * only ever the company's own. A trust pick also records the client as a
+   * company acting as trustee, which the note under the field says.
+   */
+  const pickedPatch = picked ? identityPatchForPick('company', picked, { entityType: 'company' }).patch : null
+  const pickedTrust = pickedPatch?.trustAbnNumber !== undefined
+
+  /**
    * What the register answered, as the company_details fields.
    *
    * Only ever the keys ABR actually filled — an absent key means "leave that
    * column alone", which is what keeps this safe to send against an existing
-   * record. Phone and email are never here.
+   * record. The blank company name a trust pick carries is left out for the
+   * same reason: this field never names a trustee company, so it has nothing
+   * to say about one already saved. Phone and email are never here.
    */
   function companyDetailsPayload() {
-    if (!picked) return undefined
-    const payload: Record<string, string> = { abnNumber: picked.abnNumber }
-    if (picked.companyName !== undefined) payload.companyName = picked.companyName
-    if (picked.trustName !== undefined) payload.trustName = picked.trustName
-    if (picked.acnNumber !== undefined) payload.acnNumber = picked.acnNumber
+    if (!pickedPatch) return undefined
+    const payload: Record<string, string> = {}
+    for (const [key, value] of Object.entries(pickedPatch)) {
+      if (value !== '') payload[key] = value
+    }
+    if (pickedTrust) payload.entityType = 'trust'
     return payload
   }
 
@@ -221,7 +235,14 @@ export function ClientDetailsForm({
           {/* A pick writes more than the field shows, so the field says so.
               A silent side effect on a create is not something to discover
               two steps later on the company form. */}
-          {carriedForward && (
+          {carriedForward && pickedTrust && (
+            <p className="text-xs text-foreground/50">
+              Trust ABN <span className="tabular-nums">{picked.abnNumber}</span> will be saved
+              with this client, as a company acting as trustee of this trust. Add the trustee
+              company on the company step.
+            </p>
+          )}
+          {carriedForward && !pickedTrust && (
             <p className="text-xs text-foreground/50">
               ABN <span className="tabular-nums">{picked.abnNumber}</span>
               {picked.acnNumber ? (

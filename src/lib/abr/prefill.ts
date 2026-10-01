@@ -56,22 +56,3 @@ export function prefillFromAbr(details: AbrEntityDetails): AbrPrefill {
 
   return prefill
 }
-
-/**
- * The prefill, plus the one rule every form with both name fields needs.
- *
- * `searchedIn` is the field the match was found from. If the register's answer
- * went to the *other* name field — searching the company box and landing on a
- * trust — then what is left in the searched box is a search term, not an
- * answer, so it goes. Nothing else is touched, so a trustee company typed into
- * the company field survives a pick made in the trust field.
- */
-export function prefillFor(
-  searchedIn: 'companyName' | 'trustName',
-  prefill: AbrPrefill,
-): AbrPrefill {
-  const patch: AbrPrefill = { ...prefill }
-  if (searchedIn === 'companyName' && patch.companyName === undefined) patch.companyName = ''
-  if (searchedIn === 'trustName' && patch.trustName === undefined) patch.trustName = ''
-  return patch
-}

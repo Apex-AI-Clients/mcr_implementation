@@ -47,3 +47,33 @@ export function isValidAbn(value: string): boolean {
 export function abnMatchesAcn(abn: string, acn: string): boolean {
   return digitsOnly(abn).slice(2) === digitsOnly(acn)
 }
+
+/**
+ * The ABN(s) a company with this ACN would have, if it registered for one.
+ *
+ * Its ABN is two check digits plus the ACN, and the ABN checksum leaves only
+ * one pair that works — except when the weighted sum needs no correction at
+ * all, where both 10 and 99 do. So this is one candidate, occasionally two,
+ * and never a guess: whether the company actually HAS an ABN is a question for
+ * the register (src/lib/abr/acnAbn.ts asks it).
+ *
+ * Empty for anything that is not a valid ACN.
+ */
+export function candidateAbnsForAcn(acn: string): string[] {
+  const digits = digitsOnly(acn)
+  if (!isValidAcn(digits)) return []
+  const candidates: string[] = []
+  for (let prefix = 10; prefix <= 99; prefix++) {
+    const abn = `${prefix}${digits}`
+    if (isValidAbn(abn)) candidates.push(abn)
+  }
+  return candidates
+}
+
+/** "11123456780" -> "11 123 456 780", the way the ATO prints it. Anything else as given. */
+export function formatAbn(abn: string): string {
+  const digits = digitsOnly(abn)
+  return digits.length === ABN_DIGITS
+    ? `${digits.slice(0, 2)} ${digits.slice(2, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`
+    : abn
+}
