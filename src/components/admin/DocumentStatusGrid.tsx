@@ -16,9 +16,16 @@ interface DocumentStatusGridProps {
   documents: DocumentRecord[]
   clientId?: string
   onDocumentDeleted?: () => void
+  /** An archived file: downloads only — no upload, delete or analysis. */
+  readOnly?: boolean
 }
 
-export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: DocumentStatusGridProps) {
+export function DocumentStatusGrid({
+  documents,
+  clientId,
+  onDocumentDeleted,
+  readOnly = false,
+}: DocumentStatusGridProps) {
   const router = useRouter()
   const refresh = onDocumentDeleted ?? (() => router.refresh())
   const byCategory = new Map<string, DocumentRecord[]>()
@@ -65,14 +72,14 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
             <p className="mt-1.5 ml-6.5 text-xs text-foreground/40">{meta.formatLabel}</p>
 
             {docs.map((doc) => (
-              <DocumentRow key={doc.id} doc={doc} onDeleted={refresh} />
+              <DocumentRow key={doc.id} doc={doc} onDeleted={refresh} readOnly={readOnly} />
             ))}
 
             {!received && (
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
             )}
 
-            {clientId && (
+            {clientId && !readOnly && (
               <CategoryUploader
                 clientId={clientId}
                 category={category}
@@ -82,11 +89,11 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
             )}
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
-            {category === 'historical_financials' && clientId && (
+            {category === 'historical_financials' && clientId && !readOnly && (
               <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
             )}
 
-            {category === 'integrated_client_account' && clientId && (
+            {category === 'integrated_client_account' && clientId && !readOnly && (
               <LodgementAnalysisButton clientId={clientId} />
             )}
           </div>
@@ -96,7 +103,15 @@ export function DocumentStatusGrid({ documents, clientId, onDocumentDeleted }: D
   )
 }
 
-function DocumentRow({ doc, onDeleted }: { doc: DocumentRecord; onDeleted: () => void }) {
+function DocumentRow({
+  doc,
+  onDeleted,
+  readOnly,
+}: {
+  doc: DocumentRecord
+  onDeleted: () => void
+  readOnly: boolean
+}) {
   const [downloading, setDownloading] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -156,14 +171,16 @@ function DocumentRow({ doc, onDeleted }: { doc: DocumentRecord; onDeleted: () =>
             >
               <Download className="h-3.5 w-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(true)}
-              className="text-foreground/30 hover:text-destructive transition-colors"
-              title="Delete document"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="text-foreground/30 hover:text-destructive transition-colors"
+                title="Delete document"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
         {doc.status === 'ready' && (

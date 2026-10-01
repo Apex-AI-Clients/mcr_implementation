@@ -33,6 +33,9 @@ export interface ClientSummary {
   hasAccountantDetails: boolean
   lastActivity: string | null
   createdAt: string
+  /** Set only on Archive rows (migration 0024). */
+  archivedAt?: string | null
+  archivedReason?: string | null
 }
 
 export interface ClientDetail {

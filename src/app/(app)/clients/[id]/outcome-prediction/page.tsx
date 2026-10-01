@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import type { ExtractedBalanceSheet } from '@/lib/financials/types'
@@ -19,10 +19,12 @@ export default async function OutcomePredictionPage({ params }: Props) {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name')
+    .select('id, name, archived_at')
     .eq('id', id)
     .maybeSingle()
   if (!client) notFound()
+  // An archived file is viewed, read-only, in the Archive.
+  if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
   const [lodgement, statement, cached] = await Promise.all([
     supabase

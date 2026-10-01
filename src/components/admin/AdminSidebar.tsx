@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
-import { workspaceForPath } from '@/lib/workspaces'
+import { activeNavHref, workspaceForPath } from '@/lib/workspaces'
 
 interface AdminSidebarProps {
   userEmail: string
@@ -26,7 +26,9 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
   // A single-page workspace uses the top bar instead — see WorkspaceTopBar.
   if (workspace.chrome !== 'sidebar') return null
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  // The most specific match only — "/sbr" must not light up on "/sbr/archive".
+  const activeHref = activeNavHref(workspace.nav, pathname)
+  const isActive = (href: string) => href === activeHref
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">

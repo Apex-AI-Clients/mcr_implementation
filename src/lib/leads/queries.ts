@@ -361,7 +361,11 @@ export async function getConvertedClientDetails(
 ): Promise<ConvertedClientDetails | null> {
   const supabase = getSupabaseServerClient()
   const [clientRead, detailsRead] = await Promise.all([
-    supabase.from('clients').select('id, name, email, phone').eq('id', clientId).maybeSingle(),
+    supabase
+      .from('clients')
+      .select('id, name, email, phone, archived_at')
+      .eq('id', clientId)
+      .maybeSingle(),
     supabase
       .from('company_details')
       .select(
@@ -388,6 +392,7 @@ export async function getConvertedClientDetails(
     name: client.name,
     email: client.email,
     phone: client.phone,
+    archivedAt: client.archived_at,
     entityType: details?.entity_type ?? null,
     companyName: details?.company_name ?? null,
     acnNumber: details?.acn_number ?? null,

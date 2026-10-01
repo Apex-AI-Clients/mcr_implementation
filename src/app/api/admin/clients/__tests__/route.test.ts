@@ -52,6 +52,7 @@ function mockDb({
   lead = { id: LEAD_ID, stage: 'prospect' } as { id: string; stage: string } | null,
   leadUpdateError = null as DbError,
   activityError = null as DbError,
+  existingClient = null as { id: string; archived_at: string | null } | null,
 } = {}) {
   const clientInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
     select: () => ({ single: () => Promise.resolve({ data: { id: 'cl_1' }, error: null }) }),
@@ -68,7 +69,9 @@ function mockDb({
   )
   const tables: Record<string, unknown> = {
     clients: {
-      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null }) }) }),
+      select: () => ({
+        eq: () => ({ maybeSingle: () => Promise.resolve({ data: existingClient }) }),
+      }),
       insert: clientInsert,
       delete: clientDelete,
     },
@@ -255,6 +258,32 @@ describe('POST /api/admin/clients — converting a lead', () => {
   it('rejects a lead id that is not a uuid', async () => {
     const { clientInsert } = mockDb()
     expect((await POST(post({ ...BODY, leadId: 'ld_1' }))).status).toBe(400)
+    expect(clientInsert).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/admin/clients — an email that already has a file', () => {
+  it('answers 409 with the file, saying it is not archived', async () => {
+    const { clientInsert } = mockDb({ existingClient: { id: 'cl_9', archived_at: null } })
+    const response = await POST(post(BODY))
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ clientId: 'cl_9', archived: false })
+    expect(clientInsert).not.toHaveBeenCalled()
+  })
+
+  it('says so when the file that owns the email is in the Archive', async () => {
+    const { clientInsert } = mockDb({
+      existingClient: { id: 'cl_9', archived_at: '2026-10-01T00:00:00.000Z' },
+    })
+    const response = await POST(post(BODY))
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: 'An archived client file has this email',
+      clientId: 'cl_9',
+      archived: true,
+    })
     expect(clientInsert).not.toHaveBeenCalled()
   })
 })

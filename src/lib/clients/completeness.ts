@@ -45,15 +45,21 @@ export async function getCompletenessSummary(): Promise<CompletenessSummary> {
   const supabase = getSupabaseServerClient()
 
   const [{ data: clients }, { data: documents }] = await Promise.all([
-    supabase.from('clients').select('id, name, created_at').order('created_at', { ascending: false }),
+    // Active files only: the Archive is not part of the portfolio.
+    supabase
+      .from('clients')
+      .select('id, name, created_at')
+      .is('archived_at', null)
+      .order('created_at', { ascending: false }),
     supabase.from('documents').select('client_id, doc_category, status'),
   ])
 
   // Count unique (non-rejected) categories per client.
   const docsPerClient = new Map<string, Set<string>>()
   let totalDocuments = 0
+  const active = new Set((clients ?? []).map((c) => c.id))
   for (const doc of documents ?? []) {
-    if (doc.status === 'rejected') continue
+    if (doc.status === 'rejected' || !active.has(doc.client_id)) continue
     totalDocuments++
     if (!docsPerClient.has(doc.client_id)) docsPerClient.set(doc.client_id, new Set())
     docsPerClient.get(doc.client_id)!.add(doc.doc_category)

@@ -103,11 +103,17 @@ describe('emptyConversionForm', () => {
     expect(emptyConversionForm(null).phone).toBe('')
   })
 
-  it('does not pre-fill the company phone from the lead', () => {
-    // That is the director's mobile — it goes in `phone`. A wrong default
-    // becomes wrong stored data the moment somebody presses Convert without
-    // reading it.
-    expect(emptyConversionForm(lead()).phoneNumber).toBe('')
+  it("pre-fills the company phone and email from the lead's own", () => {
+    // The person who enquired is the company's contact; both stay editable.
+    const form = emptyConversionForm(lead())
+    expect(form.phoneNumber).toBe('0407 552 118')
+    expect(form.emailAddress).toBe('dean@whitlockcivil.com.au')
+  })
+
+  it('leaves the company phone and email blank when there is no lead', () => {
+    const form = emptyConversionForm(null)
+    expect(form.phoneNumber).toBe('')
+    expect(form.emailAddress).toBe('')
   })
 
   it('does not require the client phone', () => {
@@ -125,7 +131,7 @@ describe('validateConversion — a company', () => {
     expect(hasErrors(validateConversion(company()))).toBe(false)
   })
 
-  it('requires the name, email, company name, ACN and company ABN', () => {
+  it('requires the name, email, company name and ACN', () => {
     const errors = validateConversion(
       company({ name: '', email: '', companyName: '', acnNumber: '', abnNumber: '' }),
     )
@@ -133,7 +139,10 @@ describe('validateConversion — a company', () => {
     expect(errors.email).toBeTruthy()
     expect(errors.companyName).toBeTruthy()
     expect(errors.acnNumber).toBeTruthy()
-    expect(errors.abnNumber).toBeTruthy()
+  })
+
+  it('does not require the company ABN — a company can have only an ACN', () => {
+    expect(hasErrors(validateConversion(company({ abnNumber: '' })))).toBe(false)
   })
 
   it('does not require the trust fields, but checks a trust ABN that is typed', () => {

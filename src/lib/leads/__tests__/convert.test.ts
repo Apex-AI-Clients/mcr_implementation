@@ -89,8 +89,9 @@ describe('createClientFromLead', () => {
         trustName: '',
         // A Company has no trust: saved blank, apart from the company's ABN.
         trustAbnNumber: '',
-        phoneNumber: '',
-        emailAddress: '',
+        // The lead's own phone and email, carried over as the company's.
+        phoneNumber: '0407 552 118',
+        emailAddress: 'dean@whitlockcivil.com.au',
         // Nothing typed and no extract uploaded: blank, with no source to claim.
         registeredOfficeAddress: '',
         principalPlaceOfBusiness: '',
@@ -151,7 +152,24 @@ describe('createClientFromLead', () => {
 
   it('reports a 409 as a duplicate carrying the existing file id', async () => {
     mockFetch(409, { error: 'A client with this email already exists', clientId: 'client-9' })
-    expect(await createClientFromLead(FORM)).toEqual({ kind: 'duplicate', clientId: 'client-9' })
+    expect(await createClientFromLead(FORM)).toEqual({
+      kind: 'duplicate',
+      clientId: 'client-9',
+      archived: false,
+    })
+  })
+
+  it('says when the file that owns the email is archived', async () => {
+    mockFetch(409, {
+      error: 'An archived client file has this email',
+      clientId: 'client-9',
+      archived: true,
+    })
+    expect(await createClientFromLead(FORM)).toEqual({
+      kind: 'duplicate',
+      clientId: 'client-9',
+      archived: true,
+    })
   })
 
   it('falls back to a plain failure when a 409 carries no client id', async () => {

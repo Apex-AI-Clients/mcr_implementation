@@ -30,7 +30,7 @@ type Phase =
   | { kind: 'form' }
   | { kind: 'working' }
   /** 409 — the email already belongs to a client file. Offer to link instead. */
-  | { kind: 'duplicate'; clientId: string }
+  | { kind: 'duplicate'; clientId: string; archived: boolean }
   /** The file was created but the lead could not be updated. Never retry. */
   | { kind: 'orphaned'; clientId: string }
   | { kind: 'failed'; message: string }
@@ -117,7 +117,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       return
     }
     if (result.kind === 'duplicate') {
-      setPhase({ kind: 'duplicate', clientId: result.clientId })
+      setPhase({ kind: 'duplicate', clientId: result.clientId, archived: result.archived })
       return
     }
 
@@ -151,7 +151,11 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       open={lead !== null}
       onClose={working ? () => {} : onClose}
       title={
-        phase.kind === 'duplicate' ? 'This email already has a client file' : 'Convert to client'
+        phase.kind === 'duplicate'
+          ? phase.archived
+            ? 'This email has an archived client file'
+            : 'This email already has a client file'
+          : 'Convert to client'
       }
       description={
         lead && showForm
@@ -250,7 +254,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
             </form>
           )}
 
-          {phase.kind === 'duplicate' && (
+          {phase.kind === 'duplicate' && !phase.archived && (
             <>
               <p className="text-sm leading-relaxed text-foreground/70">
                 {lead.email} already belongs to a client file. Rather than create a second one,
@@ -261,6 +265,23 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                 className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
               >
                 Look at the existing file first
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </>
+          )}
+
+          {phase.kind === 'duplicate' && phase.archived && (
+            <>
+              <p className="text-sm leading-relaxed text-foreground/70">
+                {lead.email} belongs to a client file in the Archive. Make it a client again from
+                the Archive and link {lead.name} to it, or delete it permanently there and convert
+                again.
+              </p>
+              <Link
+                href={`/sbr/archive/${phase.clientId}`}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+              >
+                Open the archived file
                 <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
             </>
@@ -327,15 +348,18 @@ function Footer({
   }
 
   if (phase.kind === 'duplicate') {
-    const { clientId } = phase
+    const { clientId, archived } = phase
     return (
       <>
         <Button type="button" variant="ghost" onClick={onClose}>
-          Cancel
+          {archived ? 'Close' : 'Cancel'}
         </Button>
-        <Button type="button" onClick={() => onLink(clientId)}>
-          Link to existing file
-        </Button>
+        {/* An archived file is restored first, from the Archive. */}
+        {!archived && (
+          <Button type="button" onClick={() => onLink(clientId)}>
+            Link to existing file
+          </Button>
+        )}
       </>
     )
   }

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { DebtInput } from '@/components/leads/DebtInput'
+import { SourceInput } from '@/components/leads/SourceInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
 import { Trash2 } from 'lucide-react'
@@ -16,12 +17,7 @@ import {
   reenquiryMarkerLabel,
   showsReenquiryMarker,
 } from '@/lib/leads/enquiries'
-import {
-  describeUncertainState,
-  formatLeadSource,
-  formatPhone,
-  formatShortDate,
-} from '@/lib/leads/format'
+import { describeUncertainState, formatPhone, formatShortDate } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -175,9 +171,10 @@ export function LeadTableRow({
       {/* The partner who ran the campaign, where one is known — "Facebook ·
           EPIC DM". Resolved from the campaign name captured at ingest, so it
           costs no request. Plain "Facebook" when the lead came from elsewhere,
-          the campaign is unknown, or it is run in-house. */}
+          the campaign is unknown, or it is run in-house. Editable in place,
+          like the debt. */}
       <td className="px-3 py-3.5 whitespace-nowrap text-foreground/50">
-        {formatLeadSource(lead)}
+        <SourceInput lead={lead} />
       </td>
       {/* <td className="px-3 py-3.5 w-8">{flagged && <FollowUpBadge compact />}</td> */}
     </tr>
@@ -273,7 +270,7 @@ export function LeadCard({
           uncertainState && <span title={uncertainState.description}>{uncertainState.label}</span>
         )}
         <span aria-hidden="true">·</span>
-        <span>{formatLeadSource(lead, 'short')}</span>
+        <SourceInput lead={lead} style="short" />
       </div>
 
       <StageSelect

@@ -13,8 +13,8 @@ import { requireStaffUser } from '@/lib/auth/staff'
 import { PATCH } from '../route'
 
 /**
- * PATCH /api/admin/leads/[id] — dismissing the "enquired again" marker.
- * Synthetic data only.
+ * PATCH /api/admin/leads/[id] — dismissing the "enquired again" marker, and
+ * correcting the source. Synthetic data only.
  */
 
 const PARAMS = { params: Promise.resolve({ id: 'ld_1' }) }
@@ -26,8 +26,8 @@ function request(body: unknown) {
   })
 }
 
-function mockDb() {
-  const updateEq = vi.fn(() => Promise.resolve({ error: null }))
+function mockDb(updateError: { code: string; message: string } | null = null) {
+  const updateEq = vi.fn(() => Promise.resolve({ error: updateError }))
   const update = vi.fn(() => ({ eq: updateEq }))
   const insert = vi.fn(() => Promise.resolve({ error: null }))
   const from = vi.fn((table: string) =>
@@ -92,3 +92,30 @@ describe('PATCH /api/admin/leads/[id] — dismiss', () => {
 function send(body: unknown) {
   return PATCH(request(body), PARAMS)
 }
+
+describe('PATCH /api/admin/leads/[id] — source', () => {
+  it('saves a corrected source, and writes no activity', async () => {
+    const { update, insert } = mockDb()
+    const response = await PATCH(request({ patch: { source: 'website' } }), PARAMS)
+
+    expect(response.status).toBe(200)
+    expect(update).toHaveBeenCalledWith({ source: 'website' })
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it('rejects a source that is not one of the four', async () => {
+    const { update } = mockDb()
+    const response = await PATCH(request({ patch: { source: 'tiktok' } }), PARAMS)
+
+    expect(response.status).toBe(400)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('answers 409, not 500, when the new source collides with another delivery', async () => {
+    mockDb({ code: '23505', message: 'duplicate key value violates unique constraint' })
+    const response = await PATCH(request({ patch: { source: 'website' } }), PARAMS)
+
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toMatch(/Another lead already has that source/)
+  })
+})

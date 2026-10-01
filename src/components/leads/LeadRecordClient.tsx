@@ -18,6 +18,7 @@ import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { Select } from '@/components/ui/Select'
 import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
+import { clientHref } from '@/lib/clients/archive'
 import { reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
 import {
   debtSelectOptions,
@@ -360,9 +361,12 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
           Client file
+          {client.archivedAt && (
+            <span className="ml-2 normal-case tracking-normal text-warning">Archived</span>
+          )}
         </p>
         <Link
-          href={`/clients/${client.id}`}
+          href={clientHref(client)}
           className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
         >
           Open

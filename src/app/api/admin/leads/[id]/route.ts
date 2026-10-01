@@ -41,6 +41,12 @@ const PatchSchema = z.object({
   debtMin: z.number().int().min(0).nullable().optional(),
   debtMax: z.number().int().min(0).nullable().optional(),
   entityType: z.enum(['company', 'trust']).nullable().optional(),
+  /**
+   * Corrected by hand from the lead table. Only the row's own source changes:
+   * lead_submissions keeps each enquiry's source as delivered, and external_id
+   * and the meta_* columns are left as they came in.
+   */
+  source: z.enum(['facebook', 'website', 'google_form', 'manual']).optional(),
   nextStep: z.string().nullable().optional(),
   stage: z
     .enum(['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact'])
@@ -87,6 +93,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (patch.debtMin !== undefined) update.debt_min = patch.debtMin
     if (patch.debtMax !== undefined) update.debt_max = patch.debtMax
     if (patch.entityType !== undefined) update.entity_type = patch.entityType
+    if (patch.source !== undefined) update.source = patch.source
     if (patch.nextStep !== undefined) update.next_step = patch.nextStep
     if (patch.convertedClientId !== undefined) {
       update.converted_client_id = patch.convertedClientId
@@ -110,6 +117,15 @@ export async function PATCH(req: NextRequest, { params }: Props) {
 
     if (Object.keys(update).length > 0) {
       const { error: updateError } = await supabase.from('leads').update(update).eq('id', id)
+      // A delivered lead is unique on (source, external_id), so a new source can
+      // collide with another lead's delivery of the same id. Unlikely, but said
+      // plainly rather than as a 500.
+      if (updateError?.code === '23505' && patch.source !== undefined) {
+        return NextResponse.json(
+          { error: 'Another lead already has that source and delivery id.' },
+          { status: 409 },
+        )
+      }
       if (updateError) throw updateError
     }
 

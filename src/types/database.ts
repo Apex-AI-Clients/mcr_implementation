@@ -57,6 +57,9 @@ export type Database = {
       }
       clients: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
+          archived_reason: string | null
           ato_admin_confirmed: boolean
           ato_admin_confirmed_at: string | null
           auth_user_id: string | null
@@ -69,6 +72,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
           ato_admin_confirmed?: boolean
           ato_admin_confirmed_at?: string | null
           auth_user_id?: string | null
@@ -81,6 +87,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
           ato_admin_confirmed?: boolean
           ato_admin_confirmed_at?: string | null
           auth_user_id?: string | null

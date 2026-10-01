@@ -176,6 +176,8 @@ export interface ConvertedClientDetails {
   name: string
   email: string
   phone: string | null
+  /** Set when the file is in the SBR Archive (migration 0024). */
+  archivedAt: string | null
   /** 'company', or 'trust' for a company acting as trustee. null with no company record. */
   entityType: string | null
   companyName: string | null

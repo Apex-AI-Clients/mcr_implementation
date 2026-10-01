@@ -7,16 +7,21 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('notFound')
   },
+  redirect: (to: string) => {
+    throw new Error(`redirect:${to}`)
+  },
 }))
 // The rest of the page is not what is under test here.
 vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: () => null }))
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
+vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import ClientDetailPage from '../page'
+import ArchivedClientPage from '@/app/(app)/sbr/archive/[id]/page'
 
 /**
  * The SBR client page: the client's phone in the header, and the ASIC fields in
@@ -170,5 +175,43 @@ describe('Client detail page — company and trust', () => {
     expect(within(card).getByText('Trust')).toBeTruthy()
     expect(valueOf(card, 'Trust name')).toBe('Sample Family Trust')
     expect(valueOf(card, 'Trust ABN')).toBe('51824753556')
+  })
+})
+
+describe('Client page and Archive page', () => {
+  const ARCHIVED = {
+    ...CLIENT,
+    archived_at: '2026-10-01T02:30:00.000Z',
+    archived_by: 'Gabby',
+    archived_reason: 'lead_deleted',
+  }
+
+  it('sends an archived file from the client page to the Archive', async () => {
+    mockDb(ARCHIVED, COMPANY)
+    await expect(ClientDetailPage({ params: Promise.resolve({ id: 'cl_1' }) })).rejects.toThrow(
+      'redirect:/sbr/archive/cl_1',
+    )
+  })
+
+  it('sends an active file from the Archive page to the client page', async () => {
+    mockDb(CLIENT, COMPANY)
+    await expect(ArchivedClientPage({ params: Promise.resolve({ id: 'cl_1' }) })).rejects.toThrow(
+      'redirect:/clients/cl_1',
+    )
+  })
+
+  it('shows an archived file the same way, with who archived it and why', async () => {
+    mockDb(ARCHIVED, COMPANY)
+    render(await ArchivedClientPage({ params: Promise.resolve({ id: 'cl_1' }) }))
+
+    const banner = screen.getByRole('status')
+    expect(banner.textContent).toContain('Archived')
+    expect(banner.textContent).toContain('by Gabby')
+    expect(banner.textContent).toContain('Its lead was deleted')
+    // The same file view as the client page.
+    expect(screen.getByText('Company and Trust Details')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Archive/ }).getAttribute('href')).toBe('/sbr/archive')
+    // No editing from the Archive.
+    expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
   })
 })

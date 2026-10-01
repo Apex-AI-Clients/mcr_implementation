@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { ComparisonClient } from './ComparisonClient'
 import type { FinancialsComparison } from '@/lib/financials/types'
@@ -15,10 +15,12 @@ export default async function FinancialsComparisonPage({ params }: Props) {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name')
+    .select('id, name, archived_at')
     .eq('id', id)
     .maybeSingle()
   if (!client) notFound()
+  // An archived file is viewed, read-only, in the Archive.
+  if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
   const [
     { data: documents },

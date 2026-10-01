@@ -45,7 +45,7 @@ export interface ConversionForm extends IdentityFormState {
    */
   companyManual: boolean
   trustManual: boolean
-  /** Optional, both of them. Everything else has to be known. */
+  /** Optional, both of them. Start as the lead's own phone and email. */
   phoneNumber: string
   emailAddress: string
   /**
@@ -83,12 +83,11 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     trustAbnNumber: '',
     companyManual: false,
     trustManual: false,
-    // Deliberately not pre-filled from the lead's own phone: that is the
-    // director's mobile — it goes in `phone` above — which is not the same
-    // thing as the company's number, and a wrong default becomes wrong stored
-    // data.
-    phoneNumber: '',
-    emailAddress: '',
+    // Pre-filled from the lead: in practice the person who enquired is the
+    // company's contact, so their phone and email are the company's too. Both
+    // stay editable for the case where the company has its own line.
+    phoneNumber: lead?.phone ? formatPhone(lead.phone) : '',
+    emailAddress: lead?.email ?? '',
     registeredOfficeAddress: '',
     principalPlaceOfBusiness: '',
     directors: [],
@@ -117,7 +116,9 @@ export function validateConversion(form: ConversionForm): ConversionErrors {
   if (!form.email.trim()) errors.email = 'Enter an email address.'
   else if (!isValidEmail(form.email)) errors.email = 'That email address does not look right.'
 
-  Object.assign(errors, validateIdentity(identityOf(form)))
+  // The company's own ABN is optional here: some companies have only an ACN,
+  // with the ABN held by their trust.
+  Object.assign(errors, validateIdentity(identityOf(form), { companyAbnRequired: false }))
 
   // Optional, but if given it has to be usable.
   if (form.emailAddress.trim() && !isValidEmail(form.emailAddress)) {

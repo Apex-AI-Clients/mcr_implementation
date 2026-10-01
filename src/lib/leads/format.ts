@@ -220,7 +220,10 @@ export function formatLeadSource(
 ): string {
   const source = SOURCE_META[lead.source]
   const base = style === 'full' ? source.label : source.short
-  const partner = partnerForCampaign(lead.metaCampaignName)
+  // Campaigns are Facebook's. A lead whose source was corrected to something
+  // else keeps its campaign columns, but they no longer describe where it came
+  // from, so no partner is claimed.
+  const partner = lead.source === 'facebook' ? partnerForCampaign(lead.metaCampaignName) : null
   return partner ? `${base} · ${partner}` : base
 }
 

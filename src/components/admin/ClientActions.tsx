@@ -2,133 +2,86 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2, AlertTriangle, X } from 'lucide-react'
+import { Archive } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { Dialog } from '@/components/ui/Dialog'
 
 interface ClientActionsProps {
   clientId: string
   clientName: string
-  clientEmail: string
 }
 
-export function ClientActions({ clientId, clientName, clientEmail }: ClientActionsProps) {
+/**
+ * "Archive client" on the client page.
+ *
+ * Used to be a permanent delete. Now it moves the file to the Archive, where it
+ * can be made a client again or deleted permanently — so nothing is destroyed
+ * from the client page, and the confirmation is a plain yes/no rather than
+ * typing the name.
+ */
+export function ClientActions({ clientId, clientName }: ClientActionsProps) {
   const router = useRouter()
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [confirmName, setConfirmName] = useState('')
-  const [deleting, setDeleting] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleDelete() {
-    if (confirmName.trim() !== clientName.trim()) {
-      setError('Name does not match.')
-      return
-    }
+  async function archive() {
     setError(null)
-    setDeleting(true)
+    setWorking(true)
     try {
-      const res = await fetch(`/api/admin/clients/${clientId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/admin/clients/${clientId}/archive`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to delete client')
+        throw new Error(data.error || 'Failed to archive client')
       }
-      router.push('/clients')
+      router.push('/sbr/archive')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
-      setDeleting(false)
+      setWorking(false)
     }
   }
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setError(null)
-            setConfirmName('')
-            setConfirmDelete(true)
-          }}
-          className="text-destructive hover:text-destructive border-destructive/20 hover:border-destructive/40"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete client
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setError(null)
+          setConfirming(true)
+        }}
+      >
+        <Archive className="h-3.5 w-3.5" />
+        Archive client
+      </Button>
 
-      {error && !confirmDelete && (
-        <p className="mt-2 text-xs text-destructive">{error}</p>
-      )}
-
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="h-9 w-9 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="h-4 w-4 text-destructive" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-foreground">Delete client?</h2>
-                  <p className="mt-1 text-xs text-foreground/60 leading-relaxed">
-                    This permanently deletes <span className="text-foreground">{clientName}</span>{' '}
-                    ({clientEmail}), along with all uploaded files and their accountant and company
-                    details. This cannot be undone.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="text-foreground/40 hover:text-foreground transition-colors"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              <Input
-                id="confirm-name"
-                label={`Type "${clientName}" to confirm`}
-                value={confirmName}
-                onChange={(e) => setConfirmName(e.target.value)}
-                autoFocus
-                autoComplete="off"
-              />
-              {error && (
-                <p className="text-xs text-destructive">{error}</p>
-              )}
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setConfirmDelete(false)}
-                disabled={deleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={handleDelete}
-                loading={deleting}
-                disabled={confirmName.trim() !== clientName.trim()}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete client
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={confirming}
+        onClose={working ? () => {} : () => setConfirming(false)}
+        title="Archive this client?"
+        description={`${clientName} leaves the client list and moves to the Archive. Nothing is deleted: from the Archive you can make them a client again, or delete them permanently.`}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirming(false)}
+              disabled={working}
+            >
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={archive} loading={working}>
+              <Archive className="h-3.5 w-3.5" />
+              Archive client
+            </Button>
+          </>
+        }
+      >
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      </Dialog>
     </>
   )
 }

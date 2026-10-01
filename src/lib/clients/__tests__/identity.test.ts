@@ -47,6 +47,17 @@ describe('validateIdentity — Company', () => {
     expect(validateIdentity(company())).toEqual({})
   })
 
+  it('can leave the company ABN optional, still checking one that is typed', () => {
+    const options = { companyAbnRequired: false }
+    expect(validateIdentity(company({ abnNumber: '' }), options)).toEqual({})
+    expect(validateIdentity(company({ abnNumber: BAD_CHECKSUM_ABN }), options).abnNumber).toMatch(
+      /check digits/,
+    )
+    expect(validateIdentity(company({ abnNumber: TRUST_ABN }), options).abnNumber).toMatch(
+      /move it to the trust ABN/,
+    )
+  })
+
   it('requires the name, the ACN and the company ABN', () => {
     const errors = validateIdentity(company({ companyName: ' ', acnNumber: '', abnNumber: '' }))
     expect(Object.keys(errors).sort()).toEqual(['abnNumber', 'acnNumber', 'companyName'])

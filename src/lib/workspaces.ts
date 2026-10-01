@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
+import { Archive, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
 
 /**
  * The two workspaces behind the single staff login.
@@ -62,6 +62,8 @@ export const WORKSPACES: Workspace[] = [
     nav: [
       { href: '/sbr', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/clients', label: 'Clients', icon: Users },
+      // Client files taken off the client list (migration 0024).
+      { href: '/sbr/archive', label: 'Archive', icon: Archive },
     ],
     prefixes: ['/sbr', '/clients'],
     chrome: 'sidebar',
@@ -78,4 +80,14 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
  */
 export function workspaceForPath(pathname: string): Workspace | null {
   return WORKSPACES.find((w) => w.prefixes.some((p) => matchesPrefix(pathname, p))) ?? null
+}
+
+/**
+ * The nav item a path belongs to: the longest href that matches, so
+ * "/sbr/archive/…" lights up Archive and not Dashboard ("/sbr") as well.
+ */
+export function activeNavHref(nav: WorkspaceNavItem[], pathname: string): string | null {
+  const matches = nav.filter((item) => matchesPrefix(pathname, item.href))
+  if (matches.length === 0) return null
+  return matches.reduce((best, item) => (item.href.length > best.href.length ? item : best)).href
 }

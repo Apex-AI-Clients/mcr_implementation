@@ -56,6 +56,8 @@ export async function GET() {
     const { data, error } = await supabase
       .from('clients')
       .select('id, name, email, status, created_at, updated_at')
+      // Archived files are in the Archive, not the client list.
+      .is('archived_at', null)
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -104,12 +106,21 @@ export async function POST(req: NextRequest) {
 
     const { data: existing } = await supabase
       .from('clients')
-      .select('id')
+      .select('id, archived_at')
       .eq('email', email)
       .maybeSingle()
     if (existing) {
+      // An archived file still owns its email. Said so, because the fix is
+      // different: restore it, or delete it permanently, from the Archive.
+      const archived = existing.archived_at !== null
       return NextResponse.json(
-        { error: 'A client with this email already exists', clientId: existing.id },
+        {
+          error: archived
+            ? 'An archived client file has this email'
+            : 'A client with this email already exists',
+          clientId: existing.id,
+          archived,
+        },
         { status: 409 },
       )
     }

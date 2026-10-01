@@ -137,9 +137,9 @@ describe('trustee company with no ABN of its own, plus the trust', () => {
     expect(toCompanyDetails(form)).toMatchObject({ abnNumber: '', trustAbnNumber: TRUST_ABN })
   })
 
-  it('a Company with no ABN does not validate — the company ABN is required there', () => {
+  it('a Company with no ABN still converts — the ABN is optional at conversion', () => {
     const { form } = withExtract(blank(), TRUSTEE_EXTRACT)
-    expect(validateConversion(form).abnNumber).toBeTruthy()
+    expect(validateConversion(form).abnNumber).toBeUndefined()
   })
 })
 

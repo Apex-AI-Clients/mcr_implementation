@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { WORKSPACES, workspaceForPath } from '../workspaces'
+import { WORKSPACES, workspaceForPath, activeNavHref } from '../workspaces'
 
 /**
  * `workspaceForPath` decides both whether AdminSidebar renders at all and which
@@ -28,11 +28,12 @@ describe('WORKSPACES', () => {
     }
   })
 
-  it('gives the SBR workspace Dashboard and Clients', () => {
+  it('gives the SBR workspace Dashboard, Clients and Archive', () => {
     const sbr = WORKSPACES.find((w) => w.id === 'sbr')!
     expect(sbr.nav.map((n) => [n.label, n.href])).toEqual([
       ['Dashboard', '/sbr'],
       ['Clients', '/clients'],
+      ['Archive', '/sbr/archive'],
     ])
   })
 
@@ -68,5 +69,25 @@ describe('workspaceForPath', () => {
 
   it.each(['/login', '/settings', '/unknown'])('returns null for %s', (pathname) => {
     expect(workspaceForPath(pathname)).toBeNull()
+  })
+})
+
+describe('activeNavHref', () => {
+  const sbr = WORKSPACES.find((w) => w.id === 'sbr')!.nav
+
+  it('lights up the most specific link — Archive, not Dashboard, under /sbr/archive', () => {
+    expect(activeNavHref(sbr, '/sbr/archive')).toBe('/sbr/archive')
+    expect(activeNavHref(sbr, '/sbr/archive/cl_1')).toBe('/sbr/archive')
+  })
+
+  it('still lights up Dashboard and Clients on their own pages', () => {
+    expect(activeNavHref(sbr, '/sbr')).toBe('/sbr')
+    expect(activeNavHref(sbr, '/clients/cl_1')).toBe('/clients')
+  })
+
+  it('matches nothing outside the nav', () => {
+    expect(activeNavHref(sbr, '/leads')).toBeNull()
+    // A prefix, not a substring: "/sbrx" is not under "/sbr".
+    expect(activeNavHref(sbr, '/sbrx')).toBeNull()
   })
 })

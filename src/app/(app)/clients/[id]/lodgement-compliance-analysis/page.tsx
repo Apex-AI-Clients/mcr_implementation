@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
@@ -18,6 +18,8 @@ export default async function LodgementAnalysisPage({ params }: Props) {
 
   const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
   if (!client) notFound()
+  // An archived file is viewed, read-only, in the Archive.
+  if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
   const [{ data: rawDocs }, { data: rawAnalysis }] = await Promise.all([
     supabase

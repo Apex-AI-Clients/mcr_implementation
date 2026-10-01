@@ -52,6 +52,7 @@ const CLIENT: ConvertedClientDetails = {
   name: 'Dean Whitlock',
   email: 'dean@example.test',
   phone: '0400000001',
+  archivedAt: null,
   entityType: 'company',
   companyName: 'Sample Trading Pty Ltd',
   acnNumber: '123456780',

@@ -594,6 +594,13 @@ describe('formatLeadSource', () => {
     expect(formatLeadSource(makeLead({ source: 'website' }))).toBe('Website')
   })
 
+  it('claims no partner once the source is no longer Facebook', () => {
+    // A lead corrected from Facebook keeps its campaign columns.
+    const corrected = makeLead({ source: 'website', metaCampaignName: 'MCR26 EPICDM Q4' })
+    expect(formatLeadSource(corrected)).toBe('Website')
+    expect(formatLeadSource(corrected, 'short')).toBe('Web')
+  })
+
   it('shows TBC rather than hiding an unconfirmed partner', () => {
     // An unattributed campaign must not read like an in-house one — that is the
     // whole reason the placeholder exists.

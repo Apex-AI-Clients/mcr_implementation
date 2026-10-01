@@ -97,7 +97,18 @@ function abnShapeError(value: string): string | null {
  *                A trust ABN, whenever one is given, is checked, and it must
  *                NOT end with the ACN — that would be the company's own.
  */
-export function validateIdentity(fields: IdentityFields): IdentityErrors {
+export function validateIdentity(
+  fields: IdentityFields,
+  options: {
+    /**
+     * Whether a Company must have its own ABN. Lead conversion turns this off:
+     * a company can have only an ACN while its trust holds the ABN. A typed
+     * ABN is still checked either way.
+     */
+    companyAbnRequired?: boolean
+  } = {},
+): IdentityErrors {
+  const companyAbnRequired = options.companyAbnRequired ?? true
   const errors: IdentityErrors = {}
   const trustee = fields.entityType === 'trust'
 
@@ -113,7 +124,7 @@ export function validateIdentity(fields: IdentityFields): IdentityErrors {
   const acn = comparableAcn(fields)
 
   if (!filled(fields.abnNumber)) {
-    if (!trustee) errors.abnNumber = "Enter the company's ABN."
+    if (!trustee && companyAbnRequired) errors.abnNumber = "Enter the company's ABN."
   } else {
     const shape = abnShapeError(fields.abnNumber)
     if (shape) errors.abnNumber = shape

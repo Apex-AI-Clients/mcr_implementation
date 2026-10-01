@@ -13,9 +13,19 @@ interface ClientsPageClientProps {
   page: number
   pageSize: number
   query: string
+  /** 'archived' for the Archive: its own URL, wording and row actions. */
+  mode?: 'active' | 'archived'
 }
 
-export function ClientsPageClient({ clients, total, page, pageSize, query }: ClientsPageClientProps) {
+export function ClientsPageClient({
+  clients,
+  total,
+  page,
+  pageSize,
+  query,
+  mode = 'active',
+}: ClientsPageClientProps) {
+  const basePath = mode === 'archived' ? '/sbr/archive' : '/clients'
   const router = useRouter()
   const [term, setTerm] = useState(query)
   const [prevQuery, setPrevQuery] = useState(query)
@@ -33,16 +43,16 @@ export function ClientsPageClient({ clients, total, page, pageSize, query }: Cli
     const t = setTimeout(() => {
       const params = new URLSearchParams()
       if (term.trim()) params.set('q', term.trim())
-      router.replace(`/clients${params.toString() ? `?${params.toString()}` : ''}`)
+      router.replace(`${basePath}${params.toString() ? `?${params.toString()}` : ''}`)
     }, 300)
     return () => clearTimeout(t)
-  }, [term, query, router])
+  }, [term, query, router, basePath])
 
   function goToPage(p: number) {
     const params = new URLSearchParams()
     if (query.trim()) params.set('q', query.trim())
     if (p > 1) params.set('page', String(p))
-    router.replace(`/clients${params.toString() ? `?${params.toString()}` : ''}`)
+    router.replace(`${basePath}${params.toString() ? `?${params.toString()}` : ''}`)
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -55,14 +65,18 @@ export function ClientsPageClient({ clients, total, page, pageSize, query }: Cli
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
         <input
           type="text"
-          placeholder="Search clients by name or email..."
+          placeholder={
+            mode === 'archived'
+              ? 'Search archived clients by name or email...'
+              : 'Search clients by name or email...'
+          }
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           className="w-full h-10 rounded-lg border border-border bg-input-bg pl-10 pr-4 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none transition-colors"
         />
       </div>
 
-      <ClientTable clients={clients} />
+      <ClientTable clients={clients} mode={mode} />
 
       {total > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

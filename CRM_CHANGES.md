@@ -320,6 +320,15 @@ The table's **Source filter** matches the row's source, i.e. first touch. A lead
 that first came from Facebook and later from the website is found under Facebook
 only.
 
+**Correcting the source by hand** (added 2026-10-01). The Source cell in the lead
+table is click-to-edit, like the debt (`SourceInput`). It changes only the row's
+`source`: `lead_submissions` keeps each enquiry's source as delivered, and
+`external_id` and the `meta_*` columns stay as they came in. The partner beside
+"Facebook" ("Facebook · EPIC DM") is shown only while the source is Facebook. No
+activity is written, so the follow-up clock is untouched. Google Form is offered only
+to a lead that already has it. If `ROW_ATTRIBUTION` is ever switched to
+`'latest_touch'`, a later enquiry overwrites a hand-corrected source.
+
 ### Existing data
 
 The migration backfilled one submission per lead that existed at the time, copied
@@ -564,7 +573,9 @@ the dry run on 2026-10-01 found no row it applies to, so no script was written.
 
 - **Company, both entity types:** name and ACN required; the ACN must pass its check
   digit.
-- **Company ABN:** required for "Company", optional for a trustee. When given: 11
+- **Company ABN:** optional at conversion for both entity types (a company can have
+  only an ACN, with the ABN held by its trust); on the intake company step, required
+  for "Company" and optional for "Trust". When given: 11
   digits, ABN checksum, and it must end with the ACN. If it doesn't, the error offers
   **[Move to trust ABN]**. The button is never shown when it would overwrite a
   different trust ABN.
@@ -586,13 +597,18 @@ The convert dialog and the intake company step render the same
   search), ACN, company ABN, then the Trust box, then registered office, principal
   place of business, directors, company phone and email.
 - **Trust** — a box straight under the company ABN, so the two ABNs are read
-  together. Always shown; for a Company it says "Optional for a company": its own
+  together. Always shown, and optional for a Company, where it reads "Fill it in if the company acts as trustee of a trust.": its own
   "Enter manually" checkbox, trust name (an ABN Lookup search), trust ABN. The old
   trust name field below the directors is gone.
 
 Changed 2026-10-01 at the user's request: the first version labelled the second
 option "Company acting as trustee of a trust" and showed the Trust section only for
 it, saving a Company's trust fields blank.
+
+**Company phone and email start as the lead's own** (changed 2026-10-01): the person
+who enquired is in practice the company's contact. Both stay editable in the convert
+dialog and on the intake company step, and show wherever the company phone and email
+already did (client page, the lead's Client file card).
 
 Each "Enter manually" checkbox affects only its own section: no name suggestions,
 and for the company no ABN-by-ACN check. Validation is the same either way.
@@ -669,6 +685,85 @@ whose numbers failed their own checksums were replaced with ones that pass.
 - Components: `src/components/identity/__tests__/` (ABN Lookup by ACN, the review
   summary), the convert dialog, ASIC upload, intake company step and step 1 suites,
   and the lead card and client page.
+
+---
+
+## Client archive (migration 0024)
+
+Added 2026-10-01. Client files are no longer destroyed from the client list. Code:
+`src/lib/clients/archive.ts`, `src/lib/clients/listing.ts`,
+`src/components/admin/ClientDetailView.tsx`, `ArchivedClientActions.tsx`,
+`ClientTable.tsx`, `src/app/(app)/sbr/archive/`,
+`src/app/api/admin/clients/[id]/archive/` and `restore/`.
+
+### What sends a file to the Archive
+
+| Trigger | `archived_reason` |
+|---|---|
+| "Archive client" on the client page, or the row / bulk action on the client list | `client_deleted` |
+| Deleting a lead that was converted into the file | `lead_deleted` |
+
+Archiving deletes nothing: documents, storage objects, and the company and
+accountant details all stay. A file already in the Archive keeps the date and
+reason it was first archived with.
+
+The lead delete route deletes the leads first and then archives the files of
+the leads actually deleted, so a failed delete archives nothing. If archiving
+fails after the delete, the response says `archiveFailed: true` and those files
+stay on the client list (the old behaviour) to be archived by hand.
+
+### The Archive (`/sbr/archive`, "Archive" in the SBR sidebar)
+
+- **List:** the same table, search and pagination as Clients, most recently
+  archived first, with an "Archived" column (date and reason).
+- **Detail** (`/sbr/archive/[id]`): the same view as the client page, read-only,
+  with a banner saying when, by whom and why it was archived. Documents can be
+  downloaded, not uploaded or deleted; no intake, analysis or prediction links.
+- **Make client again:** back on the client list exactly as archived. A file
+  archived because its lead was deleted comes back without a lead, since lead
+  deletion is permanent.
+- **Delete permanently:** the old hard delete (files, storage, details). Asks for
+  the name. `DELETE /api/admin/clients/[id]` now refuses (409) a file that is
+  not archived, so nothing is destroyed in one step from the client list.
+
+### Where an archived file is hidden, and what still sees it
+
+- Hidden from: the client list, the SBR dashboard and workspace-chooser numbers
+  (`getCompletenessSummary`, documents included), and `GET /api/admin/clients`.
+- `/clients/[id]` and its intake, financials, lodgement and prediction pages
+  redirect to `/sbr/archive/[id]`; `/sbr/archive/[id]` redirects an active file
+  back to `/clients/[id]`.
+- The lead record's "Client file" card says "Archived" and links to the Archive.
+- **An archived file still owns its email.** Converting a lead, or creating a
+  client in intake, with that email answers 409 `archived: true`. The convert
+  dialog points to the archived file and offers no "Link to existing file": the
+  file is restored, or permanently deleted, from the Archive first.
+- `PATCH /api/admin/clients/[id]` strips the archive columns, so they only change
+  through the archive and restore routes, which record who and why.
+
+### Schema — 0024 `client_archive`
+
+| Column | Notes |
+|---|---|
+| `archived_at` timestamptz | null = on the client list |
+| `archived_by` text | `staffAuthorName()` of whoever archived it. Display only |
+| `archived_reason` text | `client_deleted` or `lead_deleted` (CHECK) |
+
+A CHECK keeps `archived_at` and `archived_reason` set or clear together. Partial
+index on `archived_at` for the Archive list. No backfill.
+
+**Deploy order:** apply 0024 before this code. Every client list, the dashboard
+and the client pages filter on `archived_at`.
+
+### Tests
+
+`src/lib/clients/__tests__/archive.test.ts`,
+`src/app/api/admin/clients/[id]/__tests__/archive.route.test.ts` (archive,
+restore, permanent delete only when archived),
+`src/app/api/admin/leads/delete/__tests__/route.test.ts`, the archived-email 409
+in the clients route and convert tests, `src/components/admin/__tests__/ClientTable.test.tsx`,
+the client / Archive page redirects and banner, and the sidebar's active link
+(`activeNavHref`).
 
 ---
 

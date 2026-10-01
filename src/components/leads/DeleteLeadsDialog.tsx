@@ -24,9 +24,8 @@ const NAMES_SHOWN = 5
  *
  * Deliberately not a browser confirm(): this has to say what else goes with
  * the lead. The timeline cascades, the Meta attribution cannot be re-fetched
- * once the leadgen id has been consumed, and a converted lead leaves its
- * client file behind but loses the link back to it. None of that is obvious
- * from "Are you sure?".
+ * once the leadgen id has been consumed, and a converted lead's client file
+ * moves to the SBR Archive. None of that is obvious from "Are you sure?".
  */
 export function DeleteLeadsDialog({ leads, onClose, onDeleted }: DeleteLeadsDialogProps) {
   const { deleteLeads } = useLeads()
@@ -113,9 +112,9 @@ export function DeleteLeadsDialog({ leads, onClose, onDeleted }: DeleteLeadsDial
               {converted.length === 1
                 ? 'One of these has a client file in the restructuring workspace.'
                 : `${converted.length} of these have client files in the restructuring workspace.`}{' '}
-              The {converted.length === 1 ? 'file stays' : 'files stay'} where{' '}
-              {converted.length === 1 ? 'it is' : 'they are'}, but the link back to the lead will
-              be lost.
+              {converted.length === 1 ? 'It moves' : 'They move'} to the Archive, off the client
+              list. From there {converted.length === 1 ? 'it' : 'they'} can be made a client again
+              — without the link back to the lead — or deleted permanently.
             </p>
           </div>
         )}

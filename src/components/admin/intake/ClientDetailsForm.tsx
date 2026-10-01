@@ -181,9 +181,11 @@ export function ClientDetailsForm({
         const data = await res.json().catch(() => ({}))
         if (res.status === 409) {
           setError(
-            data.clientId
-              ? 'A client with this email already exists. Open it from the clients list to continue.'
-              : (data.error ?? 'A client with this email already exists'),
+            data.archived
+              ? 'An archived client file has this email. Restore it from the Archive, or delete it there permanently first.'
+              : data.clientId
+                ? 'A client with this email already exists. Open it from the clients list to continue.'
+                : (data.error ?? 'A client with this email already exists'),
           )
           setSaving(false)
           return

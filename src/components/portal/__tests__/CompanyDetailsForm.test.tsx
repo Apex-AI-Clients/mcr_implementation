@@ -296,7 +296,7 @@ describe('CompanyDetailsForm — company and trust', () => {
 
     expect((screen.getByLabelText('Entity type') as HTMLSelectElement).value).toBe('company')
     expect(field('Trust name').value).toBe('')
-    expect(screen.getByText(/Optional for a company/)).toBeTruthy()
+    expect(screen.getByText(/Fill it in if the company acts as trustee of a trust/)).toBeTruthy()
   })
 
   it('saves both ABNs apart, with the entity type', async () => {

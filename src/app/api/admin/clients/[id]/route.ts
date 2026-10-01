@@ -60,6 +60,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body && typeof body === 'object' && 'phone' in body) {
       body.phone = normaliseClientPhone(body.phone)
     }
+    // Archiving has its own routes (archive/, restore/), which record who and
+    // why. Never through a general edit.
+    if (body && typeof body === 'object') {
+      delete body.archived_at
+      delete body.archived_by
+      delete body.archived_reason
+    }
     const supabase = getSupabaseServerClient()
 
     const { data, error } = await supabase
@@ -87,12 +94,21 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
     const { data: client, error: lookupError } = await supabase
       .from('clients')
-      .select('id, auth_user_id')
+      .select('id, auth_user_id, archived_at')
       .eq('id', id)
       .maybeSingle()
 
     if (lookupError || !client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    // Permanent delete is the Archive's job. A client on the list is archived
+    // first (POST archive/), so nothing is destroyed in one click.
+    if (!client.archived_at) {
+      return NextResponse.json(
+        { error: 'Archive this client before deleting it permanently.' },
+        { status: 409 },
+      )
     }
 
     // 1. Remove storage objects. Files live at documents/{client_id}/{uuid}.{ext}.

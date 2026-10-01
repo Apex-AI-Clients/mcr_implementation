@@ -151,6 +151,22 @@ describe('ConvertToClientDialog', () => {
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeTruthy()
   })
 
+  it("starts the company phone and email as the lead's own, editable", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderList()
+
+    const dialog = await openConversion(user)
+    const phone = within(dialog).getByLabelText('Company phone (optional)') as HTMLInputElement
+    const email = within(dialog).getByLabelText('Company email (optional)') as HTMLInputElement
+    expect(phone.value).toBe('0407 552 118')
+    expect(email.value).toBe('dean@whitlockcivil.com.au')
+
+    await user.clear(email)
+    await user.type(email, 'accounts@whitlockcivil.com.au')
+    expect(email.value).toBe('accounts@whitlockcivil.com.au')
+  })
+
   it('does not touch the API until Convert is pressed', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn()
@@ -175,7 +191,9 @@ describe('ConvertToClientDialog', () => {
 
     expect(within(dialog).getByText('Enter the company name.')).toBeTruthy()
     expect(within(dialog).getByText('Enter the ACN.')).toBeTruthy()
-    expect(within(dialog).getByText("Enter the company's ABN.")).toBeTruthy()
+    // The company's own ABN is optional at conversion: some companies have
+    // only an ACN, with the ABN held by their trust.
+    expect(within(dialog).queryByText("Enter the company's ABN.")).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(stageSelect().value).toBe('prospect')
   })
@@ -208,11 +226,11 @@ describe('ConvertToClientDialog', () => {
     expect([...select.options].map((option) => option.textContent)).toEqual(['Company', 'Trust'])
     expect(within(dialog).getByLabelText('Trust name')).toBeTruthy()
     expect(within(dialog).getByLabelText('Trust ABN')).toBeTruthy()
-    expect(within(dialog).getByText(/Optional for a company/)).toBeTruthy()
+    expect(within(dialog).getByText(/Fill it in if the company acts as trustee of a trust/)).toBeTruthy()
 
     await user.selectOptions(select, 'trust')
     expect(within(dialog).getByLabelText('Trust name')).toBeTruthy()
-    expect(within(dialog).queryByText(/Optional for a company/)).toBeNull()
+    expect(within(dialog).queryByText(/Fill it in if the company acts as trustee of a trust/)).toBeNull()
   })
 
   it('converts a Company with no trust, and sends a trust typed for one', async () => {
@@ -418,6 +436,24 @@ describe('ConvertToClientDialog', () => {
     )
     // The route's own wording is never put in front of the user.
     expect(within(dialog).queryByText(/A client with this email already exists/)).toBeNull()
+    expect(stageSelect().value).toBe('prospect')
+  })
+
+  it('points to the Archive, and offers no link, when the email belongs to an archived file', async () => {
+    const user = userEvent.setup()
+    mockFetch(409, {
+      error: 'An archived client file has this email',
+      clientId: 'client-9',
+      archived: true,
+    })
+    renderList()
+
+    const dialog = await openAndFill(user)
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    const open = await within(dialog).findByRole('link', { name: /Open the archived file/ })
+    expect(open.getAttribute('href')).toBe('/sbr/archive/client-9')
+    expect(within(dialog).queryByRole('button', { name: 'Link to existing file' })).toBeNull()
     expect(stageSelect().value).toBe('prospect')
   })
 
