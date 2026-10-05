@@ -391,6 +391,7 @@ export function LeadsStoreProvider({
         stage: 'lead',
         // Always manual here — this one didn't come from a campaign.
         source: 'manual',
+        sourceLabel: null,
         company: null,
         nextStep: null,
         stageSince: at,

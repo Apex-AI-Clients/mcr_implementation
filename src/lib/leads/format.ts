@@ -215,9 +215,11 @@ export function describeUncertainState(
  * because it is the part somebody is actually scanning for.
  */
 export function formatLeadSource(
-  lead: Pick<Lead, 'source' | 'metaCampaignName'>,
+  lead: Pick<Lead, 'source' | 'metaCampaignName'> & { sourceLabel?: string | null },
   style: 'short' | 'full' = 'full',
 ): string {
+  // Typed by staff, so shown exactly as typed — never abbreviated or partnered.
+  if (lead.sourceLabel) return lead.sourceLabel
   const source = SOURCE_META[lead.source]
   const base = style === 'full' ? source.label : source.short
   // Campaigns are Facebook's. A lead whose source was corrected to something
@@ -673,7 +675,7 @@ export function leadsToCsv(
       // typed into the form makes this row as tall as their message.
       (lead.message ?? '').replace(/\s+/g, ' ').trim(),
       STAGE_META[lead.stage].label,
-      SOURCE_META[lead.source].label,
+      lead.sourceLabel ?? SOURCE_META[lead.source].label,
       formatIsoDate(lead.lastActionAt),
       String(countLeadNotes(activitiesByLead.get(lead.id) ?? [])),
       formatLeadNotes(activitiesByLead.get(lead.id) ?? []),

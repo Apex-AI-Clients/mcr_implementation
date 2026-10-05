@@ -16,6 +16,7 @@ const LEAD: Lead = {
   state: 'QLD',
   stage: 'prospect',
   source: 'google_form',
+  sourceLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-01T00:00:00.000Z',

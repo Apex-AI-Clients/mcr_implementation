@@ -42,6 +42,7 @@ export function toLead(row: LeadRow): Lead {
     preferredCallTime: row.preferred_call_time,
     stage: row.stage as LeadStage,
     source: row.source as LeadSource,
+    sourceLabel: row.source_label,
     company: row.company,
     nextStep: row.next_step,
     stageSince: row.stage_since,

@@ -32,6 +32,7 @@ function staleLead(overrides: Partial<Lead> = {}): Lead {
     state: 'NSW',
     stage: 'lead',
     source: 'facebook',
+    sourceLabel: null,
     company: null,
     nextStep: null,
     stageSince: at(40),

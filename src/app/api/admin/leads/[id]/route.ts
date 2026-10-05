@@ -47,6 +47,11 @@ const PatchSchema = z.object({
    * and the meta_* columns are left as they came in.
    */
   source: z.enum(['facebook', 'website', 'google_form', 'manual']).optional(),
+  /**
+   * Free text typed into the Source cell, shown instead of `source`. Null (or
+   * blank) goes back to the delivered source. `source` is left as it is.
+   */
+  sourceLabel: z.string().max(100).nullable().optional(),
   nextStep: z.string().nullable().optional(),
   stage: z
     .enum(['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact'])
@@ -94,6 +99,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (patch.debtMax !== undefined) update.debt_max = patch.debtMax
     if (patch.entityType !== undefined) update.entity_type = patch.entityType
     if (patch.source !== undefined) update.source = patch.source
+    if (patch.sourceLabel !== undefined) update.source_label = patch.sourceLabel?.trim() || null
     if (patch.nextStep !== undefined) update.next_step = patch.nextStep
     if (patch.convertedClientId !== undefined) {
       update.converted_client_id = patch.convertedClientId

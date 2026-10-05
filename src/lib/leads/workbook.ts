@@ -70,7 +70,7 @@ const COLUMNS: ColumnSpec[] = [
   },
   { header: 'State', width: 8, value: (lead) => lead.state ?? '' },
   { header: 'Stage', width: 16, value: (lead) => STAGE_META[lead.stage].label },
-  { header: 'Source', width: 20, value: (lead) => SOURCE_META[lead.source].label },
+  { header: 'Source', width: 20, value: (lead) => lead.sourceLabel ?? SOURCE_META[lead.source].label },
   { header: 'Last action', width: 12, value: (lead) => formatIsoDate(lead.lastActionAt) },
   // The two prose columns, and the only two that wrap.
   { header: 'Message', width: 46, wrap: true, value: (lead) => lead.message ?? '' },

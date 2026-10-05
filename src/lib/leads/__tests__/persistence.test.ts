@@ -23,6 +23,7 @@ const LEAD: Lead = {
   preferredCallTime: 'After 6pm',
   stage: 'lead',
   source: 'manual',
+  sourceLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-01T00:00:00.000Z',

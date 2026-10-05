@@ -33,6 +33,7 @@ const LEAD: Lead = {
   preferredCallTime: null,
   stage: 'non_proceeding',
   source: 'facebook',
+  sourceLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-20T00:00:00.000Z',

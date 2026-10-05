@@ -73,6 +73,12 @@ export interface Lead {
   preferredCallTime: string | null
   stage: LeadStage
   source: LeadSource
+  /**
+   * What staff typed into the Source cell, shown in place of `source`. Null
+   * shows the delivered source. `source` itself is never changed by typing:
+   * filters, dedup and ingest keep using it (migration 0025).
+   */
+  sourceLabel: string | null
   /** Optional on the record, deliberately absent from the capture form. */
   company: string | null
   nextStep: string | null

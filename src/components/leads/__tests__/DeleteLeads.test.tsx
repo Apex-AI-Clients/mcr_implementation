@@ -42,6 +42,7 @@ function makeLead(overrides: Partial<Lead>): Lead {
     state: 'NSW',
     stage: 'lead',
     source: 'facebook',
+    sourceLabel: null,
     company: null,
     nextStep: null,
     stageSince: '2026-09-01T00:00:00.000Z',

@@ -35,6 +35,7 @@ const LEAD: Lead = {
   state: 'QLD',
   stage: 'prospect',
   source: 'google_form',
+  sourceLabel: null,
   company: null,
   nextStep: null,
   stageSince: new Date(Date.now() - 5 * 86_400_000).toISOString(),

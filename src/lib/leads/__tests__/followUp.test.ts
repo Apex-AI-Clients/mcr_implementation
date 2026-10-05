@@ -29,6 +29,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     state: 'NSW',
     stage: 'lead',
     source: 'manual',
+    sourceLabel: null,
     company: null,
     nextStep: null,
     stageSince: at(60),

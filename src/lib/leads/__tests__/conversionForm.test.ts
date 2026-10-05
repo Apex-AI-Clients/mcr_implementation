@@ -31,6 +31,7 @@ function lead(overrides: Partial<Lead> = {}): Lead {
     preferredCallTime: null,
     stage: 'prospect',
     source: 'website',
+    sourceLabel: null,
     company: null,
     nextStep: null,
     stageSince: '2026-08-20T00:00:00.000Z',

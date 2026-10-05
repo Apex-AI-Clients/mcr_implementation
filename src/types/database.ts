@@ -634,6 +634,7 @@ export type Database = {
           reenquiry_dismissed_at: string | null
           reenquiry_dismissed_by: string | null
           source: string
+          source_label: string | null
           stage: string
           stage_since: string
           state: string | null
@@ -671,6 +672,7 @@ export type Database = {
           reenquiry_dismissed_at?: string | null
           reenquiry_dismissed_by?: string | null
           source: string
+          source_label?: string | null
           stage?: string
           stage_since?: string
           state?: string | null
@@ -708,6 +710,7 @@ export type Database = {
           reenquiry_dismissed_at?: string | null
           reenquiry_dismissed_by?: string | null
           source?: string
+          source_label?: string | null
           stage?: string
           stage_since?: string
           state?: string | null

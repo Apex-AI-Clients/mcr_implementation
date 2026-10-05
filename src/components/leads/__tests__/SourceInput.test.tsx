@@ -8,8 +8,8 @@ import { EMPTY_FILTERS } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
 
 /**
- * Correcting a lead's source in the table, like the debt. Driven through the
- * real list so the store and the save are exercised. Synthetic data only.
+ * Typing a lead's source in the table, like the debt. Driven through the real
+ * list so the store and the save are exercised. Synthetic data only.
  */
 
 vi.mock('next/navigation', () => ({
@@ -34,6 +34,7 @@ const LEAD = {
   preferredCallTime: null,
   stage: 'prospect',
   source: 'facebook',
+  sourceLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-09-01T00:00:00.000Z',
@@ -73,71 +74,68 @@ function renderList(persistence: LeadsPersistence, lead: Lead = LEAD) {
   return screen.getByRole('table')
 }
 
+const editButton = (table: HTMLElement) =>
+  within(table).getByRole('button', { name: 'Edit source for Dean Sample' })
+
 describe('SourceInput', () => {
-  it('shows the source with its partner, and edits it in place', async () => {
+  it('shows the source with its partner, and takes any typed source', async () => {
     const user = userEvent.setup()
     const updateLead = vi.fn(async () => {})
     const table = renderList({ updateLead })
 
-    const button = within(table).getByRole('button', { name: 'Edit source for Dean Sample' })
-    expect(button.textContent).toBe('Facebook · EPIC DM')
+    expect(editButton(table).textContent).toBe('Facebook · EPIC DM')
 
-    await user.click(button)
-    const select = within(table).getByLabelText('Source for Dean Sample') as HTMLSelectElement
-    // Google Form has no live form, so it is not offered.
-    expect([...select.options].map((option) => option.textContent)).toEqual([
-      'Facebook',
-      'Website',
-      'Added manually',
-    ])
-    await user.selectOptions(select, 'website')
+    await user.click(editButton(table))
+    const input = within(table).getByLabelText('Source for Dean Sample') as HTMLInputElement
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('Facebook · EPIC DM')
+    await user.type(input, '  Referral from Dave {Enter}')
 
-    expect(updateLead).toHaveBeenCalledWith({ leadId: 'ld_1', patch: { source: 'website' } })
-    // Back to the label; the partner goes with the Facebook source.
-    expect(
-      within(table).getByRole('button', { name: 'Edit source for Dean Sample' }).textContent,
-    ).toBe('Website')
+    expect(updateLead).toHaveBeenCalledWith({
+      leadId: 'ld_1',
+      patch: { sourceLabel: 'Referral from Dave' },
+    })
+    expect(editButton(table).textContent).toBe('Referral from Dave')
     expect(await screen.findByText('Source updated.')).toBeTruthy()
   })
 
-  it('saves nothing when the same source is chosen, or on Escape', async () => {
+  it('goes back to the delivered source when cleared', async () => {
+    const user = userEvent.setup()
+    const updateLead = vi.fn(async () => {})
+    const table = renderList({ updateLead }, { ...LEAD, sourceLabel: 'Trade show' } as Lead)
+
+    expect(editButton(table).textContent).toBe('Trade show')
+    await user.click(editButton(table))
+    const input = within(table).getByLabelText('Source for Dean Sample') as HTMLInputElement
+    expect(input.value).toBe('Trade show')
+    await user.clear(input)
+    await user.click(within(table).getByRole('button', { name: 'Save source for Dean Sample' }))
+
+    expect(updateLead).toHaveBeenCalledWith({ leadId: 'ld_1', patch: { sourceLabel: null } })
+    expect(editButton(table).textContent).toBe('Facebook · EPIC DM')
+  })
+
+  it('saves nothing when unchanged, or on Escape', async () => {
     const user = userEvent.setup()
     const updateLead = vi.fn(async () => {})
     const table = renderList({ updateLead })
 
-    await user.click(within(table).getByRole('button', { name: 'Edit source for Dean Sample' }))
-    await user.keyboard('{Escape}')
+    await user.click(editButton(table))
+    await user.type(within(table).getByLabelText('Source for Dean Sample'), 'Typed{Escape}')
     expect(within(table).queryByLabelText('Source for Dean Sample')).toBeNull()
 
-    await user.click(within(table).getByRole('button', { name: 'Edit source for Dean Sample' }))
-    await user.selectOptions(within(table).getByLabelText('Source for Dean Sample'), 'facebook')
+    await user.click(editButton(table))
+    await user.keyboard('{Enter}')
     expect(updateLead).not.toHaveBeenCalled()
-  })
-
-  it('still offers Google Form to a lead that already has it', async () => {
-    const user = userEvent.setup()
-    const table = renderList({ updateLead: vi.fn(async () => {}) }, {
-      ...LEAD,
-      source: 'google_form',
-    } as Lead)
-
-    await user.click(within(table).getByRole('button', { name: 'Edit source for Dean Sample' }))
-    const select = within(table).getByLabelText('Source for Dean Sample') as HTMLSelectElement
-    expect(select.value).toBe('google_form')
-    expect([...select.options].map((option) => option.value)).toContain('google_form')
   })
 
   it('puts the previous source back when the save fails', async () => {
     const user = userEvent.setup()
     const table = renderList({ updateLead: vi.fn(async () => Promise.reject(new Error('nope'))) })
 
-    await user.click(within(table).getByRole('button', { name: 'Edit source for Dean Sample' }))
-    await user.selectOptions(within(table).getByLabelText('Source for Dean Sample'), 'manual')
+    await user.click(editButton(table))
+    await user.type(within(table).getByLabelText('Source for Dean Sample'), 'Walk-in{Enter}')
 
-    await waitFor(() =>
-      expect(
-        within(table).getByRole('button', { name: 'Edit source for Dean Sample' }).textContent,
-      ).toBe('Facebook · EPIC DM'),
-    )
+    await waitFor(() => expect(editButton(table).textContent).toBe('Facebook · EPIC DM'))
   })
 })
