@@ -65,7 +65,7 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   current_financials: {
     label: 'Current Period Profit and Loss & Balance Sheet',
     description:
-      "Copy of the Current Period Company's Profit and Loss Statement & Balance Sheet as of today. (Draft is Acceptable)",
+      "Copy of the Current Period Company's Profit and Loss Statement & Balance Sheet as of today. (Draft is Acceptable) One combined PDF, or the two statements as separate PDFs — either is fine.",
     acceptedFormats: [MIME_PDF],
     formatLabel: 'PDF only',
     isOptional: false,
@@ -74,7 +74,7 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   historical_financials: {
     label: 'Last 4 Years Profit and Loss & Balance Sheet',
     description:
-      "Copy of the Last 4 years Company's Profit and Loss Statement & Balance Sheet (accountant prepared)",
+      "Copy of the Last 4 years Company's Profit and Loss Statement & Balance Sheet (accountant prepared). One combined PDF per year, or the two statements as separate PDFs for each year — either is fine.",
     acceptedFormats: [MIME_PDF],
     formatLabel: 'PDF only',
     isOptional: false,

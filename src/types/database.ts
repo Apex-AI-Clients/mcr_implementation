@@ -344,6 +344,7 @@ export type Database = {
           financial_years: number[]
           generated_at: string
           id: string
+          stale_since: string | null
         }
         Insert: {
           ai_summary?: string | null
@@ -354,6 +355,7 @@ export type Database = {
           financial_years: number[]
           generated_at?: string
           id?: string
+          stale_since?: string | null
         }
         Update: {
           ai_summary?: string | null
@@ -364,6 +366,7 @@ export type Database = {
           financial_years?: number[]
           generated_at?: string
           id?: string
+          stale_since?: string | null
         }
         Relationships: [
           {
@@ -375,59 +378,147 @@ export type Database = {
           },
         ]
       }
-      financial_statements: {
+      financial_document_extractions: {
         Row: {
-          balance_sheet: Json
           client_id: string
           document_id: string
+          encrypted: boolean
+          extracted_at: string
+          heading_entity: Json | null
+          heading_years: number[]
+          kind: string
+          model: string | null
+          page_map: Json
+          raw_response: Json | null
+          warnings: Json
+        }
+        Insert: {
+          client_id: string
+          document_id: string
+          encrypted?: boolean
+          extracted_at?: string
+          heading_entity?: Json | null
+          heading_years?: number[]
+          kind: string
+          model?: string | null
+          page_map?: Json
+          raw_response?: Json | null
+          warnings?: Json
+        }
+        Update: {
+          client_id?: string
+          document_id?: string
+          encrypted?: boolean
+          extracted_at?: string
+          heading_entity?: Json | null
+          heading_years?: number[]
+          kind?: string
+          model?: string | null
+          page_map?: Json
+          raw_response?: Json | null
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_document_extractions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_document_extractions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_statements: {
+        Row: {
+          balance_sheet: Json | null
+          bs_document_id: string | null
+          bs_extracted_at: string | null
+          bs_source_filename: string | null
+          bs_warnings: Json
+          client_id: string
+          document_id: string | null
           extracted_at: string
           extraction_model: string | null
           extraction_warnings: Json
           financial_year: number
           id: string
-          income_statement: Json
+          income_statement: Json | null
+          is_document_id: string | null
+          is_extracted_at: string | null
+          is_source_filename: string | null
+          is_warnings: Json
           period_end_date: string
           period_label: string | null
           period_start_date: string | null
           raw_extraction: Json | null
           source_column: string
-          source_filename: string
+          source_filename: string | null
         }
         Insert: {
-          balance_sheet: Json
+          balance_sheet?: Json | null
+          bs_document_id?: string | null
+          bs_extracted_at?: string | null
+          bs_source_filename?: string | null
+          bs_warnings?: Json
           client_id: string
-          document_id: string
+          document_id?: string | null
           extracted_at?: string
           extraction_model?: string | null
           extraction_warnings?: Json
           financial_year: number
           id?: string
-          income_statement: Json
+          income_statement?: Json | null
+          is_document_id?: string | null
+          is_extracted_at?: string | null
+          is_source_filename?: string | null
+          is_warnings?: Json
           period_end_date: string
           period_label?: string | null
           period_start_date?: string | null
           raw_extraction?: Json | null
           source_column: string
-          source_filename: string
+          source_filename?: string | null
         }
         Update: {
-          balance_sheet?: Json
+          balance_sheet?: Json | null
+          bs_document_id?: string | null
+          bs_extracted_at?: string | null
+          bs_source_filename?: string | null
+          bs_warnings?: Json
           client_id?: string
-          document_id?: string
+          document_id?: string | null
           extracted_at?: string
           extraction_model?: string | null
           extraction_warnings?: Json
           financial_year?: number
           id?: string
-          income_statement?: Json
+          income_statement?: Json | null
+          is_document_id?: string | null
+          is_extracted_at?: string | null
+          is_source_filename?: string | null
+          is_warnings?: Json
           period_end_date?: string
           period_label?: string | null
           period_start_date?: string | null
           raw_extraction?: Json | null
           source_column?: string
-          source_filename?: string
+          source_filename?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "financial_statements_bs_document_id_fkey"
+            columns: ["bs_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "financial_statements_client_id_fkey"
             columns: ["client_id"]
@@ -438,6 +529,13 @@ export type Database = {
           {
             foreignKeyName: "financial_statements_document_id_fkey"
             columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_statements_is_document_id_fkey"
+            columns: ["is_document_id"]
             isOneToOne: false
             referencedRelation: "documents"
             referencedColumns: ["id"]

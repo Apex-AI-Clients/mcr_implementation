@@ -1,7 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
-import type { ExtractedBalanceSheet } from '@/lib/financials/types'
+import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import type { StoredStatementSlot } from '@/lib/financials/types'
 import type { EnrichedRow } from '@/lib/analysis/types'
 import type { Json } from '@/types/database'
 import { differenceInCalendarDays } from 'date-fns'
@@ -26,7 +28,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [lodgement, statement, cached] = await Promise.all([
+  const [lodgement, slots, cached] = await Promise.all([
     supabase
       .from('lodgement_analyses')
       .select('id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
@@ -34,13 +36,8 @@ export default async function OutcomePredictionPage({ params }: Props) {
       .order('analysed_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from('financial_statements')
-      .select('financial_year, balance_sheet')
-      .eq('client_id', id)
-      .order('financial_year', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    // Read as halves: a year may have a P&L but no balance sheet.
+    loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
     supabase
       .from('sbr_outcome_predictions')
       .select('*')
@@ -48,7 +45,8 @@ export default async function OutcomePredictionPage({ params }: Props) {
       .maybeSingle(),
   ])
 
-  const balanceSheet = (statement.data?.balance_sheet ?? null) as ExtractedBalanceSheet | null
+  const statement = latestBalanceSheet(slots)
+  const balanceSheet = statement?.balanceSheet ?? null
 
   // Auto-detect the director loan at appointment from the latest balance sheet
   // so the manual checkbox pre-fills on first load. The operator can override.
@@ -59,7 +57,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     ? null
     : directorLoanValue > 0
       ? `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${
-          statement.data?.financial_year ? `FY${statement.data.financial_year} balance sheet` : 'most recent balance sheet'
+          statement ? `FY${statement.slot.financialYear} balance sheet` : 'most recent balance sheet'
         }.`
       : 'No director loan line item found on most recent balance sheet.'
 
@@ -75,9 +73,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
     creditorAmount: balanceSheet
       ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
       : null,
-    latestFinancialYear: statement.data?.financial_year ?? null,
+    latestFinancialYear: statement?.slot.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
-    hasFinancials: Boolean(statement.data),
+    hasFinancials: slots.length > 0,
   }
 
   return (

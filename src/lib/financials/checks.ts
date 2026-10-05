@@ -1,0 +1,450 @@
+import { digitsOnly } from '@/lib/asic/identifiers'
+import type { MergedStatement } from './statementSelection'
+import type {
+  ExtractedFinancialStatement,
+  ExtractionWarning,
+  FinancialCheck,
+  FinancialDocumentKind,
+  HeadingEntity,
+  StatementHalfKey,
+  StoredStatementSlot,
+} from './types'
+
+/**
+ * Checks over a client's stored statements, run when the comparison is built
+ * and stored with it. Pure. They report; they never change a figure.
+ *
+ *   totals_reconciliation / balance_sheet_equation
+ *       Each statement's own arithmetic, recomputed on the merged data so a
+ *       statement assembled from two files is checked as it is used.
+ *   retained_earnings_rollforward
+ *       Opening retained earnings + the year's profit against closing.
+ *       Dividends and drawings can only take retained earnings DOWN, so a
+ *       closing figure above opening + profit is a warning, and one below it
+ *       is information: it implies a distribution of the difference.
+ *   restatement
+ *       The same year and line read differently from the year's own file and
+ *       from the next year's comparative column.
+ *   entity_mismatch
+ *       The heading's ABN or name against the client file: a company's own
+ *       ABN, or for a trust the trust's ABN and name.
+ *   not_statements / extraction_note
+ *       What the pre-pass and extraction recorded about each document.
+ */
+
+export const ANNUAL_TOLERANCE = 50
+/** Interim exports carry rounding and suspense lines. Balance sheet only. */
+export const CURRENT_PERIOD_BS_TOLERANCE = 200
+export const YEAR_WINDOW = 4
+
+const money = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(Math.round(n)).toLocaleString('en-AU')}`
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+// ─── Year window ──────────────────────────────────────────────────────────────
+
+/** The latest YEAR_WINDOW annual years go into the comparison; older ones are extra. */
+export function applyYearWindow(
+  annual: MergedStatement[],
+  size = YEAR_WINDOW,
+): { used: MergedStatement[]; extraYears: number[] } {
+  const sorted = [...annual].sort((a, b) => a.statement.financialYear - b.statement.financialYear)
+  const used = sorted.slice(-size)
+  const extraYears = sorted.slice(0, Math.max(0, sorted.length - size)).map((m) => m.statement.financialYear)
+  return { used, extraYears }
+}
+
+// ─── Arithmetic ───────────────────────────────────────────────────────────────
+
+export interface ArithmeticFinding {
+  statement: StatementHalfKey
+  kind: 'totals_reconciliation' | 'balance_sheet_equation'
+  message: string
+}
+
+/**
+ * A statement's own arithmetic. Each identity is checked only when every
+ * figure in it is present.
+ */
+export function arithmeticFindings(
+  s: Pick<ExtractedFinancialStatement, 'incomeStatement' | 'balanceSheet'>,
+  { currentPeriod = false } = {},
+): ArithmeticFinding[] {
+  const out: ArithmeticFinding[] = []
+  const bsTolerance = currentPeriod ? CURRENT_PERIOD_BS_TOLERANCE : ANNUAL_TOLERANCE
+  const t = s.incomeStatement.totals ?? {}
+  const b = s.balanceSheet.totals ?? {}
+
+  const [income, cogs, expenses, pbt] = [t.totalIncome, t.totalCogs, t.totalExpenses, t.profitBeforeTax].map(num)
+  if (income !== null && cogs !== null && expenses !== null && pbt !== null) {
+    const calc = income - cogs - expenses
+    if (Math.abs(calc - pbt) > ANNUAL_TOLERANCE) {
+      out.push({
+        statement: 'income_statement',
+        kind: 'totals_reconciliation',
+        message: `Total income ${money(income)} − cost of sales ${money(cogs)} − expenses ${money(expenses)} = ${money(calc)}, but the profit before tax shown is ${money(pbt)}.`,
+      })
+    }
+  }
+
+  const [ca, nca, ta, cl, ncl, tl, na, te] = [
+    b.totalCurrentAssets,
+    b.totalNonCurrentAssets,
+    b.totalAssets,
+    b.totalCurrentLiabilities,
+    b.totalNonCurrentLiabilities,
+    b.totalLiabilities,
+    b.netAssets,
+    b.totalEquity,
+  ].map(num)
+
+  if (ca !== null && nca !== null && ta !== null && Math.abs(ca + nca - ta) > bsTolerance) {
+    out.push({
+      statement: 'balance_sheet',
+      kind: 'totals_reconciliation',
+      message: `Current assets ${money(ca)} + non-current assets ${money(nca)} = ${money(ca + nca)}, but total assets shown is ${money(ta)}.`,
+    })
+  }
+  if (cl !== null && ncl !== null && tl !== null && Math.abs(cl + ncl - tl) > bsTolerance) {
+    out.push({
+      statement: 'balance_sheet',
+      kind: 'totals_reconciliation',
+      message: `Current liabilities ${money(cl)} + non-current liabilities ${money(ncl)} = ${money(cl + ncl)}, but total liabilities shown is ${money(tl)}.`,
+    })
+  }
+  if (ta !== null && tl !== null && na !== null && Math.abs(ta - tl - na) > bsTolerance) {
+    out.push({
+      statement: 'balance_sheet',
+      kind: 'balance_sheet_equation',
+      message: `Total assets ${money(ta)} − total liabilities ${money(tl)} = ${money(ta - tl)}, but net assets shown is ${money(na)}.`,
+    })
+  }
+  if (na !== null && te !== null && Math.abs(na - te) > bsTolerance) {
+    out.push({
+      statement: 'balance_sheet',
+      kind: 'balance_sheet_equation',
+      message: `Net assets ${money(na)} does not equal total equity ${money(te)}.`,
+    })
+  }
+  return out
+}
+
+function documentIdsOf(m: MergedStatement, half?: StatementHalfKey): string[] {
+  const halves: StatementHalfKey[] = half ? [half] : ['income_statement', 'balance_sheet']
+  return [...new Set(halves.map((h) => m.sources[h]?.documentId).filter((id): id is string => !!id))]
+}
+
+export function arithmeticChecks(merged: MergedStatement[], current: MergedStatement | null): FinancialCheck[] {
+  const out: FinancialCheck[] = []
+  const run = (m: MergedStatement, currentPeriod: boolean) => {
+    for (const f of arithmeticFindings(m.statement, { currentPeriod })) {
+      out.push({
+        kind: f.kind,
+        severity: 'warning',
+        financialYear: m.statement.financialYear,
+        statement: f.statement,
+        ...(currentPeriod ? { currentPeriod: true } : {}),
+        message: f.message,
+        documentIds: documentIdsOf(m, f.statement),
+      })
+    }
+  }
+  for (const m of merged) run(m, false)
+  if (current) run(current, true)
+  return out
+}
+
+// ─── Retained earnings roll-forward ──────────────────────────────────────────
+
+/**
+ * For each year checked, with the previous year's balance sheet available:
+ * opening retained earnings + profit vs closing. Profit after tax when shown,
+ * else before tax. Skipped when retained earnings are not on both balance
+ * sheets (a trust usually has none — it distributes).
+ */
+export function rollForwardChecks(all: MergedStatement[], yearsToCheck: number[]): FinancialCheck[] {
+  const byYear = new Map(all.map((m) => [m.statement.financialYear, m]))
+  const out: FinancialCheck[] = []
+  for (const year of yearsToCheck) {
+    const thisYear = byYear.get(year)
+    const lastYear = byYear.get(year - 1)
+    if (!thisYear || !lastYear) continue
+    if (!thisYear.sources.balance_sheet || !lastYear.sources.balance_sheet || !thisYear.sources.income_statement) continue
+
+    const opening = num(lastYear.statement.balanceSheet.equity?.retainedEarnings)
+    const closing = num(thisYear.statement.balanceSheet.equity?.retainedEarnings)
+    const totals = thisYear.statement.incomeStatement.totals ?? {}
+    const profit = num(totals.netProfitAfterTax) ?? num(totals.profitBeforeTax)
+    if (opening === null || closing === null || profit === null) continue
+
+    const expected = opening + profit
+    const gap = closing - expected
+    if (Math.abs(gap) <= ANNUAL_TOLERANCE) continue
+
+    const documentIds = [...new Set([...documentIdsOf(thisYear), ...documentIdsOf(lastYear, 'balance_sheet')])]
+    out.push(
+      gap > 0
+        ? {
+            kind: 'retained_earnings_rollforward',
+            severity: 'warning',
+            financialYear: year,
+            statement: 'balance_sheet',
+            message: `Retained earnings rose to ${money(closing)}, more than opening ${money(opening)} plus the year's profit ${money(profit)} (${money(expected)}). Dividends can only lower it, so a figure is likely wrong.`,
+            documentIds,
+          }
+        : {
+            kind: 'retained_earnings_rollforward',
+            severity: 'info',
+            financialYear: year,
+            statement: 'balance_sheet',
+            message: `Retained earnings closed at ${money(closing)}: opening ${money(opening)} plus the year's profit ${money(profit)} less ${money(-gap)}, which implies dividends or other distributions of that amount.`,
+            documentIds,
+          },
+    )
+  }
+  return out
+}
+
+// ─── Restatement ──────────────────────────────────────────────────────────────
+
+export function restatementTolerance(a: number, b: number): number {
+  return Math.max(ANNUAL_TOLERANCE, 0.005 * Math.max(Math.abs(a), Math.abs(b)))
+}
+
+/** Every numeric leaf of a statement, keyed "section.key" (including `other` entries). */
+function leaves(value: unknown, prefix = ''): Map<string, number> {
+  const out = new Map<string, number>()
+  if (!value || typeof value !== 'object') return out
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (typeof child === 'number' && Number.isFinite(child)) out.set(path, child)
+    else if (child && typeof child === 'object') for (const [k, v] of leaves(child, path)) out.set(k, v)
+  }
+  return out
+}
+
+/** "currentLiabilities.atoLiability" -> "ato liability"; "other.Loan 2020" -> "Loan 2020". */
+function lineLabel(path: string): string {
+  const last = path.split('.').pop() ?? path
+  if (path.includes('.other.')) return last
+  return last.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+}
+
+const MAX_LINES_LISTED = 5
+
+/**
+ * A year read from its own file (primary) and from the next year's file
+ * (comparative): any line that differs beyond tolerance. Comparatives get
+ * restated — reclassified, or corrected after the year was signed — and the
+ * comparison uses the year's own figures, so this says which ones moved.
+ */
+export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[] {
+  const out: FinancialCheck[] = []
+  const years = [...new Set(slots.map((s) => s.financialYear))].sort((a, b) => a - b)
+  for (const year of years) {
+    const primary = slots.find((s) => s.financialYear === year && s.sourceColumn === 'primary')
+    const comparative = slots.find((s) => s.financialYear === year && s.sourceColumn === 'comparative')
+    if (!primary || !comparative) continue
+
+    for (const half of ['income_statement', 'balance_sheet'] as const) {
+      const own = half === 'income_statement' ? primary.incomeStatement : primary.balanceSheet
+      const later = half === 'income_statement' ? comparative.incomeStatement : comparative.balanceSheet
+      if (!own || !later) continue
+
+      const a = leaves(own.data)
+      const b = leaves(later.data)
+      const moved: string[] = []
+      for (const [path, ownValue] of a) {
+        const laterValue = b.get(path)
+        if (laterValue === undefined) continue
+        if (Math.abs(ownValue - laterValue) > restatementTolerance(ownValue, laterValue)) {
+          moved.push(`${lineLabel(path)} ${money(ownValue)} → ${money(laterValue)}`)
+        }
+      }
+      if (moved.length === 0) continue
+      const listed = moved.slice(0, MAX_LINES_LISTED).join('; ')
+      const more = moved.length > MAX_LINES_LISTED ? ` and ${moved.length - MAX_LINES_LISTED} more` : ''
+      out.push({
+        kind: 'restatement',
+        severity: 'warning',
+        financialYear: year,
+        statement: half,
+        message: `FY${year} differs between its own file (${own.sourceFilename ?? 'unknown'}) and the comparative column of ${later.sourceFilename ?? 'a later file'}: ${listed}${more}. The comparison uses the year's own figures.`,
+        documentIds: [own.documentId, later.documentId].filter((id): id is string => !!id),
+      })
+    }
+  }
+  return out
+}
+
+// ─── Entity ───────────────────────────────────────────────────────────────────
+
+export interface CompanyDetailsForCheck {
+  entityType: string | null
+  companyName: string | null
+  abnNumber: string | null
+  trustName: string | null
+  trustAbnNumber: string | null
+}
+
+export interface DocumentRecordForCheck {
+  documentId: string
+  filename: string
+  kind: FinancialDocumentKind
+  headingEntity: HeadingEntity | null
+  warnings: ExtractionWarning[]
+}
+
+/** For comparing names: no punctuation, no legal-form or trustee words. */
+export function comparableName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\b(pty|ltd|limited|proprietary|the|trustee|trustees|for|atf|as|a t f)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function entityChecks(
+  records: DocumentRecordForCheck[],
+  company: CompanyDetailsForCheck | null,
+): FinancialCheck[] {
+  if (!company) return []
+  const isTrust = company.entityType === 'trust'
+  const expectedAbn = digitsOnly((isTrust ? company.trustAbnNumber : company.abnNumber) ?? '')
+  const companyAbn = digitsOnly(company.abnNumber ?? '')
+  const expectedName = (isTrust ? company.trustName : company.companyName) ?? null
+  const out: FinancialCheck[] = []
+
+  for (const record of records) {
+    const heading = record.headingEntity
+    if (!heading) continue
+    const problems: string[] = []
+
+    if (expectedAbn && heading.abns.length > 0 && !heading.abns.includes(expectedAbn)) {
+      const printed = heading.abns.join(', ')
+      problems.push(
+        isTrust && companyAbn && heading.abns.includes(companyAbn)
+          ? `it prints the trustee company's ABN (${printed}), not the trust's ABN (${expectedAbn})`
+          : `it prints ABN ${printed}, but the client file has ${expectedAbn}`,
+      )
+    }
+
+    if (expectedName && heading.name) {
+      const want = comparableName(expectedName)
+      if (want && !comparableName(heading.name).includes(want)) {
+        problems.push(`its heading names "${heading.name}", but the client file has "${expectedName}"`)
+      }
+    }
+
+    if (problems.length > 0) {
+      out.push({
+        kind: 'entity_mismatch',
+        severity: 'warning',
+        financialYear: null,
+        statement: null,
+        message: `${record.filename}: ${problems.join('; ')}. Check it belongs to this client.`,
+        documentIds: [record.documentId],
+      })
+    }
+  }
+  return out
+}
+
+// ─── Documents and extraction notes ──────────────────────────────────────────
+
+const WARNING_KINDS = new Set<ExtractionWarning['kind']>([
+  'year_mismatch',
+  'presence_mismatch',
+  'document_kind',
+  'filename_year_conflict',
+])
+
+/** What was recorded about each document: not statements at all, and its notes. */
+export function documentChecks(records: DocumentRecordForCheck[]): FinancialCheck[] {
+  const out: FinancialCheck[] = []
+  for (const record of records) {
+    if (record.kind === 'not_financial' || record.kind === 'tax_return_only') {
+      out.push({
+        kind: 'not_statements',
+        severity: 'warning',
+        financialYear: null,
+        statement: null,
+        message: `${record.filename}: ${
+          record.kind === 'tax_return_only'
+            ? 'holds a tax return but no Income Statement or Balance Sheet'
+            : 'does not look like financial statements'
+        }. Nothing was taken from it.`,
+        documentIds: [record.documentId],
+      })
+      continue
+    }
+    for (const w of record.warnings) {
+      if (w.kind === 'document_kind') continue
+      out.push({
+        kind: 'extraction_note',
+        severity: WARNING_KINDS.has(w.kind) ? 'warning' : 'info',
+        financialYear: null,
+        statement: null,
+        message: `${record.filename}: ${w.message}`,
+        documentIds: [record.documentId],
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * The warnings stored with each half the comparison uses. Reconciliation
+ * warnings are left out: arithmeticChecks() recomputes them on the merged data.
+ */
+export function extractionNotes(merged: MergedStatement[], current: MergedStatement | null): FinancialCheck[] {
+  const out: FinancialCheck[] = []
+  const seen = new Set<string>()
+  for (const [m, currentPeriod] of [...merged.map((m) => [m, false] as const), ...(current ? [[current, true] as const] : [])]) {
+    for (const w of m.statement.warnings) {
+      if (w.kind === 'totals_reconciliation') continue
+      const key = `${m.statement.financialYear}|${currentPeriod}|${w.kind}|${w.message}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const half: StatementHalfKey | null =
+        w.section === 'incomeStatement' ? 'income_statement' : w.section === 'balanceSheet' ? 'balance_sheet' : null
+      out.push({
+        kind: 'extraction_note',
+        severity: WARNING_KINDS.has(w.kind) ? 'warning' : 'info',
+        financialYear: m.statement.financialYear,
+        statement: half,
+        ...(currentPeriod ? { currentPeriod: true } : {}),
+        message: w.message,
+        documentIds: documentIdsOf(m, half ?? undefined),
+      })
+    }
+  }
+  return out
+}
+
+/** Every check, warnings first, then by year. */
+export function runChecks(input: {
+  slots: StoredStatementSlot[]
+  allAnnual: MergedStatement[]
+  used: MergedStatement[]
+  current: MergedStatement | null
+  records: DocumentRecordForCheck[]
+  company: CompanyDetailsForCheck | null
+}): FinancialCheck[] {
+  const { slots, allAnnual, used, current, records, company } = input
+  const usedYears = new Set(used.map((m) => m.statement.financialYear))
+  const checks = [
+    ...arithmeticChecks(used, current),
+    ...rollForwardChecks(allAnnual, [...usedYears]),
+    ...restatementChecks(slots).filter((c) => c.financialYear === null || usedYears.has(c.financialYear)),
+    ...entityChecks(records, company),
+    ...documentChecks(records),
+    ...extractionNotes(used, current),
+  ]
+  const rank = (c: FinancialCheck) => (c.severity === 'warning' ? 0 : 1)
+  return checks.sort(
+    (a, b) => rank(a) - rank(b) || (a.financialYear ?? 0) - (b.financialYear ?? 0),
+  )
+}

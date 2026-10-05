@@ -51,3 +51,4 @@ CRM_BUILD.md
 # Real ASIC extracts dropped in the repo root for local testing. They carry dates
 # of birth and residential addresses and must never be committed.
 /*.pdf
+graphify-out

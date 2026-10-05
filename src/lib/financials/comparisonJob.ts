@@ -11,16 +11,39 @@
  *   2. The legacy synchronous routes (extract-financials, financials-comparison)
  *      which now delegate here so there is a single implementation.
  *
+ * Per document: the text pre-pass (prepass.ts) says what the file is and
+ * where its statements are; documents that are not statements stop there.
+ * The rest are extracted, and each column is written half by half
+ * (halfWrites.ts), so a P&L file and a Balance Sheet file for the same year
+ * fill the same slot instead of overwriting each other. What the pre-pass
+ * found is recorded per document in financial_document_extractions.
+ *
  * Nothing in this module does auth — callers are responsible for that.
  */
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { computeFinancialsComparison } from '@/lib/financials/computeComparison'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
 import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
+import {
+  applyYearWindow,
+  runChecks,
+  type CompanyDetailsForCheck,
+  type DocumentRecordForCheck,
+} from '@/lib/financials/checks'
+import { planDocument } from '@/lib/financials/documentPlan'
+import { planSlotWrite, type WritingDocument } from '@/lib/financials/halfWrites'
+import { runFinancialsPrepass, type FinancialsPrepass } from '@/lib/financials/prepass'
+import { mergeAnnualYears, mergeCurrentPeriod } from '@/lib/financials/statementSelection'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type {
   ExtractedFinancialStatement,
+  ExtractionWarning,
+  FinancialDocumentKind,
   FinancialsComparison,
+  HeadingEntity,
+  StoredStatementSlot,
 } from '@/lib/financials/types'
+import type { Json } from '@/types/database'
 
 type SupabaseClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -66,6 +89,7 @@ interface DocumentRow {
   file_path: string
   original_filename: string
   doc_category: string
+  uploaded_at: string | null
 }
 
 interface ExtractOptions {
@@ -89,7 +113,7 @@ export async function extractAllFinancials(
 
   let docsQuery = supabase
     .from('documents')
-    .select('id, file_path, original_filename, doc_category')
+    .select('id, file_path, original_filename, doc_category, uploaded_at')
     .eq('client_id', clientId)
     .in('doc_category', ['historical_financials', 'current_financials'])
     .order('uploaded_at', { ascending: true })
@@ -110,6 +134,16 @@ export async function extractAllFinancials(
     `[extract-financials] processing ${documents.length} document(s) sequentially`,
   )
 
+  // When each of the client's documents was uploaded, so a half already stored
+  // from another file is replaced only by a more recent upload — also when
+  // only a subset of documents is being re-extracted.
+  const { data: allDocs } = await supabase
+    .from('documents')
+    .select('id, uploaded_at')
+    .eq('client_id', clientId)
+  const uploadedAt = new Map((allDocs ?? []).map((d) => [d.id, d.uploaded_at ?? null]))
+  const uploadedAtOf = (documentId: string) => uploadedAt.get(documentId) ?? null
+
   let extracted = 0
   let skipped = 0
   const errors: ExtractError[] = []
@@ -129,7 +163,7 @@ export async function extractAllFinancials(
     }
 
     try {
-      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase)
+      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf)
       extracted += result.wrote
       skipped += result.skipped
       if (result.error) {
@@ -164,6 +198,7 @@ async function processDocument(
   total: number,
   clientId: string,
   supabase: SupabaseClient,
+  uploadedAtOf: (documentId: string) => string | null,
 ): Promise<ProcessResult> {
   const tag = `[extract-financials][${index}/${total}]`
   const start = Date.now()
@@ -181,12 +216,26 @@ async function processDocument(
     const arrayBuffer = await blob.arrayBuffer()
     const pdfBytes = new Uint8Array(arrayBuffer)
     const sizeMb = (pdfBytes.length / (1024 * 1024)).toFixed(2)
-    console.log(`${tag} downloaded ${sizeMb}MB, calling OpenRouter`)
 
+    // Our own read of the text layer first: what the file is, and where.
+    const prepass = await runFinancialsPrepass(pdfBytes)
+    const plan = planDocument(prepass)
+    console.log(
+      `${tag} downloaded ${sizeMb}MB; pre-pass kind=${prepass.classification.kind} failure=${prepass.failure ?? 'none'} encrypted=${prepass.encrypted}`,
+    )
+
+    if (!plan.extract) {
+      await recordDocumentExtraction(supabase, { clientId, documentId: doc.id, prepass, warnings: plan.warnings })
+      console.log(`${tag} SKIPPED (${prepass.classification.kind}) — nothing stored`)
+      return { wrote: 0, skipped: 0, error: null }
+    }
+
+    console.log(`${tag} calling OpenRouter`)
     const result = await withTimeout(
       extractFinancialStatementFromPdf({
         pdfBytes,
         sourceFilename: doc.original_filename,
+        prepass,
       }),
       PER_DOCUMENT_TIMEOUT_MS,
       `extraction timed out after ${PER_DOCUMENT_TIMEOUT_MS / 1000}s`,
@@ -197,23 +246,32 @@ async function processDocument(
       `${tag} extracted ${result.statements.length} statement(s) in ${apiElapsed}s; persisting`,
     )
 
+    const document: WritingDocument = {
+      id: doc.id,
+      filename: doc.original_filename,
+      uploadedAt: doc.uploaded_at,
+    }
     let wrote = 0
     let skipped = 0
     for (const statement of result.statements) {
-      const action = await upsertWithPrimaryWins({
-        supabase,
-        clientId,
-        documentId: doc.id,
-        sourceFilename: doc.original_filename,
-        statement,
-        rawResponse: result.rawResponse,
-      })
-      if (action === 'wrote') wrote++
-      else skipped++
+      const decisions = await writeStatementHalves({ supabase, clientId, document, statement, uploadedAtOf })
+      for (const decision of Object.values(decisions)) {
+        if (decision === 'written') wrote++
+        else if (decision === 'kept_newer_upload') skipped++
+      }
     }
 
+    await recordDocumentExtraction(supabase, {
+      clientId,
+      documentId: doc.id,
+      prepass,
+      warnings: [...plan.warnings, ...result.documentWarnings],
+      rawResponse: result.rawResponse,
+      model: result.model,
+    })
+
     const totalElapsed = ((Date.now() - start) / 1000).toFixed(1)
-    console.log(`${tag} DONE wrote=${wrote} skipped=${skipped} elapsed=${totalElapsed}s`)
+    console.log(`${tag} DONE halves wrote=${wrote} kept-newer=${skipped} elapsed=${totalElapsed}s`)
 
     return { wrote, skipped, error: null }
   } catch (err) {
@@ -239,110 +297,86 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-interface UpsertInput {
+/**
+ * Write one extracted column into its slot, half by half (see halfWrites.ts).
+ * Read-then-write without a lock: a client has one extraction job at a time
+ * (the start route refuses a second), so nothing races this.
+ */
+async function writeStatementHalves(input: {
   supabase: SupabaseClient
   clientId: string
-  documentId: string
-  sourceFilename: string
+  document: WritingDocument
   statement: ExtractedFinancialStatement
-  rawResponse: unknown
-}
+  uploadedAtOf: (documentId: string) => string | null
+}) {
+  const { supabase, clientId, document, statement, uploadedAtOf } = input
 
-/**
- * Source-column-aware upsert for financial statements.
- *
- * Each (client, financial_year, source_column) is its own slot. The legacy
- * "primary wins over comparative" and "real data wins over empty" guards apply
- * WITHIN a single source_column slot.
- */
-async function upsertWithPrimaryWins(input: UpsertInput): Promise<'wrote' | 'skipped'> {
-  const { supabase, clientId, documentId, sourceFilename, statement, rawResponse } = input
-
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('financial_statements')
-    .select('id, source_column, income_statement, balance_sheet')
+    .select('*')
     .eq('client_id', clientId)
     .eq('financial_year', statement.financialYear)
     .eq('source_column', statement.sourceColumn)
     .maybeSingle()
-
-  // Rule 1: never overwrite a primary with a comparative.
-  if (
-    existing &&
-    existing.source_column === 'primary' &&
-    statement.sourceColumn === 'comparative'
-  ) {
-    return 'skipped'
+  if (readError) {
+    throw new Error(`Failed to read statement for FY${statement.financialYear}: ${readError.message}`)
   }
 
-  // Rule 2: never overwrite a row that has real data with one that doesn't.
-  if (existing && hasMeaningfulData(existing.income_statement, existing.balance_sheet)) {
-    const newHasData = hasMeaningfulData(
-      statement.incomeStatement as unknown as Record<string, unknown>,
-      statement.balanceSheet as unknown as Record<string, unknown>,
-    )
-    if (!newHasData) {
-      return 'skipped'
-    }
+  const plan = planSlotWrite({
+    clientId,
+    existing,
+    statement,
+    document,
+    uploadedAtOf,
+    now: new Date().toISOString(),
+  })
+
+  if (plan.op === 'insert') {
+    const { error } = await supabase.from('financial_statements').insert(plan.values)
+    if (error) throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)
+  } else if (plan.op === 'update') {
+    const { error } = await supabase.from('financial_statements').update(plan.values).eq('id', plan.id)
+    if (error) throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)
   }
-
-  const payload = {
-    client_id: clientId,
-    document_id: documentId,
-    source_filename: sourceFilename,
-    financial_year: statement.financialYear,
-    period_end_date: statement.periodEndDate,
-    period_start_date: statement.periodStartDate ?? null,
-    period_label: statement.periodLabel ?? null,
-    source_column: statement.sourceColumn,
-    income_statement: statement.incomeStatement as unknown as Record<string, unknown>,
-    balance_sheet: statement.balanceSheet as unknown as Record<string, unknown>,
-    raw_extraction: rawResponse as Record<string, unknown> | null,
-    extraction_warnings: statement.warnings as unknown as Record<string, unknown>[],
-    extracted_at: new Date().toISOString(),
-    extraction_model: statement.extractionModel ?? null,
-  }
-
-  const { error } = await supabase
-    .from('financial_statements')
-    .upsert(payload, { onConflict: 'client_id,financial_year,source_column' })
-
-  if (error) {
-    throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)
-  }
-
-  return 'wrote'
+  return plan.decisions
 }
 
-function hasMeaningfulData(incomeStatement: unknown, balanceSheet: unknown): boolean {
-  const is = (incomeStatement ?? {}) as {
-    income?: { sales?: number | null }
-    totals?: { totalIncome?: number | null }
-  }
-  const bs = (balanceSheet ?? {}) as {
-    totals?: { totalAssets?: number | null; netAssets?: number | null }
-  }
-  return (
-    is.income?.sales != null ||
-    is.totals?.totalIncome != null ||
-    bs.totals?.totalAssets != null ||
-    bs.totals?.netAssets != null
+/** What the pre-pass found about a document, and its document-level warnings. */
+async function recordDocumentExtraction(
+  supabase: SupabaseClient,
+  input: {
+    clientId: string
+    documentId: string
+    prepass: FinancialsPrepass
+    warnings: ExtractionWarning[]
+    rawResponse?: unknown
+    model?: string
+  },
+): Promise<void> {
+  const { clientId, documentId, prepass, warnings, rawResponse, model } = input
+  const c = prepass.classification
+  const { error } = await supabase.from('financial_document_extractions').upsert(
+    {
+      document_id: documentId,
+      client_id: clientId,
+      kind: c.kind,
+      page_map: c.pages.map((p) => ({ page: p.page, class: p.class, ...(p.section ? { section: p.section } : {}) })) as unknown as Json,
+      heading_years: [...c.headingYears, ...(c.currentPeriodYear !== null ? [c.currentPeriodYear] : [])],
+      heading_entity: c.entity as unknown as Json,
+      encrypted: prepass.encrypted,
+      warnings: warnings as unknown as Json,
+      raw_response: (rawResponse ?? null) as Json,
+      model: model ?? null,
+      extracted_at: new Date().toISOString(),
+    },
+    { onConflict: 'document_id' },
   )
+  // The statements are already stored; losing this record only loses the
+  // coverage details, so it is logged rather than failing the document.
+  if (error) console.error(`[extract-financials] failed to record extraction for ${documentId}: ${error.message}`)
 }
 
 // ─── Comparison build ──────────────────────────────────────────────────────────
-
-interface RawStatementRow {
-  financial_year: number
-  source_column: string
-  source_filename: string
-  period_end_date: string
-  income_statement: unknown
-  balance_sheet: unknown
-  raw_extraction: unknown
-  extraction_warnings: unknown
-  extraction_model: string | null
-}
 
 /**
  * Read the extracted statements for a client, compute the comparison, generate
@@ -353,44 +387,45 @@ export async function buildAndPersistComparison(
   clientId: string,
   supabase: SupabaseClient,
 ): Promise<BuildComparisonResult> {
-  const { data: allStatements, error: stmtError } = await supabase
-    .from('financial_statements')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('financial_year', { ascending: true })
-
-  if (stmtError) {
-    console.error('[financials-comparison] statements query failed', stmtError)
+  let slots: StoredStatementSlot[]
+  try {
+    slots = await loadStoredSlots(supabase, clientId)
+  } catch (err) {
+    console.error('[financials-comparison] statements query failed', err)
     return { ok: false, status: 500, error: 'Failed to load statements.', extractedCount: 0 }
   }
 
-  const rawStatements = filterToUploadedYears(allStatements ?? [])
+  // One statement per annual FY, each half from the best source (the year's
+  // own file, else the next year's comparative column), plus the current period.
+  const annual = mergeAnnualYears(slots)
+  const currentPeriod = mergeCurrentPeriod(slots)
+  // The portal asks for the last four years: the latest four annual years go
+  // into the comparison, older ones are kept and reported as extra.
+  const { used, extraYears } = applyYearWindow(annual)
+  const statements: ExtractedFinancialStatement[] = [
+    ...used.map((m) => m.statement),
+    ...(currentPeriod ? [currentPeriod.statement] : []),
+  ]
 
-  if (!rawStatements || rawStatements.length < 2) {
+  if (statements.length < 2) {
     return {
       ok: false,
       status: 400,
       error:
         'Need at least 2 extracted annual statements to compare. Run extraction first.',
-      extractedCount: rawStatements?.length ?? 0,
+      extractedCount: statements.length,
     }
   }
 
-  const statements: ExtractedFinancialStatement[] = rawStatements.map((row) => ({
-    financialYear: row.financial_year,
-    periodEndDate: row.period_end_date,
-    sourceFilename: row.source_filename,
-    sourceColumn: row.source_column as 'primary' | 'comparative',
-    incomeStatement:
-      row.income_statement as unknown as ExtractedFinancialStatement['incomeStatement'],
-    balanceSheet: row.balance_sheet as unknown as ExtractedFinancialStatement['balanceSheet'],
-    rawExtraction:
-      (row.raw_extraction as unknown as ExtractedFinancialStatement['rawExtraction']) ?? [],
-    warnings: (row.extraction_warnings as unknown as ExtractedFinancialStatement['warnings']) ?? [],
-    extractionModel: row.extraction_model ?? undefined,
-  }))
-
-  const comparison = computeFinancialsComparison(statements)
+  const [records, company] = await Promise.all([
+    loadDocumentRecords(supabase, clientId),
+    loadCompanyDetails(supabase, clientId),
+  ])
+  const comparison: FinancialsComparison = {
+    ...computeFinancialsComparison(statements),
+    extraYears,
+    checks: runChecks({ slots, allAnnual: annual, used, current: currentPeriod, records, company }),
+  }
 
   // AI summary — best-effort; a failure here must not fail the job.
   let aiText: string | null = null
@@ -414,6 +449,8 @@ export async function buildAndPersistComparison(
       ai_summary_generated_at: aiText ? now : null,
       ai_summary_model: aiModel,
       generated_at: now,
+      // Rebuilt from the documents as they are now.
+      stale_since: null,
     },
     { onConflict: 'client_id' },
   )
@@ -437,53 +474,52 @@ export async function buildAndPersistComparison(
 }
 
 /**
- * Decide which financial_statements rows belong in the comparison. The truth
- * source for "did the user intend this year?" is the SET of years implied by
- * the uploaded filenames; rows are kept only when their financial_year is in
- * that set AND they carry meaningful data. See the original route comment for
- * the full rationale on mis-tagged primaries vs. borrowed comparatives.
+ * What the pre-pass recorded about each of the client's financials documents,
+ * for the document and entity checks. A failed read only loses those checks.
  */
-function filterToUploadedYears(allRows: RawStatementRow[]): RawStatementRow[] {
-  const uploadedYears = new Set<number>()
-  for (const row of allRows) {
-    const filenameYear = inferYearFromFilename(row.source_filename)
-    if (filenameYear !== null) uploadedYears.add(filenameYear)
+async function loadDocumentRecords(
+  supabase: SupabaseClient,
+  clientId: string,
+): Promise<DocumentRecordForCheck[]> {
+  const [{ data: records, error }, { data: documents }] = await Promise.all([
+    supabase
+      .from('financial_document_extractions')
+      .select('document_id, kind, heading_entity, warnings')
+      .eq('client_id', clientId),
+    supabase.from('documents').select('id, original_filename').eq('client_id', clientId),
+  ])
+  if (error) {
+    console.error('[financials-comparison] document records query failed', error)
+    return []
   }
-
-  const candidates = allRows.filter((r) => {
-    if (!uploadedYears.has(r.financial_year)) return false
-    return rowHasMeaningfulData(r)
-  })
-
-  const byYear = new Map<number, RawStatementRow>()
-  for (const row of candidates) {
-    const filenameYear = inferYearFromFilename(row.source_filename)
-    const existing = byYear.get(row.financial_year)
-    if (!existing) {
-      byYear.set(row.financial_year, row)
-      continue
-    }
-    const existingMatches =
-      inferYearFromFilename(existing.source_filename) === existing.financial_year
-    const newMatches = filenameYear === row.financial_year
-    if (newMatches && !existingMatches) {
-      byYear.set(row.financial_year, row)
-    }
-  }
-
-  return Array.from(byYear.values()).sort((a, b) => a.financial_year - b.financial_year)
+  const names = new Map((documents ?? []).map((d) => [d.id, d.original_filename]))
+  return (records ?? []).map((r) => ({
+    documentId: r.document_id,
+    filename: names.get(r.document_id) ?? 'A document',
+    kind: r.kind as FinancialDocumentKind,
+    headingEntity: (r.heading_entity as unknown as HeadingEntity | null) ?? null,
+    warnings: Array.isArray(r.warnings) ? (r.warnings as unknown as ExtractionWarning[]) : [],
+  }))
 }
 
-function inferYearFromFilename(filename: string): number | null {
-  const match = filename.match(/(?<!\d)(20\d{2})(?!\d)/)
-  if (!match) return null
-  const y = parseInt(match[1], 10)
-  if (y < 2000 || y > new Date().getFullYear() + 1) return null
-  return y
-}
-
-function rowHasMeaningfulData(row: RawStatementRow): boolean {
-  return hasMeaningfulData(row.income_statement, row.balance_sheet)
+async function loadCompanyDetails(
+  supabase: SupabaseClient,
+  clientId: string,
+): Promise<CompanyDetailsForCheck | null> {
+  const { data, error } = await supabase
+    .from('company_details')
+    .select('entity_type, company_name, abn_number, trust_name, trust_abn_number')
+    .eq('client_id', clientId)
+    .maybeSingle()
+  if (error) console.error('[financials-comparison] company details query failed', error)
+  if (!data) return null
+  return {
+    entityType: data.entity_type,
+    companyName: data.company_name,
+    abnNumber: data.abn_number,
+    trustName: data.trust_name,
+    trustAbnNumber: data.trust_abn_number,
+  }
 }
 
 // ─── Background job runner ───────────────────────────────────────────────────

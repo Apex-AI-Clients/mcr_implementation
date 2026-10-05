@@ -21,6 +21,9 @@ import { BalanceSheetCompareTable } from '@/components/admin/financials/BalanceS
 import { RatiosPanel } from '@/components/admin/financials/RatiosPanel'
 import { ExportButton } from '@/components/admin/financials/ExportButton'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
+import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
+import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
+import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -38,6 +41,10 @@ interface Props {
   initialExtraction: ExtractionState
   /** An in-flight job to resume polling (set when the page loads mid-run). */
   initialJobId: string | null
+  /** Which statement each year has, from the stored statements as they are now. */
+  coverage: StatementCoverage
+  /** Set when a financials document was deleted after the comparison was built. */
+  initialStaleSince: string | null
 }
 
 interface ExtractError {
@@ -74,6 +81,8 @@ export function ComparisonClient({
   initialGeneratedAt,
   initialExtraction,
   initialJobId,
+  coverage,
+  initialStaleSince,
 }: Props) {
   const router = useRouter()
   const [comparison, setComparison] = useState<FinancialsComparison | null>(initialComparison)
@@ -82,6 +91,7 @@ export function ComparisonClient({
   const [extraction, setExtraction] = useState<ExtractionState>(initialExtraction)
   const [errors, setErrors] = useState<ExtractError[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [staleSince, setStaleSince] = useState<string | null>(initialStaleSince)
 
   const [phase, setPhase] = useState<JobPhase>(initialJobId ? 'processing' : 'idle')
 
@@ -105,14 +115,17 @@ export function ComparisonClient({
         setGeneratedAt(data.result.generatedAt)
         setExtraction((prev) => ({
           ...prev,
-          extractedCount: data.result?.statementCount ?? prev.extractedCount,
+          // Documents, not statements: a full run has been through every one.
+          extractedCount: data.mode === 'full' ? prev.documentCount : prev.extractedCount,
           // A full run extracts every uploaded PDF.
           hasUnextracted: data.mode === 'full' ? false : prev.hasUnextracted,
         }))
       }
       setErrors(data.extractErrors ?? [])
       setPhase('done')
-      router.refresh() // refresh server-rendered extraction counts
+      // Rebuilt from the documents as they are now.
+      setStaleSince(null)
+      router.refresh() // refresh server-rendered extraction counts and coverage
     },
     [router],
   )
@@ -317,6 +330,31 @@ export function ComparisonClient({
 
       {errors.length > 0 && <ExtractionErrors errors={errors} />}
 
+      {/* A document behind these figures has gone since they were built. */}
+      {hasComparison && staleSince && !running && (
+        <div className="no-print flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-foreground">This comparison is out of date</p>
+            <p className="text-xs text-foreground/60 mt-0.5">
+              A financial statement file was deleted on {formatIso(staleSince)}, after these figures
+              were built. Re-run the comparison so they match the files that are left.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={runCompareOnly} disabled={running}>
+            Re-run comparison
+          </Button>
+        </div>
+      )}
+
+      {/* Which statement each year has. Built fresh from storage on every load. */}
+      {coverage.columns.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-3">Statements on file</h3>
+          <StatementCoverageTable coverage={coverage} />
+        </div>
+      )}
+
       {/* Empty / partial state — no comparison yet */}
       {!hasComparison && (
         <EmptyState
@@ -356,6 +394,10 @@ export function ComparisonClient({
             </div>
           )}
 
+          {comparison.checks && comparison.checks.length > 0 && (
+            <ComparisonChecksPanel checks={comparison.checks} />
+          )}
+
           <ScorecardTiles comparison={comparison} />
 
           {aiSummary && <AiNarrativeCallout text={aiSummary} />}
@@ -384,10 +426,11 @@ function EmptyState({
     return (
       <div className="rounded-xl border border-border bg-surface p-8 text-center">
         <p className="text-sm text-foreground/60">
-          No historical-financials PDFs have been uploaded yet.
+          No financial statement PDFs have been uploaded yet.
         </p>
         <p className="text-xs text-foreground/40 mt-1">
-          The client needs to upload at least 2 annual financial statements to enable the comparison.
+          At least 2 years of annual statements are needed — one combined PDF per year, or a separate
+          Profit and Loss and Balance Sheet.
         </p>
       </div>
     )

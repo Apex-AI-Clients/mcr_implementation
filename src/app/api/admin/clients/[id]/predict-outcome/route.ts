@@ -5,8 +5,9 @@
  * using:
  *   - Auto features from lodgement_analyses (cumulative days late, late
  *     lodgement count, days since last cash payment).
- *   - Auto feature from the latest financial_statements row
- *     (director-related loans receivable).
+ *   - Auto feature from the latest stored balance sheet
+ *     (director-related loans receivable). Read as halves: a year may have a
+ *     P&L but no balance sheet, and such a year is skipped.
  *   - Manual features supplied in the request body.
  *
  * Returns 422 with a structured "PREREQUISITES_MISSING" payload when an auto
@@ -27,7 +28,9 @@ import type {
   SbrPredictionInput,
 } from '@/lib/sbr/types'
 import type { EnrichedRow } from '@/lib/analysis/types'
-import type { ExtractedBalanceSheet } from '@/lib/financials/types'
+import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import type { StoredStatementSlot } from '@/lib/financials/types'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -52,8 +55,6 @@ const BodySchema = z.object({
   // REMOVED in v2: the director-loan-sent-to-ATO flag
 })
 
-type ServerClient = ReturnType<typeof getSupabaseServerClient>
-
 interface AutoDetectedDirectorLoan {
   detected: boolean | null
   reasoning: string | null
@@ -62,44 +63,26 @@ interface AutoDetectedDirectorLoan {
 /**
  * Auto-detect whether a director loan was on the balance sheet at appointment.
  * Prefers the current-period BS if extracted; falls back to the latest annual
- * primary statement. Returns null when no balance sheet is available.
+ * balance sheet. Returns null when no balance sheet is available.
  *
  * The detected value is returned alongside the prediction so the UI can
  * pre-fill the checkbox with an "Auto-detected from <source>" caption. The
  * operator can still override before clicking Generate.
  */
-async function autoDetectDirectorLoanAtAppointment(
-  supabase: ServerClient,
-  clientId: string,
-): Promise<AutoDetectedDirectorLoan> {
-  const { data: currentPeriod } = await supabase
-    .from('financial_statements')
-    .select('balance_sheet, period_label, financial_year, source_column')
-    .eq('client_id', clientId)
-    .eq('source_column', 'current_period')
-    .maybeSingle()
-
-  const { data: latestAnnual } = await supabase
-    .from('financial_statements')
-    .select('balance_sheet, financial_year')
-    .eq('client_id', clientId)
-    .eq('source_column', 'primary')
-    .order('financial_year', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const source = currentPeriod ?? latestAnnual
+function autoDetectDirectorLoanAtAppointment(slots: StoredStatementSlot[]): AutoDetectedDirectorLoan {
+  const source = latestBalanceSheet(slots, { preferCurrentPeriod: true })
   if (!source) {
     return { detected: null, reasoning: null }
   }
 
-  const bs = source.balance_sheet as ExtractedBalanceSheet | null
+  const bs = source.balanceSheet
   const directorLoanValue = Number(bs?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
 
   if (directorLoanValue > 0) {
-    const sourceLabel = currentPeriod
-      ? `current period (${currentPeriod.period_label ?? `FY${currentPeriod.financial_year}`})`
-      : `FY${latestAnnual!.financial_year} balance sheet`
+    const sourceLabel =
+      source.slot.sourceColumn === 'current_period'
+        ? `current period (${source.slot.periodLabel ?? `FY${source.slot.financialYear}`})`
+        : `FY${source.slot.financialYear} balance sheet`
     return {
       detected: true,
       reasoning: `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${sourceLabel}.`,
@@ -166,15 +149,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       .limit(1)
       .maybeSingle()
 
-    // Most recent financial_statements row — gives us director loan receivable
-    // and the ATO liability that we use as a creditor-amount proxy.
-    const { data: statement } = await supabase
-      .from('financial_statements')
-      .select('financial_year, balance_sheet')
-      .eq('client_id', clientId)
-      .order('financial_year', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    // Most recent balance sheet — gives us director loan receivable and the
+    // ATO liability that we use as a creditor-amount proxy.
+    // A failed read is tolerated as "no financials", as it always was: the
+    // prediction still runs, without the director loan and creditor amount.
+    const slots = await loadStoredSlots(supabase, clientId).catch((err) => {
+      console.error('[POST predict-outcome] statements read failed', err)
+      return [] as StoredStatementSlot[]
+    })
+    const statement = latestBalanceSheet(slots)
 
     const missing: MissingPrerequisite[] = []
     if (!lodgement) {
@@ -204,7 +187,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Director loan receivable — null financial_statements is tolerated; we
     // fall back to 0 and signal it as a soft prerequisite via the absence of
     // suggestedOfferAmount on the response.
-    const balanceSheet = (statement?.balance_sheet ?? null) as ExtractedBalanceSheet | null
+    const balanceSheet = statement?.balanceSheet ?? null
     const directorLoanReceivableAmount =
       Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
 
@@ -216,10 +199,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Auto-detect the director loan at appointment from the latest balance
     // sheet. The UI pre-fills the checkbox from this, but the operator's body
     // value is what actually drives the prediction (they can override).
-    const autoDetectedDirectorLoan = await autoDetectDirectorLoanAtAppointment(
-      supabase,
-      clientId,
-    )
+    const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(slots)
 
     const inputFeatures: SbrPredictionInput = {
       dpn: body.dpn,
