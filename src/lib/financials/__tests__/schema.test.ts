@@ -19,7 +19,9 @@ describe('canonical schema keys', () => {
       ['interestIncome', 'other', 'otherRevenue', 'sales'].sort(),
     )
     expect(Object.keys(INCOME_STATEMENT_SCHEMA.cogs).sort()).toEqual(
-      ['directCosts', 'other', 'purchases'].sort(),
+      // openingStock / closingStock added (cost of sales = opening + purchases
+      // + direct - closing). Additive: stored rows without them stay valid.
+      ['closingStock', 'directCosts', 'openingStock', 'other', 'purchases'].sort(),
     )
     expect(INCOME_STATEMENT_SCHEMA.totals).toEqual({
       totalIncome: 'Total Income',

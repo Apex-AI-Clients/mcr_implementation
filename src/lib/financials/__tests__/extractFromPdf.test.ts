@@ -34,6 +34,8 @@ const NO_IS = { income: {}, cogs: {}, expenses: {}, totals: {} }
 const NO_BS = { ...BS, totals: {} }
 
 interface Column {
+  lines?: unknown[]
+  warnings?: unknown[]
   sourceColumn: string
   financialYear: number
   periodEndDate: string
@@ -180,5 +182,80 @@ describe('what is kept', () => {
     const result = await extract(await buildFinancialPdf([incomeStatement(2025), balanceSheet(2025)]), 'Accounts 2023.pdf')
     expect(result.documentWarnings.map((w) => w.kind)).toContain('filename_year_conflict')
     expect(result.statements[0].financialYear).toBe(2025)
+  })
+})
+
+describe('mapping corrections (separate-file trust)', () => {
+  const line = (section: string, rawLabel: string, value: number | null, canonicalKey: string | null, isTotal = false) => ({
+    section,
+    rawLabel,
+    value,
+    canonicalKey,
+    isTotal,
+  })
+
+  it('no longer asks for, or keeps, the "combined PDF expected" note', async () => {
+    const { FINANCIALS_EXTRACTION_PROMPT } = await import('../../ai/prompts')
+    expect(FINANCIALS_EXTRACTION_PROMPT).not.toMatch(/combined PDF expected/)
+
+    modelReturns([
+      column({
+        balanceSheetPresent: false,
+        balanceSheet: NO_BS,
+        warnings: [{ kind: 'incomplete_current_period', message: 'P&L present but no Balance Sheet detected — combined PDF expected' }],
+      }),
+    ])
+    const result = await extract(await buildFinancialPdf([trustProfitAndLoss(2025)]))
+    expect(result.statements[0].warnings.map((w) => w.message).join(' ')).not.toMatch(/combined PDF expected/)
+  })
+
+  it("sets a trust's net profit after tax to its profit before tax", async () => {
+    modelReturns([
+      column({
+        balanceSheetPresent: false,
+        balanceSheet: NO_BS,
+        incomeStatement: { ...IS, totals: { totalIncome: 120000, profitBeforeTax: 30000, netProfitAfterTax: 18000 } },
+        lines: [
+          line('incomeTotals', 'Net Profit', 30000, 'totals.profitBeforeTax', true),
+          line('appropriation', 'Less Prior Year Loss', 12000, null),
+          line('incomeTotals', 'NET TRADING PROFIT/(LOSS) AFTER DEDUCTING LOSS', 18000, 'totals.netProfitAfterTax', true),
+          line('appropriation', 'Distribution to Beneficiaries', 18000, null),
+        ],
+      }),
+    ])
+    // The heading "... ATF SAMPLE FAMILY TRUST" makes it a trust.
+    const result = await extract(await buildFinancialPdf([trustProfitAndLoss(2025)]))
+    const st = result.statements[0]
+    expect(st.incomeStatement.totals.netProfitAfterTax).toBe(30000)
+    expect(st.incomeStatement.appropriations).toEqual({ priorYearLossesApplied: 12000, distributions: 18000 })
+    expect(st.incomeStatement.lines).toHaveLength(4)
+  })
+
+  it('takes totals printed in the wrong column from the line items, with one note for the file', async () => {
+    const expenseLines = (a: number, b: number, printed: number) => [
+      line('expenses', 'Rent', a, 'expenses.rent'),
+      line('expenses', 'Wages', b, 'expenses.wagesAndSalaries'),
+      line('expenses', 'Total Expenses', printed, 'totals.totalExpenses', true),
+    ]
+    modelReturns([
+      column({ incomeStatement: { ...IS, totals: { totalIncome: 120000, totalExpenses: 45000 } }, lines: expenseLines(40000, 20000, 45000) }),
+      column({
+        sourceColumn: 'comparative',
+        financialYear: 2024,
+        periodEndDate: '2024-06-30',
+        incomeStatement: { ...IS, totals: { totalIncome: 110000, totalExpenses: 60000 } },
+        lines: expenseLines(30000, 15000, 60000),
+      }),
+    ])
+    const result = await extract(await buildFinancialPdf([incomeStatement(2025), balanceSheet(2025)]))
+    expect(result.statements.map((st) => st.incomeStatement.totals.totalExpenses)).toEqual([60000, 45000])
+    expect(result.documentWarnings.filter((w) => w.kind === 'swapped_totals')).toHaveLength(1)
+  })
+
+  it('keeps an annual statement annual even when the model calls it current-period', async () => {
+    modelReturns([column({ sourceColumn: 'current_period' })])
+    const result = await extract(await buildFinancialPdf([incomeStatement(2025, { comparative: false }), balanceSheet(2025, { comparative: false })]))
+    expect(result.statements[0].sourceColumn).toBe('primary')
+    expect(result.statements[0].warnings.map((w) => w.kind)).toContain('year_mismatch')
   })
 })

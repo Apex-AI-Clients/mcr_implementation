@@ -24,6 +24,48 @@ export interface ExtractedIncomeStatement {
   cogs: IncomeStatementLines['cogs']
   expenses: IncomeStatementLines['expenses']
   totals: IncomeStatementTotals
+  /**
+   * Below the profit line: what was distributed or applied, not an expense.
+   * Read by the retained-earnings roll-forward. Absent on older extractions.
+   */
+  appropriations?: Appropriations
+  /** The printed lines this column was read from. Absent on older extractions. */
+  lines?: StatementLine[]
+}
+
+export interface Appropriations {
+  /** Distributions to beneficiaries (trusts). Positive. */
+  distributions?: LineValue
+  /** Dividends paid or provided (companies). Positive. */
+  dividends?: LineValue
+  /** Prior-year losses set against this year's profit. Positive. Not a distribution. */
+  priorYearLossesApplied?: LineValue
+}
+
+/** The printed section a line sits under. */
+export type LineSection =
+  | 'income'
+  | 'otherIncome'
+  | 'cogs'
+  | 'expenses'
+  | 'incomeTax'
+  | 'appropriation'
+  | 'incomeTotals'
+  | 'currentAssets'
+  | 'nonCurrentAssets'
+  | 'currentLiabilities'
+  | 'nonCurrentLiabilities'
+  | 'equity'
+  | 'balanceTotals'
+
+/** One printed line of one column, as read, with the key it was mapped to. */
+export interface StatementLine {
+  section: LineSection
+  rawLabel: string
+  value: number | null
+  /** "section.key", e.g. "nonCurrentAssets.propertyPlantEquipment"; null if unmapped. */
+  canonicalKey: string | null
+  isTotal: boolean
 }
 
 export type BalanceSheetLines = {
@@ -38,6 +80,8 @@ export interface ExtractedBalanceSheet {
   nonCurrentLiabilities: BalanceSheetLines['nonCurrentLiabilities']
   equity: BalanceSheetLines['equity']
   totals: BalanceSheetTotals
+  /** The printed lines this column was read from. Absent on older extractions. */
+  lines?: StatementLine[]
 }
 
 export interface ExtractionWarning {
@@ -53,6 +97,9 @@ export interface ExtractionWarning {
     | 'document_kind'
     | 'filename_year_conflict'
     | 'page_selection'
+    | 'profit_corrected'
+    | 'mapping_corrected'
+    | 'swapped_totals'
   message: string
   rawLabel?: string
   rawValue?: string
@@ -262,6 +309,7 @@ export type FinancialCheckKind =
   | 'entity_mismatch'
   | 'not_statements'
   | 'extraction_note'
+  | 'mapping_consistency'
 
 export interface FinancialCheck {
   kind: FinancialCheckKind

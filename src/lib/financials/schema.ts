@@ -15,8 +15,11 @@ export const INCOME_STATEMENT_SCHEMA = {
     other: 'Other Income (uncategorised)',
   },
   cogs: {
+    // Cost of sales = opening stock + purchases + direct costs - closing stock.
+    openingStock: 'Opening Stock',
     purchases: 'Purchases',
     directCosts: 'Direct Costs',
+    closingStock: 'Closing Stock',
     other: 'Other COGS (uncategorised)',
   },
   expenses: {

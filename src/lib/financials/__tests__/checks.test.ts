@@ -322,7 +322,10 @@ describe('restatement', () => {
     return [legacyRow(own, 'doc-2024', 'BS_23-24.pdf'), legacyRow(later, 'doc-2025', 'BS_24-25.pdf')].map(toStoredSlot)
   }
 
-  it('lists the lines that moved, with both files named', () => {
+  // These statements have no line lists (extracted before they existed), so
+  // only the printed totals are compared — mapping cannot affect totals.
+  // Comparison by printed label is covered in assembleComparison.test.ts.
+  it('without line lists, compares the printed totals and names both files', () => {
     const [check] = restatementChecks(
       slots((bs) => {
         bs.currentLiabilities.atoLiability = 97_000
@@ -332,7 +335,8 @@ describe('restatement', () => {
     expect(check).toMatchObject({ kind: 'restatement', financialYear: 2024, statement: 'balance_sheet' })
     expect(check.message).toContain('BS_23-24.pdf')
     expect(check.message).toContain('BS_24-25.pdf')
-    expect(check.message).toContain('ato liability $90,000 → $97,000')
+    expect(check.message).toContain('total current liabilities $110,000 → $117,000')
+    expect(check.message).not.toContain('ato liability')
     expect(check.documentIds).toEqual(['doc-2024', 'doc-2025'])
   })
 
@@ -449,5 +453,45 @@ describe('runChecks with a current period', () => {
     expect(checks).toEqual([
       expect.objectContaining({ kind: 'totals_reconciliation', currentPeriod: true, financialYear: 2026 }),
     ])
+  })
+})
+
+// ─── Stock and distributions (mapping-fix round) ──────────────────────────────
+
+describe('cost of sales with stock', () => {
+  function withStock(totalCogs: number) {
+    const s = statement(2025)
+    s.incomeStatement.cogs = { openingStock: 15_000, purchases: 80_000, closingStock: 20_000 }
+    s.incomeStatement.totals.totalCogs = totalCogs
+    s.incomeStatement.totals.profitBeforeTax =
+      (s.incomeStatement.totals.totalIncome ?? 0) - totalCogs - (s.incomeStatement.totals.totalExpenses ?? 0)
+    return s
+  }
+
+  it('checks opening + purchases - closing against the total', () => {
+    expect(arithmeticFindings(withStock(75_000))).toEqual([])
+    expect(arithmeticFindings(withStock(95_000))).toEqual([
+      expect.objectContaining({ kind: 'totals_reconciliation', message: expect.stringMatching(/opening stock \$15,000.*closing stock \$20,000 = \$75,000/) }),
+    ])
+  })
+})
+
+describe('roll-forward with distributions read from the P&L', () => {
+  const profit = incomeStatement(2025).totals.netProfitAfterTax!
+  function years(closing: number, distributions: number) {
+    const fy24 = statement(2024, 'primary', { balanceSheet: balanceSheet(2024, 500_000) })
+    const fy25 = statement(2025, 'primary', { balanceSheet: balanceSheet(2025, closing) })
+    fy25.incomeStatement.appropriations = { distributions }
+    return [merged(fy24), merged(fy25)]
+  }
+
+  it('is quiet when opening + profit - distributions = closing', () => {
+    expect(rollForwardChecks(years(500_000 + profit - 40_000, 40_000), [2025])).toEqual([])
+  })
+
+  it('warns either way once distributions are known', () => {
+    const [low] = rollForwardChecks(years(500_000 + profit - 70_000, 40_000), [2025])
+    expect(low).toMatchObject({ severity: 'warning' })
+    expect(low.message).toMatch(/distributions and dividends \$40,000/)
   })
 })

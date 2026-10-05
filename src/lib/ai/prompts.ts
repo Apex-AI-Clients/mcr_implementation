@@ -55,7 +55,23 @@ CANONICAL TOTALS KEYS:
 
 CANONICAL INCOME KEYS:
 - income: sales, interestIncome, otherRevenue, other
-- cogs: purchases, directCosts, other
+- cogs: openingStock, purchases, directCosts, closingStock, other
+- appropriations (below the profit line, NOT expenses): distributions, dividends, priorYearLossesApplied
+
+INVENTORY (COST OF SALES):
+- "Opening Stock" / "Opening Inventory" / "Stock on hand at beginning" → cogs.openingStock.
+- "Closing Stock" / "Closing Inventory" / "Less Closing Stock" / "Stock on hand at end" → cogs.closingStock, as a POSITIVE number (it is subtracted: cost of sales = opening stock + purchases + direct costs − closing stock).
+- NEVER put opening or closing stock into directCosts or purchases.
+
+NET PROFIT — WHAT IS AND IS NOT netProfitAfterTax:
+- netProfitAfterTax is profit after INCOME TAX EXPENSE only. If the statement shows no income tax expense line, netProfitAfterTax equals profitBeforeTax.
+- A TRUST (heading "<company> ATF <trust>", "as trustee for", or "... Trust") never pays tax at entity level: netProfitAfterTax equals profitBeforeTax.
+- These are NOT netProfitAfterTax and NOT profitBeforeTax — they are appropriation / retained-earnings movements below the profit line:
+  • "Net Trading Profit/(Loss) After Deducting Loss", "Less Prior Year Loss", "Profit after prior year losses", "Losses brought forward" → appropriations.priorYearLossesApplied (the loss amount, positive)
+  • "Distribution to Beneficiaries", "Distributions to beneficiaries", "Beneficiary distributions" → appropriations.distributions (positive)
+  • "Dividends paid" / "Dividends provided" → appropriations.dividends (positive)
+  • any line of an Appropriation Statement
+- profitBeforeTax is the operating profit: total income − cost of sales − expenses, before any of the lines above.
 
 CANONICAL BALANCE SHEET KEYS:
 - currentAssets: bankAccounts, accountsReceivable, other
@@ -135,6 +151,16 @@ OTHER REVENUE:
 TOTALS:
 - Always return the totals from the PDF even though they are calculable. These are the published totals; downstream reconciliation will compare them against the sum of returned line items.
 
+ASSET AND LOAN MAPPING (apply the same way in every file and every year):
+- "Shop Fittings", "Fixtures & Fittings", "Furniture & Fittings", "Plant & Equipment", "Office Equipment", "Motor Vehicles" (net of accumulated depreciation) → nonCurrentAssets.propertyPlantEquipment.
+- "Bond", "Rental Bond", "Bond Rent", "Security Deposit", "Deposits" → nonCurrentAssets.other under the key "Deposits". A bond is NEVER property, plant & equipment.
+- A loan named after a person or a director ("Loan - J Smith", "Loan Jane Citizen", "Director Loan") under Liabilities → nonCurrentLiabilities.directorRelatedLoansPayable, in every year, even when a year's file places it elsewhere.
+
+LINE LIST (required — this is how your mapping is checked):
+- For EVERY entry in statements, return lines: one entry per printed line of that column's Income Statement and Balance Sheet, in printed order, including printed totals and subtotals.
+- Each line: section (the printed section it sits under: income, otherIncome, cogs, expenses, incomeTax, appropriation, incomeTotals, currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities, equity, balanceTotals), rawLabel (verbatim), value (this column's number, null if blank or "-"), canonicalKey (the key you mapped it to as "section.key", e.g. "expenses.rent", "nonCurrentAssets.other", "totals.totalExpenses"; null if not mapped), isTotal (true for printed totals and subtotals).
+- Use the value printed in THIS column on THIS line. Do not move numbers between columns.
+
 RAW EXTRACTION SCOPE (critical — controls response size):
 - rawExtraction is an OPTIONAL array. The default is an empty array. Only populate it when AUDIT VALUE OUTWEIGHS RESPONSE COST.
 - ONLY include a rawExtraction entry when one of these is true and ONLY for that subset:
@@ -158,14 +184,13 @@ exports from accounting software (Xero, MYOB, QuickBooks) covering a
 partial period (e.g. "1 July 2025 to 4 May 2026"). These have ONE column
 of values, no prior-year comparative, and use slightly different labels.
 
-DETECTION RULES — a PDF is current-period when ANY of these are true:
- - The heading says "For the period <date> to <date>" rather than "For
-   the year ended <date>"
- - Only ONE value column appears in the income statement / balance sheet
- - The document has no "Notes to the Financial Statements", no
-   "Compilation Report", no "Directors Declaration", no "Appropriation
-   Statement", no "Depreciation Schedule"
+DETECTION RULES — a PDF is current-period when its heading says so:
+ - The heading says "For the period <date> to <date>" covering less than a
+   full year, rather than "For the year ended <date>"
  - The balance sheet is "As at <some non-30-June date>"
+A single value column alone does NOT make a statement current-period: an
+annual statement "for the year ended 30 June" with one column is annual
+(sourceColumn "primary").
 
 FOR CURRENT-PERIOD PDFs:
  - Return EXACTLY ONE entry in \`statements\` (never two)
@@ -215,12 +240,11 @@ check (Total Income - Total COGS - Total Expenses ≈ Net Profit). Warn but
 do not throw on mismatch — software exports sometimes have rounding lines
 that explain small discrepancies.
 
-DEFENSIVE BEHAVIOUR — if the PDF appears to contain only a Profit & Loss
-section without a Balance Sheet (or vice versa), still return ONE entry
-with whatever was found, populate the missing section's totals as null,
-and add a warning \`{ kind: 'incomplete_current_period', message: 'P&L
-present but no Balance Sheet detected — combined PDF expected' }\` or
-similar. Do NOT throw.
+SEPARATE FILES ARE NORMAL — a PDF may hold only a Profit & Loss or only a
+Balance Sheet (clients may upload them as separate files). Return what is
+present, leave the other statement's values null, set incomeStatementPresent /
+balanceSheetPresent accordingly, and do NOT add a warning about the missing
+statement.
 
 Call the submit_extracted_financials tool now with the structured extraction. Do not reply in text.
 `.trim()

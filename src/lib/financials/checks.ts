@@ -1,4 +1,5 @@
 import { digitsOnly } from '@/lib/asic/identifiers'
+import { normaliseLabel } from './labels'
 import type { MergedStatement } from './statementSelection'
 import type {
   ExtractedFinancialStatement,
@@ -83,6 +84,25 @@ export function arithmeticFindings(
         statement: 'income_statement',
         kind: 'totals_reconciliation',
         message: `Total income ${money(income)} − cost of sales ${money(cogs)} − expenses ${money(expenses)} = ${money(calc)}, but the profit before tax shown is ${money(pbt)}.`,
+      })
+    }
+  }
+
+  // Cost of sales with stock: opening + purchases + direct costs + other - closing.
+  const c = (s.incomeStatement.cogs ?? {}) as Record<string, unknown>
+  const opening = num(c.openingStock)
+  const closing = num(c.closingStock)
+  const totalCogs = num(t.totalCogs)
+  if (totalCogs !== null && (opening !== null || closing !== null)) {
+    const otherCogs = c.other && typeof c.other === 'object'
+      ? Object.values(c.other as Record<string, unknown>).reduce<number>((sum, v) => sum + (num(v) ?? 0), 0)
+      : num(c.other) ?? 0
+    const calc = (opening ?? 0) + (num(c.purchases) ?? 0) + (num(c.directCosts) ?? 0) + otherCogs - Math.abs(closing ?? 0)
+    if (Math.abs(calc - totalCogs) > ANNUAL_TOLERANCE) {
+      out.push({
+        statement: 'income_statement',
+        kind: 'totals_reconciliation',
+        message: `Cost of sales: opening stock ${money(opening ?? 0)} + purchases and direct costs − closing stock ${money(Math.abs(closing ?? 0))} = ${money(calc)}, but the total shown is ${money(totalCogs)}.`,
       })
     }
   }
@@ -177,11 +197,28 @@ export function rollForwardChecks(all: MergedStatement[], yearsToCheck: number[]
     const profit = num(totals.netProfitAfterTax) ?? num(totals.profitBeforeTax)
     if (opening === null || closing === null || profit === null) continue
 
-    const expected = opening + profit
+    // Distributions and dividends printed below the profit line, when read.
+    const ap = thisYear.statement.incomeStatement.appropriations
+    const paidOut = [num(ap?.distributions), num(ap?.dividends)].filter((v): v is number => v !== null)
+    const knownPaidOut = paidOut.length > 0 ? paidOut.reduce((a, b) => a + Math.abs(b), 0) : null
+
+    const expected = opening + profit - (knownPaidOut ?? 0)
     const gap = closing - expected
     if (Math.abs(gap) <= ANNUAL_TOLERANCE) continue
 
     const documentIds = [...new Set([...documentIdsOf(thisYear), ...documentIdsOf(lastYear, 'balance_sheet')])]
+    if (knownPaidOut !== null) {
+      // Everything is known, so any gap is a figure that does not fit.
+      out.push({
+        kind: 'retained_earnings_rollforward',
+        severity: 'warning',
+        financialYear: year,
+        statement: 'balance_sheet',
+        message: `Retained earnings closed at ${money(closing)}, but opening ${money(opening)} plus the year's profit ${money(profit)} less distributions and dividends ${money(knownPaidOut)} comes to ${money(expected)} (a difference of ${money(gap)}).`,
+        documentIds,
+      })
+      continue
+    }
     out.push(
       gap > 0
         ? {
@@ -232,6 +269,26 @@ function lineLabel(path: string): string {
 
 const MAX_LINES_LISTED = 5
 
+type Comparable = Map<string, { value: number; display: string }>
+
+/** Printed lines by normalised label (the first of any repeated label). */
+function byLabel(lines: Array<{ rawLabel: string; value: number | null }>): Comparable {
+  const out: Comparable = new Map()
+  for (const line of lines) {
+    if (line.value === null) continue
+    const key = normaliseLabel(line.rawLabel)
+    if (key && !out.has(key)) out.set(key, { value: line.value, display: line.rawLabel })
+  }
+  return out
+}
+
+/** The printed totals, for statements read before line lists existed. */
+function totalsOf(data: { totals?: unknown }): Comparable {
+  const out: Comparable = new Map()
+  for (const [path, value] of leaves(data.totals ?? {})) out.set(path, { value, display: lineLabel(path) })
+  return out
+}
+
 /**
  * A year read from its own file (primary) and from the next year's file
  * (comparative): any line that differs beyond tolerance. Comparatives get
@@ -251,14 +308,21 @@ export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[
       const later = half === 'income_statement' ? comparative.incomeStatement : comparative.balanceSheet
       if (!own || !later) continue
 
-      const a = leaves(own.data)
-      const b = leaves(later.data)
+      // The same printed line in both files, by its normalised label — so a
+      // line mapped differently in the two files is never a restatement.
+      // Without line lists (older extractions) only the printed totals are
+      // compared: they do not depend on mapping.
+      const ownLines = own.data.lines
+      const laterLines = later.data.lines
+      const a = ownLines?.length && laterLines?.length ? byLabel(ownLines) : totalsOf(own.data)
+      const b = ownLines?.length && laterLines?.length ? byLabel(laterLines) : totalsOf(later.data)
       const moved: string[] = []
-      for (const [path, ownValue] of a) {
-        const laterValue = b.get(path)
-        if (laterValue === undefined) continue
+      for (const [label, { value: ownValue, display }] of a) {
+        const laterEntry = b.get(label)
+        if (!laterEntry) continue
+        const laterValue = laterEntry.value
         if (Math.abs(ownValue - laterValue) > restatementTolerance(ownValue, laterValue)) {
-          moved.push(`${lineLabel(path)} ${money(ownValue)} → ${money(laterValue)}`)
+          moved.push(`${display} ${money(ownValue)} → ${money(laterValue)}`)
         }
       }
       if (moved.length === 0) continue
@@ -399,12 +463,20 @@ export function documentChecks(records: DocumentRecordForCheck[]): FinancialChec
  * The warnings stored with each half the comparison uses. Reconciliation
  * warnings are left out: arithmeticChecks() recomputes them on the merged data.
  */
-export function extractionNotes(merged: MergedStatement[], current: MergedStatement | null): FinancialCheck[] {
+export function extractionNotes(
+  merged: MergedStatement[],
+  current: MergedStatement | null,
+  singleStatementDocuments: Set<string> = new Set(),
+): FinancialCheck[] {
   const out: FinancialCheck[] = []
   const seen = new Set<string>()
   for (const [m, currentPeriod] of [...merged.map((m) => [m, false] as const), ...(current ? [[current, true] as const] : [])]) {
+    // "No balance sheet — combined PDF expected", stored before separate files
+    // were accepted: not a problem for a P&L-only or BS-only file.
+    const fromSingleStatementFile = documentIdsOf(m).some((id) => singleStatementDocuments.has(id))
     for (const w of m.statement.warnings) {
       if (w.kind === 'totals_reconciliation') continue
+      if (w.kind === 'incomplete_current_period' && fromSingleStatementFile) continue
       const key = `${m.statement.financialYear}|${currentPeriod}|${w.kind}|${w.message}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -432,16 +504,22 @@ export function runChecks(input: {
   current: MergedStatement | null
   records: DocumentRecordForCheck[]
   company: CompanyDetailsForCheck | null
+  /** Checks made while assembling: mapping consistency, profit corrections. */
+  extra?: FinancialCheck[]
 }): FinancialCheck[] {
-  const { slots, allAnnual, used, current, records, company } = input
+  const { slots, allAnnual, used, current, records, company, extra = [] } = input
   const usedYears = new Set(used.map((m) => m.statement.financialYear))
+  const singleStatementDocuments = new Set(
+    records.filter((r) => r.kind === 'pnl_only' || r.kind === 'bs_only').map((r) => r.documentId),
+  )
   const checks = [
     ...arithmeticChecks(used, current),
     ...rollForwardChecks(allAnnual, [...usedYears]),
     ...restatementChecks(slots).filter((c) => c.financialYear === null || usedYears.has(c.financialYear)),
     ...entityChecks(records, company),
     ...documentChecks(records),
-    ...extractionNotes(used, current),
+    ...extractionNotes(used, current, singleStatementDocuments),
+    ...extra,
   ]
   const rank = (c: FinancialCheck) => (c.severity === 'warning' ? 0 : 1)
   return checks.sort(

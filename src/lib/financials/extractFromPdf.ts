@@ -34,6 +34,7 @@
 import { OPENROUTER_EXTRACTION_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
 import { correctYear, decidePresence } from './columnChecks'
 import { buildExtractionContext } from './extractionContext'
+import { correctColumn, fixSwappedTotals, isIncomeStatementSection } from './lineCorrections'
 import { bytesForSelection, selectPages, type PageSelection } from './pageSelection'
 import type { FinancialsPrepass } from './prepass'
 import { resolveDocumentYears, type ResolvedYears } from './resolveYear'
@@ -42,6 +43,8 @@ import type {
   ExtractionWarning,
   FinancialDocumentKind,
   FinancialStatementSourceColumn,
+  LineSection,
+  StatementLine,
 } from './types'
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -85,6 +88,8 @@ export interface ExtractFromPdfInput {
   sourceFilename: string
   /** From runFinancialsPrepass on the same bytes. */
   prepass: FinancialsPrepass
+  /** The client file says the entity is a trust. A trust pays no tax itself. */
+  entityIsTrust?: boolean
 }
 
 export interface ExtractFromPdfResult {
@@ -102,6 +107,10 @@ export async function extractFinancialStatementFromPdf(
 ): Promise<ExtractFromPdfResult> {
   const { pdfBytes, sourceFilename, prepass } = input
   const { classification } = prepass
+  // A trust: from the client file, or a heading like "<CO> PTY LTD ATF <NAME> TRUST".
+  const isTrust =
+    input.entityIsTrust === true ||
+    /\b(atf|a\.t\.f\.?|as trustee for)\b/i.test(classification.entity?.name ?? '')
 
   // Which pages go: only the statements when the file can be cut, the whole
   // file with the statement pages named when it is encrypted.
@@ -151,7 +160,8 @@ export async function extractFinancialStatementFromPdf(
   // https://openrouter.ai/docs/features/multimodal/pdfs
   const requestBody = {
     model: OPENROUTER_EXTRACTION_MODEL,
-    max_tokens: 16000,
+    // Room for the full line list on top of the canonical figures.
+    max_tokens: 32000,
     tools: [buildExtractionTool()],
     // Force the single extraction tool — equivalent to Anthropic's
     // tool_choice: { type: 'tool', name: EXTRACTION_TOOL_NAME }.
@@ -381,12 +391,37 @@ export async function extractFinancialStatementFromPdf(
       model: modelUsed,
       kind: classification.kind,
       years,
+      isTrust,
     })
     if (statement) statements.push(statement)
     else {
       documentWarnings.push({
         kind: 'presence_mismatch',
         message: `A ${raw.sourceColumn ?? 'returned'} column for FY${raw.financialYear ?? '?'} carried no real statement data and was dropped.`,
+      })
+    }
+  }
+
+  // A printed total in the wrong column: take it from its own column's lines.
+  const primary = statements.find((st) => st.sourceColumn === 'primary')
+  const comparative = statements.find((st) => st.sourceColumn === 'comparative')
+  if (primary && comparative) {
+    const columns = [primary, comparative].map((st) => ({
+      incomeStatement: st.incomeStatement,
+      balanceSheet: st.balanceSheet,
+      lines: [...(st.incomeStatement.lines ?? []), ...(st.balanceSheet.lines ?? [])],
+    }))
+    if (fixSwappedTotals(columns[0], columns[1])) {
+      for (const st of [primary, comparative]) {
+        // Re-check the arithmetic on the corrected totals.
+        st.warnings = [
+          ...st.warnings.filter((w) => w.kind !== 'totals_reconciliation'),
+          ...reconcile({ incomeStatement: st.incomeStatement, balanceSheet: st.balanceSheet, financialYear: st.financialYear, sourceColumn: st.sourceColumn }),
+        ]
+      }
+      documentWarnings.push({
+        kind: 'swapped_totals',
+        message: 'Totals in this file appear to be printed in the wrong column; figures were taken from the line items.',
       })
     }
   }
@@ -430,6 +465,7 @@ interface RawToolInput {
 }
 
 interface RawStatement {
+  lines?: unknown[]
   sourceColumn?: string
   incomeStatementPresent?: boolean
   balanceSheetPresent?: boolean
@@ -462,7 +498,23 @@ function sectionSchema(canonicalKeys: readonly string[]): Record<string, unknown
 }
 
 const INCOME_KEYS = ['sales', 'interestIncome', 'otherRevenue'] as const
-const COGS_KEYS = ['purchases', 'directCosts'] as const
+const COGS_KEYS = ['openingStock', 'purchases', 'directCosts', 'closingStock'] as const
+const APPROPRIATION_KEYS = ['distributions', 'dividends', 'priorYearLossesApplied'] as const
+const LINE_SECTIONS: LineSection[] = [
+  'income',
+  'otherIncome',
+  'cogs',
+  'expenses',
+  'incomeTax',
+  'appropriation',
+  'incomeTotals',
+  'currentAssets',
+  'nonCurrentAssets',
+  'currentLiabilities',
+  'nonCurrentLiabilities',
+  'equity',
+  'balanceTotals',
+]
 const EXPENSES_KEYS = [
   'depreciation',
   'motorVehicle',
@@ -588,6 +640,12 @@ function buildExtractionTool(): Record<string, unknown> {
                     cogs: sectionSchema(COGS_KEYS),
                     expenses: sectionSchema(EXPENSES_KEYS),
                     totals: sectionSchema(IS_TOTALS_KEYS),
+                    appropriations: {
+                      type: 'object',
+                      description:
+                        'Below the profit line, NOT expenses: distributions to beneficiaries, dividends, prior-year losses applied. Positive numbers.',
+                      properties: Object.fromEntries(APPROPRIATION_KEYS.map((k) => [k, { type: ['number', 'null'] }])),
+                    },
                   },
                   required: ['income', 'cogs', 'expenses', 'totals'],
                 },
@@ -611,6 +669,22 @@ function buildExtractionTool(): Record<string, unknown> {
                     'equity',
                     'totals',
                   ],
+                },
+                lines: {
+                  type: 'array',
+                  description:
+                    'Every printed line of this column, in order, totals included. See LINE LIST in the prompt.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      section: { type: 'string', enum: LINE_SECTIONS },
+                      rawLabel: { type: 'string' },
+                      value: { type: ['number', 'null'] },
+                      canonicalKey: { type: ['string', 'null'] },
+                      isTotal: { type: 'boolean' },
+                    },
+                    required: ['section', 'rawLabel', 'value', 'isTotal'],
+                  },
                 },
                 rawExtraction: {
                   type: 'array',
@@ -659,6 +733,7 @@ function buildExtractionTool(): Record<string, unknown> {
                 'periodEndDate',
                 'incomeStatement',
                 'balanceSheet',
+                'lines',
               ],
             },
           },
@@ -676,6 +751,26 @@ interface NormaliseContext {
   model: string
   kind: FinancialDocumentKind
   years: ResolvedYears
+  isTrust: boolean
+}
+
+/** The model's line list, kept only where each entry has the right shape. */
+function normaliseLines(value: unknown): StatementLine[] {
+  if (!Array.isArray(value)) return []
+  const out: StatementLine[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const l = item as Record<string, unknown>
+    if (typeof l.rawLabel !== 'string' || !LINE_SECTIONS.includes(l.section as LineSection)) continue
+    out.push({
+      section: l.section as LineSection,
+      rawLabel: l.rawLabel.trim(),
+      value: typeof l.value === 'number' && Number.isFinite(l.value) ? l.value : null,
+      canonicalKey: typeof l.canonicalKey === 'string' && l.canonicalKey.trim() ? l.canonicalKey.trim() : null,
+      isTotal: l.isTotal === true,
+    })
+  }
+  return out
 }
 
 /**
@@ -684,9 +779,9 @@ interface NormaliseContext {
  */
 function normaliseAndValidate(
   raw: RawStatement,
-  { sourceFilename, model, kind, years }: NormaliseContext,
+  { sourceFilename, model, kind, years, isTrust }: NormaliseContext,
 ): ExtractedFinancialStatement | null {
-  const sourceColumn = normaliseSourceColumn(raw.sourceColumn)
+  let sourceColumn = normaliseSourceColumn(raw.sourceColumn)
   if (!sourceColumn) {
     throw new Error(
       `extractFinancialStatementFromPdf: missing or invalid sourceColumn in ${sourceFilename}`,
@@ -708,8 +803,26 @@ function normaliseAndValidate(
   }
 
   const warnings: ExtractionWarning[] = Array.isArray(raw.warnings)
-    ? (raw.warnings as ExtractionWarning[]).filter((w) => w && typeof w === 'object')
+    ? (raw.warnings as ExtractionWarning[])
+        .filter((w) => w && typeof w === 'object')
+        // A P&L-only or Balance-Sheet-only file is normal now: the coverage
+        // table shows what is missing. Drop the model's "incomplete" note.
+        .filter((w) => !(w.kind === 'incomplete_current_period' && (kind === 'pnl_only' || kind === 'bs_only')))
     : []
+
+  // Headings decide annual vs current period too: one value column alone does
+  // not make an annual statement a current-period one, nor the reverse.
+  if (years.source === 'heading') {
+    const annualOnly = years.annualYears.length > 0 && years.currentPeriodYear === null
+    const currentOnly = years.annualYears.length === 0 && years.currentPeriodYear !== null
+    if (annualOnly && sourceColumn === 'current_period') {
+      warnings.push({ kind: 'year_mismatch', message: 'The model read an annual statement as a current-period one. Stored as the annual statement the heading names.' })
+      sourceColumn = 'primary'
+    } else if (currentOnly && sourceColumn !== 'current_period') {
+      warnings.push({ kind: 'year_mismatch', message: 'The model read a current-period statement as an annual one. Stored as the current period the heading names.' })
+      sourceColumn = 'current_period'
+    }
+  }
 
   // Headings decide the year. An annual column moved to another year takes
   // that year's 30 June as its end date.
@@ -724,13 +837,14 @@ function normaliseAndValidate(
   const balanceSheet = (raw.balanceSheet ??
     {}) as unknown as ExtractedFinancialStatement['balanceSheet']
 
-  const filledIncome = {
+  const filledIncome: ExtractedFinancialStatement['incomeStatement'] = {
     income: incomeStatement.income ?? {},
     cogs: incomeStatement.cogs ?? {},
     expenses: incomeStatement.expenses ?? {},
     totals: incomeStatement.totals ?? {},
+    ...(incomeStatement.appropriations ? { appropriations: incomeStatement.appropriations } : {}),
   }
-  const filledBalance = {
+  const filledBalance: ExtractedFinancialStatement['balanceSheet'] = {
     currentAssets: balanceSheet.currentAssets ?? {},
     nonCurrentAssets: balanceSheet.nonCurrentAssets ?? {},
     currentLiabilities: balanceSheet.currentLiabilities ?? {},
@@ -738,6 +852,15 @@ function normaliseAndValidate(
     equity: balanceSheet.equity ?? {},
     totals: balanceSheet.totals ?? {},
   }
+
+  // Our own corrections over the model's mapping, from the printed lines:
+  // the label dictionary, stock, appropriations, and the profit post-check.
+  const lines = normaliseLines(raw.lines)
+  warnings.push(...correctColumn({ incomeStatement: filledIncome, balanceSheet: filledBalance }, lines, { isTrust }))
+  const isLines = lines.filter((l) => isIncomeStatementSection(l.section))
+  const bsLines = lines.filter((l) => !isIncomeStatementSection(l.section))
+  if (isLines.length) filledIncome.lines = isLines
+  if (bsLines.length) filledBalance.lines = bsLines
 
   warnings.push(
     ...reconcile({

@@ -21,19 +21,13 @@
  * Nothing in this module does auth — callers are responsible for that.
  */
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { computeFinancialsComparison } from '@/lib/financials/computeComparison'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
 import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
-import {
-  applyYearWindow,
-  runChecks,
-  type CompanyDetailsForCheck,
-  type DocumentRecordForCheck,
-} from '@/lib/financials/checks'
+import { assembleComparison, entityIsTrust } from '@/lib/financials/assembleComparison'
+import { type CompanyDetailsForCheck, type DocumentRecordForCheck } from '@/lib/financials/checks'
 import { planDocument } from '@/lib/financials/documentPlan'
 import { planSlotWrite, type WritingDocument } from '@/lib/financials/halfWrites'
 import { runFinancialsPrepass, type FinancialsPrepass } from '@/lib/financials/prepass'
-import { mergeAnnualYears, mergeCurrentPeriod } from '@/lib/financials/statementSelection'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type {
   ExtractedFinancialStatement,
@@ -144,6 +138,9 @@ export async function extractAllFinancials(
   const uploadedAt = new Map((allDocs ?? []).map((d) => [d.id, d.uploaded_at ?? null]))
   const uploadedAtOf = (documentId: string) => uploadedAt.get(documentId) ?? null
 
+  // A trust pays no tax itself: its net profit after tax is its profit before tax.
+  const isTrust = entityIsTrust(await loadCompanyDetails(supabase, clientId), [])
+
   let extracted = 0
   let skipped = 0
   const errors: ExtractError[] = []
@@ -163,7 +160,7 @@ export async function extractAllFinancials(
     }
 
     try {
-      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf)
+      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf, isTrust)
       extracted += result.wrote
       skipped += result.skipped
       if (result.error) {
@@ -199,6 +196,7 @@ async function processDocument(
   clientId: string,
   supabase: SupabaseClient,
   uploadedAtOf: (documentId: string) => string | null,
+  isTrust: boolean,
 ): Promise<ProcessResult> {
   const tag = `[extract-financials][${index}/${total}]`
   const start = Date.now()
@@ -236,6 +234,7 @@ async function processDocument(
         pdfBytes,
         sourceFilename: doc.original_filename,
         prepass,
+        entityIsTrust: isTrust,
       }),
       PER_DOCUMENT_TIMEOUT_MS,
       `extraction timed out after ${PER_DOCUMENT_TIMEOUT_MS / 1000}s`,
@@ -397,35 +396,24 @@ export async function buildAndPersistComparison(
 
   // One statement per annual FY, each half from the best source (the year's
   // own file, else the next year's comparative column), plus the current period.
-  const annual = mergeAnnualYears(slots)
-  const currentPeriod = mergeCurrentPeriod(slots)
-  // The portal asks for the last four years: the latest four annual years go
-  // into the comparison, older ones are kept and reported as extra.
-  const { used, extraYears } = applyYearWindow(annual)
-  const statements: ExtractedFinancialStatement[] = [
-    ...used.map((m) => m.statement),
-    ...(currentPeriod ? [currentPeriod.statement] : []),
-  ]
+  const [records, company] = await Promise.all([
+    loadDocumentRecords(supabase, clientId),
+    loadCompanyDetails(supabase, clientId),
+  ])
 
-  if (statements.length < 2) {
+  // Corrections first, then the figures, the checks — and the AI summary below
+  // is built from this comparison only (see assembleComparison.ts).
+  const assembled = assembleComparison({ slots, records, company })
+  if (!assembled.ok) {
     return {
       ok: false,
       status: 400,
       error:
         'Need at least 2 extracted annual statements to compare. Run extraction first.',
-      extractedCount: statements.length,
+      extractedCount: assembled.statementCount,
     }
   }
-
-  const [records, company] = await Promise.all([
-    loadDocumentRecords(supabase, clientId),
-    loadCompanyDetails(supabase, clientId),
-  ])
-  const comparison: FinancialsComparison = {
-    ...computeFinancialsComparison(statements),
-    extraYears,
-    checks: runChecks({ slots, allAnnual: annual, used, current: currentPeriod, records, company }),
-  }
+  const { comparison, statementCount } = assembled
 
   // AI summary — best-effort; a failure here must not fail the job.
   let aiText: string | null = null
@@ -457,7 +445,7 @@ export async function buildAndPersistComparison(
 
   if (upsertError) {
     console.error('[financials-comparison] upsert failed', upsertError)
-    return { ok: false, status: 500, error: 'Failed to persist comparison.', extractedCount: statements.length }
+    return { ok: false, status: 500, error: 'Failed to persist comparison.', extractedCount: statementCount }
   }
 
   return {
@@ -468,7 +456,7 @@ export async function buildAndPersistComparison(
       aiSummary: aiText,
       aiSummaryGeneratedAt: aiText ? now : null,
       generatedAt: now,
-      statementCount: statements.length,
+      statementCount,
     },
   }
 }
