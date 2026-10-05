@@ -34,7 +34,7 @@
 import { OPENROUTER_EXTRACTION_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
 import { correctYear, decidePresence } from './columnChecks'
 import { buildExtractionContext } from './extractionContext'
-import { correctColumn, fixSwappedTotals, isIncomeStatementSection } from './lineCorrections'
+import { correctFile, isIncomeStatementSection, type FileColumn } from './lineCorrections'
 import { bytesForSelection, selectPages, type PageSelection } from './pageSelection'
 import type { FinancialsPrepass } from './prepass'
 import { resolveDocumentYears, type ResolvedYears } from './resolveYear'
@@ -90,6 +90,8 @@ export interface ExtractFromPdfInput {
   prepass: FinancialsPrepass
   /** The client file says the entity is a trust. A trust pays no tax itself. */
   entityIsTrust?: boolean
+  /** Directors' names on the client file: a loan named after one is director-related. */
+  directors?: readonly string[]
 }
 
 export interface ExtractFromPdfResult {
@@ -391,7 +393,6 @@ export async function extractFinancialStatementFromPdf(
       model: modelUsed,
       kind: classification.kind,
       years,
-      isTrust,
     })
     if (statement) statements.push(statement)
     else {
@@ -402,28 +403,36 @@ export async function extractFinancialStatementFromPdf(
     }
   }
 
-  // A printed total in the wrong column: take it from its own column's lines.
-  const primary = statements.find((st) => st.sourceColumn === 'primary')
-  const comparative = statements.find((st) => st.sourceColumn === 'comparative')
-  if (primary && comparative) {
-    const columns = [primary, comparative].map((st) => ({
+  // Our own corrections, over every column of this file the same way: printed
+  // signs, swapped totals, the rebuild from complete line lists, the label
+  // dictionary and loan rule, and the profit rule. Then the arithmetic check,
+  // on the corrected figures.
+  const textOf = (pages: number[]) => pages.flatMap((page) => prepass.pages[page - 1] ?? [])
+  const pageLines = prepass.pages.length
+    ? { is: textOf(classification.statementPages.income_statement), bs: textOf(classification.statementPages.balance_sheet) }
+    : null
+  const linesOf = (st: ExtractedFinancialStatement) => [...(st.incomeStatement.lines ?? []), ...(st.balanceSheet.lines ?? [])]
+  const annual = statements.filter((st) => st.sourceColumn !== 'current_period')
+  const groups: ExtractedFinancialStatement[][] = [
+    annual.sort((x, y) => (x.sourceColumn === 'primary' ? 0 : 1) - (y.sourceColumn === 'primary' ? 0 : 1)),
+    ...statements.filter((st) => st.sourceColumn === 'current_period').map((st) => [st]),
+  ].filter((g) => g.length > 0)
+  const ctx = { isTrust, directors: input.directors ?? [] }
+  for (const group of groups) {
+    const columns: FileColumn[] = group.map((st, index) => ({
       incomeStatement: st.incomeStatement,
       balanceSheet: st.balanceSheet,
-      lines: [...(st.incomeStatement.lines ?? []), ...(st.balanceSheet.lines ?? [])],
+      lines: linesOf(st),
+      index,
     }))
-    if (fixSwappedTotals(columns[0], columns[1])) {
-      for (const st of [primary, comparative]) {
-        // Re-check the arithmetic on the corrected totals.
-        st.warnings = [
-          ...st.warnings.filter((w) => w.kind !== 'totals_reconciliation'),
-          ...reconcile({ incomeStatement: st.incomeStatement, balanceSheet: st.balanceSheet, financialYear: st.financialYear, sourceColumn: st.sourceColumn }),
-        ]
-      }
-      documentWarnings.push({
-        kind: 'swapped_totals',
-        message: 'Totals in this file appear to be printed in the wrong column; figures were taken from the line items.',
-      })
-    }
+    const { columnNotes, fileNotes } = correctFile(columns, ctx, pageLines)
+    group.forEach((st, i) => st.warnings.push(...columnNotes[i]))
+    documentWarnings.push(...fileNotes)
+  }
+  for (const st of statements) {
+    st.warnings.push(
+      ...reconcile({ incomeStatement: st.incomeStatement, balanceSheet: st.balanceSheet, financialYear: st.financialYear, sourceColumn: st.sourceColumn }),
+    )
   }
 
   // Nothing real in any column: today's "empty extraction" failure, kept so a
@@ -751,7 +760,6 @@ interface NormaliseContext {
   model: string
   kind: FinancialDocumentKind
   years: ResolvedYears
-  isTrust: boolean
 }
 
 /** The model's line list, kept only where each entry has the right shape. */
@@ -779,7 +787,7 @@ function normaliseLines(value: unknown): StatementLine[] {
  */
 function normaliseAndValidate(
   raw: RawStatement,
-  { sourceFilename, model, kind, years, isTrust }: NormaliseContext,
+  { sourceFilename, model, kind, years }: NormaliseContext,
 ): ExtractedFinancialStatement | null {
   let sourceColumn = normaliseSourceColumn(raw.sourceColumn)
   if (!sourceColumn) {
@@ -802,12 +810,16 @@ function normaliseAndValidate(
     )
   }
 
+  const lines = normaliseLines(raw.lines)
   const warnings: ExtractionWarning[] = Array.isArray(raw.warnings)
     ? (raw.warnings as ExtractionWarning[])
         .filter((w) => w && typeof w === 'object')
         // A P&L-only or Balance-Sheet-only file is normal now: the coverage
         // table shows what is missing. Drop the model's "incomplete" note.
         .filter((w) => !(w.kind === 'incomplete_current_period' && (kind === 'pnl_only' || kind === 'bs_only')))
+        // With a line list, unmapped lines are noted from the lines themselves,
+        // the same way for every column; the model's own notes are uneven.
+        .filter((w) => !(w.kind === 'unmapped_line_item' && lines.length > 0))
     : []
 
   // Headings decide annual vs current period too: one value column alone does
@@ -853,23 +865,12 @@ function normaliseAndValidate(
     totals: balanceSheet.totals ?? {},
   }
 
-  // Our own corrections over the model's mapping, from the printed lines:
-  // the label dictionary, stock, appropriations, and the profit post-check.
-  const lines = normaliseLines(raw.lines)
-  warnings.push(...correctColumn({ incomeStatement: filledIncome, balanceSheet: filledBalance }, lines, { isTrust }))
+  // The printed lines go with their statement; correctFile() works on them
+  // once every column of the file has been read.
   const isLines = lines.filter((l) => isIncomeStatementSection(l.section))
   const bsLines = lines.filter((l) => !isIncomeStatementSection(l.section))
   if (isLines.length) filledIncome.lines = isLines
   if (bsLines.length) filledBalance.lines = bsLines
-
-  warnings.push(
-    ...reconcile({
-      incomeStatement: filledIncome,
-      balanceSheet: filledBalance,
-      financialYear,
-      sourceColumn,
-    }),
-  )
 
   const periodLabel = normalisePeriodField(raw.periodLabel)
   const periodStartDate = normalisePeriodField(raw.periodStartDate)

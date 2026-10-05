@@ -182,3 +182,44 @@ export function planSlotWrite(input: {
 
   return { op: 'update', id: existing.id, decisions, values: values as Update }
 }
+
+// ─── Stale halves ─────────────────────────────────────────────────────────────
+
+/** "2024|comparative|balance_sheet": a half one extraction run produced. */
+export function halfKey(financialYear: number, sourceColumn: string, half: StatementHalfKey): string {
+  return `${financialYear}|${sourceColumn}|${half}`
+}
+
+export interface StaleHalf {
+  rowId: string
+  half: StatementHalfKey
+  /** The row has no other owned half left, so it goes. */
+  deleteRow: boolean
+}
+
+/**
+ * Halves this document owned before but did not produce in this run. A
+ * re-extraction replaces everything a document owns: what it no longer
+ * returns is cleared, exactly as deleting the document would clear it,
+ * instead of lingering from an older run.
+ */
+export function staleHalves(
+  rows: FinancialStatementRow[],
+  documentId: string,
+  produced: ReadonlySet<string>,
+): StaleHalf[] {
+  const out: StaleHalf[] = []
+  for (const row of rows) {
+    const owned = (half: StatementHalfKey) =>
+      (half === 'income_statement' ? row.is_document_id : row.bs_document_id) === documentId
+    const stale = HALVES.filter(
+      (half) => owned(half) && !produced.has(halfKey(row.financial_year, row.source_column, half)),
+    )
+    if (stale.length === 0) continue
+    const keeps = HALVES.some(
+      (half) => !stale.includes(half) && (half === 'income_statement' ? row.is_document_id : row.bs_document_id) !== null,
+    )
+    for (const half of stale) out.push({ rowId: row.id, half, deleteRow: !keeps })
+  }
+  return out
+}

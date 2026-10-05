@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { ComparisonClient } from './ComparisonClient'
 import { buildCoverage } from '@/lib/financials/coverage'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
@@ -32,6 +32,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     { data: comparisonRow },
     { data: activeJob },
     slots,
+    failures,
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -62,6 +63,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
       .maybeSingle(),
     // For the coverage table. A failed read shows no table rather than an error.
     loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
+    loadColumnFailures(supabase, id),
   ])
 
   const documentCount = documents?.length ?? 0
@@ -97,7 +99,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
           hasUnextracted,
         }}
         initialJobId={activeJob?.id ?? null}
-        coverage={buildCoverage(slots)}
+        coverage={buildCoverage(slots, failures)}
         initialStaleSince={comparisonRow?.stale_since ?? null}
       />
     </div>

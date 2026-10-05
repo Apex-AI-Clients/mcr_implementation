@@ -21,12 +21,13 @@
  * Nothing in this module does auth — callers are responsible for that.
  */
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { readDirectors } from '@/lib/clients/companyDetails'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
 import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
 import { assembleComparison, entityIsTrust } from '@/lib/financials/assembleComparison'
 import { type CompanyDetailsForCheck, type DocumentRecordForCheck } from '@/lib/financials/checks'
-import { planDocument } from '@/lib/financials/documentPlan'
-import { planSlotWrite, type WritingDocument } from '@/lib/financials/halfWrites'
+import { expectedColumns, missingColumns, planDocument } from '@/lib/financials/documentPlan'
+import { halfKey, planSlotWrite, staleHalves, type WritingDocument } from '@/lib/financials/halfWrites'
 import { runFinancialsPrepass, type FinancialsPrepass } from '@/lib/financials/prepass'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type {
@@ -35,6 +36,7 @@ import type {
   FinancialDocumentKind,
   FinancialsComparison,
   HeadingEntity,
+  StatementHalfKey,
   StoredStatementSlot,
 } from '@/lib/financials/types'
 import type { Json } from '@/types/database'
@@ -138,8 +140,11 @@ export async function extractAllFinancials(
   const uploadedAt = new Map((allDocs ?? []).map((d) => [d.id, d.uploaded_at ?? null]))
   const uploadedAtOf = (documentId: string) => uploadedAt.get(documentId) ?? null
 
-  // A trust pays no tax itself: its net profit after tax is its profit before tax.
-  const isTrust = entityIsTrust(await loadCompanyDetails(supabase, clientId), [])
+  // A trust pays no tax itself: its net profit after tax is its profit before
+  // tax. And a loan named after a director on file is director-related.
+  const company = await loadCompanyDetails(supabase, clientId)
+  const isTrust = entityIsTrust(company, [])
+  const directors = company?.directors ?? []
 
   let extracted = 0
   let skipped = 0
@@ -160,7 +165,7 @@ export async function extractAllFinancials(
     }
 
     try {
-      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf, isTrust)
+      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf, { isTrust, directors })
       extracted += result.wrote
       skipped += result.skipped
       if (result.error) {
@@ -196,7 +201,7 @@ async function processDocument(
   clientId: string,
   supabase: SupabaseClient,
   uploadedAtOf: (documentId: string) => string | null,
-  isTrust: boolean,
+  entity: { isTrust: boolean; directors: string[] },
 ): Promise<ProcessResult> {
   const tag = `[extract-financials][${index}/${total}]`
   const start = Date.now()
@@ -229,16 +234,46 @@ async function processDocument(
     }
 
     console.log(`${tag} calling OpenRouter`)
-    const result = await withTimeout(
-      extractFinancialStatementFromPdf({
-        pdfBytes,
-        sourceFilename: doc.original_filename,
-        prepass,
-        entityIsTrust: isTrust,
-      }),
-      PER_DOCUMENT_TIMEOUT_MS,
-      `extraction timed out after ${PER_DOCUMENT_TIMEOUT_MS / 1000}s`,
-    )
+    const extract = () =>
+      withTimeout(
+        extractFinancialStatementFromPdf({
+          pdfBytes,
+          sourceFilename: doc.original_filename,
+          prepass,
+          entityIsTrust: entity.isTrust,
+          directors: entity.directors,
+        }),
+        PER_DOCUMENT_TIMEOUT_MS,
+        `extraction timed out after ${PER_DOCUMENT_TIMEOUT_MS / 1000}s`,
+      )
+    let result = await extract()
+
+    // The headings show a column the model did not return: try once more,
+    // keeping whichever run returned more of the expected columns.
+    const expected = expectedColumns(prepass)
+    let missing = missingColumns(expected, result.statements)
+    if (missing.length > 0) {
+      console.log(
+        `${tag} missing column(s) ${missing.map((m) => `FY${m.financialYear} ${m.sourceColumn}`).join(', ')}; retrying once`,
+      )
+      try {
+        const retry = await extract()
+        if (missingColumns(expected, retry.statements).length < missing.length) result = retry
+      } catch (err) {
+        console.error(`${tag} retry failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      missing = missingColumns(expected, result.statements)
+    }
+    const kind = prepass.classification.kind
+    const missingHalves: StatementHalfKey[] =
+      kind === 'pnl_only' ? ['income_statement'] : kind === 'bs_only' ? ['balance_sheet'] : ['income_statement', 'balance_sheet']
+    const columnFailures: ExtractionWarning[] = missing.map((m) => ({
+      kind: 'column_not_extracted',
+      financialYear: m.financialYear,
+      sourceColumn: m.sourceColumn,
+      halves: missingHalves,
+      message: `The ${m.sourceColumn === 'comparative' ? 'comparative' : m.sourceColumn === 'current_period' ? 'current-period' : 'main'} column for FY${m.financialYear} is printed in this file but was not read, even on a second try. Re-run the extraction.`,
+    }))
 
     const apiElapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(
@@ -252,19 +287,26 @@ async function processDocument(
     }
     let wrote = 0
     let skipped = 0
+    const produced = new Set<string>()
     for (const statement of result.statements) {
       const decisions = await writeStatementHalves({ supabase, clientId, document, statement, uploadedAtOf })
-      for (const decision of Object.values(decisions)) {
+      for (const [half, decision] of Object.entries(decisions) as Array<[StatementHalfKey, string]>) {
         if (decision === 'written') wrote++
         else if (decision === 'kept_newer_upload') skipped++
+        if (decision !== 'not_in_document') produced.add(halfKey(statement.financialYear, statement.sourceColumn, half))
       }
     }
+
+    // Halves this document produced in an earlier run but not in this one go,
+    // so nothing lingers from an older extraction.
+    const cleared = await clearStaleHalves(supabase, clientId, doc.id, produced)
+    if (cleared > 0) console.log(`${tag} cleared ${cleared} stale half/halves from an earlier run`)
 
     await recordDocumentExtraction(supabase, {
       clientId,
       documentId: doc.id,
       prepass,
-      warnings: [...plan.warnings, ...result.documentWarnings],
+      warnings: [...plan.warnings, ...result.documentWarnings, ...columnFailures],
       rawResponse: result.rawResponse,
       model: result.model,
     })
@@ -338,6 +380,36 @@ async function writeStatementHalves(input: {
     if (error) throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)
   }
   return plan.decisions
+}
+
+async function clearStaleHalves(
+  supabase: SupabaseClient,
+  clientId: string,
+  documentId: string,
+  produced: ReadonlySet<string>,
+): Promise<number> {
+  const { data: rows, error } = await supabase
+    .from('financial_statements')
+    .select('*')
+    .eq('client_id', clientId)
+    .or(`is_document_id.eq.${documentId},bs_document_id.eq.${documentId}`)
+  if (error) throw new Error(`Failed to read this document's statements: ${error.message}`)
+
+  const stale = staleHalves(rows ?? [], documentId, produced)
+  for (const s of stale) {
+    if (s.deleteRow) {
+      const { error: e } = await supabase.from('financial_statements').delete().eq('id', s.rowId)
+      if (e) throw new Error(`Failed to clear a stale statement: ${e.message}`)
+      continue
+    }
+    const cleared =
+      s.half === 'income_statement'
+        ? { income_statement: null, is_document_id: null, is_source_filename: null, is_extracted_at: null, is_warnings: [] }
+        : { balance_sheet: null, bs_document_id: null, bs_source_filename: null, bs_extracted_at: null, bs_warnings: [] }
+    const { error: e } = await supabase.from('financial_statements').update(cleared).eq('id', s.rowId)
+    if (e) throw new Error(`Failed to clear a stale statement: ${e.message}`)
+  }
+  return stale.length
 }
 
 /** What the pre-pass found about a document, and its document-level warnings. */
@@ -496,7 +568,7 @@ async function loadCompanyDetails(
 ): Promise<CompanyDetailsForCheck | null> {
   const { data, error } = await supabase
     .from('company_details')
-    .select('entity_type, company_name, abn_number, trust_name, trust_abn_number')
+    .select('entity_type, company_name, abn_number, trust_name, trust_abn_number, directors')
     .eq('client_id', clientId)
     .maybeSingle()
   if (error) console.error('[financials-comparison] company details query failed', error)
@@ -507,6 +579,7 @@ async function loadCompanyDetails(
     abnNumber: data.abn_number,
     trustName: data.trust_name,
     trustAbnNumber: data.trust_abn_number,
+    directors: readDirectors(data.directors).map((d) => d.name),
   }
 }
 

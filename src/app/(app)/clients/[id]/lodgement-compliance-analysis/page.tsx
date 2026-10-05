@@ -73,16 +73,14 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       }
     : null
 
-  const STATUS_LABELS: Record<
-    string,
-    { label: string; variant: 'success' | 'warning' | 'destructive' | 'muted' | 'accent' }
-  > = {
-    invited: { label: 'Invited', variant: 'accent' },
-    in_progress: { label: 'Uploading', variant: 'warning' },
-    complete: { label: 'Complete', variant: 'success' },
-    missing_items: { label: 'Missing Items', variant: 'destructive' },
-  }
-  const statusBadge = STATUS_LABELS[client.status] ?? { label: client.status, variant: 'muted' }
+  // This page is about the analysis, so its badge is the analysis state. The
+  // client's document status ("Missing: …") belongs on the client page.
+  const statusBadge = rawAnalysis
+    ? {
+        label: `Analysed ${new Date(rawAnalysis.analysed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+        variant: 'success' as const,
+      }
+    : { label: 'Not analysed yet', variant: 'muted' as const }
 
   return (
     <div id="lodgement-export-root" className="p-6 max-w-4xl mx-auto">

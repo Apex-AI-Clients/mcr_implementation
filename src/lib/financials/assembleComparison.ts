@@ -62,7 +62,7 @@ export function assembleComparison(input: {
   const { slots, records, company } = input
   const isTrust = entityIsTrust(company, records)
 
-  const mappingChecks = harmoniseMappings(slots)
+  const mappingChecks = harmoniseMappings(slots, { isTrust, directors: company?.directors ?? [] })
   const annual = mergeAnnualYears(slots)
   const current = mergeCurrentPeriod(slots)
   const corrections = [
@@ -77,9 +77,21 @@ export function assembleComparison(input: {
   ]
   if (statements.length < 2) return { ok: false, statementCount: statements.length }
 
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  const equityByYear: NonNullable<FinancialsComparison['equityByYear']> = {}
+  for (const m of used) {
+    const s = m.statement
+    equityByYear[s.financialYear] = {
+      retainedEarnings: m.sources.balance_sheet ? num(s.balanceSheet.equity?.retainedEarnings) : null,
+      distributions: num(s.incomeStatement.appropriations?.distributions),
+      dividends: num(s.incomeStatement.appropriations?.dividends),
+    }
+  }
+
   const comparison: FinancialsComparison = {
     ...computeFinancialsComparison(statements),
     extraYears,
+    equityByYear,
     checks: runChecks({
       slots,
       allAnnual: annual,

@@ -221,3 +221,34 @@ describe('assembleComparison (trust, separate files)', () => {
     expect(prompt).toContain(`Net profit/(loss) $${formatted(250_000 - 170_000)}`)
   })
 })
+
+describe('restatement: retained-earnings lines and signs', () => {
+  function pnlWith(lines: StatementLine[]): ExtractedIncomeStatement {
+    return { income: { sales: 100 }, cogs: {}, expenses: {}, totals: {}, lines }
+  }
+
+  it('leaves appropriation and after-loss lines out entirely', () => {
+    const own = pnlWith([
+      line('income', 'Sales', 100, 'income.sales'),
+      line('incomeTotals', 'NET TRADING PROFIT /(LOSS) AFTER DEDUCTING LOSS', 4_682, 'ignore.profitAfterLosses', true),
+      line('appropriation', 'Distribution to Beneficiaries', 16_996, null),
+    ])
+    const later = pnlWith([
+      line('income', 'Sales', 100, 'income.sales'),
+      line('incomeTotals', 'NET TRADING PROFIT /(LOSS) AFTER DEDUCTING LOSS', 9_999, 'ignore.profitAfterLosses', true),
+      line('appropriation', 'Distribution to Beneficiaries', 1, null),
+    ])
+    const slots = [slot(2024, 'primary', { is: [own, 'pnl-23-24'] }), slot(2024, 'comparative', { is: [later, 'pnl-24-25'] })]
+    expect(restatementChecks(slots)).toEqual([])
+  })
+
+  it('reports a difference in sign only as a note, not a warning', () => {
+    const own = pnlWith([line('expenses', 'Bank Charges', 4_682, 'expenses.bankFees')])
+    const later = pnlWith([line('expenses', 'Bank Charges', -4_682, 'expenses.bankFees')])
+    const slots = [slot(2024, 'primary', { is: [own, 'pnl-23-24'] }), slot(2024, 'comparative', { is: [later, 'pnl-24-25'] })]
+    const checks = restatementChecks(slots)
+    expect(checks).toEqual([
+      expect.objectContaining({ severity: 'info', message: expect.stringMatching(/sign differs between files for Bank Charges/) }),
+    ])
+  })
+})

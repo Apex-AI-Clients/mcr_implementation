@@ -121,7 +121,9 @@ describe('opening and closing stock', () => {
     ]
     const notes = correctColumn(s, lines, { isTrust: false })
     expect(s.incomeStatement.cogs).toEqual({ purchases: 80_000, openingStock: 15_000, closingStock: 20_000 })
-    expect(notes.filter((n) => n.kind === 'mapping_corrected')).toHaveLength(2)
+    // The cost-of-sales lines add up to the printed total, so the section is
+    // rebuilt from them: right figures, nothing to report.
+    expect(notes.filter((n) => n.kind === 'lines_incomplete')).toEqual([])
   })
 })
 
@@ -140,7 +142,7 @@ describe('mapping dictionary', () => {
     expect(lines[1].canonicalKey).toBe('nonCurrentAssets.other.Deposits')
   })
 
-  it('moves a person-named loan to director loans payable, from wherever it was filed', () => {
+  function loans() {
     const s = {
       incomeStatement: blankIs(),
       balanceSheet: { ...blankBs(), nonCurrentLiabilities: { loansAndFinance: 70_000 } },
@@ -149,8 +151,22 @@ describe('mapping dictionary', () => {
       line('nonCurrentLiabilities', 'Loan - Westpac', 50_000, 'nonCurrentLiabilities.loansAndFinance'),
       line('nonCurrentLiabilities', 'Loan - Jane Citizen', 20_000, 'nonCurrentLiabilities.loansAndFinance'),
     ]
-    correctColumn(s, lines, { isTrust: false })
+    return { s, lines }
+  }
+
+  it("moves a loan named after a director on file to director loans payable", () => {
+    const { s, lines } = loans()
+    correctColumn(s, lines, { isTrust: false, directors: ['Jane Citizen'] })
     expect(s.balanceSheet.nonCurrentLiabilities).toEqual({ loansAndFinance: 50_000, directorRelatedLoansPayable: 20_000 })
+  })
+
+  it('never assumes a person-named loan is a director loan: it stays put, with a note', () => {
+    const { s, lines } = loans()
+    const notes = correctColumn(s, lines, { isTrust: false, directors: [] })
+    expect(s.balanceSheet.nonCurrentLiabilities).toEqual({ loansAndFinance: 70_000 })
+    expect(notes.filter((n) => n.kind === 'loan_unconfirmed').map((n) => n.message)).toEqual([
+      "Loan 'Loan - Jane Citizen': director or lender? Confirm. It is shown under loans & finance until confirmed.",
+    ])
   })
 
   it('takes an unmapped line out of the "other" entry it was filed under', () => {

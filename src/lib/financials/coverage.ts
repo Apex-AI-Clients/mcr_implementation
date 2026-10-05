@@ -1,6 +1,6 @@
 import { YEAR_WINDOW, applyYearWindow } from './checks'
 import { mergeAnnualYears, mergeCurrentPeriod, type MergedStatement } from './statementSelection'
-import type { StatementHalfKey, StoredStatementSlot } from './types'
+import type { FinancialStatementSourceColumn, StatementHalfKey, StoredStatementSlot } from './types'
 
 /**
  * Which statement each year has, and where it came from — the coverage table
@@ -10,11 +10,19 @@ import type { StatementHalfKey, StoredStatementSlot } from './types'
  * Columns: the four financial years the comparison wants (the latest four up
  * to the newest year stored, gaps included so a missing year shows), any older
  * years that are stored as extras, then the current period if there is one.
- * Each cell is the year's own file, a later file's comparative column, or
- * missing.
+ * Each cell is the year's own file, a later file's comparative column,
+ * missing (no file supplies it), or failed (a file prints it but it could not
+ * be read, even on a retry — re-running may fix it).
  */
 
-export type CoverageStatus = 'own' | 'comparative' | 'missing'
+export type CoverageStatus = 'own' | 'comparative' | 'missing' | 'failed'
+
+/** A column a document prints but whose extraction failed. */
+export interface ColumnFailure {
+  financialYear: number
+  sourceColumn: FinancialStatementSourceColumn
+  half: StatementHalfKey
+}
 
 export interface CoverageCell {
   status: CoverageStatus
@@ -50,7 +58,7 @@ function cell(m: MergedStatement | undefined, half: StatementHalfKey): CoverageC
   }
 }
 
-export function buildCoverage(slots: StoredStatementSlot[]): StatementCoverage {
+export function buildCoverage(slots: StoredStatementSlot[], failures: ColumnFailure[] = []): StatementCoverage {
   const annual = mergeAnnualYears(slots)
   const current = mergeCurrentPeriod(slots)
   const { used, extraYears } = applyYearWindow(annual)
@@ -80,12 +88,19 @@ export function buildCoverage(slots: StoredStatementSlot[]): StatementCoverage {
     })
   }
 
-  const rowFor = (half: StatementHalfKey) =>
-    columns.map((column) =>
-      column.kind === 'current_period'
-        ? cell(current ?? undefined, half)
-        : cell(byYear.get(column.financialYear), half),
+  const failed = (column: CoverageColumn, half: StatementHalfKey) =>
+    failures.some(
+      (f) =>
+        f.half === half &&
+        f.financialYear === column.financialYear &&
+        (f.sourceColumn === 'current_period') === (column.kind === 'current_period'),
     )
+  const rowFor = (half: StatementHalfKey) =>
+    columns.map((column) => {
+      const found =
+        column.kind === 'current_period' ? cell(current ?? undefined, half) : cell(byYear.get(column.financialYear), half)
+      return found.status === 'missing' && failed(column, half) ? { ...found, status: 'failed' as const } : found
+    })
 
   return {
     columns,

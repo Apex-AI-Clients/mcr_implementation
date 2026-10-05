@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  classifyLoan,
   dictionaryKey,
   isIncomeTaxExpenseLabel,
-  isPersonLoanLabel,
   isPriorYearLossLabel,
   normaliseLabel,
 } from '../labels'
@@ -31,14 +31,19 @@ describe('dictionaryKey', () => {
     ['Bond Rent', 'nonCurrentAssets', 'nonCurrentAssets.other.Deposits'],
     ['Deposits', 'currentAssets', 'nonCurrentAssets.other.Deposits'],
     ['Opening Stock', 'cogs', 'cogs.openingStock'],
+    ['Inventories', 'currentAssets', 'currentAssets.inventories'],
+    ['Stock on hand', 'currentAssets', 'currentAssets.inventories'],
+    ['Closing Stock', 'currentAssets', 'currentAssets.inventories'], // under assets it is the stock held
+    ['Borrowing Cost', 'nonCurrentAssets', 'nonCurrentAssets.other.Borrowing costs'],
+    ['Borrowing Costs', 'currentAssets', 'nonCurrentAssets.other.Borrowing costs'],
+    ['Amortisation', 'expenses', 'expenses.depreciation'],
+    ['Amortisation of borrowing costs', 'expenses', 'expenses.depreciation'],
+    ['Depreciation & Amortisation', 'expenses', 'expenses.depreciation'],
     ['Less Closing Stock', 'cogs', 'cogs.closingStock'],
     ['Distribution to Beneficiaries', 'appropriation', 'appropriations.distributions'],
     ['Less Prior Year Loss', 'appropriation', 'appropriations.priorYearLossesApplied'],
     ['NET TRADING PROFIT/(LOSS) AFTER DEDUCTING LOSS', 'incomeTotals', 'ignore.profitAfterLosses'],
     ['Profit after prior year losses', 'incomeTotals', 'ignore.profitAfterLosses'],
-    ['Loan - Jane Citizen', 'nonCurrentLiabilities', 'nonCurrentLiabilities.directorRelatedLoansPayable'],
-    ['Director Loan', 'currentLiabilities', 'nonCurrentLiabilities.directorRelatedLoansPayable'],
-    ['Loan 2020', 'nonCurrentLiabilities', 'nonCurrentLiabilities.directorRelatedLoansPayable'],
   ] as const)('%s under %s -> %s', (label, section, key) => {
     expect(dictionaryKey(label, section)).toBe(key)
   })
@@ -46,6 +51,7 @@ describe('dictionaryKey', () => {
   it.each([
     ['Loan - Westpac', 'nonCurrentLiabilities'],
     ['Loan - Hino Truck', 'nonCurrentLiabilities'],
+    ['Loan - Jane Citizen', 'nonCurrentLiabilities'], // loans are classified by classifyLoan, not the dictionary
     ['Chattel Mortgage - Ute', 'nonCurrentLiabilities'],
     ['Bond', 'currentLiabilities'], // a bond HELD is a liability, not a deposit asset
     ['Sales', 'income'],
@@ -55,14 +61,54 @@ describe('dictionaryKey', () => {
   })
 })
 
-describe('label tests', () => {
-  it('tells a person loan from a lender loan', () => {
-    expect(isPersonLoanLabel(normaliseLabel('Loan J Smith'))).toBe(true)
-    expect(isPersonLoanLabel(normaliseLabel('Shareholder Loan Account'))).toBe(true)
-    expect(isPersonLoanLabel(normaliseLabel('Business Loan - ANZ'))).toBe(false)
-    expect(isPersonLoanLabel(normaliseLabel('Premium Funding Loan'))).toBe(false)
+describe('classifyLoan', () => {
+  // Names below are invented. The shapes are the real ones.
+  const DIRECTORS = ['Anh Bao Citizen']
+
+  it.each([
+    // PARKCON-style vehicle and equipment finance.
+    ['Loan - VW', 'lender_asset'],
+    ['Loan - Hino Truck', 'lender_asset'],
+    ['Loan - Mini Excavator', 'lender_asset'],
+    ['Loan - Audi', 'lender_asset'],
+    ['Loan - T Cross', 'lender_asset'],
+    ['Loan - Van', 'lender_asset'],
+    // Finance businesses ("Name Loan - Name" with a lender word).
+    ['Business Loan - Ondesk', 'lender'],
+    ['Car Loan - Getcapital', 'lender_asset'],
+    ['Loan - Getcapital', 'lender'],
+    ['Loan - Sample Finance Pty Ltd', 'lender'],
+    ['Loan - Westpac', 'lender'],
+  ] as const)('%s -> %s', (label, expected) => {
+    expect(classifyLoan(label, DIRECTORS)).toBe(expected)
   })
 
+  it('makes "Loan - <three names>" director-related only when it matches a director on file', () => {
+    expect(classifyLoan('Loan - Anh Bao Citizen', DIRECTORS)).toBe('director')
+    // Any order, any case, a middle name missing.
+    expect(classifyLoan('Loan - CITIZEN Anh', DIRECTORS)).toBe('director')
+    // No matching director: never assumed.
+    expect(classifyLoan('Loan - Minh Van Sample', DIRECTORS)).toBe('unconfirmed')
+    expect(classifyLoan('Loan - Anh Bao Citizen', [])).toBe('unconfirmed')
+  })
+
+  it('does not read "Van" in a name as a vehicle', () => {
+    expect(classifyLoan('Loan - Van Nguyen', [])).toBe('unconfirmed')
+    expect(classifyLoan('Loan - Van Nguyen', ['Van Nguyen'])).toBe('director')
+  })
+
+  it('takes an explicit "director" or "shareholder" at its word', () => {
+    expect(classifyLoan('Director Loan', [])).toBe('director')
+    expect(classifyLoan('Shareholder Loan Account', [])).toBe('director')
+  })
+
+  it('leaves non-loans and year-suffixed loans to the extraction rules', () => {
+    expect(classifyLoan('Sales', [])).toBeNull()
+    expect(classifyLoan('Loan 2020', [])).toBeNull()
+  })
+})
+
+describe('label tests', () => {
   it('knows an income tax expense line from a tax payable', () => {
     expect(isIncomeTaxExpenseLabel('Income Tax Expense')).toBe(true)
     expect(isIncomeTaxExpenseLabel('Less: Income tax')).toBe(true)

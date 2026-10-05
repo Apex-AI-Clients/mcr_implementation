@@ -1,5 +1,11 @@
-import { dictionaryKey, normaliseLabel } from './labels'
-import { isIncomeStatementSection, moveLine, type Statements } from './lineCorrections'
+import { normaliseLabel } from './labels'
+import {
+  effectiveKey,
+  isIncomeStatementSection,
+  moveLine,
+  type CorrectionContext,
+  type Statements,
+} from './lineCorrections'
 import { emptyBalanceSheet, emptyIncomeStatement } from './statementSelection'
 import type {
   ExtractedBalanceSheet,
@@ -16,10 +22,13 @@ import type {
  * given (they are read fresh for each build and never written back).
  *
  * When the same printed label (normalised) was mapped to different keys in
- * different files, every occurrence moves to one key: the dictionary's if it
- * knows the label, otherwise the key most files used (ties: alphabetical, so
- * the result never depends on the order files were read). Each harmonised
- * label is reported once.
+ * different files, every occurrence moves to one key:
+ *   1. the label dictionary or the loan rule, when either decides the label;
+ *   2. otherwise the key used by most DOCUMENTS — one vote per file, not per
+ *      column, so a file's comparative column cannot outvote another file;
+ *      a tie goes to the key a year's own file (primary column) used, then
+ *      alphabetically, so the result never depends on reading order.
+ * Each harmonised label is reported once.
  */
 
 interface Occurrence {
@@ -35,7 +44,7 @@ function readableKey(path: string): string {
   return last.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
 }
 
-export function harmoniseMappings(slots: StoredStatementSlot[]): FinancialCheck[] {
+export function harmoniseMappings(slots: StoredStatementSlot[], ctx: CorrectionContext = { isTrust: false }): FinancialCheck[] {
   const groups = new Map<string, Occurrence[]>()
   for (const slot of slots) {
     for (const half of ['income_statement', 'balance_sheet'] as const) {
@@ -53,15 +62,29 @@ export function harmoniseMappings(slots: StoredStatementSlot[]): FinancialCheck[
   const checks: FinancialCheck[] = []
   for (const occurrences of groups.values()) {
     const keys = [...new Set(occurrences.map((o) => o.line.canonicalKey as string))]
-    if (keys.length < 2) continue
-
     const first = occurrences[0].line
-    const fromDictionary = dictionaryKey(first.rawLabel, first.section)
-    let chosen = fromDictionary
+    const decided = effectiveKey(first, ctx)
+    const fromRule = decided.source === 'dictionary' || decided.source === 'loan' ? decided.key : null
+    // A rule applies even when every file agrees on something else — that is
+    // how statements read before the rule existed get corrected on a rebuild.
+    if (fromRule ? keys.every((k) => k === fromRule) : keys.length < 2) continue
+
+    let chosen = fromRule
     if (!chosen) {
-      const counts = new Map<string, number>()
-      for (const o of occurrences) counts.set(o.line.canonicalKey as string, (counts.get(o.line.canonicalKey as string) ?? 0) + 1)
-      chosen = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
+      // One vote per document; a key used in some year's own file wins a tie.
+      const votes = new Map<string, Set<string>>()
+      const ownFile = new Set<string>()
+      for (const o of occurrences) {
+        const key = o.line.canonicalKey as string
+        votes.set(key, (votes.get(key) ?? new Set()).add(o.stored.documentId ?? o.slot.id))
+        if (o.slot.sourceColumn === 'primary') ownFile.add(key)
+      }
+      chosen = [...votes.entries()].sort(
+        (a, b) =>
+          b[1].size - a[1].size ||
+          Number(ownFile.has(b[0])) - Number(ownFile.has(a[0])) ||
+          a[0].localeCompare(b[0]),
+      )[0][0]
     }
 
     const moved: Occurrence[] = []
@@ -88,7 +111,7 @@ export function harmoniseMappings(slots: StoredStatementSlot[]): FinancialCheck[
       severity: 'info',
       financialYear: null,
       statement: isIncomeStatementSection(first.section) ? 'income_statement' : 'balance_sheet',
-      message: `"${first.rawLabel}" was read as ${previously}. It is treated as ${readableKey(chosen)} in every file (${fromDictionary ? 'the label dictionary' : 'what most files used'}).`,
+      message: `"${first.rawLabel}" was read as ${previously}. It is treated as ${readableKey(chosen)} in every file (${fromRule ? (decided.source === 'loan' ? 'the loan rule' : 'the label dictionary') : 'what most files used'}).`,
       documentIds: [...new Set(moved.map((o) => o.stored.documentId).filter((id): id is string => !!id))],
     })
   }

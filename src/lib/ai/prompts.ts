@@ -14,11 +14,12 @@ WRITING RULES:
 - 4 to 6 sentences. Hard maximum: 140 words total.
 - Plain English. No jargon. No markdown. No bullet points.
 - Factual only. Do not invent figures or extrapolate beyond what the data shows.
+- Every dollar figure you write must be one of the figures below, or the difference between two of them. Do not add figures together.
 - Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
 
 WHAT TO COVER (use natural prose, not headers):
 1. Revenue trajectory — direction and magnitude over the period.
-2. Profitability — number of profitable years vs loss years, accumulated retained earnings position.
+2. Profitability — number of profitable years vs loss years, and the retained earnings position using ONLY the "Retained earnings" figures given per year (and any distributions paid). NEVER add profits across years, and NEVER describe a sum of profits as retained earnings.
 3. ATO debt trajectory — particularly whether it is growing FASTER than revenue (a critical SBR-suitability indicator). State the YoY trajectory explicitly.
 4. Director / related-party loans receivable — note any material build-up, since this is the single strongest negative signal for ATO assessment.
 5. Net asset position and what it implies for solvency.
@@ -32,7 +33,6 @@ KEY DERIVED METRICS (latest year):
 - ATO debt as % of revenue: {atoDebtPctRevenueLatest}
 - Director loans as % of total assets: {directorLoansPctAssetsLatest}
 - Net assets: \${netAssetsLatest}
-- Cumulative net profit/(loss) over the {numYears} year period: \${cumulativeProfitLoss}
 
 Respond with the summary paragraph only. No preamble, no headers, no quotes.
 `.trim()

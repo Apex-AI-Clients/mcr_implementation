@@ -1,5 +1,6 @@
 import { digitsOnly } from '@/lib/asic/identifiers'
-import { normaliseLabel } from './labels'
+import { dictionaryKey, isPriorYearLossLabel, normaliseLabel } from './labels'
+import type { StatementLine } from './types'
 import type { MergedStatement } from './statementSelection'
 import type {
   ExtractedFinancialStatement,
@@ -272,10 +273,22 @@ const MAX_LINES_LISTED = 5
 type Comparable = Map<string, { value: number; display: string }>
 
 /** Printed lines by normalised label (the first of any repeated label). */
-function byLabel(lines: Array<{ rawLabel: string; value: number | null }>): Comparable {
+/**
+ * Lines that move retained earnings rather than report the year: appropriation
+ * lines, prior-year losses, the profit-after-losses subtotal, distributions.
+ * They are expected to differ between files, so restatement leaves them out.
+ */
+function isAppropriationLine(line: StatementLine): boolean {
+  if (line.section === 'appropriation') return true
+  const key = dictionaryKey(line.rawLabel, line.section)
+  if (key && (key.startsWith('appropriations.') || key.startsWith('ignore.'))) return true
+  return isPriorYearLossLabel(line.rawLabel) || /\b(distribution|distributions|beneficiar(y|ies)|retained (profits|earnings))\b/.test(normaliseLabel(line.rawLabel))
+}
+
+function byLabel(lines: StatementLine[]): Comparable {
   const out: Comparable = new Map()
   for (const line of lines) {
-    if (line.value === null) continue
+    if (line.value === null || isAppropriationLine(line)) continue
     const key = normaliseLabel(line.rawLabel)
     if (key && !out.has(key)) out.set(key, { value: line.value, display: line.rawLabel })
   }
@@ -317,13 +330,29 @@ export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[
       const a = ownLines?.length && laterLines?.length ? byLabel(ownLines) : totalsOf(own.data)
       const b = ownLines?.length && laterLines?.length ? byLabel(laterLines) : totalsOf(later.data)
       const moved: string[] = []
+      const signOnly: string[] = []
       for (const [label, { value: ownValue, display }] of a) {
         const laterEntry = b.get(label)
         if (!laterEntry) continue
         const laterValue = laterEntry.value
-        if (Math.abs(ownValue - laterValue) > restatementTolerance(ownValue, laterValue)) {
+        if (Math.abs(ownValue - laterValue) <= restatementTolerance(ownValue, laterValue)) continue
+        // The same amount with the opposite sign is almost always a sign read
+        // differently from one file to the other, not a restatement.
+        if (Math.abs(Math.abs(ownValue) - Math.abs(laterValue)) <= restatementTolerance(ownValue, laterValue)) {
+          signOnly.push(`${display} ${money(ownValue)} / ${money(laterValue)}`)
+        } else {
           moved.push(`${display} ${money(ownValue)} → ${money(laterValue)}`)
         }
+      }
+      if (signOnly.length > 0) {
+        out.push({
+          kind: 'restatement',
+          severity: 'info',
+          financialYear: year,
+          statement: half,
+          message: `FY${year}: sign differs between files for ${signOnly.join('; ')} (${own.sourceFilename ?? 'its own file'} and ${later.sourceFilename ?? 'a later file'}). The comparison uses the year's own figures.`,
+          documentIds: [own.documentId, later.documentId].filter((id): id is string => !!id),
+        })
       }
       if (moved.length === 0) continue
       const listed = moved.slice(0, MAX_LINES_LISTED).join('; ')
@@ -349,6 +378,8 @@ export interface CompanyDetailsForCheck {
   abnNumber: string | null
   trustName: string | null
   trustAbnNumber: string | null
+  /** Directors' names, for the loan rule. */
+  directors?: string[]
 }
 
 export interface DocumentRecordForCheck {
@@ -423,6 +454,7 @@ const WARNING_KINDS = new Set<ExtractionWarning['kind']>([
   'presence_mismatch',
   'document_kind',
   'filename_year_conflict',
+  'column_not_extracted',
 ])
 
 /** What was recorded about each document: not statements at all, and its notes. */

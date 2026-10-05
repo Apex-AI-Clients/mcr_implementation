@@ -86,3 +86,25 @@ describe('buildCoverage', () => {
     expect(buildCoverage([])).toEqual({ columns: [], rows: { income_statement: [], balance_sheet: [] } })
   })
 })
+
+describe('failed extraction', () => {
+  it('marks a cell "failed" when a file prints the column but it could not be read', () => {
+    const coverage = buildCoverage(
+      [slot(2024, 'primary', { is: 'pnl', bs: 'bs' }), slot(2023, 'comparative', { is: 'pnl' })],
+      [{ financialYear: 2023, sourceColumn: 'comparative', half: 'balance_sheet' }],
+    )
+    const i = coverage.columns.findIndex((c) => c.financialYear === 2023)
+    expect(coverage.rows.balance_sheet[i].status).toBe('failed')
+    expect(coverage.rows.income_statement[i].status).toBe('comparative')
+  })
+
+  it('keeps "missing" when no file prints it, and never overrides data that is there', () => {
+    const coverage = buildCoverage(
+      [slot(2024, 'primary', { is: 'pnl', bs: 'bs' })],
+      [{ financialYear: 2024, sourceColumn: 'primary', half: 'balance_sheet' }],
+    )
+    const last = coverage.columns.length - 1
+    expect(coverage.rows.balance_sheet[last].status).toBe('own')
+    expect(coverage.rows.balance_sheet[0].status).toBe('missing')
+  })
+})

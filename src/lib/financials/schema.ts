@@ -68,6 +68,7 @@ export const BALANCE_SHEET_SCHEMA = {
   currentAssets: {
     bankAccounts: 'Bank Accounts',
     accountsReceivable: 'Accounts Receivable',
+    inventories: 'Inventories',
     other: 'Other Current Assets (uncategorised)',
   },
   nonCurrentAssets: {

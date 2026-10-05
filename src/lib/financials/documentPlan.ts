@@ -56,3 +56,36 @@ export function planDocument(prepass: FinancialsPrepass): DocumentPlan {
     warnings: failure ? [{ kind: 'page_selection', message: `${reason[failure]} The whole file was sent.` }] : [],
   }
 }
+
+// ─── Columns the headings promise ─────────────────────────────────────────────
+
+export interface ExpectedColumn {
+  financialYear: number
+  sourceColumn: 'primary' | 'comparative' | 'current_period'
+}
+
+/**
+ * The columns this document's own text shows: each annual heading year as a
+ * primary column, a column-header year one before it as the comparative, and
+ * a current-period heading. Nothing for a document the pre-pass could not read.
+ */
+export function expectedColumns(prepass: FinancialsPrepass): ExpectedColumn[] {
+  const c = prepass.classification
+  if (c.kind === 'unknown' || c.kind === 'not_financial' || c.kind === 'tax_return_only') return []
+  const out: ExpectedColumn[] = c.headingYears.map((y) => ({ financialYear: y, sourceColumn: 'primary' as const }))
+  for (const y of c.comparativeYears) {
+    if (c.headingYears.includes(y + 1)) out.push({ financialYear: y, sourceColumn: 'comparative' })
+  }
+  if (c.currentPeriodYear !== null) out.push({ financialYear: c.currentPeriodYear, sourceColumn: 'current_period' })
+  return out
+}
+
+/** Expected columns the extraction did not return. */
+export function missingColumns(
+  expected: ExpectedColumn[],
+  returned: Array<{ financialYear: number; sourceColumn: string }>,
+): ExpectedColumn[] {
+  return expected.filter(
+    (e) => !returned.some((r) => r.financialYear === e.financialYear && r.sourceColumn === e.sourceColumn),
+  )
+}

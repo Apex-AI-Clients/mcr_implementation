@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { correctYear, decidePresence } from '../columnChecks'
-import { planDocument } from '../documentPlan'
+import { expectedColumns, missingColumns, planDocument } from '../documentPlan'
 import { buildExtractionContext } from '../extractionContext'
 import type { FinancialsPrepass } from '../prepass'
 import type { ResolvedYears } from '../resolveYear'
@@ -96,6 +96,7 @@ const prepass = (kind: FinancialDocumentKind, failure: FinancialsPrepass['failur
   encrypted: false,
   pageCount: 1,
   failure,
+  pages: [],
 })
 
 describe('planDocument', () => {
@@ -163,5 +164,30 @@ describe('buildExtractionContext', () => {
       selection: selection('whole_file'),
     })
     expect(nothing).toContain('derive financialYear ONLY from the PDF heading')
+  })
+})
+
+describe('expected and missing columns', () => {
+  const withYears = (headingYears: number[], comparativeYears: number[], kind: FinancialDocumentKind = 'bs_only') => {
+    const p = prepass(kind)
+    p.classification.headingYears = headingYears
+    p.classification.comparativeYears = comparativeYears
+    return p
+  }
+
+  it('expects the heading year and the prior-year column the headers show', () => {
+    expect(expectedColumns(withYears([2024], [2023]))).toEqual([
+      { financialYear: 2024, sourceColumn: 'primary' },
+      { financialYear: 2023, sourceColumn: 'comparative' },
+    ])
+  })
+
+  it('reports the comparative the model did not return', () => {
+    const missing = missingColumns(expectedColumns(withYears([2024], [2023])), [{ financialYear: 2024, sourceColumn: 'primary' }])
+    expect(missing).toEqual([{ financialYear: 2023, sourceColumn: 'comparative' }])
+  })
+
+  it('expects nothing of a document it could not read', () => {
+    expect(expectedColumns(withYears([2024], [2023], 'unknown'))).toEqual([])
   })
 })

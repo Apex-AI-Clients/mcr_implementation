@@ -100,10 +100,18 @@ export interface ExtractionWarning {
     | 'profit_corrected'
     | 'mapping_corrected'
     | 'swapped_totals'
+    | 'sign_corrected'
+    | 'loan_unconfirmed'
+    | 'lines_incomplete'
+    | 'column_not_extracted'
   message: string
   rawLabel?: string
   rawValue?: string
   section?: string
+  /** column_not_extracted: the column the headings show but the model did not return. */
+  financialYear?: number
+  sourceColumn?: FinancialStatementSourceColumn
+  halves?: StatementHalfKey[]
 }
 
 export interface RawExtractionEntry {
@@ -348,4 +356,10 @@ export interface FinancialsComparison {
   extraYears?: number[]
   /** Checks run over the statements. Absent on comparisons built before them. */
   checks?: FinancialCheck[]
+  /**
+   * Retained earnings (balance sheet) and what was paid out (P&L
+   * appropriations) per compared year — for the AI summary, which must never
+   * stand in a sum of profits for retained earnings.
+   */
+  equityByYear?: Record<number, { retainedEarnings: number | null; distributions: number | null; dividends: number | null }>
 }

@@ -29,6 +29,8 @@ export interface FinancialsPrepass {
   pageCount: number
   /** Why the pre-pass found nothing usable; null when it read the document. */
   failure: PrepassFailure | null
+  /** Each page's text lines (empty when unreadable). For checks against the printed figures. */
+  pages: string[][]
 }
 
 const EMPTY: PrepassClassification = {
@@ -72,6 +74,7 @@ export async function runFinancialsPrepass(bytes: Uint8Array): Promise<Financial
       encrypted,
       pageCount: err instanceof PdfTooLongError ? err.pageCount : 0,
       failure,
+      pages: [],
     }
   }
 
@@ -81,5 +84,6 @@ export async function runFinancialsPrepass(bytes: Uint8Array): Promise<Financial
     encrypted,
     pageCount,
     failure: classification.hasTextLayer ? null : 'no_text_layer',
+    pages,
   }
 }

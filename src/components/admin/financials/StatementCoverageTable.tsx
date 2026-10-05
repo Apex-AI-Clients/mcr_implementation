@@ -1,4 +1,4 @@
-import { Check, CornerDownLeft, Minus } from 'lucide-react'
+import { AlertTriangle, Check, CornerDownLeft, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CoverageCell, StatementCoverage } from '@/lib/financials/coverage'
 import type { StatementHalfKey } from '@/lib/financials/types'
@@ -29,6 +29,14 @@ function CellContent({ cell }: { cell: CoverageCell }) {
       <span className="inline-flex items-center gap-1 text-success">
         <Check className="h-3.5 w-3.5" aria-hidden />
         <span>Own file</span>
+      </span>
+    )
+  }
+  if (cell.status === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-1 text-warning">
+        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+        <span>Extraction failed — re-run</span>
       </span>
     )
   }
@@ -114,7 +122,9 @@ export function StatementCoverageTable({ coverage, className }: Props) {
       <p className="text-[11px] text-foreground/50">
         <span className="text-success">Own file</span> — read from that year&apos;s statements.{' '}
         <span className="text-accent">Comparative</span> — read from the prior-year column of the next
-        year&apos;s statements. Hover a cell for the file. Years marked older are kept but not compared.
+        year&apos;s statements. <span className="text-destructive">Missing</span> — no file supplies it.{' '}
+        <span className="text-warning">Extraction failed</span> — a file prints it but it could not be read; re-run the
+        extraction. Hover a cell for the file. Years marked older are kept but not compared.
       </p>
     </div>
   )

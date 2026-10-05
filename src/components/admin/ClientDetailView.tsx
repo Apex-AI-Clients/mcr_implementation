@@ -7,7 +7,7 @@ import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
 import { buildCoverage } from '@/lib/financials/coverage'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { getLeadIdForClient } from '@/lib/leads/queries'
@@ -16,6 +16,7 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { describeDirector } from '@/lib/asic/fill'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { archiveReasonLabel } from '@/lib/clients/archive'
+import { documentStatusBadge } from '@/lib/clients/status'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
@@ -54,6 +55,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     { data: rawCompany },
     originLeadId,
     slots,
+    failures,
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -67,8 +69,9 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     getLeadIdForClient(id),
     // The coverage table. A failed read just leaves it out.
     loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
+    loadColumnFailures(supabase, id),
   ])
-  const coverage = buildCoverage(slots)
+  const coverage = buildCoverage(slots, failures)
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
@@ -114,16 +117,8 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     : null
   const identity = identityDisplay(companyDetails ?? {})
 
-  const STATUS_LABELS: Record<
-    string,
-    { label: string; variant: 'success' | 'warning' | 'destructive' | 'muted' | 'accent' }
-  > = {
-    invited: { label: 'Invited', variant: 'accent' },
-    in_progress: { label: 'Uploading', variant: 'warning' },
-    complete: { label: 'Complete', variant: 'success' },
-    missing_items: { label: 'Missing Items', variant: 'destructive' },
-  }
-  const statusBadge = STATUS_LABELS[client.status] ?? { label: client.status, variant: 'muted' }
+  // Document status, naming the required categories that have no file yet.
+  const statusBadge = documentStatusBadge(client.status, documents.map((d) => d.docCategory))
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

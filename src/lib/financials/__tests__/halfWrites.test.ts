@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeFinancialsComparison } from '../computeComparison'
 import { toStoredSlot, type FinancialStatementRow } from '../halves'
-import { planSlotWrite, type WritingDocument } from '../halfWrites'
+import { halfKey, planSlotWrite, staleHalves, type WritingDocument } from '../halfWrites'
 import { latestBalanceSheet, mergeAnnualYears, mergeCurrentPeriod } from '../statementSelection'
 import type {
   ExtractedBalanceSheet,
@@ -353,5 +353,37 @@ describe('latestBalanceSheet (prediction readers)', () => {
     const store = new Store()
     store.write(store.doc('pnl', '2026-01-01T00:00:00Z'), column(2025, { is: 1 }))
     expect(latestBalanceSheet(store.slots())).toBeNull()
+  })
+})
+
+describe('re-extraction clears what a document no longer produces', () => {
+  it('clears a stale comparative half, keeping the slot when another file still owns the other half', () => {
+    const store = new Store()
+    const bsFile = store.doc('bs-23-24', '2026-01-01T00:00:00Z')
+    const pnlFile = store.doc('pnl-23-24', '2026-01-01T00:00:01Z')
+    // Earlier run: the balance sheet file produced both columns.
+    store.write(bsFile, column(2024, { bs: 100 }))
+    store.write(bsFile, column(2023, { bs: 90 }, 'comparative'))
+    store.write(pnlFile, column(2023, { is: 80 }, 'comparative'))
+
+    // This run produced only the FY2024 column.
+    const produced = new Set([halfKey(2024, 'primary', 'balance_sheet')])
+    const stale = staleHalves(store.rows, 'bs-23-24', produced)
+    const fy2023 = store.rows.find((r) => r.financial_year === 2023)!
+    expect(stale).toEqual([{ rowId: fy2023.id, half: 'balance_sheet', deleteRow: false }])
+  })
+
+  it('deletes the row when the stale half was its only one', () => {
+    const store = new Store()
+    const bsFile = store.doc('bs', '2026-01-01T00:00:00Z')
+    store.write(bsFile, column(2023, { bs: 90 }, 'comparative'))
+    expect(staleHalves(store.rows, 'bs', new Set())).toEqual([{ rowId: store.rows[0].id, half: 'balance_sheet', deleteRow: true }])
+  })
+
+  it('leaves halves the document produced again, and halves other documents own', () => {
+    const store = new Store()
+    store.write(store.doc('a', '2026-01-01T00:00:00Z'), column(2024, { bs: 1 }))
+    store.write(store.doc('b', '2026-01-01T00:00:01Z'), column(2024, { is: 1 }))
+    expect(staleHalves(store.rows, 'a', new Set([halfKey(2024, 'primary', 'balance_sheet')]))).toEqual([])
   })
 })

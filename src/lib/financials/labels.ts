@@ -45,24 +45,60 @@ export function normaliseLabel(label: string): string {
 const ASSET_SECTIONS: LineSection[] = ['currentAssets', 'nonCurrentAssets']
 const LIABILITY_SECTIONS: LineSection[] = ['currentLiabilities', 'nonCurrentLiabilities']
 
-/** Words that make a loan a third party's, not a person's. */
-const LENDER_WORDS =
-  /\b(bank|finance|financial|westpac|nab|anz|cba|commonwealth|macquarie|st george|stgeorge|bendigo|suncorp|amex|pepper|latitude|ato|tax|insurance|premium|chattel|mortgage|hire purchase|lease|equipment|vehicle|car|truck|ute|van|excavator|machinery|plant|business|credit|card|overdraft|line of credit|government|council)\b/
+// ─── Loans ────────────────────────────────────────────────────────────────────
+
+/** A lender's name or form: the loan is owed to a finance business. */
+const LENDER_MARKERS =
+  /\b(bank|banking|finance|financial|capital|credit|pty|ltd|limited|leasing|lease|funding|lending|lender|ondesk|getcapital|westpac|nab|anz|cba|commonwealth|macquarie|st george|stgeorge|bendigo|suncorp|amex|pepper|latitude|prospa|moula|ato|insurance|premium|mortgage|chattel|hire purchase)\b/
+
+/** An asset the loan financed. "van" is handled separately (it is also a name). */
+const ASSET_WORDS =
+  /\b(truck|trucks|ute|utes|car|cars|excavator|excavators|plant|equipment|vehicle|vehicles|machinery|forklift|trailer|bobcat|tractor|boat|crane|loader|motorbike|motorcycle)\b/
+
+/** Vehicle and equipment makes and models seen on finance lines. */
+const VEHICLE_BRANDS =
+  /\b(vw|volkswagen|audi|toyota|hino|isuzu|ford|holden|mazda|nissan|mitsubishi|mercedes|benz|bmw|landcruiser|land cruiser|hilux|t cross|tcross|ranger|navara|triton|prado|kia|hyundai|subaru|volvo|kenworth|iveco|fuso|kubota|caterpillar|cat|komatsu|tesla|jeep|lexus|porsche|suzuki|honda|renault|peugeot|skoda|ldv|ram|dmax|d max)\b/
+
+/** "van" as a vehicle: not followed by another name-like word ("Van Nguyen" is a name). */
+const VAN_VEHICLE = /\bvan\b(?!\s+(?!loans?\b)[a-z]{2,})/
+
+const LOAN_WORDS = /\b(loans?|less|to|from|account|a c|payable|receivable|owing|the)\b/g
+
+export type LoanClass = 'director' | 'lender_asset' | 'lender' | 'unconfirmed'
 
 /**
- * A loan the label ties to a person: "Loan - Jane Citizen", "Loan J Smith",
- * "Director Loan", "Shareholder loan", "Loan 2020". Not a bank or an asset
- * finance loan.
+ * Who a loan line is owed to, from its label. Pure. Null when the label is
+ * not a loan, or is a year-suffixed loan ("Loan 2020"), which the extraction
+ * prompt already classifies.
+ *
+ *   director      the label names a director on file (every token of a
+ *                 one-word name, or two or more of a longer name, in any
+ *                 order), or says "director" / "shareholder" outright
+ *   lender_asset  vehicle or equipment finance: an asset word or a make
+ *                 ("Loan - VW", "Loan - Hino Truck", "Loan - Audi")
+ *   lender        a finance business ("Business Loan - Ondesk", "Loan - Westpac")
+ *   unconfirmed   anything else — never assumed to be a director's
  */
-export function isPersonLoanLabel(normalised: string): boolean {
-  if (!/\bloans?\b/.test(normalised)) return false
-  if (LENDER_WORDS.test(normalised)) return false
-  if (/\b(director|directors|shareholder|shareholders|owner|related party|beneficiary)\b/.test(normalised)) return true
-  // Year-suffixed, no counterparty: "loan 2020", "loan 2023".
-  if (/^loans? (20\d{2})$/.test(normalised)) return true
-  // "loan <name>" / "<name> loan": one or two words that are not loan words.
-  const rest = normalised.replace(/\bloans?\b/, '').replace(/\b(to|from|account|a c)\b/g, '').trim()
-  return /^[a-z]+( [a-z]+){0,2}$/.test(rest) && rest.length >= 2
+export function classifyLoan(rawLabel: string, directors: readonly string[] = []): LoanClass | null {
+  const label = normaliseLabel(rawLabel)
+  if (!/\bloans?\b/.test(label)) return null
+  if (/^loans? 20\d{2}$/.test(label)) return null
+
+  const tokens = label.replace(LOAN_WORDS, ' ').split(' ').filter((t) => t.length >= 2)
+  for (const director of directors) {
+    const name = normaliseLabel(director).split(' ').filter((t) => t.length >= 2)
+    if (name.length === 0) continue
+    const shared = name.filter((t) => tokens.includes(t)).length
+    if (name.length === 1 ? shared === 1 : shared >= 2) return 'director'
+  }
+  if (/\b(director|directors|shareholder|shareholders)\b/.test(label)) return 'director'
+  if (ASSET_WORDS.test(label) || VEHICLE_BRANDS.test(label) || VAN_VEHICLE.test(label)) return 'lender_asset'
+  if (LENDER_MARKERS.test(label)) return 'lender'
+  return 'unconfirmed'
+}
+
+export function isLiabilitySection(section: LineSection): boolean {
+  return LIABILITY_SECTIONS.includes(section)
 }
 
 interface DictionaryEntry {
@@ -78,11 +114,19 @@ interface DictionaryEntry {
  */
 const DICTIONARY: DictionaryEntry[] = [
   // Inventory: never direct costs.
-  { pattern: /^(less )?opening (stock|inventory)( on hand)?$|^stock on hand at (the )?(beginning|start)/, key: 'cogs.openingStock' },
-  { pattern: /^(less )?closing (stock|inventory)( on hand)?$|^stock on hand at (the )?end/, key: 'cogs.closingStock' },
+  { pattern: /^(less )?opening (stock|inventory)( on hand)?$|^stock on hand at (the )?(beginning|start)/, sections: ['cogs'], key: 'cogs.openingStock' },
+  { pattern: /^(less )?closing (stock|inventory)( on hand)?$|^stock on hand at (the )?end/, sections: ['cogs'], key: 'cogs.closingStock' },
+  // Stock held at balance date is a current asset.
+  { pattern: /^(inventor(y|ies)|stock on hand|trading stock|closing stock|stock)( at cost)?$/, sections: ASSET_SECTIONS, key: 'currentAssets.inventories' },
+
+  // Amortisation is folded into depreciation, every year and column.
+  { pattern: /^(less )?amorti[sz]ation\b|^depreciation and amorti[sz]ation$/, sections: ['expenses'], key: 'expenses.depreciation' },
 
   // Bonds and deposits: never property, plant & equipment.
   { pattern: /^((rental|rent|lease|security|shop|premises) )?(bond|bonds|deposit|deposits)( (paid|held|rent|lodged))?$|^bond rent$/, sections: ASSET_SECTIONS, key: 'nonCurrentAssets.other.Deposits' },
+
+  // Capitalised borrowing costs: an asset, not property, plant & equipment.
+  { pattern: /^(capitali[sz]ed )?borrowing costs?( capitali[sz]ed)?( at cost)?$/, sections: ASSET_SECTIONS, key: 'nonCurrentAssets.other.Borrowing costs' },
 
   // Fittings and equipment.
   {
@@ -107,9 +151,6 @@ export function dictionaryKey(rawLabel: string, section: LineSection): string | 
   for (const entry of DICTIONARY) {
     if (entry.sections && !entry.sections.includes(section)) continue
     if (entry.pattern.test(label)) return entry.key
-  }
-  if (LIABILITY_SECTIONS.includes(section) && isPersonLoanLabel(label)) {
-    return 'nonCurrentLiabilities.directorRelatedLoansPayable'
   }
   return null
 }
