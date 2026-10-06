@@ -4,7 +4,8 @@ import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
-import { creditorDebt, daysSinceLastPayment, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { loadIcaRows } from '@/lib/sbr/icaRows'
 import type { Json } from '@/types/database'
 
 
@@ -30,7 +31,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const [lodgement, slots, cached] = await Promise.all([
     supabase
       .from('lodgement_analyses')
-      .select('id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
@@ -48,13 +49,16 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const balanceSheet = statement?.balanceSheet ?? null
 
   // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
-  const icaRows = (lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
+  // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
+  const ica = await loadIcaRows(supabase, lodgement.data ?? null)
+  const icaRows = (ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
   const debt = creditorDebt({
     icaRows,
     balanceSheet,
     balanceSheetDate: statement?.slot.periodEndDate ?? null,
     balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
   })
+  console.log(`[creditor-debt] page client=${id} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
   // Auto-detect the director loan at appointment from the latest balance sheet
   // so the manual checkbox pre-fills on first load. The operator can override.

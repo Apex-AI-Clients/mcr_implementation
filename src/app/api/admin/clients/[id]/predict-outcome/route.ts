@@ -26,8 +26,10 @@ import type {
   SbrPrediction,
   SbrPredictionInput,
 } from '@/lib/sbr/types'
+import { loadIcaRows } from '@/lib/sbr/icaRows'
 import {
   creditorDebt,
+  describeDecision,
   daysSinceLastPayment as daysSinceLastPaymentOnAccount,
   type CreditorDebt,
   type IcaRow,
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { data: lodgement } = await supabase
       .from('lodgement_analyses')
       .select(
-        'id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at',
+        'id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at',
       )
       .eq('client_id', clientId)
       .order('analysed_at', { ascending: false })
@@ -189,7 +191,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const cumulativeDaysLate = lodgement!.cumulative_days_late
     const numberOfLateLodgements = lodgement!.number_of_late_lodgements
     // Measured to the account's statement date, not today (creditorDebt.ts).
-    const icaRows = lodgement!.rows as unknown as IcaRow[]
+    // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
+    const ica = await loadIcaRows(supabase, lodgement)
+    const icaRows: IcaRow[] = ica.rows ?? (lodgement!.rows as unknown as IcaRow[])
     const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows)
 
     // Director loan receivable — null financial_statements is tolerated; we
@@ -209,6 +213,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       staffAmount: body.creditorAmount ?? null,
     })
     const creditorAmount = debt.amount
+    // The decision, every time: source, amount, date, and why the ATO account was not used.
+    console.log(`[creditor-debt] predict client=${clientId} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
     // Auto-detect the director loan at appointment from the latest balance
     // sheet. The UI pre-fills the checkbox from this, but the operator's body

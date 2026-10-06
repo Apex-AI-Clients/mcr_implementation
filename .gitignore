@@ -52,3 +52,11 @@ CRM_BUILD.md
 # of birth and residential addresses and must never be committed.
 /*.pdf
 graphify-out
+
+# Verified figures of real test clients, and snapshots of their stored
+# statements, for `npm run figures:check`. Real client data: never committed.
+/verified-figures/
+
+# Exported reports of real clients, dropped in for review. Never committed.
+/pdfs/
+/pdfs2/

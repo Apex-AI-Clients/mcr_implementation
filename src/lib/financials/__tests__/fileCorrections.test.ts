@@ -243,6 +243,8 @@ describe('regression: PARKCON-style combined statement', () => {
         totals: {
           totalIncome: v(1_200_000),
           totalCogs: v(500_000),
+          // No "Gross Profit" line is printed: it is total income less cost of sales.
+          grossProfit: v(1_200_000) - v(500_000),
           totalExpenses: v(340_000),
           profitBeforeTax: v(360_000),
           netProfitAfterTax: v(270_000),

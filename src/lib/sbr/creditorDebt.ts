@@ -1,5 +1,4 @@
 import { differenceInCalendarDays } from 'date-fns'
-import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
 import type { ExtractedBalanceSheet } from '@/lib/financials/types'
 
 /**
@@ -23,7 +22,10 @@ export interface IcaRow {
 
 function dateOf(value: string | Date | null | undefined): Date | null {
   if (!value) return null
-  const d = value instanceof Date ? value : new Date(value)
+  // A Date straight from the CSV parser is local midnight: keep its calendar
+  // day, whatever the server's time zone. Stored rows are ISO strings.
+  const d =
+    value instanceof Date ? new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())) : new Date(value)
   return Number.isFinite(d.getTime()) ? d : null
 }
 
@@ -90,30 +92,60 @@ export interface CreditorDebt {
   source: CreditorDebtSource | null
   /** The date the amount is as at (ISO). */
   asOf: string | null
-  /** How it reads beside the figure: "ATO integrated client account at 20 Apr 2026". */
+  /** Where it came from, as shown after "Source:": "ATO account statement, 26 Sep 2026". */
   description: string
   /** What to provide when there is no amount. */
   missing: string | null
+  /** Why the ATO account statement was not used, when it was not. */
+  icaNotUsed: string | null
 }
 
-/** ATO + GST + PAYG withholding + super payable on a balance sheet; null when it shows none of them. */
+/** One log line for the decision: source, amount, date, and why the ATO account was not used. */
+export function describeDecision(debt: CreditorDebt): string {
+  return [
+    `source=${debt.source ?? 'none'}`,
+    `amount=${debt.amount ?? 'none'}`,
+    `asOf=${debt.asOf ?? 'none'}`,
+    debt.icaNotUsed ? `icaNotUsed="${debt.icaNotUsed}"` : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
+function whyNotIca(icaRows: readonly IcaRow[] | null | undefined): string {
+  if (!icaRows || icaRows.length === 0) return 'no lodgement analysis (upload and analyse the Activity Statement CSV)'
+  return 'the lodgement analysis rows carry no balance owing (re-run the lodgement analysis)'
+}
+
+/**
+ * What a balance sheet says is owed to the ATO: ATO liability, GST and PAYG
+ * withholding. NOT superannuation payable — that is owed to super funds, not
+ * the ATO. Null when the balance sheet shows none of them.
+ */
+export const BALANCE_SHEET_ATO_KEYS = ['atoLiability', 'gstPayable', 'paygWithholdingPayable'] as const
+
 export function balanceSheetAtoTotal(bs: ExtractedBalanceSheet | null | undefined): number | null {
   if (!bs) return null
   const cl = (bs.currentLiabilities ?? {}) as Record<string, unknown>
-  const values = ATO_LIABILITY_KEYS.map((k) => cl[k]).filter((v): v is number => typeof v === 'number')
+  const values = BALANCE_SHEET_ATO_KEYS.map((k) => cl[k]).filter((v): v is number => typeof v === 'number')
   return values.length ? values.reduce((a, b) => a + b, 0) : null
 }
 
-const longDate = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "26 Sep 2026" — fixed three-letter months (the en-AU locale gives "Sept", "June"). */
+const longDate = (iso: string) => {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`)
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+}
 
 /**
  * The creditor debt, from the best source available — never from two added
  * together (the integrated client account already holds the GST and PAYG
  * that a balance sheet lists separately):
  *   1. an amount staff entered;
- *   2. the ATO integrated client account's balance owing;
- *   3. the balance sheet's ATO-related liabilities.
+ *   2. the ATO account statement's balance owing, as at the statement date;
+ *   3. the balance sheet's ATO liability, GST and PAYG (not super).
  */
 export function creditorDebt(input: {
   icaRows?: readonly IcaRow[] | null
@@ -125,29 +157,38 @@ export function creditorDebt(input: {
   const { icaRows, balanceSheet, balanceSheetDate, balanceSheetLabel, staffAmount } = input
 
   if (typeof staffAmount === 'number' && Number.isFinite(staffAmount) && staffAmount >= 0) {
-    return { amount: staffAmount, source: 'staff', asOf: null, description: 'Entered by staff', missing: null }
+    return { amount: staffAmount, source: 'staff', asOf: null, description: 'Entered by staff', missing: null, icaNotUsed: 'staff entered the amount' }
   }
 
   const ica = icaPosition(icaRows)
   if (ica.balance !== null) {
     // A credit balance means the ATO owes the client: no ATO debt.
+    const asOf = ica.statementDate ?? ica.balanceDate
     return {
       amount: Math.max(0, ica.balance),
       source: 'ica',
-      asOf: ica.balanceDate,
-      description: `ATO integrated client account${ica.balanceDate ? ` at ${longDate(ica.balanceDate)}` : ''}`,
+      asOf,
+      description: `ATO account statement${asOf ? `, ${longDate(asOf)}` : ''}`,
       missing: null,
+      icaNotUsed: null,
     }
   }
 
   const fromBalanceSheet = balanceSheetAtoTotal(balanceSheet)
   if (fromBalanceSheet !== null) {
+    // An analysis whose rows carry no balance was read before the CSV
+    // line-ending fix: re-running it gives the account balance.
+    const stale = Array.isArray(icaRows) && icaRows.length > 0
     return {
       amount: fromBalanceSheet,
       source: 'balance_sheet',
       asOf: balanceSheetDate ?? null,
-      description: `Balance sheet ATO, GST, PAYG and super payable${balanceSheetLabel ? ` (${balanceSheetLabel})` : ''}`,
+      description: [
+        `Balance sheet${balanceSheetLabel ? ` (${balanceSheetLabel})` : ''}${balanceSheetDate ? `, as at ${longDate(balanceSheetDate)}` : ''}: ATO, GST and PAYG`,
+        stale ? '. Re-run the lodgement analysis to use the ATO account balance' : '',
+      ].join(''),
       missing: null,
+      icaNotUsed: whyNotIca(icaRows),
     }
   }
 
@@ -158,5 +199,6 @@ export function creditorDebt(input: {
     description: 'No ATO debt figure yet',
     missing:
       'The ATO debt: upload and analyse the ATO integrated client account CSV, or enter the amount here.',
+    icaNotUsed: whyNotIca(icaRows),
   }
 }

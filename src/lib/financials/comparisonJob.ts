@@ -580,7 +580,7 @@ export async function buildAndPersistComparison(
  * What the pre-pass recorded about each of the client's financials documents,
  * for the document and entity checks. A failed read only loses those checks.
  */
-async function loadDocumentRecords(
+export async function loadDocumentRecords(
   supabase: SupabaseClient,
   clientId: string,
 ): Promise<DocumentRecordForCheck[]> {
@@ -605,7 +605,7 @@ async function loadDocumentRecords(
   }))
 }
 
-async function loadCompanyDetails(
+export async function loadCompanyDetails(
   supabase: SupabaseClient,
   clientId: string,
 ): Promise<CompanyDetailsForCheck | null> {

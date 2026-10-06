@@ -67,6 +67,13 @@ const LOAN_WORDS = /\b(loans?|less|to|from|account|a c|payable|receivable|owing|
 export type LoanClass = 'director' | 'lender_asset' | 'lender' | 'unconfirmed'
 
 /**
+ * Interest and charges lines of a finance contract ("Loan - Hino Truck
+ * Unexpired Interest", "Less Unexpired Interest - VW"): contra-liabilities of
+ * the finance they follow. Never a director's loan.
+ */
+const FINANCE_CHARGES = /\b(unexpired|interest|charges)\b/
+
+/**
  * Who a loan line is owed to, from its label. Pure. Null when the label is
  * not a loan, or is a year-suffixed loan ("Loan 2020"), which the extraction
  * prompt already classifies.
@@ -81,6 +88,12 @@ export type LoanClass = 'director' | 'lender_asset' | 'lender' | 'unconfirmed'
  */
 export function classifyLoan(rawLabel: string, directors: readonly string[] = []): LoanClass | null {
   const label = normaliseLabel(rawLabel)
+  if (FINANCE_CHARGES.test(label)) {
+    // Unexpired interest follows its finance: vehicle or equipment finance
+    // when the label names the asset, otherwise a lender's.
+    if (!/\bloans?\b|\bunexpired\b/.test(label)) return null
+    return ASSET_WORDS.test(label) || VEHICLE_BRANDS.test(label) || VAN_VEHICLE.test(label) ? 'lender_asset' : 'lender'
+  }
   if (!/\bloans?\b/.test(label)) return null
   if (/^loans? 20\d{2}$/.test(label)) return null
 
@@ -99,6 +112,23 @@ export function classifyLoan(rawLabel: string, directors: readonly string[] = []
 
 export function isLiabilitySection(section: LineSection): boolean {
   return LIABILITY_SECTIONS.includes(section)
+}
+
+/** Bank and cheque accounts by how they are printed: "Business Account", "Westpac Cheque Account 123". */
+const BANK_ACCOUNT =
+  /^((business|cheque|operating|trading|transaction|everyday|savings|working|bank|main|online)( (cheque|saver|savings))? account|bank|cash at bank|bank overdraft|overdraft|(westpac|cba|commonwealth|nab|anz|bendigo|st george|stgeorge|macquarie|suncorp|bankwest|ing)( bank)?( (business|cheque|operating|transaction|savings))? account)( \d+| no \d+)?$/
+
+/** Which category an "other" line of a printed section belongs to. */
+const OTHER_CATEGORY: Partial<Record<LineSection, string>> = {
+  income: 'income',
+  otherIncome: 'income',
+  cogs: 'cogs',
+  expenses: 'expenses',
+  currentAssets: 'currentAssets',
+  nonCurrentAssets: 'nonCurrentAssets',
+  currentLiabilities: 'currentLiabilities',
+  nonCurrentLiabilities: 'nonCurrentLiabilities',
+  equity: 'equity',
 }
 
 interface DictionaryEntry {
@@ -129,6 +159,14 @@ const DICTIONARY: DictionaryEntry[] = [
   { pattern: /^(waste( and)? cleaning|cleaning( and waste)?|waste (removal|disposal))$/, sections: ['expenses'], key: 'expenses.generalExpenses' },
   { pattern: /^asic (fees?|charges?|annual review fees?|lodgement fees?)$/, sections: ['expenses'], key: 'expenses.generalExpenses' },
   { pattern: /^gst( account| clearing| payable| control| collected)?$/, sections: ['currentLiabilities', 'nonCurrentLiabilities'], key: 'currentLiabilities.gstPayable' },
+
+  // A bank account printed under liabilities is overdrawn: an overdraft, never
+  // "bank accounts". Under assets it is cash at bank.
+  { pattern: BANK_ACCOUNT, sections: ['currentLiabilities', 'nonCurrentLiabilities'], key: 'currentLiabilities.bankOverdraft' },
+  { pattern: BANK_ACCOUNT, sections: ['currentAssets', 'nonCurrentAssets'], key: 'currentAssets.bankAccounts' },
+
+  // Wages owed at balance date: a payable, never taxation.
+  { pattern: /^(wages|salaries|salary|payroll)( and (wages|salaries|super))?( payable| accrued| owing)?( payroll)?$|^(accrued|unpaid) (wages|salaries)$/, sections: ['currentLiabilities', 'nonCurrentLiabilities'], key: 'currentLiabilities.other.Wages payable' },
 
   // Amortisation is folded into depreciation, every year and column.
   { pattern: /^(less )?amorti[sz]ation\b|^depreciation and amorti[sz]ation$/, sections: ['expenses'], key: 'expenses.depreciation' },
@@ -163,7 +201,21 @@ export function dictionaryKey(rawLabel: string, section: LineSection): string | 
     if (entry.sections && !entry.sections.includes(section)) continue
     if (entry.pattern.test(label)) return entry.key
   }
+  // A rounding line stays in its own section, as "other".
+  if (/^rounding( adjustment)?$/.test(label) && OTHER_CATEGORY[section]) return `${OTHER_CATEGORY[section]}.other.Rounding`
   return null
+}
+
+/**
+ * A director-related loan by its label alone: year-suffixed ("Loan 2020",
+ * "Loan - 2023"), marked "(Quarantined)", naming a director on file, or saying
+ * "director" / "shareholder".
+ */
+export function isDirectorLoanLabel(rawLabel: string, directors: readonly string[] = []): boolean {
+  const label = normaliseLabel(rawLabel)
+  if (!/\bloans?\b/.test(label) || FINANCE_CHARGES.test(label)) return false
+  if (/^loans? (19|20)\d{2}$/.test(label) || /\bquarantined\b/.test(label)) return true
+  return classifyLoan(rawLabel, directors) === 'director'
 }
 
 /** An income tax EXPENSE line (not a payable on the balance sheet). */

@@ -80,7 +80,11 @@ export function arithmeticFindings(
   const [income, cogs, expenses, pbt] = [t.totalIncome, t.totalCogs, t.totalExpenses, t.profitBeforeTax].map(num)
   if (income !== null && cogs !== null && expenses !== null && pbt !== null) {
     const calc = income - cogs - expenses
-    if (Math.abs(calc - pbt) > ANNUAL_TOLERANCE) {
+    // Templates that print "Other Income" after the first Total Income leave
+    // it out of total income: the profit then includes it on top.
+    const inc = (s.incomeStatement.income ?? {}) as Record<string, unknown>
+    const otherIncome = (num(inc.interestIncome) ?? 0) + (num(inc.otherRevenue) ?? 0)
+    if (Math.abs(calc - pbt) > ANNUAL_TOLERANCE && Math.abs(calc + otherIncome - pbt) > ANNUAL_TOLERANCE) {
       out.push({
         statement: 'income_statement',
         kind: 'totals_reconciliation',
@@ -303,11 +307,50 @@ function totalsOf(data: { totals?: unknown }): Comparable {
   return out
 }
 
+interface HeadlinePair {
+  label: string
+  own: number
+  later: number
+}
+
+/** The year's headline figures from both readings, where both have them. */
+function headlinePairs(
+  primary: StoredStatementSlot,
+  comparative: StoredStatementSlot,
+): HeadlinePair[] {
+  const pairs: HeadlinePair[] = []
+  const add = (label: string, own: unknown, later: unknown) => {
+    if (typeof own === 'number' && typeof later === 'number') pairs.push({ label, own, later })
+  }
+  const ownBs = primary.balanceSheet?.data.totals
+  const laterBs = comparative.balanceSheet?.data.totals
+  if (ownBs && laterBs) {
+    add('net assets', ownBs.netAssets, laterBs.netAssets)
+    add('total assets', ownBs.totalAssets, laterBs.totalAssets)
+    add('total liabilities', ownBs.totalLiabilities, laterBs.totalLiabilities)
+  }
+  const ownIs = primary.incomeStatement?.data.totals
+  const laterIs = comparative.incomeStatement?.data.totals
+  if (ownIs && laterIs) {
+    add('profit', ownIs.profitBeforeTax ?? ownIs.netProfitAfterTax, laterIs.profitBeforeTax ?? laterIs.netProfitAfterTax)
+  }
+  return pairs
+}
+
 /**
  * A year read from its own file (primary) and from the next year's file
- * (comparative): any line that differs beyond tolerance. Comparatives get
- * restated — reclassified, or corrected after the year was signed — and the
- * comparison uses the year's own figures, so this says which ones moved.
+ * (comparative). Accountants reclassify prior years — loans moved between
+ * current and non-current, a loan moved from liabilities to assets, bank and
+ * receivables restated — without changing what the year added up to.
+ *
+ *   - Net assets and profit match: the line differences are a
+ *     reclassification — one NOTE per year, the lines in its details. Total
+ *     assets and total liabilities moving by the same amount (a gross-up,
+ *     e.g. a loan moved from liabilities to assets) is still a note.
+ *   - Net assets or profit differ: a WARNING, naming them, the lines in details.
+ *   - The same amount with the opposite sign: a note ("sign differs").
+ *
+ * The comparison always uses the year's own figures.
  */
 export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[] {
   const out: FinancialCheck[] = []
@@ -317,10 +360,19 @@ export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[
     const comparative = slots.find((s) => s.financialYear === year && s.sourceColumn === 'comparative')
     if (!primary || !comparative) continue
 
+    const moved: string[] = []
+    const signOnly: string[] = []
+    const halvesMoved = new Set<'income_statement' | 'balance_sheet'>()
+    const documentIds = new Set<string>()
+    let ownFile: string | null = null
+    let laterFile: string | null = null
+
     for (const half of ['income_statement', 'balance_sheet'] as const) {
       const own = half === 'income_statement' ? primary.incomeStatement : primary.balanceSheet
       const later = half === 'income_statement' ? comparative.incomeStatement : comparative.balanceSheet
       if (!own || !later) continue
+      ownFile ??= own.sourceFilename
+      laterFile ??= later.sourceFilename
 
       // The same printed line in both files, by its normalised label — so a
       // line mapped differently in the two files is never a restatement.
@@ -330,44 +382,72 @@ export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[
       const laterLines = later.data.lines
       const a = ownLines?.length && laterLines?.length ? byLabel(ownLines) : totalsOf(own.data)
       const b = ownLines?.length && laterLines?.length ? byLabel(laterLines) : totalsOf(later.data)
-      const moved: string[] = []
-      const signOnly: string[] = []
       for (const [label, { value: ownValue, display }] of a) {
         const laterEntry = b.get(label)
         if (!laterEntry) continue
         const laterValue = laterEntry.value
         if (Math.abs(ownValue - laterValue) <= restatementTolerance(ownValue, laterValue)) continue
-        // The same amount with the opposite sign is almost always a sign read
-        // differently from one file to the other, not a restatement.
         if (Math.abs(Math.abs(ownValue) - Math.abs(laterValue)) <= restatementTolerance(ownValue, laterValue)) {
           signOnly.push(`${display} ${money(ownValue)} / ${money(laterValue)}`)
         } else {
           moved.push(`${display} ${money(ownValue)} → ${money(laterValue)}`)
+          halvesMoved.add(half)
         }
+        for (const id of [own.documentId, later.documentId]) if (id) documentIds.add(id)
       }
-      if (signOnly.length > 0) {
-        out.push({
-          kind: 'restatement',
-          severity: 'info',
-          financialYear: year,
-          statement: half,
-          group: 'sign_differs',
-          message: `FY${year}: sign differs between files for ${signOnly.join('; ')} (${own.sourceFilename ?? 'its own file'} and ${later.sourceFilename ?? 'a later file'}). The comparison uses the year's own figures.`,
-          documentIds: [own.documentId, later.documentId].filter((id): id is string => !!id),
-        })
-      }
-      if (moved.length === 0) continue
-      const listed = moved.slice(0, MAX_LINES_LISTED).join('; ')
-      const more = moved.length > MAX_LINES_LISTED ? ` and ${moved.length - MAX_LINES_LISTED} more` : ''
+    }
+
+    const files = `${ownFile ?? 'its own file'} and ${laterFile ?? 'a later file'}`
+    if (signOnly.length > 0) {
       out.push({
         kind: 'restatement',
-        severity: 'warning',
+        severity: 'info',
         financialYear: year,
-        statement: half,
-        message: `FY${year} differs between its own file (${own.sourceFilename ?? 'unknown'}) and the comparative column of ${later.sourceFilename ?? 'a later file'}: ${listed}${more}. The comparison uses the year's own figures.`,
-        documentIds: [own.documentId, later.documentId].filter((id): id is string => !!id),
+        statement: null,
+        group: 'sign_differs',
+        message: `FY${year}: sign differs between files for ${signOnly.join('; ')} (${files}). The comparison uses the year's own figures.`,
+        documentIds: [...documentIds],
       })
     }
+    if (moved.length === 0) continue
+
+    const statement = halvesMoved.size === 1 ? [...halvesMoved][0] : null
+    const pairs = headlinePairs(primary, comparative)
+    const differing = pairs.filter((p) => Math.abs(p.own - p.later) > restatementTolerance(p.own, p.later))
+    // Only net assets and profit make a restatement worth a warning.
+    const material = differing.filter((p) => p.label === 'net assets' || p.label === 'profit')
+
+    if (pairs.length > 0 && material.length === 0) {
+      const grossedUp = differing.map((p) => `${p.label} ${p.later > p.own ? 'up' : 'down'} ${money(Math.abs(p.later - p.own))}`)
+      const unchanged = [
+        pairs.some((p) => p.label === 'net assets') ? 'net assets unchanged' : 'totals unchanged',
+        ...(grossedUp.length ? [grossedUp.join(', ')] : []),
+      ].join('; ')
+      out.push({
+        kind: 'restatement',
+        severity: 'info',
+        financialYear: year,
+        statement,
+        group: 'reclassified',
+        message: `FY${year} figures were reclassified in the FY${year + 1} accounts (${unchanged}).`,
+        details: moved,
+        documentIds: [...documentIds],
+      })
+      continue
+    }
+
+    const what = material.length
+      ? material.map((p) => `${p.label} ${money(p.own)} → ${money(p.later)}`).join('; ')
+      : moved.slice(0, MAX_LINES_LISTED).join('; ')
+    out.push({
+      kind: 'restatement',
+      severity: 'warning',
+      financialYear: year,
+      statement,
+      message: `FY${year} differs between its own file and the comparative column of ${laterFile ?? 'a later file'}: ${what}. The comparison uses the year's own figures.`,
+      details: moved,
+      documentIds: [...documentIds],
+    })
   }
   return out
 }
@@ -412,7 +492,7 @@ export function entityChecks(
   const expectedAbn = digitsOnly((isTrust ? company.trustAbnNumber : company.abnNumber) ?? '')
   const companyAbn = digitsOnly(company.abnNumber ?? '')
   const expectedName = (isTrust ? company.trustName : company.companyName) ?? null
-  const out: FinancialCheck[] = []
+  const mismatches: Array<{ record: DocumentRecordForCheck; problems: string[] }> = []
 
   for (const record of records) {
     const heading = record.headingEntity
@@ -435,18 +515,28 @@ export function entityChecks(
       }
     }
 
-    if (problems.length > 0) {
-      out.push({
-        kind: 'entity_mismatch',
-        severity: 'warning',
-        financialYear: null,
-        statement: null,
-        message: `${record.filename}: ${problems.join('; ')}. Check it belongs to this client.`,
-        documentIds: [record.documentId],
-      })
-    }
+    if (problems.length > 0) mismatches.push({ record, problems })
   }
-  return out
+  if (mismatches.length === 0) return []
+
+  // One warning for every document whose heading differs, each listed.
+  const listed = mismatches
+    .map(({ record, problems }) => `${record.filename}: ${problems.join('; ')}`)
+    .sort((a, b) => a.localeCompare(b))
+  return [
+    {
+      kind: 'entity_mismatch',
+      severity: 'warning',
+      financialYear: null,
+      statement: null,
+      message:
+        mismatches.length === 1
+          ? `${listed[0]}. Check it belongs to this client.`
+          : `${mismatches.length} documents' headings differ from the client file. Check they belong to this client.`,
+      details: mismatches.length === 1 ? undefined : listed,
+      documentIds: mismatches.map(({ record }) => record.documentId).sort(),
+    },
+  ]
 }
 
 // ─── Documents and extraction notes ──────────────────────────────────────────

@@ -337,6 +337,8 @@ export interface FinancialCheck {
   documentIds: string[]
   /** Notes of one sort collapse into one line in the panel; see ComparisonChecksPanel. */
   group?: string
+  /** The items behind a summary, shown collapsed (e.g. the lines a reclassification moved). */
+  details?: string[]
 }
 
 export interface FinancialsComparison {

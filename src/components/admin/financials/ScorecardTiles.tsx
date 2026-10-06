@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { TrendSparkline } from './TrendSparkline'
 import { YoYBadge } from './YoYBadge'
+import { negativeNoun } from '@/lib/financials/changeLabel'
 import type { FinancialsComparison, HeadlineKey, HeadlineMetric } from '@/lib/financials/types'
 
 interface Props {
@@ -53,6 +54,9 @@ function formatAud(v: number | null | undefined): string {
 
 function Tile({ metric, invertSentiment }: { metric: HeadlineMetric; invertSentiment: boolean }) {
   const { label, formatted, trend, yoyPercent, severity, currentPeriodValue } = metric
+  // The two latest years with a value: what the YoY change compares.
+  const present = trend.filter((v): v is number => v !== null)
+  const lastTwo: [number | null, number | null] = present.length >= 2 ? [present[present.length - 2], present[present.length - 1]] : [null, null]
   const hasCurrentPeriod = currentPeriodValue !== undefined && currentPeriodValue !== null
 
   return (
@@ -65,7 +69,13 @@ function Tile({ metric, invertSentiment }: { metric: HeadlineMetric; invertSenti
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-medium text-foreground/55 leading-tight">{label}</span>
-        <YoYBadge percent={yoyPercent} invertSentiment={invertSentiment} />
+        <YoYBadge
+          percent={yoyPercent}
+          invertSentiment={invertSentiment}
+          previous={lastTwo[0]}
+          current={lastTwo[1]}
+          negativeNoun={negativeNoun(metric.key)}
+        />
       </div>
       <div
         className={cn('text-xl font-bold tabular-nums leading-tight', {

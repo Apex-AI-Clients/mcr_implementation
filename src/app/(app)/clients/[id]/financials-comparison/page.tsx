@@ -2,6 +2,8 @@ import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { ComparisonClient } from './ComparisonClient'
 import { buildCoverage } from '@/lib/financials/coverage'
+import { financialsDiagnosticsEnabled } from '@/lib/financials/diagnostics'
+import { closeDeadJob, isJobDead } from '@/lib/financials/jobLiveness'
 import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import type { FinancialsComparison } from '@/lib/financials/types'
@@ -55,7 +57,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     // hand its id to the client so polling resumes seamlessly.
     supabase
       .from('financial_comparison_jobs')
-      .select('id')
+      .select('id, status, created_at')
       .eq('client_id', id)
       .in('status', ['pending', 'processing'])
       .order('created_at', { ascending: false })
@@ -65,6 +67,10 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
     loadColumnFailures(supabase, id),
   ])
+
+  // A job that outlived its function is dead: close it rather than resume it.
+  const liveJob = activeJob && isJobDead(activeJob) ? null : activeJob
+  if (activeJob && !liveJob) await closeDeadJob(supabase, activeJob.id)
 
   const documentCount = documents?.length ?? 0
   // A document counts as extracted once it owns a half (a single PDF can fill
@@ -98,9 +104,10 @@ export default async function FinancialsComparisonPage({ params }: Props) {
           documentCount,
           hasUnextracted,
         }}
-        initialJobId={activeJob?.id ?? null}
+        initialJobId={liveJob?.id ?? null}
         coverage={buildCoverage(slots, failures)}
         initialStaleSince={comparisonRow?.stale_since ?? null}
+        showDiagnostics={financialsDiagnosticsEnabled()}
       />
     </div>
   )

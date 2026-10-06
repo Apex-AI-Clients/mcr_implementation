@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { computeFinancialsComparison } from '@/lib/financials/computeComparison'
+import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { ExtractedFinancialStatement, FinancialsComparison } from '@/lib/financials/types'
 
 /**
@@ -58,7 +59,13 @@ const comparison: FinancialsComparison = {
   ],
 }
 
-function renderPage() {
+const missing = { status: 'missing' as const, filename: null, documentId: null }
+const coverage: StatementCoverage = {
+  columns: [{ key: 'fy2025', label: 'FY2025', financialYear: 2025, kind: 'annual', extra: false }],
+  rows: { income_statement: [missing], balance_sheet: [missing] },
+}
+
+function renderPage({ showDiagnostics = true, withCoverage = false } = {}) {
   return render(
     <ComparisonClient
       clientId="client-1"
@@ -68,8 +75,9 @@ function renderPage() {
       initialGeneratedAt={null}
       initialExtraction={{ extractedCount: 2, documentCount: 2, hasUnextracted: false }}
       initialJobId={null}
-      coverage={{ columns: [], rows: { income_statement: [], balance_sheet: [] } }}
+      coverage={withCoverage ? coverage : { columns: [], rows: { income_statement: [], balance_sheet: [] } }}
       initialStaleSince={null}
+      showDiagnostics={showDiagnostics}
     />,
   )
 }
@@ -95,5 +103,23 @@ describe('export contents', () => {
     const banner = await screen.findByText(/Could not confirm the comparison started/)
     expect(banner.className).toContain('no-print')
     expect(refresh).toHaveBeenCalled()
+  })
+})
+
+describe('diagnostics (SHOW_FINANCIALS_DIAGNOSTICS)', () => {
+  it('shows "Statements on file" and the statement checks when enabled', () => {
+    renderPage({ showDiagnostics: true, withCoverage: true })
+    expect(screen.getByText('Statements on file')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Statement checks/ })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'Include checks in PDF' })).toBeTruthy()
+  })
+
+  it('hides them in production (flag off)', () => {
+    renderPage({ showDiagnostics: false, withCoverage: true })
+    expect(screen.queryByText('Statements on file')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Statement checks/ })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Include checks in PDF' })).toBeNull()
+    // The comparison itself is still there.
+    expect(screen.getByText('Income Statement')).toBeTruthy()
   })
 })

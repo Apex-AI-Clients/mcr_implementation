@@ -325,19 +325,57 @@ describe('restatement', () => {
   // These statements have no line lists (extracted before they existed), so
   // only the printed totals are compared — mapping cannot affect totals.
   // Comparison by printed label is covered in assembleComparison.test.ts.
-  it('without line lists, compares the printed totals and names both files', () => {
+  it('without line lists, compares the printed totals; unchanged headlines make it a reclassification note', () => {
+    // Current liabilities moved, but net assets, total assets and total
+    // liabilities are the same in both files.
     const [check] = restatementChecks(
       slots((bs) => {
         bs.currentLiabilities.atoLiability = 97_000
         bs.totals.totalCurrentLiabilities = 117_000
       }),
     )
-    expect(check).toMatchObject({ kind: 'restatement', financialYear: 2024, statement: 'balance_sheet' })
-    expect(check.message).toContain('BS_23-24.pdf')
-    expect(check.message).toContain('BS_24-25.pdf')
-    expect(check.message).toContain('total current liabilities $110,000 → $117,000')
-    expect(check.message).not.toContain('ato liability')
+    expect(check).toMatchObject({ kind: 'restatement', severity: 'info', group: 'reclassified', financialYear: 2024, statement: 'balance_sheet' })
+    expect(check.message).toBe('FY2024 figures were reclassified in the FY2025 accounts (net assets unchanged).')
+    expect(check.details).toEqual(['total current liabilities $110,000 → $117,000'])
     expect(check.documentIds).toEqual(['doc-2024', 'doc-2025'])
+  })
+
+  it('warns, naming the headline figure, when what the year added up to changed', () => {
+    const [check] = restatementChecks(
+      slots((bs) => {
+        bs.totals.netAssets = (bs.totals.netAssets ?? 0) - 9_000
+        bs.totals.totalEquity = bs.totals.netAssets
+      }),
+    )
+    expect(check).toMatchObject({ kind: 'restatement', severity: 'warning', financialYear: 2024 })
+    expect(check.message).toMatch(/net assets \$[\d,]+ → \$[\d,]+/)
+    expect(check.message).toContain('BS_24-25.pdf')
+  })
+
+  it('treats a gross-up (total assets and liabilities up by the same amount) as a note, not a warning', () => {
+    // A negative loan moved from liabilities to assets: both totals rise by
+    // 21,000, net assets unchanged.
+    const [check] = restatementChecks(
+      slots((bs) => {
+        bs.nonCurrentAssets.directorRelatedLoansReceivable = 21_000
+        bs.totals.totalAssets = (bs.totals.totalAssets ?? 0) + 21_000
+        bs.totals.totalLiabilities = (bs.totals.totalLiabilities ?? 0) + 21_000
+      }),
+    )
+    expect(check).toMatchObject({ severity: 'info', group: 'reclassified', financialYear: 2024 })
+    expect(check.message).toBe(
+      'FY2024 figures were reclassified in the FY2025 accounts (net assets unchanged; total assets up $21,000, total liabilities up $21,000).',
+    )
+  })
+
+  it('warns when profit differs, even with net assets unchanged', () => {
+    const own = statement(2024)
+    const later = statement(2024, 'comparative')
+    later.balanceSheet = balanceSheet(2024, 140_000)
+    later.incomeStatement.totals.profitBeforeTax = (later.incomeStatement.totals.profitBeforeTax ?? 0) + 12_000
+    const [check] = restatementChecks([legacyRow(own, 'doc-2024', 'a.pdf'), legacyRow(later, 'doc-2025', 'b.pdf')].map(toStoredSlot))
+    expect(check).toMatchObject({ severity: 'warning', financialYear: 2024 })
+    expect(check.message).toMatch(/profit \$[\d,]+ → \$[\d,]+/)
   })
 
   it('ignores differences within $50 or 0.5%', () => {
@@ -386,6 +424,23 @@ describe('entity checks', () => {
     expect(check.kind).toBe('entity_mismatch')
     expect(check.message).toMatch(/ABN 33114847696/)
     expect(check.message).toMatch(/OTHER BUILDERS/)
+  })
+
+  it('raises ONE warning listing every document whose heading differs', () => {
+    const other = { name: 'OTHER BUILDERS PTY LTD', abns: ['33114847696'] }
+    const checks = entityChecks(
+      [
+        record({ documentId: 'doc-b', filename: 'b.pdf', headingEntity: other }),
+        record({ documentId: 'doc-ok', filename: 'ok.pdf' }),
+        record({ documentId: 'doc-a', filename: 'a.pdf', headingEntity: other }),
+      ],
+      companyFile,
+    )
+    expect(checks).toHaveLength(1)
+    expect(checks[0]).toMatchObject({ kind: 'entity_mismatch', severity: 'warning', documentIds: ['doc-a', 'doc-b'] })
+    expect(checks[0].message).toBe("2 documents' headings differ from the client file. Check they belong to this client.")
+    expect(checks[0].details).toHaveLength(2)
+    expect(checks[0].details![0]).toMatch(/^a\.pdf: it prints ABN 33114847696/)
   })
 
   it('passes a trust heading "<CO> ATF <TRUST>" with the trust ABN', () => {

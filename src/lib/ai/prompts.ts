@@ -139,10 +139,10 @@ UNEXPIRED INTEREST NETTING:
 CURRENT-LIABILITY EQUIPMENT FINANCE:
 - A chattel-mortgage or vehicle-finance principal line that sits under Current Liabilities (the portion due within 12 months) — there is no canonical key for this under currentLiabilities. Bucket it under currentLiabilities.other with the raw label preserved verbatim. Net any Unexpired Interest sibling line before placing the value.
 
-NEGATIVE-VALUED LOAN LINES UNDER NON-CURRENT LIABILITIES (FY22-style edge case):
-- Some older balance sheets place director-loan accounts under Non-Current LIABILITIES with NEGATIVE values (e.g. "Loan 2019  (7,325)", "Loan 2020  (21,964)"). This is the same economic position as a positive asset, just displayed inversely.
-- Record these literally as negative numbers under nonCurrentLiabilities.other with the raw label preserved verbatim. DO NOT relocate them to nonCurrentAssets.directorRelatedLoansReceivable, and DO NOT flip the sign. They will appear in the comparison view as a small negative item under "Other Non-Current Liabilities" — that is the desired behaviour.
-- This rule applies ONLY when a "Loan 20XX" line shows a negative (parenthesised) value under Non-Current Liabilities. A positive "Loan 20XX" line under Non-Current Assets follows the normal director-loan classification rule above.
+NEGATIVE-VALUED LOAN LINES UNDER LIABILITIES (FY22-style edge case):
+- Some older balance sheets place director-loan accounts under LIABILITIES with NEGATIVE values (e.g. "Loan 2019  (7,325)", "Loan 2020  (21,964)"). A negative liability is money owed TO the company: a receivable.
+- Map these to nonCurrentAssets.directorRelatedLoansReceivable as a POSITIVE amount (7,325 and 21,964), and in the line list keep the value exactly as printed (negative) under its printed section. directorRelatedLoansReceivable is never negative.
+- A positive "Loan 20XX" line follows the normal director-loan classification rule above.
 
 OTHER REVENUE:
 - Map government stimulus (JobKeeper, Cash Flow Boost, Boosting Cash Flow for Employers), insurance recoveries, and one-off items to "otherRevenue".

@@ -119,3 +119,26 @@ export function printedAmountsFor(
   }
   return found
 }
+
+/**
+ * Every printed row carrying this label, in page order — for labels printed
+ * more than once ("Total Income" twice). A row that cannot be read is null.
+ */
+export function printedRowsFor(
+  rawLabel: string,
+  pageLines: readonly string[],
+  columns: number,
+): Array<Array<number | null> | null> {
+  const label = normaliseLabel(rawLabel)
+  const rows: Array<Array<number | null> | null> = []
+  if (!label) return rows
+  for (const text of pageLines) {
+    const words = text.trim().split(/\s+/)
+    let k = words.length
+    while (k > 0 && (NUMBER.test(words[k - 1]) || DASH.test(words[k - 1]) || words[k - 1] === '$')) k--
+    if (k === words.length || k === 0) continue
+    if (normaliseLabel(words.slice(0, k).join(' ')) !== label) continue
+    rows.push(parsePrintedAmounts(words.slice(k), columns))
+  }
+  return rows
+}

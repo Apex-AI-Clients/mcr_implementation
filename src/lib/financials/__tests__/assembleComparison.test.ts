@@ -171,7 +171,49 @@ describe('restatement by raw label', () => {
       slot(2024, 'comparative', { bs: [trustBs(5_000, 'nonCurrentAssets.other.Deposits', 46_000), 'bs-2025'] }),
     ]
     const [check] = restatementChecks(slots)
-    expect(check.message).toContain('Shop Fittings $40,000 → $46,000')
+    // Net assets changed with it, so this is a warning naming net assets (not
+    // total assets, which alone would be a gross-up), the line in its details.
+    expect(check.severity).toBe('warning')
+    expect(check.message).toContain('net assets $25,000 → $31,000')
+    expect(check.message).not.toContain('total assets')
+    expect(check.details).toContain('Shop Fittings $40,000 → $46,000')
+  })
+
+  it('makes PARKCON-style reclassifications one note per year when the headlines match', () => {
+    // FY2023 as its own file and as the FY2024 file's comparative: a loan moved
+    // from current to non-current and a director loan moved from liabilities
+    // to assets — net assets, total assets, total liabilities and profit unchanged.
+    const sheet = (lines: StatementLine[]): ExtractedBalanceSheet => ({
+      currentAssets: {},
+      nonCurrentAssets: {},
+      currentLiabilities: {},
+      nonCurrentLiabilities: {},
+      equity: {},
+      totals: { totalAssets: 500_000, totalLiabilities: 300_000, netAssets: 200_000 },
+      lines,
+    })
+    const own = sheet([
+      line('currentLiabilities', 'Loan - VW', 12_000, 'currentLiabilities.other'),
+      line('nonCurrentLiabilities', 'Loan - Hino Truck', 80_000, 'nonCurrentLiabilities.chattelMortgages'),
+      line('currentAssets', 'Cash at Bank', 30_000, 'currentAssets.bankAccounts'),
+    ])
+    const later = sheet([
+      line('currentLiabilities', 'Loan - VW', 0, 'currentLiabilities.other'),
+      line('nonCurrentLiabilities', 'Loan - Hino Truck', 92_000, 'nonCurrentLiabilities.chattelMortgages'),
+      line('currentAssets', 'Cash at Bank', 30_000, 'currentAssets.bankAccounts'),
+    ])
+    const checks = restatementChecks([
+      slot(2023, 'primary', { bs: [own, 'fy23'] }),
+      slot(2023, 'comparative', { bs: [later, 'fy24'] }),
+    ])
+    expect(checks).toEqual([
+      expect.objectContaining({
+        severity: 'info',
+        group: 'reclassified',
+        message: 'FY2023 figures were reclassified in the FY2024 accounts (net assets unchanged).',
+        details: ['Loan - VW $12,000 → $0', 'Loan - Hino Truck $80,000 → $92,000'],
+      }),
+    ])
   })
 })
 

@@ -8,10 +8,10 @@ afterEach(() => vi.useRealTimers())
 
 // An ATO integrated client account, newest first, as exported.
 const ICA: IcaRow[] = [
-  { rowIndex: 0, processedDate: '2026-04-20T00:00:00.000Z', balance: 211_061.47, lodgementType: 'GIC' },
-  { rowIndex: 1, processedDate: '2026-04-09T00:00:00.000Z', balance: 209_848.34, lodgementType: 'Payment' },
+  { rowIndex: 0, processedDate: '2026-04-20T00:00:00.000Z', balance: 120_500.25, lodgementType: 'GIC' },
+  { rowIndex: 1, processedDate: '2026-04-09T00:00:00.000Z', balance: 119_300.1, lodgementType: 'Payment' },
   { rowIndex: 2, processedDate: '2026-04-09T00:00:00.000Z', balance: null, lodgementType: 'Payment' },
-  { rowIndex: 3, processedDate: '2026-04-01T00:00:00.000Z', balance: 216_848.34, lodgementType: 'GIC' },
+  { rowIndex: 3, processedDate: '2026-04-01T00:00:00.000Z', balance: 125_000, lodgementType: 'GIC' },
 ]
 
 const bs = (cl: Record<string, number>): ExtractedBalanceSheet => ({
@@ -25,7 +25,7 @@ const bs = (cl: Record<string, number>): ExtractedBalanceSheet => ({
 
 describe('icaPosition', () => {
   it("takes the ATO's own running balance on the newest row, and the latest date as the statement date", () => {
-    expect(icaPosition(ICA)).toEqual({ balance: 211_061.47, balanceDate: '2026-04-20', statementDate: '2026-04-20' })
+    expect(icaPosition(ICA)).toEqual({ balance: 120_500.25, balanceDate: '2026-04-20', statementDate: '2026-04-20' })
   })
 
   it('handles no rows', () => {
@@ -34,25 +34,39 @@ describe('icaPosition', () => {
 })
 
 describe('creditorDebt', () => {
-  it('uses the integrated client account first, with its date', () => {
+  it('uses the ATO account statement first, as at its statement date', () => {
     const debt = creditorDebt({ icaRows: ICA, balanceSheet: bs({ atoLiability: 50_000, gstPayable: 9_000 }) })
-    expect(debt).toMatchObject({ amount: 211_061.47, source: 'ica', asOf: '2026-04-20' })
-    expect(debt.description).toBe('ATO integrated client account at 20 Apr 2026')
+    expect(debt).toMatchObject({ amount: 120_500.25, source: 'ica', asOf: '2026-04-20' })
+    expect(debt.description).toBe('ATO account statement, 20 Apr 2026')
+  })
+
+  it('dates the balance by the statement (the newest row), even when that row prints no balance', () => {
+    const rows: IcaRow[] = [{ rowIndex: 0, processedDate: '2026-09-26T00:00:00.000Z', balance: null }, ...ICA]
+    expect(creditorDebt({ icaRows: rows })).toMatchObject({ asOf: '2026-09-26', description: 'ATO account statement, 26 Sep 2026' })
   })
 
   it('never adds the balance sheet on top: GST and PAYG are already in the account balance', () => {
-    expect(creditorDebt({ icaRows: ICA, balanceSheet: bs({ gstPayable: 9_000 }) }).amount).toBe(211_061.47)
+    expect(creditorDebt({ icaRows: ICA, balanceSheet: bs({ gstPayable: 9_000 }) }).amount).toBe(120_500.25)
   })
 
-  it('falls back to the balance sheet ATO-related total — a "GST account" with no ATO line included', () => {
+  it('falls back to the balance sheet ATO liability, GST and PAYG — never super, which is owed to super funds', () => {
     const debt = creditorDebt({
       icaRows: null,
       balanceSheet: bs({ gstPayable: 42_000, paygWithholdingPayable: 8_000, superannuationPayable: 5_000 }),
       balanceSheetDate: '2025-06-30',
       balanceSheetLabel: 'FY2025',
     })
-    expect(debt).toMatchObject({ amount: 55_000, source: 'balance_sheet', asOf: '2025-06-30', missing: null })
-    expect(debt.description).toContain('FY2025')
+    expect(debt).toMatchObject({ amount: 50_000, source: 'balance_sheet', asOf: '2025-06-30', missing: null })
+    expect(debt.description).toBe('Balance sheet (FY2025), as at 30 Jun 2025: ATO, GST and PAYG')
+  })
+
+  it('asks for the lodgement analysis to be re-run when its rows carry no balance', () => {
+    const debt = creditorDebt({
+      icaRows: ICA.map((r) => ({ ...r, balance: null })),
+      balanceSheet: bs({ gstPayable: 42_000 }),
+    })
+    expect(debt.source).toBe('balance_sheet')
+    expect(debt.description).toMatch(/Re-run the lodgement analysis/)
   })
 
   it('uses the amount staff entered over everything else', () => {
@@ -70,8 +84,9 @@ describe('creditorDebt', () => {
     expect(debt.missing).not.toMatch(/financials extraction/)
   })
 
-  it('reads the balance sheet total from the four ATO-related lines only', () => {
-    expect(balanceSheetAtoTotal(bs({ atoLiability: 1, gstPayable: 2, paygWithholdingPayable: 3, superannuationPayable: 4, bankOverdraft: 100 }))).toBe(10)
+  it('reads the balance sheet total from the ATO liability, GST and PAYG lines only', () => {
+    expect(balanceSheetAtoTotal(bs({ atoLiability: 1, gstPayable: 2, paygWithholdingPayable: 3, superannuationPayable: 4, bankOverdraft: 100 }))).toBe(6)
+    expect(balanceSheetAtoTotal(bs({ superannuationPayable: 4 }))).toBeNull()
     expect(balanceSheetAtoTotal(bs({ bankOverdraft: 100 }))).toBeNull()
   })
 })

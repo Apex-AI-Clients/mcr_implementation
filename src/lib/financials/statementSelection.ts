@@ -64,10 +64,37 @@ function pickHalf<T>(
   return null
 }
 
+const NIL_CATEGORIES = {
+  incomeStatement: ['income', 'cogs', 'expenses', 'appropriations'],
+  balanceSheet: ['currentAssets', 'nonCurrentAssets', 'currentLiabilities', 'nonCurrentLiabilities', 'equity'],
+} as const
+
+/**
+ * A line the year's own file does not print at all, but another file's column
+ * for the same year prints as "-": it is $0, not unknown. Only nil figures
+ * are taken this way — never an amount (that would be a restatement).
+ */
+function fillNils(target: object, others: object[], categories: readonly string[]) {
+  const t = target as Record<string, Record<string, unknown> | undefined>
+  for (const other of others) {
+    const o = other as Record<string, Record<string, unknown> | undefined>
+    for (const category of categories) {
+      const from = o[category]
+      const to = t[category]
+      if (!from || !to) continue
+      for (const [key, value] of Object.entries(from)) {
+        if (key !== 'other' && value === 0 && to[key] == null) to[key] = 0
+      }
+    }
+  }
+}
+
 function merge(slots: StoredStatementSlot[]): MergedStatement | null {
   const is = pickHalf(slots, (s) => s.incomeStatement)
   const bs = pickHalf(slots, (s) => s.balanceSheet)
   if (!is && !bs) return null
+  if (is) fillNils(is.half.data as object, slots.filter((s) => s !== is.slot && s.incomeStatement).map((s) => s.incomeStatement!.data as object), NIL_CATEGORIES.incomeStatement)
+  if (bs) fillNils(bs.half.data as object, slots.filter((s) => s !== bs.slot && s.balanceSheet).map((s) => s.balanceSheet!.data as object), NIL_CATEGORIES.balanceSheet)
 
   // The slot that leads: the P&L's (it names the period), else the balance sheet's.
   const lead = (is ?? bs)!.slot

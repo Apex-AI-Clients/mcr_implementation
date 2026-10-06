@@ -45,6 +45,11 @@ interface Props {
   coverage: StatementCoverage
   /** Set when a financials document was deleted after the comparison was built. */
   initialStaleSince: string | null
+  /**
+   * Show "Statements on file" and the statement checks. Development and test
+   * deployments only (SHOW_FINANCIALS_DIAGNOSTICS); hidden in production.
+   */
+  showDiagnostics: boolean
 }
 
 interface ExtractError {
@@ -83,6 +88,7 @@ export function ComparisonClient({
   initialJobId,
   coverage,
   initialStaleSince,
+  showDiagnostics,
 }: Props) {
   const router = useRouter()
   const [comparison, setComparison] = useState<FinancialsComparison | null>(initialComparison)
@@ -142,6 +148,13 @@ export function ComparisonClient({
           { cache: 'no-store' },
         )
         if (activeJobId.current !== jobId) return // a newer job superseded this one
+        if (res.status === 401) {
+          // Signed out mid-run. The run itself carries on on the server; signing
+          // back in reopens this page, which picks it up again.
+          setError('Your session ended. Sign in again — the comparison keeps running and this page will pick it up.')
+          setPhase('failed')
+          return
+        }
         const data = (await res.json()) as JobStatusResponse & { error?: string }
         if (!res.ok) {
           setError(data.error ?? 'Failed to read job status.')
@@ -292,7 +305,7 @@ export function ComparisonClient({
 
           {hasComparison && (
             <div className="no-print flex flex-wrap items-center gap-2">
-              {comparison.checks && comparison.checks.length > 0 && (
+              {showDiagnostics && comparison.checks && comparison.checks.length > 0 && (
                 <label className="flex items-center gap-1.5 text-xs text-foreground/60">
                   <input
                     type="checkbox"
@@ -381,7 +394,7 @@ export function ComparisonClient({
       )}
 
       {/* Which statement each year has. Built fresh from storage on every load. */}
-      {coverage.columns.length > 0 && (
+      {showDiagnostics && coverage.columns.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-foreground mb-3">Statements on file</h3>
           <StatementCoverageTable coverage={coverage} />
@@ -427,7 +440,7 @@ export function ComparisonClient({
             </div>
           )}
 
-          {comparison.checks && comparison.checks.length > 0 && (
+          {showDiagnostics && comparison.checks && comparison.checks.length > 0 && (
             <div className={includeChecks ? undefined : 'no-print'}>
               <ComparisonChecksPanel checks={comparison.checks} />
             </div>

@@ -43,7 +43,7 @@ function mockDb({
   insertError,
   runningAfter,
 }: {
-  activeAtCheck: { id: string; updated_at: string } | null
+  activeAtCheck: { id: string; status: string; created_at: string } | null
   insertError: { code: string; message: string } | null
   runningAfter: { id: string } | null
 }) {
@@ -66,19 +66,24 @@ function mockDb({
     }
     return chain
   }
+  const update = vi.fn(() => {
+    const chain = { eq: () => chain, in: async () => ({ error: null }) }
+    return chain
+  })
   const from = vi.fn((table: string) => {
     if (table === 'clients') {
       return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'client-1' } }) }) }) }
     }
-    return { select: activeQuery, insert, update: () => ({ eq: async () => ({ error: null }) }) }
+    return { select: activeQuery, insert, update }
   })
   vi.mocked(getSupabaseServerClient).mockReturnValue({ from } as never)
-  return { insert }
+  return { insert, update }
 }
 
 beforeEach(() => {
   afterSpy.mockReset()
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 
 describe('one active comparison job per client', () => {
@@ -91,7 +96,7 @@ describe('one active comparison job per client', () => {
 
   it('returns the running job when one is already active', async () => {
     const { insert } = mockDb({
-      activeAtCheck: { id: 'job-running', updated_at: new Date().toISOString() },
+      activeAtCheck: { id: 'job-running', status: 'processing', created_at: new Date().toISOString() },
       insertError: null,
       runningAfter: null,
     })
@@ -99,6 +104,19 @@ describe('one active comparison job per client', () => {
     expect(await res.json()).toEqual({ jobId: 'job-running', reused: true })
     expect(insert).not.toHaveBeenCalled()
     expect(afterSpy).not.toHaveBeenCalled()
+  })
+
+  it('closes a job older than the function can live, and starts a new one', async () => {
+    const { insert, update } = mockDb({
+      activeAtCheck: { id: 'job-dead', status: 'processing', created_at: new Date(Date.now() - 20 * 60_000).toISOString() },
+      insertError: null,
+      runningAfter: null,
+    })
+    const res = await POST(request(), PARAMS)
+    expect(await res.json()).toEqual({ jobId: 'job-new', reused: false })
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(afterSpy).toHaveBeenCalledTimes(1)
   })
 
   it('returns the winning job, and starts nothing, when a racing start got there first', async () => {

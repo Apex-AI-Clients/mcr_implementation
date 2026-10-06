@@ -53,6 +53,20 @@ export function noteSummary(group: string, n: number): string {
       return `${plural(n, 'statement', 'statements')} whose lines did not add up (figures kept as read)`
     case 'swapped_totals':
       return `${plural(n, 'file', 'files')} with totals printed in the wrong column`
+    case 'reclassified':
+      return `${plural(n, 'year', 'years')} reclassified in the next year's accounts (totals unchanged)`
+    case 'total_income':
+      return `${plural(n, 'total income figure', 'total income figures')} taken from the first "Total Income" line`
+    case 'gross_profit':
+      return `${plural(n, 'gross profit', 'gross profits')} worked out as total income less cost of sales`
+    case 'subtotals':
+      return `${plural(n, 'balance sheet', 'balance sheets')} whose subtotals were taken from the lines (sections printed under separate headings)`
+    case 'heading':
+      return `${plural(n, 'heading', 'headings')} not counted again (their figure is the total below them)`
+    case 'nil_line':
+      return `${plural(n, 'figure', 'figures')} set to $0 where the line prints "-"`
+    case 'negative_loan':
+      return `${plural(n, 'negative loan', 'negative loans')} under liabilities shown as director loans receivable`
     case 'year_mismatch':
       return `${plural(n, 'column', 'columns')} moved to the year the heading names`
     case 'presence_mismatch':
@@ -101,6 +115,25 @@ function where(check: FinancialCheck): string {
   return check.statement ? `${period} ${STATEMENT_LABEL[check.statement]}: ` : `${period}: `
 }
 
+/** The lines behind a check, collapsed until asked for. */
+function Details({ items }: { items?: string[] }) {
+  if (!items?.length) return null
+  return (
+    <details className="mt-0.5">
+      <summary className="cursor-pointer text-[11px] text-foreground/50 hover:text-foreground">
+        {plural(items.length, 'line', 'lines')}
+      </summary>
+      <ul className="mt-0.5 ml-3 space-y-0.5">
+        {items.map((item, i) => (
+          <li key={i} className="text-[11px] text-foreground/50 tabular-nums">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
 function NoteGroup({ label, items }: { label: string; items: FinancialCheck[] }) {
   const [open, setOpen] = useState(false)
   return (
@@ -120,6 +153,7 @@ function NoteGroup({ label, items }: { label: string; items: FinancialCheck[] })
             <li key={i} className="text-xs text-foreground/50">
               {where(check)}
               {check.message}
+              <Details items={check.details} />
             </li>
           ))}
         </ul>
@@ -181,7 +215,10 @@ export function ComparisonChecksPanel({ checks }: Props) {
                 {group.checks.map((check, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-label="Warning" />
-                    <span className="text-foreground/80">{check.message}</span>
+                    <span className="text-foreground/80">
+                      {check.message}
+                      <Details items={check.details} />
+                    </span>
                   </li>
                 ))}
               </ul>

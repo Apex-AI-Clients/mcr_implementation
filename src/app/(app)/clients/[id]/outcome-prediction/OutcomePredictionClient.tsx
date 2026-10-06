@@ -34,7 +34,7 @@ interface InitialAuto {
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
   creditorAmount: number | null
-  /** Where the automatic creditor amount comes from, e.g. "ATO integrated client account at 20 Apr 2026". */
+  /** Where the automatic creditor amount comes from, e.g. "ATO account statement, 26 Sep 2026". */
   creditorSource: string
   /** What is missing when there is no automatic amount. */
   creditorMissing: string | null
@@ -310,6 +310,13 @@ export function OutcomePredictionClient({
       {prediction && (
         <>
           <HeadlineTiles prediction={prediction} />
+          {/* On screen and in the PDF: what the offer is sized against, and from where. */}
+          {prediction.creditorAmount != null && (
+            <p className="-mt-2 text-xs text-foreground/60">
+              ATO debt <span className="font-medium text-foreground">{formatAud(prediction.creditorAmount)}</span>
+              {prediction.creditorDebt ? ` — ${prediction.creditorDebt.description}` : ''}
+            </p>
+          )}
           {/* Temporarily hidden (client request): "What the rejections tell us"
               and "How to strengthen this profile". Re-enable by uncommenting. */}
           {/* <RejectionLearningPanel prediction={prediction} /> */}
@@ -509,9 +516,9 @@ function InputPanel(props: InputPanelProps) {
               </dd>
               <p className="mt-0.5 text-foreground/30">
                 {creditorEdited
-                  ? 'Entered by staff'
+                  ? 'Source: entered by staff'
                   : auto.creditorAmount != null
-                    ? auto.creditorSource
+                    ? `Source: ${auto.creditorSource}`
                     : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
               </p>
             </div>
@@ -1162,6 +1169,7 @@ function CalculationsContent({
                 <div>
                   ATO debt (creditor amount) ={' '}
                   <span className="text-foreground">{formatAud(prediction.creditorAmount)}</span>
+                  {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
                 </div>
                 <div>
                   Predicted outcome ={' '}
