@@ -19,7 +19,6 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { differenceInCalendarDays } from 'date-fns'
 import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/server'
 import { predictSbrOutcome } from '@/lib/sbr/predictOutcome'
 import type {
@@ -27,7 +26,12 @@ import type {
   SbrPrediction,
   SbrPredictionInput,
 } from '@/lib/sbr/types'
-import type { EnrichedRow } from '@/lib/analysis/types'
+import {
+  creditorDebt,
+  daysSinceLastPayment as daysSinceLastPaymentOnAccount,
+  type CreditorDebt,
+  type IcaRow,
+} from '@/lib/sbr/creditorDebt'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
@@ -49,6 +53,8 @@ async function requireAdmin() {
 }
 
 const BodySchema = z.object({
+  /** Staff's own figure for the creditor (ATO) debt, replacing the automatic one. */
+  creditorAmount: z.number().nonnegative().nullable().optional(),
   dpn: z.boolean(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
@@ -104,6 +110,8 @@ interface MissingPrerequisite {
 interface PredictResponse extends SbrPrediction {
   inputFeatures: SbrPredictionInput
   creditorAmount: number | null
+  /** Where the creditor amount came from, and as at when. */
+  creditorDebt: CreditorDebt
   computedAt: string
   cached: false
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
@@ -180,9 +188,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Auto features.
     const cumulativeDaysLate = lodgement!.cumulative_days_late
     const numberOfLateLodgements = lodgement!.number_of_late_lodgements
-    const daysSinceLastPayment = deriveDaysSinceLastPayment(
-      lodgement!.rows as unknown as EnrichedRow[],
-    )
+    // Measured to the account's statement date, not today (creditorDebt.ts).
+    const icaRows = lodgement!.rows as unknown as IcaRow[]
+    const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows)
 
     // Director loan receivable — null financial_statements is tolerated; we
     // fall back to 0 and signal it as a soft prerequisite via the absence of
@@ -191,10 +199,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     const directorLoanReceivableAmount =
       Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
 
-    // ATO liability proxy for creditor amount.
-    const creditorAmount = balanceSheet
-      ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
-      : null
+    // The creditor debt: staff's figure, else the integrated client account,
+    // else the balance sheet's ATO-related liabilities — never two added up.
+    const debt = creditorDebt({
+      icaRows,
+      balanceSheet,
+      balanceSheetDate: statement?.slot.periodEndDate ?? null,
+      balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
+      staffAmount: body.creditorAmount ?? null,
+    })
+    const creditorAmount = debt.amount
 
     // Auto-detect the director loan at appointment from the latest balance
     // sheet. The UI pre-fills the checkbox from this, but the operator's body
@@ -274,6 +288,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...prediction,
       inputFeatures,
       creditorAmount,
+      creditorDebt: debt,
       computedAt: now,
       cached: false,
       autoDetectedDirectorLoan,
@@ -283,28 +298,4 @@ export async function POST(req: NextRequest, { params }: Params) {
     console.error('[POST predict-outcome] unexpected', err)
     return NextResponse.json({ error: 'Failed to compute prediction.' }, { status: 500 })
   }
-}
-
-/**
- * Walk the EnrichedRow array, find cash Payment rows, and return the count of
- * calendar days from the most-recent payment's processedDate to today.
- * Returns 9999 when the client has no payment activity on record.
- */
-function deriveDaysSinceLastPayment(rows: EnrichedRow[] | null | undefined): number {
-  if (!rows || !Array.isArray(rows)) return 9999
-  const payments = rows.filter((r) => r.lodgementType === 'Payment')
-  if (payments.length === 0) return 9999
-
-  let latest: Date | null = null
-  for (const r of payments) {
-    if (!r.processedDate) continue
-    // processedDate may arrive as a string from JSON.
-    const d = r.processedDate instanceof Date ? r.processedDate : new Date(r.processedDate)
-    if (!Number.isFinite(d.getTime())) continue
-    if (!latest || d.getTime() > latest.getTime()) latest = d
-  }
-  if (!latest) return 9999
-
-  const diff = differenceInCalendarDays(new Date(), latest)
-  return diff < 0 ? 0 : diff
 }

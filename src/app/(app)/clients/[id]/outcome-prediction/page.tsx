@@ -4,9 +4,8 @@ import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
-import type { EnrichedRow } from '@/lib/analysis/types'
+import { creditorDebt, daysSinceLastPayment, type IcaRow } from '@/lib/sbr/creditorDebt'
 import type { Json } from '@/types/database'
-import { differenceInCalendarDays } from 'date-fns'
 
 
 export const dynamic = 'force-dynamic'
@@ -48,6 +47,15 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const statement = latestBalanceSheet(slots)
   const balanceSheet = statement?.balanceSheet ?? null
 
+  // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
+  const icaRows = (lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
+  const debt = creditorDebt({
+    icaRows,
+    balanceSheet,
+    balanceSheetDate: statement?.slot.periodEndDate ?? null,
+    balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
+  })
+
   // Auto-detect the director loan at appointment from the latest balance sheet
   // so the manual checkbox pre-fills on first load. The operator can override.
   const directorLoanValue =
@@ -64,15 +72,13 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const initialAuto = {
     cumulativeDaysLate: lodgement.data?.cumulative_days_late ?? null,
     numberOfLateLodgements: lodgement.data?.number_of_late_lodgements ?? null,
-    daysSinceLastPayment: lodgement.data
-      ? deriveDaysSinceLastPayment(lodgement.data.rows as unknown as EnrichedRow[])
-      : null,
+    daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
-    creditorAmount: balanceSheet
-      ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
-      : null,
+    creditorAmount: debt.amount,
+    creditorSource: debt.description,
+    creditorMissing: debt.missing,
     latestFinancialYear: statement?.slot.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
     hasFinancials: slots.length > 0,
@@ -110,22 +116,4 @@ function serialiseCachedPrediction(row: CachedRow) {
     trainingSetSize: row.training_set_size,
     computedAt: row.computed_at,
   }
-}
-
-function deriveDaysSinceLastPayment(rows: EnrichedRow[] | null): number {
-  if (!rows || !Array.isArray(rows)) return 9999
-  const payments = rows.filter((r) => r.lodgementType === 'Payment')
-  if (payments.length === 0) return 9999
-
-  let latest: Date | null = null
-  for (const r of payments) {
-    if (!r.processedDate) continue
-    const d = r.processedDate instanceof Date ? r.processedDate : new Date(r.processedDate)
-    if (!Number.isFinite(d.getTime())) continue
-    if (!latest || d.getTime() > latest.getTime()) latest = d
-  }
-  if (!latest) return 9999
-
-  const diff = differenceInCalendarDays(new Date(), latest)
-  return diff < 0 ? 0 : diff
 }

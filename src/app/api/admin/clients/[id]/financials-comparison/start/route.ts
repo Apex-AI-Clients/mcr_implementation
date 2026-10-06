@@ -104,6 +104,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       .select('id')
       .single()
 
+    // Another request started a job between our check and this insert: the
+    // database allows one active job per client (migration 0027), so hand
+    // back the one that won instead of running the extraction twice.
+    if (insertError?.code === '23505') {
+      const { data: running } = await supabase
+        .from('financial_comparison_jobs')
+        .select('id')
+        .eq('client_id', clientId)
+        .in('status', ['pending', 'processing'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (running) return NextResponse.json({ jobId: running.id, reused: true })
+    }
+
     if (insertError || !job) {
       console.error('[financials-comparison/start] insert failed', insertError)
       return NextResponse.json({ error: 'Failed to create job.' }, { status: 500 })

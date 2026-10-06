@@ -23,11 +23,11 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
-import { extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
+import { EXTRACTION_CALL_BUDGET_MS, extractFinancialStatementFromPdf } from '@/lib/financials/extractFromPdf'
 import { assembleComparison, entityIsTrust } from '@/lib/financials/assembleComparison'
 import { type CompanyDetailsForCheck, type DocumentRecordForCheck } from '@/lib/financials/checks'
 import { expectedColumns, missingColumns, planDocument } from '@/lib/financials/documentPlan'
-import { halfKey, planSlotWrite, staleHalves, type WritingDocument } from '@/lib/financials/halfWrites'
+import { halfKey, planSlotWrite, staleHalves, type SlotWritePlan, type WritingDocument } from '@/lib/financials/halfWrites'
 import { runFinancialsPrepass, type FinancialsPrepass } from '@/lib/financials/prepass'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type {
@@ -72,10 +72,24 @@ export type BuildComparisonResult =
 
 // ─── Tuning ──────────────────────────────────────────────────────────────────
 
-const PER_DOCUMENT_TIMEOUT_MS = 180_000 // 3 min — Gemini through OpenRouter is faster than Anthropic was
-/** Default pause between PDFs. The synchronous route keeps the original 10s for
- *  readable logs; the background job overrides this to a smaller value to leave
- *  more of the function's duration budget for real work. */
+/**
+ * One extraction call is at most EXTRACTION_CALL_BUDGET_MS (two 150s attempts
+ * and a short backoff — see extractFromPdf.ts); the per-document limit adds a
+ * little for the download and the writes.
+ */
+export const PER_DOCUMENT_TIMEOUT_MS = EXTRACTION_CALL_BUDGET_MS + 10_000
+
+/** Documents extracted at once. Two halves the wall time without bursting the provider. */
+export const DOCUMENT_CONCURRENCY = 2
+
+/**
+ * How long extraction may run inside one job. The start route's function may
+ * run for 800s (maxDuration, Vercel Pro with Fluid Compute); the rest is kept
+ * for building the comparison and the AI summary (up to two 60s calls).
+ */
+export const EXTRACTION_PHASE_BUDGET_MS = 640_000
+
+/** Default pause before the second worker starts, so the two calls do not land at once. */
 const DEFAULT_INTER_DOCUMENT_DELAY_MS = 10_000
 
 // ─── Extraction ────────────────────────────────────────────────────────────────
@@ -91,6 +105,8 @@ interface DocumentRow {
 interface ExtractOptions {
   documentIds?: string[]
   interDocumentDelayMs?: number
+  /** Epoch ms by which extraction must be finished; documents not started by then are reported, not run. */
+  deadline?: number
 }
 
 /**
@@ -126,8 +142,9 @@ export async function extractAllFinancials(
     throw new Error('No financials documents found for this client.')
   }
 
+  const deadline = options.deadline ?? requestStart + EXTRACTION_PHASE_BUDGET_MS
   console.log(
-    `[extract-financials] processing ${documents.length} document(s) sequentially`,
+    `[extract-financials] processing ${documents.length} document(s), ${DOCUMENT_CONCURRENCY} at a time`,
   )
 
   // When each of the client's documents was uploaded, so a half already stored
@@ -150,35 +167,43 @@ export async function extractAllFinancials(
   let skipped = 0
   const errors: ExtractError[] = []
 
-  for (let i = 0; i < documents.length; i++) {
-    const doc = documents[i] as DocumentRow
-
-    console.log(
-      `[extract-financials] processing ${doc.doc_category} document: ${doc.original_filename}`,
-    )
-
-    // Inter-document delay (skip before the first PDF) — light pacing so we
-    // don't burst the AI provider; kept small in the background job so most of
-    // the duration budget goes to real extraction work.
-    if (i > 0 && interDocumentDelayMs > 0) {
+  // A small pool: each worker takes the next document until none are left.
+  // A document is only started while a whole call still fits before the
+  // deadline; the rest are reported so a re-run can finish them.
+  let next = 0
+  const worker = async (slot: number) => {
+    if (slot > 0 && interDocumentDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, interDocumentDelayMs))
     }
-
-    try {
-      const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf, { isTrust, directors })
-      extracted += result.wrote
-      skipped += result.skipped
-      if (result.error) {
-        errors.push({ documentId: doc.id, filename: doc.original_filename, error: result.error })
+    while (next < documents.length) {
+      const i = next++
+      const doc = documents[i] as DocumentRow
+      if (Date.now() + PER_DOCUMENT_TIMEOUT_MS > deadline) {
+        errors.push({
+          documentId: doc.id,
+          filename: doc.original_filename,
+          error: 'Not extracted: this run had no time left for it. Re-run to finish.',
+        })
+        continue
       }
-    } catch (err) {
-      errors.push({
-        documentId: doc.id,
-        filename: doc.original_filename,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      console.log(`[extract-financials] processing ${doc.doc_category} document: ${doc.original_filename}`)
+      try {
+        const result = await processDocument(doc, i + 1, documents.length, clientId, supabase, uploadedAtOf, { isTrust, directors }, deadline)
+        extracted += result.wrote
+        skipped += result.skipped
+        if (result.error) {
+          errors.push({ documentId: doc.id, filename: doc.original_filename, error: result.error })
+        }
+      } catch (err) {
+        errors.push({
+          documentId: doc.id,
+          filename: doc.original_filename,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
+  await Promise.all(Array.from({ length: Math.min(DOCUMENT_CONCURRENCY, documents.length) }, (_, slot) => worker(slot)))
 
   const elapsed = ((Date.now() - requestStart) / 1000).toFixed(1)
   console.log(
@@ -202,6 +227,7 @@ async function processDocument(
   supabase: SupabaseClient,
   uploadedAtOf: (documentId: string) => string | null,
   entity: { isTrust: boolean; directors: string[] },
+  deadline: number,
 ): Promise<ProcessResult> {
   const tag = `[extract-financials][${index}/${total}]`
   const start = Date.now()
@@ -247,12 +273,16 @@ async function processDocument(
         `extraction timed out after ${PER_DOCUMENT_TIMEOUT_MS / 1000}s`,
       )
     let result = await extract()
+    console.log(
+      `${tag} extraction call: ${result.call.seconds}s, attempts=${result.call.attempts}, generation=${result.call.generationId ?? 'n/a'}, tokens prompt=${result.call.promptTokens ?? '?'} completion=${result.call.completionTokens ?? '?'} reasoning=${result.call.reasoningTokens ?? '?'}`,
+    )
 
     // The headings show a column the model did not return: try once more,
     // keeping whichever run returned more of the expected columns.
     const expected = expectedColumns(prepass)
     let missing = missingColumns(expected, result.statements)
-    if (missing.length > 0) {
+    // Only when a whole second call still fits before the job's deadline.
+    if (missing.length > 0 && Date.now() + PER_DOCUMENT_TIMEOUT_MS <= deadline) {
       console.log(
         `${tag} missing column(s) ${missing.map((m) => `FY${m.financialYear} ${m.sourceColumn}`).join(', ')}; retrying once`,
       )
@@ -349,7 +379,8 @@ async function writeStatementHalves(input: {
   document: WritingDocument
   statement: ExtractedFinancialStatement
   uploadedAtOf: (documentId: string) => string | null
-}) {
+  retried?: boolean
+}): Promise<SlotWritePlan['decisions']> {
   const { supabase, clientId, document, statement, uploadedAtOf } = input
 
   const { data: existing, error: readError } = await supabase
@@ -374,6 +405,12 @@ async function writeStatementHalves(input: {
 
   if (plan.op === 'insert') {
     const { error } = await supabase.from('financial_statements').insert(plan.values)
+    // Two documents run at once and can both create the same slot (a P&L and
+    // a balance sheet for one year): the second one re-reads and writes its
+    // half into the row the first created.
+    if (error?.code === '23505' && !input.retried) {
+      return writeStatementHalves({ ...input, retried: true })
+    }
     if (error) throw new Error(`Failed to persist statement for FY${statement.financialYear}: ${error.message}`)
   } else if (plan.op === 'update') {
     const { error } = await supabase.from('financial_statements').update(plan.values).eq('id', plan.id)
@@ -397,17 +434,23 @@ async function clearStaleHalves(
 
   const stale = staleHalves(rows ?? [], documentId, produced)
   for (const s of stale) {
-    if (s.deleteRow) {
-      const { error: e } = await supabase.from('financial_statements').delete().eq('id', s.rowId)
-      if (e) throw new Error(`Failed to clear a stale statement: ${e.message}`)
-      continue
-    }
     const cleared =
       s.half === 'income_statement'
         ? { income_statement: null, is_document_id: null, is_source_filename: null, is_extracted_at: null, is_warnings: [] }
         : { balance_sheet: null, bs_document_id: null, bs_source_filename: null, bs_extracted_at: null, bs_warnings: [] }
     const { error: e } = await supabase.from('financial_statements').update(cleared).eq('id', s.rowId)
     if (e) throw new Error(`Failed to clear a stale statement: ${e.message}`)
+    if (s.deleteRow) {
+      // Only if it is still empty now: with documents running in parallel,
+      // another one may have written its half in since we read the row.
+      const { error: d } = await supabase
+        .from('financial_statements')
+        .delete()
+        .eq('id', s.rowId)
+        .is('is_document_id', null)
+        .is('bs_document_id', null)
+      if (d) throw new Error(`Failed to clear a stale statement: ${d.message}`)
+    }
   }
   return stale.length
 }
@@ -599,6 +642,9 @@ export async function runComparisonJob(params: {
   supabase: SupabaseClient
 }): Promise<void> {
   const { jobId, clientId, mode, supabase } = params
+  // The function's clock starts with the request; extraction must leave room
+  // for the comparison and summary after it.
+  const jobStart = Date.now()
 
   const markFailed = async (message: string, extractErrors: ExtractError[] = []) => {
     await supabase
@@ -627,7 +673,10 @@ export async function runComparisonJob(params: {
     if (mode === 'full') {
       // Keep pacing light in the background so most of the duration budget goes
       // to extraction rather than idle waiting.
-      const ext = await extractAllFinancials(clientId, supabase, { interDocumentDelayMs: 2_000 })
+      const ext = await extractAllFinancials(clientId, supabase, {
+        interDocumentDelayMs: 2_000,
+        deadline: jobStart + EXTRACTION_PHASE_BUDGET_MS,
+      })
       extractErrors = ext.errors
     }
 

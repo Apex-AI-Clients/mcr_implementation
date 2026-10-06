@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { readPdfPageLines } from '@/lib/pdf/pageLines'
-import { extractFinancialStatementFromPdf } from '../extractFromPdf'
+import {
+  EXTRACTION_CALL_BUDGET_MS,
+  OPENROUTER_ATTEMPTS,
+  PER_ATTEMPT_TIMEOUT_MS,
+  RETRY_BACKOFF_MS,
+  extractFinancialStatementFromPdf,
+  shouldRetry,
+} from '../extractFromPdf'
+import { PER_DOCUMENT_TIMEOUT_MS } from '../comparisonJob'
 import { runFinancialsPrepass } from '../prepass'
 import {
   balanceSheet,
@@ -259,5 +267,84 @@ describe('mapping corrections (separate-file trust)', () => {
     const result = await extract(await buildFinancialPdf([incomeStatement(2025, { comparative: false }), balanceSheet(2025, { comparative: false })]))
     expect(result.statements[0].sourceColumn).toBe('primary')
     expect(result.statements[0].warnings.map((w) => w.kind)).toContain('year_mismatch')
+  })
+})
+
+describe('retry policy and timing', () => {
+  it('retries only rate limiting, server errors and dropped connections — never our own timeout', () => {
+    expect(shouldRetry({ kind: 'timeout' })).toBe(false)
+    expect(shouldRetry({ kind: 'network' })).toBe(true)
+    expect(shouldRetry({ kind: 'http', status: 429 })).toBe(true)
+    expect(shouldRetry({ kind: 'http', status: 503 })).toBe(true)
+    expect(shouldRetry({ kind: 'http', status: 400 })).toBe(false)
+    expect(shouldRetry({ kind: 'provider', code: 504 })).toBe(true)
+    expect(shouldRetry({ kind: 'provider', code: 'invalid_request' })).toBe(false)
+  })
+
+  it('fits one call — two 150s attempts and a backoff — inside the per-document limit', () => {
+    expect(PER_ATTEMPT_TIMEOUT_MS).toBe(150_000)
+    expect(OPENROUTER_ATTEMPTS).toBe(2)
+    expect(PER_DOCUMENT_TIMEOUT_MS).toBeGreaterThanOrEqual(EXTRACTION_CALL_BUDGET_MS)
+  })
+
+  const okBody = (statements: unknown[]) =>
+    JSON.stringify({
+      id: 'gen-123',
+      model: 'test-model',
+      usage: { prompt_tokens: 1000, completion_tokens: 900, completion_tokens_details: { reasoning_tokens: 0 } },
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: { tool_calls: [{ type: 'function', function: { name: 'submit_extracted_financials', arguments: JSON.stringify({ statements }) } }] },
+        },
+      ],
+    })
+
+  it('turns thinking off, retries a 503 once, and reports what the call cost', async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    let calls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        bodies.push(JSON.parse(init.body))
+        calls++
+        return calls === 1 ? new Response('busy', { status: 503 }) : new Response(okBody([column()]), { status: 200 })
+      }),
+    )
+    const result = await extract(await buildFinancialPdf([incomeStatement(2025), balanceSheet(2025)]))
+    expect(calls).toBe(2)
+    expect(bodies[0].reasoning).toEqual({ enabled: false })
+    expect(result.call).toMatchObject({ generationId: 'gen-123', attempts: 2, promptTokens: 1000, completionTokens: 900, reasoningTokens: 0 })
+  })
+
+  it('does not retry a request error that a second try cannot fix', async () => {
+    const fetchMock = vi.fn(async () => new Response('bad request', { status: 400 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(extract(await buildFinancialPdf([incomeStatement(2025), balanceSheet(2025)]))).rejects.toThrow(/HTTP 400/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up after our own 150s timeout, without a second attempt', async () => {
+    const pdf = await buildFinancialPdf([incomeStatement(2025), balanceSheet(2025)])
+    const prepass = await runFinancialsPrepass(pdf)
+    const fetchMock = vi.fn(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise<Response>((_, reject) => {
+          init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const pending = extractFinancialStatementFromPdf({ pdfBytes: pdf, sourceFilename: 'slow.pdf', prepass })
+      const outcome = expect(pending).rejects.toThrow(/timed out/)
+      await vi.advanceTimersByTimeAsync(PER_ATTEMPT_TIMEOUT_MS + 1_000)
+      await outcome
+      // Even well past a second attempt's worth of time, still only one call.
+      await vi.advanceTimersByTimeAsync(PER_ATTEMPT_TIMEOUT_MS + RETRY_BACKOFF_MS)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

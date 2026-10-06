@@ -34,6 +34,10 @@ interface InitialAuto {
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
   creditorAmount: number | null
+  /** Where the automatic creditor amount comes from, e.g. "ATO integrated client account at 20 Apr 2026". */
+  creditorSource: string
+  /** What is missing when there is no automatic amount. */
+  creditorMissing: string | null
   latestFinancialYear: number | null
   hasLodgement: boolean
   hasFinancials: boolean
@@ -59,6 +63,7 @@ interface Props {
 interface FullPrediction extends SbrPrediction {
   inputFeatures: SbrPredictionInput
   creditorAmount: number | null
+  creditorDebt?: { description: string; missing: string | null; source: string | null }
   computedAt: string
   autoDetectedDirectorLoan?: {
     detected: boolean | null
@@ -128,6 +133,19 @@ export function OutcomePredictionClient({
     cachedInputs?.directorLoanAtAppointment ?? initialAuto.directorLoanDetected === true,
   )
 
+  // The creditor (ATO) debt: prefilled from the automatic figure, editable by
+  // staff. Only an amount staff changed is sent; otherwise the server works
+  // it out afresh.
+  const [creditorText, setCreditorText] = useState(
+    initialAuto.creditorAmount != null ? String(Math.round(initialAuto.creditorAmount)) : '',
+  )
+  const [creditorEdited, setCreditorEdited] = useState(false)
+  const creditorOverride = (() => {
+    if (!creditorEdited) return undefined
+    const n = Number(creditorText.replace(/[$,\s]/g, ''))
+    return creditorText.trim() !== '' && Number.isFinite(n) && n >= 0 ? n : undefined
+  })()
+
   const [prediction, setPrediction] = useState<FullPrediction | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -153,6 +171,7 @@ export function OutcomePredictionClient({
           dpn,
           paymentPlanType,
           directorLoanAtAppointment,
+          ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
         }),
       })
       const data = await res.json()
@@ -281,6 +300,10 @@ export function OutcomePredictionClient({
           running={running}
           canRun={canRun}
           hasPrediction={prediction !== null}
+          creditorText={creditorText}
+          setCreditorText={setCreditorText}
+          creditorEdited={creditorEdited}
+          setCreditorEdited={setCreditorEdited}
         />
       </div>
 
@@ -374,6 +397,10 @@ interface InputPanelProps {
   running: boolean
   canRun: boolean
   hasPrediction: boolean
+  creditorText: string
+  setCreditorText: (v: string) => void
+  creditorEdited: boolean
+  setCreditorEdited: (v: boolean) => void
 }
 
 function InputPanel(props: InputPanelProps) {
@@ -391,6 +418,10 @@ function InputPanel(props: InputPanelProps) {
     running,
     canRun,
     hasPrediction,
+    creditorText,
+    setCreditorText,
+    creditorEdited,
+    setCreditorEdited,
   } = props
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -459,18 +490,31 @@ function InputPanel(props: InputPanelProps) {
               }
               softMissing={!auto.hasFinancials}
             />
-            <ReadOnlyField
-              label="ATO debt (creditor amount proxy)"
-              value={formatAud(auto.creditorAmount)}
-              hint={
-                auto.creditorAmount != null
-                  ? auto.latestFinancialYear != null
-                    ? `FY${auto.latestFinancialYear}`
-                    : undefined
-                  : 'Suggested offer requires financials extraction'
-              }
-              softMissing={auto.creditorAmount == null}
-            />
+            <div>
+              <dt className="text-foreground/40">
+                <label htmlFor="creditor-amount">ATO debt (creditor amount)</label>
+              </dt>
+              <dd className="mt-0.5">
+                <input
+                  id="creditor-amount"
+                  inputMode="decimal"
+                  value={creditorText}
+                  placeholder="Enter amount"
+                  onChange={(event) => {
+                    setCreditorText(event.target.value)
+                    setCreditorEdited(true)
+                  }}
+                  className="h-7 w-36 rounded-md border border-border bg-input-bg px-2 text-sm font-medium tabular-nums text-foreground focus:border-accent focus:outline-none"
+                />
+              </dd>
+              <p className="mt-0.5 text-foreground/30">
+                {creditorEdited
+                  ? 'Entered by staff'
+                  : auto.creditorAmount != null
+                    ? auto.creditorSource
+                    : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
+              </p>
+            </div>
           </dl>
         </div>
 
@@ -866,7 +910,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
             <>
               <p className="text-4xl font-bold tabular-nums text-foreground">—</p>
               <p className="mt-1 text-xs text-warning">
-                Run financials extraction to enable offer suggestion
+                {prediction.creditorDebt?.missing ?? 'Enter the ATO debt above to get a suggested offer.'}
               </p>
               <p className="mt-2 text-xs text-foreground/40">Suggested SBR amount</p>
             </>
@@ -1222,8 +1266,8 @@ function CalculationsContent({
             </>
           ) : (
             <p className="text-xs text-foreground/55">
-              Not calculable yet — run financials extraction so the ATO debt figure can be
-              read from the balance sheet.
+              Not calculable yet —{' '}
+              {prediction.creditorDebt?.missing ?? 'enter the ATO debt above to get a suggested offer.'}
             </p>
           )}
         </section>
@@ -1823,7 +1867,8 @@ function ExportButton({
         ? roundToNearest(prediction.suggestedOfferAmount, 500)
         : '',
     )
-    push('ATO debt (creditor proxy)', prediction.creditorAmount ?? '')
+    push('ATO debt (creditor amount)', prediction.creditorAmount ?? '')
+    push('ATO debt source', prediction.creditorDebt?.description ?? '')
     push('Risk Band', riskBandExportLabel(prediction.riskBand))
     push('Risk Band Reasoning', prediction.riskBandReasoning)
     push(
