@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
+import { recomputeClientStatus } from '@/lib/clients/status'
 
 async function requireStaff() {
   const authClient = await getSupabaseAuthClient()
@@ -24,7 +25,7 @@ export async function POST(_req: NextRequest, { params }: Props) {
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('id, file_path')
+    .select('id, file_path, client_id')
     .eq('id', documentId)
     .single()
 
@@ -44,6 +45,9 @@ export async function POST(_req: NextRequest, { params }: Props) {
     console.error('[admin/documents/delete] db error:', dbError)
     return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 })
   }
+
+  // A required category may now be empty.
+  await recomputeClientStatus(supabase, doc.client_id)
 
   return NextResponse.json({ success: true })
 }

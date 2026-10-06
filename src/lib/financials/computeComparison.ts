@@ -11,6 +11,7 @@ import type {
   DiffTableSection,
   Direction,
   ExtractedFinancialStatement,
+  StatementHalfKey,
   FinancialsComparison,
   HeadlineKey,
   HeadlineMetric,
@@ -200,23 +201,34 @@ function buildDiffTable(
   pick: (s: ExtractedFinancialStatement, key: string) => number | null,
   byYear: Record<number, ExtractedFinancialStatement>,
   currentPeriodStatement?: ExtractedFinancialStatement,
+  /**
+   * The statement these lines belong to. A line a year's statement does not
+   * list, when that statement IS on file, is nil: shown as $0. "—" is left
+   * for a year whose statement is missing. (Totals pass none.)
+   */
+  half?: StatementHalfKey,
 ): DiffTableSection {
   const rows: DiffRow[] = []
+  const nilWhenListed = (s: ExtractedFinancialStatement | undefined, v: number | null): number | null =>
+    v === null && half && s?.present?.[half] === true ? 0 : v
   for (const [canonicalKey, label] of Object.entries(schemaSection)) {
     const valuesByYear: Record<number, number | null> = {}
-    let allZeroOrNull = true
+    // A row is kept when any year has a figure — $0 included: a line printed
+    // as "-" every year is shown as $0, not hidden.
+    let allNull = true
     for (const fy of years) {
       const v = pick(byYear[fy], canonicalKey)
       valuesByYear[fy] = v
-      if (v !== null && v !== 0) allZeroOrNull = false
+      if (v !== null) allNull = false
     }
 
     const currentPeriodValue = currentPeriodStatement
       ? pick(currentPeriodStatement, canonicalKey)
       : null
-    if (currentPeriodValue !== null && currentPeriodValue !== 0) allZeroOrNull = false
+    if (currentPeriodValue !== null) allNull = false
 
-    if (allZeroOrNull) continue
+    if (allNull) continue
+    for (const fy of years) valuesByYear[fy] = nilWhenListed(byYear[fy], valuesByYear[fy])
 
     const yoyByYear: Record<number, number | null> = {}
     for (let i = 0; i < years.length; i++) {
@@ -236,7 +248,7 @@ function buildDiffTable(
       yoyPercentByYear: yoyByYear,
       absoluteChangeOldestToLatest: absoluteChange,
       direction: direction(trend),
-      ...(currentPeriodStatement ? { currentPeriodValue } : {}),
+      ...(currentPeriodStatement ? { currentPeriodValue: nilWhenListed(currentPeriodStatement, currentPeriodValue) } : {}),
     })
   }
   return { category, rows }
@@ -432,6 +444,7 @@ export function computeFinancialsComparison(
       (s, k) => pickIncomeLine('income', s, k),
       byYear,
       cp,
+      'income_statement',
     ),
     buildDiffTable(
       'Cost of Goods Sold',
@@ -440,6 +453,7 @@ export function computeFinancialsComparison(
       (s, k) => pickIncomeLine('cogs', s, k),
       byYear,
       cp,
+      'income_statement',
     ),
     buildDiffTable(
       'Expenses',
@@ -448,6 +462,7 @@ export function computeFinancialsComparison(
       (s, k) => pickIncomeLine('expenses', s, k),
       byYear,
       cp,
+      'income_statement',
     ),
     buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear, cp),
   ]
@@ -461,6 +476,7 @@ export function computeFinancialsComparison(
       (s, k) => pickBalanceLine('currentAssets', s, k),
       byYear,
       cp,
+      'balance_sheet',
     ),
     buildDiffTable(
       'Non-Current Assets',
@@ -469,6 +485,7 @@ export function computeFinancialsComparison(
       (s, k) => pickBalanceLine('nonCurrentAssets', s, k),
       byYear,
       cp,
+      'balance_sheet',
     ),
     buildDiffTable(
       'Current Liabilities',
@@ -477,6 +494,7 @@ export function computeFinancialsComparison(
       (s, k) => pickBalanceLine('currentLiabilities', s, k),
       byYear,
       cp,
+      'balance_sheet',
     ),
     buildDiffTable(
       'Non-Current Liabilities',
@@ -485,6 +503,7 @@ export function computeFinancialsComparison(
       (s, k) => pickBalanceLine('nonCurrentLiabilities', s, k),
       byYear,
       cp,
+      'balance_sheet',
     ),
     buildDiffTable(
       'Equity',
@@ -493,6 +512,7 @@ export function computeFinancialsComparison(
       (s, k) => pickBalanceLine('equity', s, k),
       byYear,
       cp,
+      'balance_sheet',
     ),
     buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear, cp),
   ]

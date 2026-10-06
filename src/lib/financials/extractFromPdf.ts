@@ -12,23 +12,40 @@
  * present in most Xero exports). The function returns ONE entry per column
  * detected — so 0, 1, or 2 ExtractedFinancialStatement values.
  *
+ * The caller runs the text pre-pass (prepass.ts) first and passes it in. It
+ * decides which pages are sent (pageSelection.ts), what the prompt states as
+ * fact about the document (extractionContext.ts), and the cross-checks on what
+ * comes back (columnChecks.ts): which halves each column really carries, and
+ * the year the headings name.
+ *
  * Throws when:
  *   - the model returns no tool call (shouldn't happen with forced tool_choice)
  *   - the tool arguments aren't valid JSON
  *   - no financial year can be determined for a returned column
+ *   - no column carries any real statement data
  *
- * Does NOT throw (logs warnings instead) when:
+ * Does NOT throw (warns instead) when:
  *   - individual line items can't be mapped (they go in `other`)
  *   - published totals don't reconcile to the sum of line items within $50
+ *   - one column is empty, or carries a statement the document does not have
  *
  * Must only be imported from API routes — never from a component.
  */
-import { PDFDocument } from 'pdf-lib'
 import { OPENROUTER_EXTRACTION_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
+import { correctYear, decidePresence } from './columnChecks'
+import { buildExtractionContext } from './extractionContext'
+import { expectedColumns } from './documentPlan'
+import { correctFile, isIncomeStatementSection, type FileColumn } from './lineCorrections'
+import { bytesForSelection, selectPages, type PageSelection } from './pageSelection'
+import type { FinancialsPrepass } from './prepass'
+import { resolveDocumentYears, type ResolvedYears } from './resolveYear'
 import type {
   ExtractedFinancialStatement,
   ExtractionWarning,
+  FinancialDocumentKind,
   FinancialStatementSourceColumn,
+  LineSection,
+  StatementLine,
 } from './types'
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -42,68 +59,117 @@ const CURRENT_PERIOD_BALANCE_TOLERANCE_AUD = 200
 
 const EXTRACTION_TOOL_NAME = 'submit_extracted_financials'
 
-/** Maximum number of pages to send to the model. The Income Statement and
- *  Balance Sheet always live within the first 8 pages of these PDFs (the
- *  rest is notes, declarations, depreciation schedule, and an optional
- *  appended Company Tax Return). Trimming dramatically reduces both upload
- *  size and the model's PDF-parse time. */
-const MAX_PAGES_FOR_EXTRACTION = 8
+// Timing. One extraction call is up to two attempts: the first, and one retry
+// for a failure that a second try can fix (429, 5xx, a dropped connection).
+// Our own per-attempt timeout is never retried — a document that takes over
+// 150s will take as long again. EXTRACTION_CALL_BUDGET_MS is the most one call
+// can take; the job sizes its per-document limit from it.
+export const OPENROUTER_ATTEMPTS = 2
+export const PER_ATTEMPT_TIMEOUT_MS = 150_000
+export const RETRY_BACKOFF_MS = 3_000
+export const EXTRACTION_CALL_BUDGET_MS = OPENROUTER_ATTEMPTS * PER_ATTEMPT_TIMEOUT_MS + RETRY_BACKOFF_MS
 
-// Retry policy for the OpenRouter call. Gemini's PDF parse occasionally trips a
-// 504 gateway timeout (especially on full-size encrypted PDFs); these are
-// transient, so we re-issue the idempotent request. Kept small so a sustained
-// outage can't blow the route's 800s maxDuration across sequential documents.
-const MAX_OPENROUTER_ATTEMPTS = 3
-const PER_ATTEMPT_TIMEOUT_MS = 90_000
+export type AttemptFailure =
+  | { kind: 'timeout' } // our own per-attempt limit
+  | { kind: 'network' } // the connection failed before an answer
+  | { kind: 'http'; status: number }
+  | { kind: 'provider'; code: number | string | undefined }
 
-/** Transient = worth retrying: any 5xx status/code, plus the upstream
- *  "operation was aborted" / timeout messages OpenRouter reports as a 504. */
-function isTransientOpenRouterError(
-  status: number | string | undefined,
-  message: string,
-): boolean {
-  const code = typeof status === 'number' ? status : parseInt(String(status ?? ''), 10)
-  if (!Number.isNaN(code) && code >= 500 && code < 600) return true
-  const m = message.toLowerCase()
-  return m.includes('abort') || m.includes('timeout') || m.includes('timed out')
+/** Worth a second try: rate limiting, a server-side error, or a dropped connection. Never our own timeout. */
+export function shouldRetry(failure: AttemptFailure): boolean {
+  if (failure.kind === 'timeout') return false
+  if (failure.kind === 'network') return true
+  const code =
+    failure.kind === 'http'
+      ? failure.status
+      : typeof failure.code === 'number'
+        ? failure.code
+        : parseInt(String(failure.code ?? ''), 10)
+  return code === 429 || (code >= 500 && code < 600)
 }
 
-/** Short backoff between OpenRouter attempts: ~2s, then ~5s. */
-function backoffDelay(attempt: number): Promise<void> {
-  const ms = attempt === 1 ? 2000 : 5000
-  return new Promise((resolve) => setTimeout(resolve, ms))
+function backoffDelay(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS))
+}
+
+/** What one extraction call cost, for the logs. */
+export interface ExtractionCallStats {
+  generationId: string | null
+  seconds: number
+  attempts: number
+  promptTokens: number | null
+  completionTokens: number | null
+  reasoningTokens: number | null
 }
 
 export interface ExtractFromPdfInput {
   pdfBytes: Uint8Array
   sourceFilename: string
+  /** From runFinancialsPrepass on the same bytes. */
+  prepass: FinancialsPrepass
+  /** The client file says the entity is a trust. A trust pays no tax itself. */
+  entityIsTrust?: boolean
+  /** Directors' names on the client file: a loan named after one is director-related. */
+  directors?: readonly string[]
 }
 
 export interface ExtractFromPdfResult {
   statements: ExtractedFinancialStatement[]
   rawResponse: unknown
   model: string
+  selection: PageSelection
+  years: ResolvedYears
+  /** About the document as a whole: a filename that disagrees with the headings, etc. */
+  documentWarnings: ExtractionWarning[]
+  call: ExtractionCallStats
 }
 
 export async function extractFinancialStatementFromPdf(
   input: ExtractFromPdfInput,
 ): Promise<ExtractFromPdfResult> {
-  const { pdfBytes, sourceFilename } = input
+  const { pdfBytes, sourceFilename, prepass } = input
+  const { classification } = prepass
+  // A trust: from the client file, or a heading like "<CO> PTY LTD ATF <NAME> TRUST".
+  const isTrust =
+    input.entityIsTrust === true ||
+    /\b(atf|a\.t\.f\.?|as trustee for)\b/i.test(classification.entity?.name ?? '')
 
-  // Trim to the first MAX_PAGES_FOR_EXTRACTION pages. PDFs in this dataset
-  // bundle a Company Tax Return after the financials; sending it to the
-  // model wastes tokens and slows extraction.
-  const trimmedBytes = await trimPdfToFirstPages(pdfBytes, MAX_PAGES_FOR_EXTRACTION)
-  const trimmedKb = Math.round(trimmedBytes.length / 1024)
-  const originalKb = Math.round(pdfBytes.length / 1024)
-  // Best-effort year detection from the filename. The expected primary FY
-  // typically lives in the filename ("PARKCON_..._2024_signed.pdf" → 2024).
-  // We pass this to the model as a guardrail against year hallucinations.
-  const filenameYear = inferYearFromFilename(sourceFilename)
+  // Which pages go: only the statements when the file can be cut, the whole
+  // file with the statement pages named when it is encrypted.
+  const selection = selectPages({
+    encrypted: prepass.encrypted,
+    pageCount: prepass.pageCount,
+    classification,
+  })
+  const sentBytes = await bytesForSelection(pdfBytes, selection)
+
+  // Headings decide the year; the filename is only the fallback.
+  const years = resolveDocumentYears(classification, sourceFilename)
+  const documentWarnings: ExtractionWarning[] = []
+  if (years.conflict) {
+    documentWarnings.push({
+      kind: 'filename_year_conflict',
+      message: `The filename suggests FY${years.conflict.filenameYear}, but the statement headings name FY${years.conflict.headingYears.join(', FY')}. The headings were used.`,
+    })
+  }
+  if (
+    classification.hasTextLayer &&
+    (selection.mode === 'first_pages_fallback' || selection.mode === 'whole_file')
+  ) {
+    documentWarnings.push({
+      kind: 'page_selection',
+      message:
+        'No Income Statement or Balance Sheet heading was recognised in the text, so the statement pages could not be singled out.',
+    })
+  }
+
+  const yearLog =
+    [...years.annualYears, ...(years.currentPeriodYear ? [`cp${years.currentPeriodYear}`] : [])].join('/') ||
+    'none'
   console.log(
-    `[extractFinancialStatementFromPdf] ${sourceFilename}: ${originalKb}KB → ${trimmedKb}KB after trimming to ${MAX_PAGES_FOR_EXTRACTION} pages; filename hints FY=${filenameYear ?? 'unknown'}`,
+    `[extractFinancialStatementFromPdf] ${sourceFilename}: kind=${classification.kind} encrypted=${prepass.encrypted} selection=${selection.mode} pages=[${selection.sentPages.join(',')}] of ${prepass.pageCount}; ${Math.round(pdfBytes.length / 1024)}KB -> ${Math.round(sentBytes.length / 1024)}KB; years=${years.source}:${yearLog}`,
   )
-  const base64Pdf = Buffer.from(trimmedBytes).toString('base64')
+  const base64Pdf = Buffer.from(sentBytes).toString('base64')
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set.')
@@ -116,7 +182,8 @@ export async function extractFinancialStatementFromPdf(
   // https://openrouter.ai/docs/features/multimodal/pdfs
   const requestBody = {
     model: OPENROUTER_EXTRACTION_MODEL,
-    max_tokens: 16000,
+    // Room for the full line list on top of the canonical figures.
+    max_tokens: 32000,
     tools: [buildExtractionTool()],
     // Force the single extraction tool — equivalent to Anthropic's
     // tool_choice: { type: 'tool', name: EXTRACTION_TOOL_NAME }.
@@ -130,7 +197,9 @@ export async function extractFinancialStatementFromPdf(
         content: [
           {
             type: 'text',
-            text: buildExtractionPromptWithHint(sourceFilename, filenameYear),
+            text:
+              FINANCIALS_EXTRACTION_PROMPT +
+              buildExtractionContext({ sourceFilename, classification, years, selection }),
           },
           // OpenRouter PDF input via the `file` content type. The data: URL
           // embeds the base64-encoded PDF. The plugins array (below) tells
@@ -163,6 +232,12 @@ export async function extractFinancialStatementFromPdf(
       order: ['google-ai-studio', 'google-vertex'],
       allow_fallbacks: false,
     },
+    // Gemini 2.5 Flash "thinks" by default, which adds tens of seconds and
+    // tokens to a task that is reading, not reasoning. Turned off; the logged
+    // reasoning token count shows whether the provider honoured it.
+    reasoning: { enabled: false },
+    // Token counts (and cost) on the response, for the logs.
+    usage: { include: true },
   }
 
   // Gemini-via-OpenRouter intermittently returns a 504 ("operation was
@@ -177,21 +252,28 @@ export async function extractFinancialStatementFromPdf(
   let response: OpenRouterChatResponse | null = null
   let callElapsed = '0.0'
   let lastError = ''
+  let attemptsMade = 0
+  const started = Date.now()
 
-  for (let attempt = 1; attempt <= MAX_OPENROUTER_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= OPENROUTER_ATTEMPTS; attempt++) {
+    attemptsMade = attempt
     const callStart = Date.now()
     console.log(
-      `[extractFinancialStatementFromPdf] ${sourceFilename}: calling OpenRouter (Gemini 2.5 Flash), attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS}`,
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: calling OpenRouter, attempt ${attempt}/${OPENROUTER_ATTEMPTS}`,
     )
 
-    // Per-attempt timeout. A single hung upstream shouldn't consume the whole
-    // function budget — abort and retry instead.
+    // Per-attempt timeout. Ours, so never retried: see shouldRetry().
     const controller = new AbortController()
-    const timeoutHandle = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS)
+    let timedOut = false
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, PER_ATTEMPT_TIMEOUT_MS)
 
-    let httpResponse: Response
+    let failure: AttemptFailure | null = null
+    let candidate: OpenRouterChatResponse | null = null
     try {
-      httpResponse = await fetch(OPENROUTER_CHAT_URL, {
+      const httpResponse = await fetch(OPENROUTER_CHAT_URL, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -202,78 +284,70 @@ export async function extractFinancialStatementFromPdf(
         body: JSON.stringify(requestBody),
         signal: controller.signal,
       })
-    } catch (err) {
-      // AbortError (our per-attempt timeout) or a network blip — both transient.
-      const msg = err instanceof Error ? err.message : String(err)
-      lastError = msg
-      console.error(
-        `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} request error after ${((Date.now() - callStart) / 1000).toFixed(1)}s: ${msg}`,
-      )
-      if (attempt < MAX_OPENROUTER_ATTEMPTS) {
-        await backoffDelay(attempt)
-        continue
+      if (!httpResponse.ok) {
+        const errorText = await httpResponse.text().catch(() => '')
+        lastError = `HTTP ${httpResponse.status}: ${errorText.slice(0, 300)}`
+        failure = { kind: 'http', status: httpResponse.status }
+      } else {
+        candidate = (await httpResponse.json()) as OpenRouterChatResponse
+        // OpenRouter often returns provider failures as a 200 with an `error`
+        // object (top-level or per-choice) and no usable completion.
+        const orError = candidate.error ?? candidate.choices?.[0]?.error
+        if (orError) {
+          const detail = typeof orError.message === 'string' ? orError.message : JSON.stringify(orError)
+          lastError = `code=${orError.code ?? 'n/a'}: ${detail}`
+          failure = { kind: 'provider', code: orError.code }
+        }
       }
-      throw new Error(
-        `extractFinancialStatementFromPdf: OpenRouter request failed for ${sourceFilename} after ${MAX_OPENROUTER_ATTEMPTS} attempts: ${msg}`,
-      )
+    } catch (err) {
+      lastError = timedOut
+        ? `no answer within ${PER_ATTEMPT_TIMEOUT_MS / 1000}s`
+        : err instanceof Error
+          ? err.message
+          : String(err)
+      failure = timedOut ? { kind: 'timeout' } : { kind: 'network' }
     } finally {
       clearTimeout(timeoutHandle)
     }
 
     callElapsed = ((Date.now() - callStart) / 1000).toFixed(1)
-
-    if (!httpResponse.ok) {
-      const errorText = await httpResponse.text().catch(() => '')
-      if (isTransientOpenRouterError(httpResponse.status, errorText) && attempt < MAX_OPENROUTER_ATTEMPTS) {
-        lastError = `HTTP ${httpResponse.status}: ${errorText.slice(0, 200)}`
-        console.error(
-          `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} transient HTTP ${httpResponse.status} after ${callElapsed}s — retrying`,
-        )
-        await backoffDelay(attempt)
-        continue
-      }
-      throw new Error(
-        `extractFinancialStatementFromPdf: OpenRouter HTTP ${httpResponse.status} for ${sourceFilename}: ${errorText.slice(0, 500)}`,
-      )
+    if (!failure && candidate) {
+      response = candidate
+      break
     }
 
-    const candidate = (await httpResponse.json()) as OpenRouterChatResponse
-
-    // OpenRouter often returns provider failures as a 200 with an `error`
-    // object (top-level or per-choice) and no usable completion. Inspect it so
-    // the logs show the real cause instead of "model did not call the tool",
-    // and retry it when it's a transient gateway/timeout error.
-    const orError = candidate.error ?? candidate.choices?.[0]?.error
-    if (orError) {
-      const detail =
-        typeof orError.message === 'string' ? orError.message : JSON.stringify(orError)
-      if (isTransientOpenRouterError(orError.code, detail) && attempt < MAX_OPENROUTER_ATTEMPTS) {
-        lastError = `code=${orError.code ?? 'n/a'}: ${detail}`
-        console.error(
-          `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${MAX_OPENROUTER_ATTEMPTS} transient OpenRouter error (code=${orError.code ?? 'n/a'}) after ${callElapsed}s: ${detail} — retrying`,
-        )
-        await backoffDelay(attempt)
-        continue
-      }
-      console.error(
-        `[extractFinancialStatementFromPdf] ${sourceFilename}: OpenRouter returned an error (code=${orError.code ?? 'n/a'}): ${detail}`,
-      )
-      throw new Error(
-        `extractFinancialStatementFromPdf: OpenRouter error for ${sourceFilename}: ${detail}`,
-      )
+    const retry = failure !== null && shouldRetry(failure) && attempt < OPENROUTER_ATTEMPTS
+    console.error(
+      `[extractFinancialStatementFromPdf] ${sourceFilename}: attempt ${attempt}/${OPENROUTER_ATTEMPTS} failed after ${callElapsed}s (${failure?.kind}): ${lastError}${retry ? ' — retrying once' : ''}`,
+    )
+    if (retry) {
+      await backoffDelay()
+      continue
     }
-
-    response = candidate
-    break
+    throw new Error(
+      `extractFinancialStatementFromPdf: OpenRouter ${failure?.kind === 'timeout' ? 'timed out' : 'failed'} for ${sourceFilename} after ${attempt} attempt(s): ${lastError}`,
+    )
   }
 
   if (!response) {
     throw new Error(
-      `extractFinancialStatementFromPdf: OpenRouter did not return a usable response for ${sourceFilename} after ${MAX_OPENROUTER_ATTEMPTS} attempts${
+      `extractFinancialStatementFromPdf: OpenRouter did not return a usable response for ${sourceFilename}${
         lastError ? ` (last error: ${lastError})` : ''
       }.`,
     )
   }
+
+  const call: ExtractionCallStats = {
+    generationId: response.id ?? null,
+    seconds: Math.round((Date.now() - started) / 100) / 10,
+    attempts: attemptsMade,
+    promptTokens: response.usage?.prompt_tokens ?? null,
+    completionTokens: response.usage?.completion_tokens ?? null,
+    reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+  }
+  console.log(
+    `[extractFinancialStatementFromPdf] ${sourceFilename}: generation=${call.generationId ?? 'n/a'} ${call.seconds}s attempts=${call.attempts} tokens prompt=${call.promptTokens ?? '?'} completion=${call.completionTokens ?? '?'} reasoning=${call.reasoningTokens ?? '?'}`,
+  )
 
   const choice = response.choices?.[0]
   const finishReason = choice?.finish_reason ?? 'unknown'
@@ -339,14 +413,79 @@ export async function extractFinancialStatementFromPdf(
 
   const statements: ExtractedFinancialStatement[] = []
   for (const raw of parsed.statements) {
-    statements.push(normaliseAndValidate(raw, sourceFilename, modelUsed))
+    const statement = normaliseAndValidate(raw, {
+      sourceFilename,
+      model: modelUsed,
+      kind: classification.kind,
+      years,
+    })
+    if (statement) statements.push(statement)
+    else {
+      documentWarnings.push({
+        kind: 'presence_mismatch',
+        message: `A ${raw.sourceColumn ?? 'returned'} column for FY${raw.financialYear ?? '?'} carried no real statement data and was dropped.`,
+      })
+    }
   }
 
-  return { statements, rawResponse: parsed, model: modelUsed }
+  // Our own corrections, over every column of this file the same way: printed
+  // signs, swapped totals, the rebuild from complete line lists, the label
+  // dictionary and loan rule, and the profit rule. Then the arithmetic check,
+  // on the corrected figures.
+  const textOf = (pages: number[]) => pages.flatMap((page) => prepass.pages[page - 1] ?? [])
+  const pageText = prepass.pages.length
+    ? { is: textOf(classification.statementPages.income_statement), bs: textOf(classification.statementPages.balance_sheet) }
+    : null
+  // Value columns the headings print: the row parser needs exactly this many.
+  const annualColumns = expectedColumns(prepass).filter((c) => c.sourceColumn !== 'current_period').length
+  const linesOf = (st: ExtractedFinancialStatement) => [...(st.incomeStatement.lines ?? []), ...(st.balanceSheet.lines ?? [])]
+  const annual = statements.filter((st) => st.sourceColumn !== 'current_period')
+  const groups: ExtractedFinancialStatement[][] = [
+    annual.sort((x, y) => (x.sourceColumn === 'primary' ? 0 : 1) - (y.sourceColumn === 'primary' ? 0 : 1)),
+    ...statements.filter((st) => st.sourceColumn === 'current_period').map((st) => [st]),
+  ].filter((g) => g.length > 0)
+  const ctx = { isTrust, directors: input.directors ?? [] }
+  for (const group of groups) {
+    const columns: FileColumn[] = group.map((st, index) => ({
+      incomeStatement: st.incomeStatement,
+      balanceSheet: st.balanceSheet,
+      lines: linesOf(st),
+      index,
+    }))
+    const isCurrentPeriod = group[0].sourceColumn === 'current_period'
+    const printed = pageText
+      ? { ...pageText, columns: isCurrentPeriod ? 1 : Math.max(annualColumns, group.length) }
+      : null
+    const { columnNotes, fileNotes } = correctFile(columns, ctx, printed)
+    group.forEach((st, i) => st.warnings.push(...columnNotes[i]))
+    documentWarnings.push(...fileNotes)
+  }
+  for (const st of statements) {
+    st.warnings.push(
+      ...reconcile({ incomeStatement: st.incomeStatement, balanceSheet: st.balanceSheet, financialYear: st.financialYear, sourceColumn: st.sourceColumn }),
+    )
+  }
+
+  // Nothing real in any column: today's "empty extraction" failure, kept so a
+  // stub never reaches storage.
+  if (statements.length === 0) {
+    throw new Error(
+      `extractFinancialStatementFromPdf: rejecting empty extraction for ${sourceFilename} — no column carried real Income Statement or Balance Sheet figures.`,
+    )
+  }
+
+  return { statements, rawResponse: parsed, model: modelUsed, selection, years, documentWarnings, call }
 }
 
 interface OpenRouterChatResponse {
+  /** OpenRouter's generation id: look a call up in its dashboard. */
+  id?: string
   model?: string
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    completion_tokens_details?: { reasoning_tokens?: number }
+  }
   // OpenRouter returns provider/gateway failures as an `error` object — often
   // with HTTP 200 and no `choices`. We must inspect this; otherwise the failure
   // surfaces only as a confusing "model did not call the tool" with empty text.
@@ -373,7 +512,10 @@ interface RawToolInput {
 }
 
 interface RawStatement {
+  lines?: unknown[]
   sourceColumn?: string
+  incomeStatementPresent?: boolean
+  balanceSheetPresent?: boolean
   financialYear?: number
   periodEndDate?: string
   periodStartDate?: string | null
@@ -403,7 +545,23 @@ function sectionSchema(canonicalKeys: readonly string[]): Record<string, unknown
 }
 
 const INCOME_KEYS = ['sales', 'interestIncome', 'otherRevenue'] as const
-const COGS_KEYS = ['purchases', 'directCosts'] as const
+const COGS_KEYS = ['openingStock', 'purchases', 'directCosts', 'closingStock'] as const
+const APPROPRIATION_KEYS = ['distributions', 'dividends', 'priorYearLossesApplied'] as const
+const LINE_SECTIONS: LineSection[] = [
+  'income',
+  'otherIncome',
+  'cogs',
+  'expenses',
+  'incomeTax',
+  'appropriation',
+  'incomeTotals',
+  'currentAssets',
+  'nonCurrentAssets',
+  'currentLiabilities',
+  'nonCurrentLiabilities',
+  'equity',
+  'balanceTotals',
+]
 const EXPENSES_KEYS = [
   'depreciation',
   'motorVehicle',
@@ -493,6 +651,15 @@ function buildExtractionTool(): Record<string, unknown> {
                   type: 'string',
                   enum: ['primary', 'comparative', 'current_period'],
                 },
+                incomeStatementPresent: {
+                  type: 'boolean',
+                  description:
+                    'True only if this document actually contains an Income Statement / Profit and Loss for this column.',
+                },
+                balanceSheetPresent: {
+                  type: 'boolean',
+                  description: 'True only if this document actually contains a Balance Sheet for this column.',
+                },
                 financialYear: {
                   type: 'integer',
                   description: 'e.g. 2025 for the year ended 30 June 2025',
@@ -520,6 +687,12 @@ function buildExtractionTool(): Record<string, unknown> {
                     cogs: sectionSchema(COGS_KEYS),
                     expenses: sectionSchema(EXPENSES_KEYS),
                     totals: sectionSchema(IS_TOTALS_KEYS),
+                    appropriations: {
+                      type: 'object',
+                      description:
+                        'Below the profit line, NOT expenses: distributions to beneficiaries, dividends, prior-year losses applied. Positive numbers.',
+                      properties: Object.fromEntries(APPROPRIATION_KEYS.map((k) => [k, { type: ['number', 'null'] }])),
+                    },
                   },
                   required: ['income', 'cogs', 'expenses', 'totals'],
                 },
@@ -543,6 +716,22 @@ function buildExtractionTool(): Record<string, unknown> {
                     'equity',
                     'totals',
                   ],
+                },
+                lines: {
+                  type: 'array',
+                  description:
+                    'Every printed line of this column, in order, totals included. See LINE LIST in the prompt.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      section: { type: 'string', enum: LINE_SECTIONS },
+                      rawLabel: { type: 'string' },
+                      value: { type: ['number', 'null'] },
+                      canonicalKey: { type: ['string', 'null'] },
+                      isTotal: { type: 'boolean' },
+                    },
+                    required: ['section', 'rawLabel', 'value', 'isTotal'],
+                  },
                 },
                 rawExtraction: {
                   type: 'array',
@@ -585,10 +774,13 @@ function buildExtractionTool(): Record<string, unknown> {
               },
               required: [
                 'sourceColumn',
+                'incomeStatementPresent',
+                'balanceSheetPresent',
                 'financialYear',
                 'periodEndDate',
                 'incomeStatement',
                 'balanceSheet',
+                'lines',
               ],
             },
           },
@@ -601,48 +793,108 @@ function buildExtractionTool(): Record<string, unknown> {
 
 // ─── Per-statement validation + reconciliation ──────────────────────────────
 
+interface NormaliseContext {
+  sourceFilename: string
+  model: string
+  kind: FinancialDocumentKind
+  years: ResolvedYears
+}
+
+/** The model's line list, kept only where each entry has the right shape. */
+function normaliseLines(value: unknown): StatementLine[] {
+  if (!Array.isArray(value)) return []
+  const out: StatementLine[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const l = item as Record<string, unknown>
+    if (typeof l.rawLabel !== 'string' || !LINE_SECTIONS.includes(l.section as LineSection)) continue
+    out.push({
+      section: l.section as LineSection,
+      rawLabel: l.rawLabel.trim(),
+      value: typeof l.value === 'number' && Number.isFinite(l.value) ? l.value : null,
+      canonicalKey: typeof l.canonicalKey === 'string' && l.canonicalKey.trim() ? l.canonicalKey.trim() : null,
+      isTotal: l.isTotal === true,
+    })
+  }
+  return out
+}
+
+/**
+ * One returned column -> a statement, or null when neither half is really
+ * there. Throws only on a malformed column (no source column, year or date).
+ */
 function normaliseAndValidate(
   raw: RawStatement,
-  sourceFilename: string,
-  model: string,
-): ExtractedFinancialStatement {
-  const sourceColumn = normaliseSourceColumn(raw.sourceColumn)
+  { sourceFilename, model, kind, years }: NormaliseContext,
+): ExtractedFinancialStatement | null {
+  let sourceColumn = normaliseSourceColumn(raw.sourceColumn)
   if (!sourceColumn) {
     throw new Error(
       `extractFinancialStatementFromPdf: missing or invalid sourceColumn in ${sourceFilename}`,
     )
   }
 
-  const financialYear = raw.financialYear
-  if (typeof financialYear !== 'number' || !Number.isInteger(financialYear)) {
+  const modelYear = raw.financialYear
+  if (typeof modelYear !== 'number' || !Number.isInteger(modelYear)) {
     throw new Error(
       `extractFinancialStatementFromPdf: missing or invalid financialYear in ${sourceFilename} (${sourceColumn} column)`,
     )
   }
 
-  const periodEndDate = raw.periodEndDate
-  if (typeof periodEndDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(periodEndDate)) {
+  const rawEndDate = raw.periodEndDate
+  if (typeof rawEndDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
     throw new Error(
-      `extractFinancialStatementFromPdf: missing or invalid periodEndDate in ${sourceFilename} (FY${financialYear})`,
+      `extractFinancialStatementFromPdf: missing or invalid periodEndDate in ${sourceFilename} (FY${modelYear})`,
     )
   }
 
+  const lines = normaliseLines(raw.lines)
   const warnings: ExtractionWarning[] = Array.isArray(raw.warnings)
-    ? (raw.warnings as ExtractionWarning[]).filter((w) => w && typeof w === 'object')
+    ? (raw.warnings as ExtractionWarning[])
+        .filter((w) => w && typeof w === 'object')
+        // A P&L-only or Balance-Sheet-only file is normal now: the coverage
+        // table shows what is missing. Drop the model's "incomplete" note.
+        .filter((w) => !(w.kind === 'incomplete_current_period' && (kind === 'pnl_only' || kind === 'bs_only')))
+        // With a line list, unmapped lines are noted from the lines themselves,
+        // the same way for every column; the model's own notes are uneven.
+        .filter((w) => !(w.kind === 'unmapped_line_item' && lines.length > 0))
     : []
+
+  // Headings decide annual vs current period too: one value column alone does
+  // not make an annual statement a current-period one, nor the reverse.
+  if (years.source === 'heading') {
+    const annualOnly = years.annualYears.length > 0 && years.currentPeriodYear === null
+    const currentOnly = years.annualYears.length === 0 && years.currentPeriodYear !== null
+    if (annualOnly && sourceColumn === 'current_period') {
+      warnings.push({ kind: 'year_mismatch', message: 'The model read an annual statement as a current-period one. Stored as the annual statement the heading names.' })
+      sourceColumn = 'primary'
+    } else if (currentOnly && sourceColumn !== 'current_period') {
+      warnings.push({ kind: 'year_mismatch', message: 'The model read a current-period statement as an annual one. Stored as the current period the heading names.' })
+      sourceColumn = 'current_period'
+    }
+  }
+
+  // Headings decide the year. An annual column moved to another year takes
+  // that year's 30 June as its end date.
+  const year = correctYear({ modelYear, sourceColumn, years })
+  const financialYear = year.financialYear
+  if (year.warning) warnings.push(year.warning)
+  const periodEndDate =
+    year.warning && sourceColumn !== 'current_period' ? `${financialYear}-06-30` : rawEndDate
 
   const incomeStatement = (raw.incomeStatement ??
     {}) as unknown as ExtractedFinancialStatement['incomeStatement']
   const balanceSheet = (raw.balanceSheet ??
     {}) as unknown as ExtractedFinancialStatement['balanceSheet']
 
-  const filledIncome = {
+  const filledIncome: ExtractedFinancialStatement['incomeStatement'] = {
     income: incomeStatement.income ?? {},
     cogs: incomeStatement.cogs ?? {},
     expenses: incomeStatement.expenses ?? {},
     totals: incomeStatement.totals ?? {},
+    ...(incomeStatement.appropriations ? { appropriations: incomeStatement.appropriations } : {}),
   }
-  const filledBalance = {
+  const filledBalance: ExtractedFinancialStatement['balanceSheet'] = {
     currentAssets: balanceSheet.currentAssets ?? {},
     nonCurrentAssets: balanceSheet.nonCurrentAssets ?? {},
     currentLiabilities: balanceSheet.currentLiabilities ?? {},
@@ -651,38 +903,44 @@ function normaliseAndValidate(
     totals: balanceSheet.totals ?? {},
   }
 
-  warnings.push(
-    ...reconcile({
-      incomeStatement: filledIncome,
-      balanceSheet: filledBalance,
-      financialYear,
-      sourceColumn,
-    }),
-  )
+  // The printed lines go with their statement; correctFile() works on them
+  // once every column of the file has been read.
+  const isLines = lines.filter((l) => isIncomeStatementSection(l.section))
+  const bsLines = lines.filter((l) => !isIncomeStatementSection(l.section))
+  if (isLines.length) filledIncome.lines = isLines
+  if (bsLines.length) filledBalance.lines = bsLines
 
   const periodLabel = normalisePeriodField(raw.periodLabel)
   const periodStartDate = normalisePeriodField(raw.periodStartDate)
 
-  // Reject extractions that have no meaningful data. The model has been
-  // observed to return a stub (correct shape, null values everywhere) when
-  // it fails to parse a column. Persisting such a row would overwrite real
-  // data via the UNIQUE(client_id, financial_year) constraint.
-  const totalIncome = filledIncome.totals.totalIncome
-  const totalAssets = filledBalance.totals.totalAssets
-  const sales = filledIncome.income.sales
-  if (
-    totalIncome == null &&
-    totalAssets == null &&
-    sales == null
-  ) {
+  // Which halves this column really carries. The model has been observed to
+  // return a stub (right shape, nulls everywhere) when it fails to read a
+  // column, and to fill a statement the file does not have. Neither may
+  // reach storage: a half is stored only when it is really there.
+  const isCheck = decidePresence({
+    half: 'income_statement',
+    modelSaysPresent: raw.incomeStatementPresent,
+    data: filledIncome,
+    kind,
+    financialYear,
+    sourceColumn,
+  })
+  const bsCheck = decidePresence({
+    half: 'balance_sheet',
+    modelSaysPresent: raw.balanceSheetPresent,
+    data: filledBalance,
+    kind,
+    financialYear,
+    sourceColumn,
+  })
+  for (const check of [isCheck, bsCheck]) if (check.warning) warnings.push(check.warning)
+
+  if (!isCheck.present && !bsCheck.present) {
     console.error(
-      `[extractFinancialStatementFromPdf] EMPTY EXTRACTION ${sourceFilename} (FY${financialYear} ${sourceColumn}): ` +
-        `income.sales=${sales}, totals.totalIncome=${totalIncome}, totals.totalAssets=${totalAssets}. ` +
+      `[extractFinancialStatementFromPdf] EMPTY COLUMN ${sourceFilename} (FY${financialYear} ${sourceColumn}). ` +
         `Raw response sample: ${JSON.stringify(raw).slice(0, 500)}`,
     )
-    throw new Error(
-      `extractFinancialStatementFromPdf: rejecting empty extraction for ${sourceFilename} (FY${financialYear} ${sourceColumn}) — no sales, totalIncome, or totalAssets values returned.`,
-    )
+    return null
   }
 
   return {
@@ -697,81 +955,10 @@ function normaliseAndValidate(
       : [],
     warnings,
     extractionModel: model,
+    present: { income_statement: isCheck.present, balance_sheet: bsCheck.present },
     ...(periodLabel !== undefined ? { periodLabel } : {}),
     ...(periodStartDate !== undefined ? { periodStartDate } : {}),
   }
-}
-
-/** Best-effort: extract a 4-digit financial year (20XX) from a filename.
- *  Returns the FIRST 20XX match. Filenames in this product follow patterns
- *  like "2023 - PARKCON...pdf", "PARKCON_..._Tax 2024_signed.pdf", or
- *  "PARKCON_..._Tax Return 2025_signed.pdf". Uses a digit-aware boundary
- *  (negative lookbehind/ahead for digits only) so "_" before/after the
- *  year is treated as a separator, not part of the year. */
-function inferYearFromFilename(filename: string): number | null {
-  const match = filename.match(/(?<!\d)(20\d{2})(?!\d)/)
-  if (!match) return null
-  const year = parseInt(match[1], 10)
-  const currentYear = new Date().getFullYear()
-  if (year < 2000 || year > currentYear + 1) return null
-  return year
-}
-
-/** Inject the filename + filename-derived year into the prompt so the model
- *  can't hallucinate a different year. If the filename has no detectable
- *  year, the model is told to rely on the PDF heading only. */
-function buildExtractionPromptWithHint(filename: string, hintYear: number | null): string {
-  const hint = hintYear
-    ? `\n\nSOURCE FILENAME: "${filename}"\nFILENAME SUGGESTS PRIMARY FINANCIAL YEAR: ${hintYear}. The PRIMARY column's financialYear should be ${hintYear} unless the PDF heading clearly says otherwise. If the PDF's heading year disagrees with the filename year, trust the PDF heading and add a warning of kind "unmapped_line_item" explaining the mismatch.\n`
-    : `\n\nSOURCE FILENAME: "${filename}"\nThe filename does not contain a clear year hint — derive financialYear ONLY from the PDF heading.\n`
-  return FINANCIALS_EXTRACTION_PROMPT + hint
-}
-
-/**
- * Load a PDF, keep only the first N pages, return the serialised bytes.
- *
- * Behaviour:
- *   - PDFs ≤ N pages: returned untouched.
- *   - Encrypted/signed PDFs: returned untouched. pdf-lib can OPEN encrypted
- *     PDFs with ignoreEncryption:true, but the page-content streams remain
- *     encrypted internally — re-saving produces a structurally-valid but
- *     visually-blank PDF. We observed the model calling the extraction tool
- *     with all-null values on such PDFs. Better to send the full original
- *     and let OpenRouter forward it to the underlying model unmodified.
- *   - Unencrypted PDFs > N pages: trimmed to the first N pages.
- *
- * Source PDFs in this product bundle an Annual Financial Statement
- * (~7-8 pages) followed by an optional Company Tax Return (~10 pages).
- * Trimming dramatically speeds up processing on unencrypted PDFs.
- */
-async function trimPdfToFirstPages(input: Uint8Array, maxPages: number): Promise<Uint8Array> {
-  let source: PDFDocument
-  try {
-    // First attempt: refuse encrypted PDFs. If this throws, we know the PDF
-    // is encrypted and we shouldn't trim it (the re-saved output would have
-    // blank content streams).
-    source = await PDFDocument.load(input, { ignoreEncryption: false })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (message.includes('encrypted')) {
-      console.log(
-        `[extractFinancialStatementFromPdf] PDF is encrypted/signed (${Math.round(input.length / 1024)}KB) — bypassing trim, sending original to OpenRouter`,
-      )
-      return input
-    }
-    throw err
-  }
-
-  const totalPages = source.getPageCount()
-  if (totalPages <= maxPages) {
-    return input
-  }
-
-  const out = await PDFDocument.create()
-  const indices = Array.from({ length: maxPages }, (_, i) => i)
-  const pages = await out.copyPages(source, indices)
-  for (const p of pages) out.addPage(p)
-  return await out.save()
 }
 
 function normaliseSourceColumn(value: unknown): FinancialStatementSourceColumn | null {

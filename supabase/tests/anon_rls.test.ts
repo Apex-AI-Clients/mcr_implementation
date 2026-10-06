@@ -3,7 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 
 /**
- * The publishable (anon) key sees nothing in the tables migration 0021 closed.
+ * The publishable (anon) key sees nothing in the tables migration 0021 closed,
+ * nor in the ones closed the same way since (0026).
  *
  * Run with `npm run test:db` after setting SUPABASE_TEST_URL,
  * SUPABASE_TEST_SERVICE_ROLE_KEY and SUPABASE_TEST_ANON_KEY for a DEV project.
@@ -27,6 +28,23 @@ const CLOSED_TABLES = [
   'sbr_historical_cases',
   'sbr_outcome_predictions',
   'financial_comparison_jobs',
+  'financial_document_extractions',
+] as const
+
+/** The column each one-row select asks for. Every table has an `id` but this one. */
+const KEY_COLUMN: Partial<Record<(typeof CLOSED_TABLES)[number], string>> = {
+  financial_document_extractions: 'document_id',
+}
+
+/**
+ * Trigger functions from 0026. EXECUTE is revoked from PUBLIC, anon and
+ * authenticated; PostgREST also never exposes a function that returns
+ * `trigger`. Either way the anon key must get an error, never a call.
+ * The privilege itself is checked in SQL — see the migration's report.
+ */
+const TRIGGER_FUNCTIONS = [
+  'financial_statements_release_document',
+  'financial_statements_legacy_write_guard',
 ] as const
 
 let anon: SupabaseClient<Database>
@@ -46,14 +64,24 @@ describe.skipIf(!configured)('anon key and the tables 0021 closed', () => {
   })
 
   it.each(CLOSED_TABLES)('%s: anon selects nothing', async (table) => {
-    const { data, error } = await anon.from(table).select('id').limit(1)
+    const { data, error } = await anon.from(table).select(KEY_COLUMN[table] ?? 'id').limit(1)
     expect(error).toBeNull()
     expect(data).toEqual([])
   })
 
   it.each(CLOSED_TABLES)('%s: service role is unaffected', async (table) => {
-    const { error } = await db.from(table).select('id', { count: 'exact', head: true })
+    const { error } = await db
+      .from(table)
+      .select(KEY_COLUMN[table] ?? 'id', { count: 'exact', head: true })
     expect(error).toBeNull()
+  })
+
+  it.each(TRIGGER_FUNCTIONS)('%s: anon cannot call it', async (fn) => {
+    // Not in the generated Functions type (trigger functions never are).
+    const { error } = await anon.rpc(fn as never)
+    expect(error).not.toBeNull()
+    // PGRST202 = not exposed at all; 42501 = exposed but not permitted.
+    expect(['PGRST202', '42501']).toContain(error?.code)
   })
 
   it('anon cannot write company_details', async () => {

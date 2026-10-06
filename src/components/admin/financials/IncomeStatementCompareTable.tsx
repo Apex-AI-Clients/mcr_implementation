@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { YoYBadge } from './YoYBadge'
+import { negativeNoun } from '@/lib/financials/changeLabel'
 import type {
   CurrentPeriodSnapshot,
   DiffTableSection,
@@ -234,7 +235,14 @@ function DiffRowEl({
           <td key={fy} className={cn('py-1.5 pr-4 text-right tabular-nums', { 'font-semibold': bold })}>
             <div className="inline-flex items-center justify-end gap-1.5">
               <span>{formatAud(v)}</span>
-              {i > 0 && <YoYBadge percent={yoy} />}
+              {i > 0 && (
+                <YoYBadge
+                  percent={yoy}
+                  previous={row.valuesByYear[years[i - 1]]}
+                  current={v}
+                  negativeNoun={negativeNoun(row.canonicalKey)}
+                />
+              )}
             </div>
           </td>
         )

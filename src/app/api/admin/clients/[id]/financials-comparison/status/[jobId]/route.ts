@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import type { ComparisonPayload, ExtractError } from '@/lib/financials/comparisonJob'
+import { closeDeadJob, DEAD_JOB_MESSAGE, isJobDead } from '@/lib/financials/jobLiveness'
 
 interface Params {
   params: Promise<{ id: string; jobId: string }>
@@ -62,10 +63,15 @@ export async function GET(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Job not found.' }, { status: 404 })
     }
 
+    // A job its function outlived can never finish: close it, so the page
+    // stops waiting and offers a re-run.
+    const dead = isJobDead(job)
+    if (dead) await closeDeadJob(supabase, job.id)
+
     const body: JobStatusResponse = {
-      status: job.status as JobStatusResponse['status'],
+      status: dead ? 'failed' : (job.status as JobStatusResponse['status']),
       mode: job.mode as JobStatusResponse['mode'],
-      error: job.error,
+      error: dead ? DEAD_JOB_MESSAGE : job.error,
       result: (job.result as unknown as ComparisonPayload | null) ?? null,
       extractErrors: (job.extract_errors as unknown as ExtractError[]) ?? [],
       startedAt: job.started_at,

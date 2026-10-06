@@ -2,12 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { uploadToStorage } from '@/lib/storage/upload'
-import {
-  CATEGORY_META,
-  DOCUMENT_CATEGORIES,
-  MAX_FILE_SIZE_BYTES,
-  REQUIRED_CATEGORIES,
-} from '@/lib/constants'
+import { CATEGORY_META, DOCUMENT_CATEGORIES, MAX_FILE_SIZE_BYTES } from '@/lib/constants'
+import { recomputeClientStatus } from '@/lib/clients/status'
 import type { DocCategory } from '@/lib/constants'
 
 const VALID_CATEGORIES = new Set(Object.values(DOCUMENT_CATEGORIES))
@@ -77,28 +73,11 @@ export async function POST(req: NextRequest) {
 
     if (docError || !document) throw docError
 
-    await updateClientStatus(clientId)
+    await recomputeClientStatus(supabase, clientId)
 
     return NextResponse.json({ documentId: document.id }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/portal/upload]', err)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
-}
-
-async function updateClientStatus(clientId: string) {
-  const supabase = getSupabaseServerClient()
-  const { data: docs } = await supabase
-    .from('documents')
-    .select('doc_category')
-    .eq('client_id', clientId)
-    .neq('status', 'rejected')
-
-  const receivedCategories = new Set((docs ?? []).map((d) => d.doc_category))
-  const allRequiredMet = REQUIRED_CATEGORIES.every((c) => receivedCategories.has(c))
-
-  await supabase
-    .from('clients')
-    .update({ status: allRequiredMet ? 'complete' : 'in_progress' })
-    .eq('id', clientId)
 }

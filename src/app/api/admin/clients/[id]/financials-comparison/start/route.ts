@@ -21,12 +21,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { runComparisonJob } from '@/lib/financials/comparisonJob'
+import { closeDeadJob, isJobDead } from '@/lib/financials/jobLiveness'
 
 export const maxDuration = 800
-
-// An 'active' job older than this is assumed dead (e.g. the function instance
-// was recycled mid-run) and will not block a fresh start.
-const STALE_JOB_MS = 15 * 60 * 1000
 
 interface Params {
   params: Promise<{ id: string }>
@@ -71,11 +68,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Guard against duplicate runs (e.g. double-click). If a live job already
-    // exists for this client, return it instead of starting another. A job that
-    // hasn't updated within STALE_JOB_MS is treated as dead and superseded.
+    // exists for this client, return it instead of starting another. A job older
+    // than the function's lifetime is dead (see jobLiveness) and is closed.
     const { data: active } = await supabase
       .from('financial_comparison_jobs')
-      .select('id, updated_at')
+      .select('id, status, created_at')
       .eq('client_id', clientId)
       .in('status', ['pending', 'processing'])
       .order('created_at', { ascending: false })
@@ -83,19 +80,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       .maybeSingle()
 
     if (active) {
-      const fresh = Date.now() - new Date(active.updated_at).getTime() < STALE_JOB_MS
-      if (fresh) {
-        return NextResponse.json({ jobId: active.id, reused: true })
-      }
-      await supabase
-        .from('financial_comparison_jobs')
-        .update({
-          status: 'failed',
-          error: 'Superseded by a new run (previous job went stale).',
-          updated_at: new Date().toISOString(),
-          finished_at: new Date().toISOString(),
-        })
-        .eq('id', active.id)
+      if (!isJobDead(active)) return NextResponse.json({ jobId: active.id, reused: true })
+      await closeDeadJob(supabase, active.id)
     }
 
     const { data: job, error: insertError } = await supabase
@@ -103,6 +89,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       .insert({ client_id: clientId, status: 'pending', mode })
       .select('id')
       .single()
+
+    // Another request started a job between our check and this insert: the
+    // database allows one active job per client (migration 0027), so hand
+    // back the one that won instead of running the extraction twice.
+    if (insertError?.code === '23505') {
+      const { data: running } = await supabase
+        .from('financial_comparison_jobs')
+        .select('id')
+        .eq('client_id', clientId)
+        .in('status', ['pending', 'processing'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (running) return NextResponse.json({ jobId: running.id, reused: true })
+    }
 
     if (insertError || !job) {
       console.error('[financials-comparison/start] insert failed', insertError)

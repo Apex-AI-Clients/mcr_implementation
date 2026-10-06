@@ -15,8 +15,11 @@ export const INCOME_STATEMENT_SCHEMA = {
     other: 'Other Income (uncategorised)',
   },
   cogs: {
+    // Cost of sales = opening stock + purchases + direct costs - closing stock.
+    openingStock: 'Opening Stock',
     purchases: 'Purchases',
     directCosts: 'Direct Costs',
+    closingStock: 'Closing Stock',
     other: 'Other COGS (uncategorised)',
   },
   expenses: {
@@ -65,6 +68,7 @@ export const BALANCE_SHEET_SCHEMA = {
   currentAssets: {
     bankAccounts: 'Bank Accounts',
     accountsReceivable: 'Accounts Receivable',
+    inventories: 'Inventories',
     other: 'Other Current Assets (uncategorised)',
   },
   nonCurrentAssets: {
@@ -94,6 +98,8 @@ export const BALANCE_SHEET_SCHEMA = {
   equity: {
     retainedEarnings: 'Retained Earnings',
     shareCapital: 'Share Capital',
+    // Distributions to beneficiaries shown in a trust's equity.
+    distributions: 'Distributions to Beneficiaries',
     other: 'Other Equity (uncategorised)',
   },
   totals: {

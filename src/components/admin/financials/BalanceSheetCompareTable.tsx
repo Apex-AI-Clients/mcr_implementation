@@ -1,6 +1,7 @@
 import { AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { YoYBadge } from './YoYBadge'
+import { negativeNoun } from '@/lib/financials/changeLabel'
 import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
 import type {
   CurrentPeriodSnapshot,
@@ -234,6 +235,9 @@ function DiffRowEl({
                 <YoYBadge
                   percent={yoy}
                   invertSentiment={shouldInvertSentiment(row.canonicalKey)}
+                  previous={row.valuesByYear[years[i - 1]]}
+                  current={v}
+                  negativeNoun={negativeNoun(row.canonicalKey)}
                 />
               )}
             </div>
@@ -281,7 +285,14 @@ function NetAssetsRow({
           >
             <div className="inline-flex items-center justify-end gap-1.5">
               <span>{formatAud(v)}</span>
-              {i > 0 && <YoYBadge percent={yoy} />}
+              {i > 0 && (
+                <YoYBadge
+                  percent={yoy}
+                  previous={row.valuesByYear[years[i - 1]]}
+                  current={v}
+                  negativeNoun={negativeNoun(row.canonicalKey)}
+                />
+              )}
             </div>
           </td>
         )

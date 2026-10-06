@@ -27,7 +27,9 @@ function parseAtoDate(raw: string): Date | null {
  * pass isSigned=true to handle it. Debit/Credit columns are always positive.
  */
 function parseCurrency(raw: string, isSigned = false): number | null {
-  const trimmed = raw.trim()
+  // A stray quote can survive on the last cell of a row (see the line-ending
+  // note in parseActivityStatementCsv); it is never part of the amount.
+  const trimmed = raw.replace(/"/g, '').trim()
   if (!trimmed) return null
 
   let multiplier = 1
@@ -90,7 +92,10 @@ export function extractPeriodEnding(description: string): Date | null {
  *   Lines 4+: data rows
  */
 export function parseActivityStatementCsv(csvText: string): ParsedCsv {
-  const allRows: string[][] = parse(csvText, {
+  // ATO exports end lines with CRLF. With relax_quotes, csv-parse then keeps
+  // the closing quote and the CR on the LAST cell of every row (the Balance),
+  // so a balance such as "$1,000.00 DR" did not parse and every balance was lost.
+  const allRows: string[][] = parse(csvText.replace(/\r\n?/g, '\n'), {
     relax_column_count: true,
     relax_quotes: true,
     skip_empty_lines: true,

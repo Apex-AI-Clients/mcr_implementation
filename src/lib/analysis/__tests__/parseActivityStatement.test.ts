@@ -83,4 +83,21 @@ describe('parseActivityStatementCsv', () => {
     const result = parseActivityStatementCsv(csv)
     expect(result.rows[0].processedDate).toBeNull()
   })
+
+  it('reads the Balance column of a CRLF export (as the ATO exports them)', () => {
+    // Synthetic rows. With CRLF endings the last cell used to keep its closing
+    // quote, so every balance read as null.
+    const csv = [
+      '"Activity statement 001"',
+      '"SAMPLE PTY LTD"',
+      'Processed date,Effective date,Description,Debit (DR),Credit (CR),Balance',
+      '"26 Sep 2026","26 Sep 2026","General interest charge","$100.00","","$50,000.00 DR"',
+      '"10 Sep 2026","10 Sep 2026","Payment received","","$1,000.00","$49,900.00 DR"',
+      '"01 Aug 2026","01 Aug 2026","Refund","","$75.50","$1,200.00 CR"',
+    ].join('\r\n')
+    const rows = parseActivityStatementCsv(csv).rows
+    expect(rows.map((r) => r.balance)).toEqual([50_000, 49_900, -1_200])
+    expect(rows.map((r) => r.debit)).toEqual([100, null, null])
+    expect(rows[2].credit).toBe(75.5)
+  })
 })

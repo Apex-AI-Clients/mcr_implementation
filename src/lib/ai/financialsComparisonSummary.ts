@@ -3,6 +3,11 @@
  * narrative summary of the multi-year financial comparison. Mirrors
  * lodgementSummary.ts.
  *
+ * Every dollar figure in the summary is checked against the figures it was
+ * given (summaryFigures.ts). A summary with a figure that is not one of them,
+ * or the difference between two, is regenerated once with the stray figures
+ * named; if that fails too, a summary without figures is used instead.
+ *
  * Must only be imported from API routes.
  */
 import {
@@ -10,6 +15,7 @@ import {
   FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE,
 } from './prompts'
 import { getOpenRouterClient } from './openrouterClient'
+import { summaryWithoutFigures, unsupportedFigures } from './summaryFigures'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 function formatNum(value: number | null | undefined): string {
@@ -47,6 +53,11 @@ function buildYearByYearTable(comparison: FinancialsComparison): string {
     const netProfit = comparison.headlines.netProfit.trend[idx] ?? null
     const netAssets = comparison.headlines.netAssets.trend[idx] ?? null
     const dirLoans = comparison.headlines.directorLoansReceivable.trend[idx] ?? null
+    const equity = comparison.equityByYear?.[fy]
+    const paidOut = [
+      equity?.distributions != null ? `distributions paid $${formatNum(equity.distributions)}` : null,
+      equity?.dividends != null ? `dividends paid $${formatNum(equity.dividends)}` : null,
+    ].filter(Boolean)
 
     lines.push(
       `- FY${fy}: Revenue $${formatNum(revenue)}, Net profit/(loss) $${formatNum(
@@ -55,7 +66,9 @@ function buildYearByYearTable(comparison: FinancialsComparison): string {
         ratios.atoDebtAsPercentOfRevenue,
       )} of revenue), Director loans receivable $${formatNum(dirLoans)} (${formatPercent(
         ratios.directorLoansAsPercentOfAssets,
-      )} of assets), Net assets $${formatNum(netAssets)}`,
+      )} of assets), Net assets $${formatNum(netAssets)}, Retained earnings at year end $${formatNum(
+        equity?.retainedEarnings ?? null,
+      )}${paidOut.length ? `, ${paidOut.join(', ')}` : ''}`,
     )
   }
   return lines.join('\n')
@@ -89,30 +102,38 @@ export async function generateFinancialsComparisonSummary(input: {
       .replaceAll(
         '{netAssetsLatest}',
         formatNum(comparison.headlines.netAssets.latestValue),
-      )
-      .replaceAll('{numYears}', String(comparison.years.length))
-      .replaceAll(
-        '{cumulativeProfitLoss}',
-        formatNum(comparison.cumulativeProfitBeforeTax),
-      ) + buildCurrentPeriodPromptSection(comparison)
+      ) +
+    // No sum of profits is given: it was being reported as retained earnings.
+    // The real retained earnings are in the year table.
+    buildCurrentPeriodPromptSection(comparison)
 
   const client = getOpenRouterClient({ timeoutMs: 60_000 })
-
-  const response = await client.chat.completions.create({
-    model: OPENROUTER_NARRATIVE_MODEL,
-    max_tokens: 350,
-    messages: [{ role: 'user', content: prompt }],
-    // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
-    provider: {
-      order: ['google-ai-studio', 'google-vertex'],
-      allow_fallbacks: false,
-    },
-  })
-
-  const text = response.choices[0]?.message?.content?.trim() ?? ''
-  if (!text) {
-    throw new Error('generateFinancialsComparisonSummary: OpenRouter returned empty content.')
+  const ask = async (content: string) => {
+    const response = await client.chat.completions.create({
+      model: OPENROUTER_NARRATIVE_MODEL,
+      max_tokens: 350,
+      messages: [{ role: 'user', content }],
+      // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
+      provider: {
+        order: ['google-ai-studio', 'google-vertex'],
+        allow_fallbacks: false,
+      },
+    })
+    const text = response.choices[0]?.message?.content?.trim() ?? ''
+    if (!text) {
+      throw new Error('generateFinancialsComparisonSummary: OpenRouter returned empty content.')
+    }
+    return { text, model: response.model }
   }
 
-  return { text, model: response.model }
+  const first = await ask(prompt)
+  const stray = unsupportedFigures(first.text, comparison)
+  if (stray.length === 0) return first
+
+  const second = await ask(
+    `${prompt}\n\nYour previous summary stated ${stray.join(', ')}, which ${stray.length === 1 ? 'is' : 'are'} not in the figures above or the difference between two of them. Write it again using only those figures.`,
+  )
+  if (unsupportedFigures(second.text, comparison).length === 0) return second
+
+  return { text: summaryWithoutFigures(comparison), model: `${second.model} (figures withheld)` }
 }

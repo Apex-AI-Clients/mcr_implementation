@@ -1,10 +1,12 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
-import type { ExtractedBalanceSheet } from '@/lib/financials/types'
-import type { EnrichedRow } from '@/lib/analysis/types'
+import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import type { StoredStatementSlot } from '@/lib/financials/types'
+import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { loadIcaRows } from '@/lib/sbr/icaRows'
 import type { Json } from '@/types/database'
-import { differenceInCalendarDays } from 'date-fns'
 
 
 export const dynamic = 'force-dynamic'
@@ -26,21 +28,16 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [lodgement, statement, cached] = await Promise.all([
+  const [lodgement, slots, cached] = await Promise.all([
     supabase
       .from('lodgement_analyses')
-      .select('id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from('financial_statements')
-      .select('financial_year, balance_sheet')
-      .eq('client_id', id)
-      .order('financial_year', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    // Read as halves: a year may have a P&L but no balance sheet.
+    loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
     supabase
       .from('sbr_outcome_predictions')
       .select('*')
@@ -48,7 +45,20 @@ export default async function OutcomePredictionPage({ params }: Props) {
       .maybeSingle(),
   ])
 
-  const balanceSheet = (statement.data?.balance_sheet ?? null) as ExtractedBalanceSheet | null
+  const statement = latestBalanceSheet(slots)
+  const balanceSheet = statement?.balanceSheet ?? null
+
+  // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
+  // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
+  const ica = await loadIcaRows(supabase, lodgement.data ?? null)
+  const icaRows = (ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
+  const debt = creditorDebt({
+    icaRows,
+    balanceSheet,
+    balanceSheetDate: statement?.slot.periodEndDate ?? null,
+    balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
+  })
+  console.log(`[creditor-debt] page client=${id} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
   // Auto-detect the director loan at appointment from the latest balance sheet
   // so the manual checkbox pre-fills on first load. The operator can override.
@@ -59,25 +69,23 @@ export default async function OutcomePredictionPage({ params }: Props) {
     ? null
     : directorLoanValue > 0
       ? `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${
-          statement.data?.financial_year ? `FY${statement.data.financial_year} balance sheet` : 'most recent balance sheet'
+          statement ? `FY${statement.slot.financialYear} balance sheet` : 'most recent balance sheet'
         }.`
       : 'No director loan line item found on most recent balance sheet.'
 
   const initialAuto = {
     cumulativeDaysLate: lodgement.data?.cumulative_days_late ?? null,
     numberOfLateLodgements: lodgement.data?.number_of_late_lodgements ?? null,
-    daysSinceLastPayment: lodgement.data
-      ? deriveDaysSinceLastPayment(lodgement.data.rows as unknown as EnrichedRow[])
-      : null,
+    daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
-    creditorAmount: balanceSheet
-      ? Number(balanceSheet.currentLiabilities?.atoLiability ?? 0) || null
-      : null,
-    latestFinancialYear: statement.data?.financial_year ?? null,
+    creditorAmount: debt.amount,
+    creditorSource: debt.description,
+    creditorMissing: debt.missing,
+    latestFinancialYear: statement?.slot.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
-    hasFinancials: Boolean(statement.data),
+    hasFinancials: slots.length > 0,
   }
 
   return (
@@ -112,22 +120,4 @@ function serialiseCachedPrediction(row: CachedRow) {
     trainingSetSize: row.training_set_size,
     computedAt: row.computed_at,
   }
-}
-
-function deriveDaysSinceLastPayment(rows: EnrichedRow[] | null): number {
-  if (!rows || !Array.isArray(rows)) return 9999
-  const payments = rows.filter((r) => r.lodgementType === 'Payment')
-  if (payments.length === 0) return 9999
-
-  let latest: Date | null = null
-  for (const r of payments) {
-    if (!r.processedDate) continue
-    const d = r.processedDate instanceof Date ? r.processedDate : new Date(r.processedDate)
-    if (!Number.isFinite(d.getTime())) continue
-    if (!latest || d.getTime() > latest.getTime()) latest = d
-  }
-  if (!latest) return 9999
-
-  const diff = differenceInCalendarDays(new Date(), latest)
-  return diff < 0 ? 0 : diff
 }
