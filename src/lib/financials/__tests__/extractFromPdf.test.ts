@@ -214,28 +214,30 @@ describe('mapping corrections (separate-file trust)', () => {
       column({
         balanceSheetPresent: false,
         balanceSheet: NO_BS,
-        incomeStatement: { ...IS, totals: { totalIncome: 120000, profitBeforeTax: 30000, netProfitAfterTax: 18000 } },
+        // Consistent with the synthetic PDF, which prints "Net Profit 45,000 38,000".
+        incomeStatement: { ...IS, totals: { totalIncome: 210000, profitBeforeTax: 45000, netProfitAfterTax: 33000 } },
         lines: [
-          line('incomeTotals', 'Net Profit', 30000, 'totals.profitBeforeTax', true),
+          line('incomeTotals', 'Net Profit', 45000, 'totals.profitBeforeTax', true),
           line('appropriation', 'Less Prior Year Loss', 12000, null),
-          line('incomeTotals', 'NET TRADING PROFIT/(LOSS) AFTER DEDUCTING LOSS', 18000, 'totals.netProfitAfterTax', true),
-          line('appropriation', 'Distribution to Beneficiaries', 18000, null),
+          line('incomeTotals', 'NET TRADING PROFIT/(LOSS) AFTER DEDUCTING LOSS', 33000, 'totals.netProfitAfterTax', true),
+          line('appropriation', 'Distribution to Beneficiaries', 33000, null),
         ],
       }),
     ])
     // The heading "... ATF SAMPLE FAMILY TRUST" makes it a trust.
     const result = await extract(await buildFinancialPdf([trustProfitAndLoss(2025)]))
     const st = result.statements[0]
-    expect(st.incomeStatement.totals.netProfitAfterTax).toBe(30000)
-    expect(st.incomeStatement.appropriations).toEqual({ priorYearLossesApplied: 12000, distributions: 18000 })
+    expect(st.incomeStatement.totals.netProfitAfterTax).toBe(45000)
+    expect(st.incomeStatement.appropriations).toEqual({ priorYearLossesApplied: 12000, distributions: 33000 })
     expect(st.incomeStatement.lines).toHaveLength(4)
   })
 
   it('takes totals printed in the wrong column from the line items, with one note for the file', async () => {
+    // Labels the synthetic PDF does not print, so only the swap logic decides.
     const expenseLines = (a: number, b: number, printed: number) => [
-      line('expenses', 'Rent', a, 'expenses.rent'),
-      line('expenses', 'Wages', b, 'expenses.wagesAndSalaries'),
-      line('expenses', 'Total Expenses', printed, 'totals.totalExpenses', true),
+      line('expenses', 'Sample Expense A', a, 'expenses.rent'),
+      line('expenses', 'Sample Expense B', b, 'expenses.wagesAndSalaries'),
+      line('expenses', 'Sample Expenses Total', printed, 'totals.totalExpenses', true),
     ]
     modelReturns([
       column({ incomeStatement: { ...IS, totals: { totalIncome: 120000, totalExpenses: 45000 } }, lines: expenseLines(40000, 20000, 45000) }),

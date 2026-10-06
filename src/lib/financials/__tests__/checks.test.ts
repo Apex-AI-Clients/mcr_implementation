@@ -435,7 +435,8 @@ describe('document checks', () => {
     const [check] = documentChecks([
       record({ warnings: [{ kind: 'filename_year_conflict', message: 'The filename suggests FY2023.' }] }),
     ])
-    expect(check).toMatchObject({ kind: 'extraction_note', severity: 'warning' })
+    // The headings were used: nothing for staff to do, so a note, not a warning.
+    expect(check).toMatchObject({ kind: 'extraction_note', severity: 'info', group: 'filename_year_conflict' })
     expect(check.message).toBe('statements.pdf: The filename suggests FY2023.')
   })
 })

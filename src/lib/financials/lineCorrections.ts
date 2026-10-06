@@ -387,34 +387,106 @@ function rebuild(s: Statements, lines: StatementLine[], half: 'is' | 'bs', ctx: 
 
 // ─── Signs ────────────────────────────────────────────────────────────────────
 
-/** Give each line the sign the PDF prints, when the text layer shows it unambiguously. */
-function applyPrintedSigns(
-  column: Column,
-  index: number,
-  columns: number,
-  pageLines: Record<'is' | 'bs', readonly string[]>,
-): ExtractionWarning[] {
+/** Our own text of a file's statement pages, and how many value columns they print. */
+export interface PrintedText {
+  is: readonly string[]
+  bs: readonly string[]
+  /** Value columns in the statements' headings (e.g. 2 for "2024 2023"). */
+  columns: number
+}
+
+const fmt = (v: number | null) => (v === null ? '"-"' : money(v))
+
+/**
+ * Every line checked against the row our text layer prints for it: when the
+ * row reads unambiguously (one value per column) and this column's printed
+ * value differs from the model's, the printed value is used — catching a
+ * model that slid a figure onto the next row. Rows that cannot be read
+ * without guessing keep the model's value.
+ */
+function applyPrintedValues(column: Column, index: number, printed: PrintedText): ExtractionWarning[] {
   const notes: ExtractionWarning[] = []
   for (const line of column.lines) {
-    if (line.value === null || line.value === 0) continue
-    const printed = printedAmountsFor(line.rawLabel, pageLines[isIncomeStatementSection(line.section) ? 'is' : 'bs'], columns)
-    const value = printed?.[index]
-    if (value == null || Math.abs(Math.abs(value) - Math.abs(line.value)) >= 0.5 || Math.sign(value) === Math.sign(line.value)) continue
-
+    const row = printedAmountsFor(line.rawLabel, printed[isIncomeStatementSection(line.section) ? 'is' : 'bs'], printed.columns)
+    if (!row) continue
+    const value = row[index] ?? null
     const before = line.value
+    if (value === before || (value !== null && before !== null && Math.abs(value - before) < 0.5)) continue
+
     line.value = value
-    // A total the model filed straight from this line takes the sign too.
-    const loc = locate(column, line.canonicalKey, false)
-    if (loc && typeof loc.object[loc.key] === 'number' && Math.abs((loc.object[loc.key] as number) - before) < 0.5) {
-      loc.object[loc.key] = value
+    // Carry the change into where the model filed the figure. A section
+    // rebuilt from its lines later is exact anyway; this keeps an
+    // incomplete section's figures in step too.
+    const loc = locate(column, validModelKey(line) ?? line.canonicalKey, value !== null)
+    if (loc) {
+      const current = typeof loc.object[loc.key] === 'number' ? (loc.object[loc.key] as number) : null
+      if (line.canonicalKey?.startsWith('totals.')) {
+        if (current === null || before === null || Math.abs(current - before) < 0.5) loc.object[loc.key] = value ?? 0
+      } else {
+        loc.object[loc.key] = (current ?? 0) - (before ?? 0) + (value ?? 0)
+      }
     }
+
+    const signOnly = value !== null && before !== null && Math.abs(Math.abs(value) - Math.abs(before)) < 0.5
     notes.push({
-      kind: 'sign_corrected',
+      kind: signOnly ? 'sign_corrected' : 'value_corrected',
       section: isIncomeStatementSection(line.section) ? 'incomeStatement' : 'balanceSheet',
-      message: `"${line.rawLabel}" is printed as a negative (${money(value)}); its sign was corrected.`,
+      message: signOnly
+        ? `"${line.rawLabel}" is printed as ${fmt(value)}; its sign was corrected.`
+        : `"${line.rawLabel}" was read as ${fmt(before)}, but the statement prints ${fmt(value)} on that row. The printed figure was used.`,
     })
   }
   return notes
+}
+
+// ─── Printed nil and distributions ────────────────────────────────────────────
+
+/**
+ * A line printed with "-" exists and is nil: its figure is 0, not unknown.
+ * Shown as $0; "—" stays for a line the year does not have at all.
+ */
+function zeroPrintedNils(target: Statements, lines: StatementLine[], ctx: CorrectionContext) {
+  for (const line of lines) {
+    if (line.value !== null) continue
+    const key = line.isTotal ? validTotalKey(line) : effectiveKey({ ...line, value: 0 }, ctx).key
+    if (!key || key.startsWith('ignore.') || key.startsWith('appropriations.')) continue
+    const loc = locate(target, key, true)
+    if (loc && loc.object[loc.key] === undefined) loc.object[loc.key] = 0
+  }
+}
+
+function validTotalKey(line: StatementLine): string | null {
+  const key = line.canonicalKey
+  return key && /^totals\.[a-zA-Z]+$/.test(key) ? key : null
+}
+
+const DISTRIBUTION_HEADING = /\b(distributions?|distributed) (to|among) beneficiar|\bbeneficiar(y|ies)( distributions?)?$|^distributions?$/
+const NOT_A_BENEFICIARY = /\b(profit|loss|income|undistributed|retained|total|tax|balance|brought forward|carried forward)\b/
+
+/**
+ * Distributions to beneficiaries, from the appropriation lines: the printed
+ * "DISTRIBUTION TO BENEFICIARIES" figure when it carries one, otherwise the
+ * named beneficiary lines printed under it. Null when there are none.
+ */
+export function distributionsFromLines(lines: StatementLine[]): number | null {
+  const start = lines.findIndex(
+    (l) => (l.section === 'appropriation' || l.section === 'incomeTotals' || l.section === 'equity') && DISTRIBUTION_HEADING.test(normaliseLabel(l.rawLabel)),
+  )
+  if (start === -1) return null
+  const heading = lines[start]
+  if (heading.value !== null && heading.value !== 0) return Math.abs(heading.value)
+
+  let sum: number | null = null
+  for (const l of lines.slice(start + 1)) {
+    if (l.section !== heading.section) break
+    if (l.isTotal) {
+      if (l.value !== null) return Math.abs(l.value)
+      break
+    }
+    if (NOT_A_BENEFICIARY.test(normaliseLabel(l.rawLabel)) || isPriorYearLossLabel(l.rawLabel)) break
+    if (l.value !== null) sum = (sum ?? 0) + Math.abs(l.value)
+  }
+  return sum
 }
 
 // ─── Per column, per file ─────────────────────────────────────────────────────
@@ -423,26 +495,33 @@ function categoryLabel(key: string): string {
   return readableKey(key.split('.')[0] ?? key)
 }
 
-/** Notes made from the lines themselves, the same for every year and column. */
-function lineNotes(lines: StatementLine[], ctx: CorrectionContext): ExtractionWarning[] {
+/**
+ * Notes made from the lines' FINAL mapping — run after the label dictionary,
+ * the loan rule and the cross-file consistency pass, so a note never
+ * contradicts where a line ended up. The same for every year and column.
+ */
+export function finalLineNotes(lines: StatementLine[], ctx: CorrectionContext): ExtractionWarning[] {
   const notes: ExtractionWarning[] = []
   for (const line of lines) {
-    if (line.isTotal || line.value === null) continue
-    const ek = effectiveKey(line, ctx)
+    if (line.isTotal || line.value === null || !line.canonicalKey) continue
     const section = isIncomeStatementSection(line.section) ? 'incomeStatement' : 'balanceSheet'
-    if (ek.loan === 'unconfirmed') {
+    if (isLiabilitySection(line.section) && classifyLoan(line.rawLabel, ctx.directors ?? []) === 'unconfirmed') {
       notes.push({
         kind: 'loan_unconfirmed',
         section,
         message: `Loan '${line.rawLabel}': director or lender? Confirm. It is shown under loans & finance until confirmed.`,
       })
-    } else if ((ek.source === 'model' || ek.source === 'fallback') && ek.key?.includes('.other.')) {
-      notes.push({
-        kind: 'unmapped_line_item',
-        section,
-        message: `"${line.rawLabel}" is not one of the standard lines; it is kept under other ${categoryLabel(ek.key)}.`,
-      })
+      continue
     }
+    const finalKey = line.canonicalKey
+    if (!finalKey.includes('.other') || dictionaryKey(line.rawLabel, line.section)) continue
+    notes.push({
+      kind: 'unmapped_line_item',
+      section,
+      rawLabel: line.rawLabel,
+      message: `"${line.rawLabel}" is not one of the standard lines; it is kept under other ${categoryLabel(finalKey)}.`,
+      group: `unmapped:${categoryLabel(finalKey)}`,
+    })
   }
   return notes
 }
@@ -489,7 +568,20 @@ function correctOne(column: Column, other: Column | null, ctx: CorrectionContext
   const cogs = target.incomeStatement.cogs as Record<string, number | null | undefined>
   if (typeof cogs.closingStock === 'number') cogs.closingStock = Math.abs(cogs.closingStock)
 
-  notes.push(...lineNotes(lines, ctx))
+  // Distributions to beneficiaries, from the heading or the named lines under it.
+  const distributions = distributionsFromLines(lines)
+  if (distributions !== null) {
+    if (lines.some((l) => isIncomeStatementSection(l.section) && DISTRIBUTION_HEADING.test(normaliseLabel(l.rawLabel)))) {
+      target.incomeStatement.appropriations = { ...target.incomeStatement.appropriations, distributions }
+    } else {
+      ;(target.balanceSheet.equity as Record<string, number>).distributions = distributions
+    }
+  }
+
+  zeroPrintedNils(target, lines, ctx)
+
+  // Unmapped-line and loan notes are made when the comparison is built, after
+  // the consistency pass, from the final mapping (see finalLineNotes).
   notes.push(...correctProfit(target, lines, ctx))
   return notes
 }
@@ -500,20 +592,20 @@ export interface FileColumn extends Column {
 }
 
 /**
- * Every column of one file, the same way. `pageLines` is our own text of the
- * file's statement pages, for the printed-sign check. Returns each column's
- * notes, and the file's own notes.
+ * Every column of one file, the same way. `printed` is our own text of the
+ * file's statement pages, which every line is checked against. Returns each
+ * column's notes, and the file's own notes.
  */
 export function correctFile(
   columns: FileColumn[],
   ctx: CorrectionContext,
-  pageLines: Record<'is' | 'bs', readonly string[]> | null,
+  printed: PrintedText | null,
 ): { columnNotes: ExtractionWarning[][]; fileNotes: ExtractionWarning[] } {
   const columnNotes = columns.map(() => [] as ExtractionWarning[])
   const fileNotes: ExtractionWarning[] = []
 
-  if (pageLines) {
-    columns.forEach((column, i) => columnNotes[i].push(...applyPrintedSigns(column, column.index, columns.length, pageLines)))
+  if (printed) {
+    columns.forEach((column, i) => columnNotes[i].push(...applyPrintedValues(column, column.index, printed)))
   }
 
   // Totals printed in the wrong column are put right before anything is

@@ -109,6 +109,7 @@ export function harmoniseMappings(slots: StoredStatementSlot[], ctx: CorrectionC
     checks.push({
       kind: 'mapping_consistency',
       severity: 'info',
+      group: 'mapping_consistency',
       financialYear: null,
       statement: isIncomeStatementSection(first.section) ? 'income_statement' : 'balance_sheet',
       message: `"${first.rawLabel}" was read as ${previously}. It is treated as ${readableKey(chosen)} in every file (${fromRule ? (decided.source === 'loan' ? 'the loan rule' : 'the label dictionary') : 'what most files used'}).`,

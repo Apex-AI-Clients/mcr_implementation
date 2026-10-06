@@ -5,7 +5,7 @@ import {
   type DocumentRecordForCheck,
 } from './checks'
 import { computeFinancialsComparison } from './computeComparison'
-import { correctProfit } from './lineCorrections'
+import { correctProfit, finalLineNotes, type CorrectionContext } from './lineCorrections'
 import { harmoniseMappings } from './mappingConsistency'
 import { mergeAnnualYears, mergeCurrentPeriod, type MergedStatement } from './statementSelection'
 import type { ExtractedFinancialStatement, FinancialCheck, FinancialsComparison, StoredStatementSlot } from './types'
@@ -48,7 +48,36 @@ function profitChecks(merged: MergedStatement[], isTrust: boolean, currentPeriod
         ...(currentPeriod ? { currentPeriod: true } : {}),
         message: note.message,
         documentIds: m.sources.income_statement?.documentId ? [m.sources.income_statement.documentId] : [],
+        group: 'profit_corrected',
       })
+    }
+  }
+  return out
+}
+
+/**
+ * Unmapped-line and unconfirmed-loan notes, from each compared statement's
+ * FINAL mapping — after the dictionary, the loan rule and the consistency
+ * pass — so they cannot contradict where a line ended up.
+ */
+function lineNoteChecks(merged: MergedStatement[], ctx: CorrectionContext, current: MergedStatement | null): FinancialCheck[] {
+  const out: FinancialCheck[] = []
+  for (const m of merged) {
+    for (const half of ['income_statement', 'balance_sheet'] as const) {
+      const lines = half === 'income_statement' ? m.statement.incomeStatement.lines : m.statement.balanceSheet.lines
+      if (!lines?.length || !m.sources[half]) continue
+      for (const note of finalLineNotes(lines, ctx)) {
+        out.push({
+          kind: 'extraction_note',
+          severity: note.kind === 'loan_unconfirmed' ? 'warning' : 'info',
+          financialYear: m.statement.financialYear,
+          statement: half,
+          ...(m === current ? { currentPeriod: true } : {}),
+          message: note.message,
+          documentIds: m.sources[half]?.documentId ? [m.sources[half]!.documentId as string] : [],
+          group: note.group ?? note.kind,
+        })
+      }
     }
   }
   return out
@@ -62,7 +91,8 @@ export function assembleComparison(input: {
   const { slots, records, company } = input
   const isTrust = entityIsTrust(company, records)
 
-  const mappingChecks = harmoniseMappings(slots, { isTrust, directors: company?.directors ?? [] })
+  const ctx: CorrectionContext = { isTrust, directors: company?.directors ?? [] }
+  const mappingChecks = harmoniseMappings(slots, ctx)
   const annual = mergeAnnualYears(slots)
   const current = mergeCurrentPeriod(slots)
   const corrections = [
@@ -83,7 +113,11 @@ export function assembleComparison(input: {
     const s = m.statement
     equityByYear[s.financialYear] = {
       retainedEarnings: m.sources.balance_sheet ? num(s.balanceSheet.equity?.retainedEarnings) : null,
-      distributions: num(s.incomeStatement.appropriations?.distributions),
+      // Printed in the P&L appropriation (separate-file trusts) or in the
+      // balance sheet's equity — one figure either way.
+      distributions:
+        num(s.incomeStatement.appropriations?.distributions) ??
+        num((s.balanceSheet.equity as Record<string, unknown> | undefined)?.distributions),
       dividends: num(s.incomeStatement.appropriations?.dividends),
     }
   }
@@ -99,7 +133,7 @@ export function assembleComparison(input: {
       current,
       records,
       company,
-      extra: [...mappingChecks, ...corrections],
+      extra: [...mappingChecks, ...corrections, ...lineNoteChecks([...used, ...(current ? [current] : [])], ctx, current)],
     }),
   }
   return { ok: true, comparison, statementCount: statements.length }

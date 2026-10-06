@@ -252,3 +252,65 @@ describe('restatement: retained-earnings lines and signs', () => {
     ])
   })
 })
+
+describe('notes come from the final mapping', () => {
+  function pnl(key: string): ExtractedIncomeStatement {
+    return {
+      income: { sales: 100_000 },
+      cogs: {},
+      expenses: key === 'expenses.generalExpenses' ? { generalExpenses: 500 } : ({ other: { 'Sundry Costs': 500 } } as never),
+      totals: { totalIncome: 100_000, profitBeforeTax: 99_500 },
+      lines: [
+        line('income', 'Sales', 100_000, 'income.sales'),
+        line('expenses', 'Sundry Costs', 500, key),
+      ],
+    }
+  }
+
+  it('never says "not a standard line" for a line the consistency pass mapped', () => {
+    // FY2024's own file maps "Sundry Costs" to general expenses; FY2025's file to "other".
+    const slots = [
+      slot(2024, 'primary', { is: [pnl('expenses.generalExpenses'), 'pnl-23-24'] }),
+      slot(2025, 'primary', { is: [pnl('expenses.other'), 'pnl-24-25'] }),
+    ]
+    // A note stored at extraction time, before the consistency pass, must not survive.
+    slots[1].incomeStatement!.warnings = [
+      { kind: 'unmapped_line_item', message: '"Sundry Costs" is not one of the standard lines; it is kept under other expenses.' },
+    ]
+    const result = assembleComparison({ slots, records: [], company: null })
+    if (!result.ok) throw new Error('expected a comparison')
+    const messages = result.comparison.checks!.map((c) => c.message)
+    expect(messages.some((m) => /Sundry Costs" is not one of the standard lines/.test(m))).toBe(false)
+    expect(messages.some((m) => /"Sundry Costs" was read as/.test(m))).toBe(true)
+  })
+})
+
+describe('equity figures for the summary', () => {
+  it('passes a printed "-" retained earnings as 0 and the distributions read from the P&L', () => {
+    const pnl = (sales: number, distributions?: number): ExtractedIncomeStatement => ({
+      income: { sales },
+      cogs: {},
+      expenses: {},
+      totals: { totalIncome: sales, profitBeforeTax: 10_000 },
+      ...(distributions ? { appropriations: { distributions } } : {}),
+    })
+    const bs = (retainedEarnings: number): ExtractedBalanceSheet => ({
+      currentAssets: {},
+      nonCurrentAssets: {},
+      currentLiabilities: {},
+      nonCurrentLiabilities: {},
+      equity: { retainedEarnings },
+      totals: { totalAssets: 1 },
+    })
+    const slots = [
+      slot(2024, 'primary', { is: [pnl(200_000), 'p24'], bs: [bs(-4_682), 'b24'] }),
+      slot(2025, 'primary', { is: [pnl(250_000, 16_996), 'p25'], bs: [bs(0), 'b25'] }),
+    ]
+    const result = assembleComparison({ slots, records: trustRecords, company: null })
+    if (!result.ok) throw new Error('expected a comparison')
+    expect(result.comparison.equityByYear).toEqual({
+      2024: { retainedEarnings: -4_682, distributions: null, dividends: null },
+      2025: { retainedEarnings: 0, distributions: 16_996, dividends: null },
+    })
+  })
+})

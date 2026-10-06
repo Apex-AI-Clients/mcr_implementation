@@ -101,6 +101,7 @@ export interface ExtractionWarning {
     | 'mapping_corrected'
     | 'swapped_totals'
     | 'sign_corrected'
+    | 'value_corrected'
     | 'loan_unconfirmed'
     | 'lines_incomplete'
     | 'column_not_extracted'
@@ -108,6 +109,8 @@ export interface ExtractionWarning {
   rawLabel?: string
   rawValue?: string
   section?: string
+  /** Notes of one sort are shown together as one collapsible line ("12 lines kept under other expenses"). */
+  group?: string
   /** column_not_extracted: the column the headings show but the model did not return. */
   financialYear?: number
   sourceColumn?: FinancialStatementSourceColumn
@@ -332,6 +335,8 @@ export interface FinancialCheck {
   message: string
   /** The documents involved, for linking to the file. */
   documentIds: string[]
+  /** Notes of one sort collapse into one line in the panel; see ComparisonChecksPanel. */
+  group?: string
 }
 
 export interface FinancialsComparison {

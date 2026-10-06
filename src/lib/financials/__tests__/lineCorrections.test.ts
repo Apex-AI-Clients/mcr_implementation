@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { correctColumn, correctProfit, fixSwappedTotals, type Column } from '../lineCorrections'
+import { correctColumn, correctProfit, finalLineNotes, fixSwappedTotals, type Column } from '../lineCorrections'
 import type { ExtractedBalanceSheet, ExtractedIncomeStatement, LineSection, StatementLine } from '../types'
 
 /**
@@ -162,8 +162,10 @@ describe('mapping dictionary', () => {
 
   it('never assumes a person-named loan is a director loan: it stays put, with a note', () => {
     const { s, lines } = loans()
-    const notes = correctColumn(s, lines, { isTrust: false, directors: [] })
+    correctColumn(s, lines, { isTrust: false, directors: [] })
     expect(s.balanceSheet.nonCurrentLiabilities).toEqual({ loansAndFinance: 70_000 })
+    // The note is made from the final mapping when the comparison is built.
+    const notes = finalLineNotes(lines, { isTrust: false, directors: [] })
     expect(notes.filter((n) => n.kind === 'loan_unconfirmed').map((n) => n.message)).toEqual([
       "Loan 'Loan - Jane Citizen': director or lender? Confirm. It is shown under loans & finance until confirmed.",
     ])

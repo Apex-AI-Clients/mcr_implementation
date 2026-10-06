@@ -235,6 +235,7 @@ export function rollForwardChecks(all: MergedStatement[], yearsToCheck: number[]
             severity: 'info',
             financialYear: year,
             statement: 'balance_sheet',
+            group: 'distributions_implied',
             message: `Retained earnings closed at ${money(closing)}: opening ${money(opening)} plus the year's profit ${money(profit)} less ${money(-gap)}, which implies dividends or other distributions of that amount.`,
             documentIds,
           },
@@ -350,6 +351,7 @@ export function restatementChecks(slots: StoredStatementSlot[]): FinancialCheck[
           severity: 'info',
           financialYear: year,
           statement: half,
+          group: 'sign_differs',
           message: `FY${year}: sign differs between files for ${signOnly.join('; ')} (${own.sourceFilename ?? 'its own file'} and ${later.sourceFilename ?? 'a later file'}). The comparison uses the year's own figures.`,
           documentIds: [own.documentId, later.documentId].filter((id): id is string => !!id),
         })
@@ -449,13 +451,15 @@ export function entityChecks(
 
 // ─── Documents and extraction notes ──────────────────────────────────────────
 
-const WARNING_KINDS = new Set<ExtractionWarning['kind']>([
-  'year_mismatch',
-  'presence_mismatch',
-  'document_kind',
-  'filename_year_conflict',
-  'column_not_extracted',
-])
+/**
+ * Only what needs staff action is a warning: a column that could not be read,
+ * a file that is not statements, a loan whose holder must be confirmed.
+ * Everything we corrected or explained ourselves is a note.
+ */
+const WARNING_KINDS = new Set<ExtractionWarning['kind']>(['column_not_extracted', 'document_kind', 'loan_unconfirmed'])
+
+/** Note kinds made fresh from the lines' final mapping when the comparison is built. */
+const REGENERATED_KINDS = new Set<ExtractionWarning['kind']>(['unmapped_line_item', 'loan_unconfirmed'])
 
 /** What was recorded about each document: not statements at all, and its notes. */
 export function documentChecks(records: DocumentRecordForCheck[]): FinancialCheck[] {
@@ -485,6 +489,7 @@ export function documentChecks(records: DocumentRecordForCheck[]): FinancialChec
         statement: null,
         message: `${record.filename}: ${w.message}`,
         documentIds: [record.documentId],
+        group: w.group ?? w.kind,
       })
     }
   }
@@ -506,8 +511,12 @@ export function extractionNotes(
     // "No balance sheet — combined PDF expected", stored before separate files
     // were accepted: not a problem for a P&L-only or BS-only file.
     const fromSingleStatementFile = documentIdsOf(m).some((id) => singleStatementDocuments.has(id))
+    const hasLines = Boolean(m.statement.incomeStatement.lines?.length || m.statement.balanceSheet.lines?.length)
     for (const w of m.statement.warnings) {
       if (w.kind === 'totals_reconciliation') continue
+      // Made again from the final mapping (assembleComparison), so a stored
+      // copy from extraction time can never contradict it.
+      if (hasLines && REGENERATED_KINDS.has(w.kind)) continue
       if (w.kind === 'incomplete_current_period' && fromSingleStatementFile) continue
       const key = `${m.statement.financialYear}|${currentPeriod}|${w.kind}|${w.message}`
       if (seen.has(key)) continue
@@ -522,6 +531,7 @@ export function extractionNotes(
         ...(currentPeriod ? { currentPeriod: true } : {}),
         message: w.message,
         documentIds: documentIdsOf(m, half ?? undefined),
+        group: w.group ?? w.kind,
       })
     }
   }

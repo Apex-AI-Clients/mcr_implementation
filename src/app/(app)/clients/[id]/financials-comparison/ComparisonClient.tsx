@@ -92,6 +92,8 @@ export function ComparisonClient({
   const [errors, setErrors] = useState<ExtractError[]>([])
   const [error, setError] = useState<string | null>(null)
   const [staleSince, setStaleSince] = useState<string | null>(initialStaleSince)
+  // The statement checks are for staff, not the exported report, unless asked for.
+  const [includeChecks, setIncludeChecks] = useState(false)
 
   const [phase, setPhase] = useState<JobPhase>(initialJobId ? 'processing' : 'idle')
 
@@ -195,11 +197,16 @@ export function ComparisonClient({
         activeJobId.current = data.jobId
         void poll(data.jobId)
       } catch {
-        setError('Network error while starting the comparison.')
+        // The answer was lost, not necessarily the run: the server may have
+        // created the job before the connection dropped (a preview deployment
+        // cold-starting or being replaced). Refreshing hands any job it did
+        // start back to this page, which then picks it up (effect below).
+        setError('Could not confirm the comparison started. Checking for a run in progress…')
         setPhase('failed')
+        router.refresh()
       }
     },
-    [clientId, clearPoll, poll],
+    [clientId, clearPoll, poll, router],
   )
 
   // On load: resume an in-flight job, otherwise auto-start the comparison when
@@ -215,6 +222,17 @@ export function ComparisonClient({
     return clearPoll
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A job found by a later refresh (e.g. after a start request whose answer
+  // was lost) is picked up and followed like any other.
+  useEffect(() => {
+    if (initialJobId && initialJobId !== activeJobId.current) {
+      activeJobId.current = initialJobId
+      setError(null)
+      setPhase('processing')
+      void poll(initialJobId)
+    }
+  }, [initialJobId, poll])
 
   const runFull = useCallback(() => startJob('full'), [startJob])
   const runCompareOnly = useCallback(() => startJob('compare'), [startJob])
@@ -274,6 +292,17 @@ export function ComparisonClient({
 
           {hasComparison && (
             <div className="no-print flex flex-wrap items-center gap-2">
+              {comparison.checks && comparison.checks.length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs text-foreground/60">
+                  <input
+                    type="checkbox"
+                    checked={includeChecks}
+                    onChange={(event) => setIncludeChecks(event.target.checked)}
+                    className="accent-accent"
+                  />
+                  Include checks in PDF
+                </label>
+              )}
               <ExportPdfButton
                 targetId="financials-export-root"
                 fileName={`${clientName}_financials_comparison`}
@@ -321,14 +350,18 @@ export function ComparisonClient({
         </div>
       )}
 
-      {/* Errors */}
+      {/* Errors — screen only: a run's transient state never belongs in an export. */}
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="no-print rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      {errors.length > 0 && <ExtractionErrors errors={errors} />}
+      {errors.length > 0 && (
+        <div className="no-print">
+          <ExtractionErrors errors={errors} />
+        </div>
+      )}
 
       {/* A document behind these figures has gone since they were built. */}
       {hasComparison && staleSince && !running && (
@@ -395,7 +428,9 @@ export function ComparisonClient({
           )}
 
           {comparison.checks && comparison.checks.length > 0 && (
-            <ComparisonChecksPanel checks={comparison.checks} />
+            <div className={includeChecks ? undefined : 'no-print'}>
+              <ComparisonChecksPanel checks={comparison.checks} />
+            </div>
           )}
 
           <ScorecardTiles comparison={comparison} />

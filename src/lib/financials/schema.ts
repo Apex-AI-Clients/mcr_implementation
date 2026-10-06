@@ -98,6 +98,8 @@ export const BALANCE_SHEET_SCHEMA = {
   equity: {
     retainedEarnings: 'Retained Earnings',
     shareCapital: 'Share Capital',
+    // Distributions to beneficiaries shown in a trust's equity.
+    distributions: 'Distributions to Beneficiaries',
     other: 'Other Equity (uncategorised)',
   },
   totals: {

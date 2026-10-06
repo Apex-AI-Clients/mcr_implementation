@@ -119,6 +119,17 @@ const DICTIONARY: DictionaryEntry[] = [
   // Stock held at balance date is a current asset.
   { pattern: /^(inventor(y|ies)|stock on hand|trading stock|closing stock|stock)( at cost)?$/, sections: ASSET_SECTIONS, key: 'currentAssets.inventories' },
 
+  // Expense labels seen in real statements, kept in one place every year.
+  { pattern: /^(mv|m v|motor vehicle)( expenses?| costs?| running costs?)$/, sections: ['expenses'], key: 'expenses.motorVehicle' },
+  { pattern: /^(business|general|public liability) insurance$/, sections: ['expenses'], key: 'expenses.insurance' },
+  { pattern: /^(work ?cover|workers compensation)( insurance)?$/, sections: ['expenses'], key: 'expenses.insurance' },
+  { pattern: /^(licen[cs]es?|registrations?)( and | )?(licen[cs]es?|registrations?)?$/, sections: ['expenses'], key: 'expenses.generalExpenses' },
+  { pattern: /^(rent(al)? )?outgoings$/, sections: ['expenses'], key: 'expenses.rent' },
+  { pattern: /^(merchant|eftpos) (fees?|charges?)$|^bank (charges|fees)( and merchant fees)?$/, sections: ['expenses'], key: 'expenses.bankFees' },
+  { pattern: /^(waste( and)? cleaning|cleaning( and waste)?|waste (removal|disposal))$/, sections: ['expenses'], key: 'expenses.generalExpenses' },
+  { pattern: /^asic (fees?|charges?|annual review fees?|lodgement fees?)$/, sections: ['expenses'], key: 'expenses.generalExpenses' },
+  { pattern: /^gst( account| clearing| payable| control| collected)?$/, sections: ['currentLiabilities', 'nonCurrentLiabilities'], key: 'currentLiabilities.gstPayable' },
+
   // Amortisation is folded into depreciation, every year and column.
   { pattern: /^(less )?amorti[sz]ation\b|^depreciation and amorti[sz]ation$/, sections: ['expenses'], key: 'expenses.depreciation' },
 

@@ -107,25 +107,54 @@ const checks: FinancialCheck[] = [
 ]
 
 describe('ComparisonChecksPanel', () => {
-  it('opens on a warning and groups checks by year and statement', () => {
+  it('opens on a warning and lists warnings by year and statement', () => {
     render(<ComparisonChecksPanel checks={checks} />)
     expect(screen.getByRole('button', { name: /Statement checks 3 warnings · 1 note/ }).getAttribute('aria-expanded')).toBe('true')
     const headings = screen.getAllByText(/^(Documents|FY\d{4} · .+|Current period · .+)$/).map((el) => el.textContent)
-    expect(headings).toEqual([
-      'Documents',
-      'FY2024 · Balance Sheet',
-      'FY2025 · Balance Sheet',
-      'Current period · Profit & Loss',
-    ])
+    // The note (FY2025) is not among the warnings: it is collapsed under Notes.
+    expect(headings).toEqual(['Documents', 'FY2024 · Balance Sheet', 'Current period · Profit & Loss'])
+  })
+
+  it('collapses notes into one line per sort, expandable to the items', async () => {
+    const user = userEvent.setup()
+    const notes: FinancialCheck[] = [
+      ...['Sundry', 'Petty Cash', 'Misc'].map((label) => ({
+        kind: 'extraction_note' as const,
+        severity: 'info' as const,
+        financialYear: 2025,
+        statement: 'income_statement' as const,
+        message: `"${label}" is not one of the standard lines; it is kept under other expenses.`,
+        documentIds: [],
+        group: 'unmapped:expenses',
+      })),
+      ...[1, 2].map((n) => ({
+        kind: 'extraction_note' as const,
+        severity: 'info' as const,
+        financialYear: 2024,
+        statement: 'balance_sheet' as const,
+        message: `Sign ${n} corrected.`,
+        documentIds: [],
+        group: 'sign_corrected',
+      })),
+    ]
+    render(<ComparisonChecksPanel checks={notes} />)
+    await user.click(screen.getByRole('button', { name: /Statement checks 5 notes/ }))
+    expect(screen.getByRole('button', { name: '3 lines kept under other expenses' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '2 signs corrected from the printed statement' })).toBeTruthy()
+    expect(screen.queryByText(/"Sundry" is not one/)).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '3 lines kept under other expenses' }))
+    expect(screen.getByText(/FY2025 Profit & Loss: "Sundry" is not one of the standard lines/)).toBeTruthy()
   })
 
   it('starts closed when there are only notes, and toggles', async () => {
     const user = userEvent.setup()
     render(<ComparisonChecksPanel checks={[checks[1]]} />)
     const toggle = screen.getByRole('button', { name: /Statement checks 1 note/ })
-    expect(screen.queryByText('Implies dividends of $40,000.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /other note/ })).toBeNull()
     await user.click(toggle)
-    expect(screen.getByText('Implies dividends of $40,000.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /1 other note/ }))
+    expect(screen.getByText(/Implies dividends of \$40,000\./)).toBeTruthy()
   })
 
   it('renders nothing with no checks', () => {

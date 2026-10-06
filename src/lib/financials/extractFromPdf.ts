@@ -34,6 +34,7 @@
 import { OPENROUTER_EXTRACTION_MODEL, FINANCIALS_EXTRACTION_PROMPT } from '../ai/prompts'
 import { correctYear, decidePresence } from './columnChecks'
 import { buildExtractionContext } from './extractionContext'
+import { expectedColumns } from './documentPlan'
 import { correctFile, isIncomeStatementSection, type FileColumn } from './lineCorrections'
 import { bytesForSelection, selectPages, type PageSelection } from './pageSelection'
 import type { FinancialsPrepass } from './prepass'
@@ -408,9 +409,11 @@ export async function extractFinancialStatementFromPdf(
   // dictionary and loan rule, and the profit rule. Then the arithmetic check,
   // on the corrected figures.
   const textOf = (pages: number[]) => pages.flatMap((page) => prepass.pages[page - 1] ?? [])
-  const pageLines = prepass.pages.length
+  const pageText = prepass.pages.length
     ? { is: textOf(classification.statementPages.income_statement), bs: textOf(classification.statementPages.balance_sheet) }
     : null
+  // Value columns the headings print: the row parser needs exactly this many.
+  const annualColumns = expectedColumns(prepass).filter((c) => c.sourceColumn !== 'current_period').length
   const linesOf = (st: ExtractedFinancialStatement) => [...(st.incomeStatement.lines ?? []), ...(st.balanceSheet.lines ?? [])]
   const annual = statements.filter((st) => st.sourceColumn !== 'current_period')
   const groups: ExtractedFinancialStatement[][] = [
@@ -425,7 +428,11 @@ export async function extractFinancialStatementFromPdf(
       lines: linesOf(st),
       index,
     }))
-    const { columnNotes, fileNotes } = correctFile(columns, ctx, pageLines)
+    const isCurrentPeriod = group[0].sourceColumn === 'current_period'
+    const printed = pageText
+      ? { ...pageText, columns: isCurrentPeriod ? 1 : Math.max(annualColumns, group.length) }
+      : null
+    const { columnNotes, fileNotes } = correctFile(columns, ctx, printed)
     group.forEach((st, i) => st.warnings.push(...columnNotes[i]))
     documentWarnings.push(...fileNotes)
   }
