@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
-import { uploadToStorage } from '@/lib/storage/upload'
-import { CATEGORY_META, DOCUMENT_CATEGORIES, MAX_FILE_SIZE_BYTES } from '@/lib/constants'
-import { recomputeClientStatus } from '@/lib/clients/status'
-import type { DocCategory } from '@/lib/constants'
+import { createUploadTarget } from '@/lib/storage/upload'
+import { checkUploadRequest } from '@/lib/storage/rules'
 
-const VALID_CATEGORIES = new Set(Object.values(DOCUMENT_CATEGORIES))
-
+/**
+ * Step 1 of an upload: check the file's description and sign a one-time
+ * Storage upload URL. The browser then sends the bytes straight to Storage
+ * (Vercel refuses request bodies over 4.5 MB, so they cannot come through
+ * here) and calls /api/portal/upload/complete to record the document.
+ */
 export async function POST(req: NextRequest) {
   try {
     const user = await requireStaffUser()
@@ -15,67 +17,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const formData = await req.formData()
-    const file = formData.get('file') as File | null
-    const docCategory = formData.get('doc_category') as string | null
-    const clientId = formData.get('client_id') as string | null
+    const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
+    const clientId = typeof body?.client_id === 'string' ? body.client_id : null
+    const filename = typeof body?.filename === 'string' ? body.filename : null
 
     if (!clientId) {
       return NextResponse.json({ error: 'Missing clientId' }, { status: 400 })
     }
-
-    if (!file) {
+    if (!filename) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
 
-    if (!docCategory || !VALID_CATEGORIES.has(docCategory as DocCategory)) {
-      return NextResponse.json({ error: 'Invalid document category' }, { status: 400 })
-    }
-
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: 'File too large. Maximum size is 50MB.' },
-        { status: 413 },
-      )
-    }
-
-    const meta = CATEGORY_META[docCategory as DocCategory]
-    if (!meta.acceptedFormats.includes(file.type)) {
-      return NextResponse.json(
-        { error: `This category only accepts ${meta.formatLabel} files.` },
-        { status: 415 },
-      )
+    const refusal = checkUploadRequest({
+      docCategory: body?.doc_category,
+      fileType: body?.file_type,
+      fileSize: body?.file_size,
+    })
+    if (refusal) {
+      return NextResponse.json({ error: refusal.error }, { status: refusal.status })
     }
 
     const supabase = getSupabaseServerClient()
-    const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const filePath = await uploadToStorage(
-      supabase,
-      clientId,
-      file.name,
-      file.type,
-      fileBuffer,
-    )
+    const target = await createUploadTarget(supabase, clientId, filename)
 
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .insert({
-        client_id: clientId,
-        file_path: filePath,
-        original_filename: file.name,
-        file_type: file.type,
-        file_size_bytes: file.size,
-        doc_category: docCategory,
-        status: 'ready',
-      })
-      .select()
-      .single()
-
-    if (docError || !document) throw docError
-
-    await recomputeClientStatus(supabase, clientId)
-
-    return NextResponse.json({ documentId: document.id }, { status: 201 })
+    return NextResponse.json(target, { status: 201 })
   } catch (err) {
     console.error('[POST /api/portal/upload]', err)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })

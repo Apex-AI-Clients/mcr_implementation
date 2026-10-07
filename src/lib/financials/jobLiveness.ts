@@ -40,3 +40,27 @@ export async function closeDeadJob(supabase: SupabaseClient, jobId: string): Pro
   if (error) console.error(`[comparison-job] could not close dead job=${jobId}: ${error.message}`)
   else console.warn(`[comparison-job] closed dead job=${jobId} (older than ${JOB_MAX_AGE_MS / 60_000} min, never finished)`)
 }
+
+/**
+ * The client's comparison job that is still running, if any. A dead one found
+ * on the way is closed, so it is never shown as running.
+ */
+export async function findLiveComparisonJob(
+  supabase: SupabaseClient,
+  clientId: string,
+): Promise<{ id: string; status: string; created_at: string; mode: string } | null> {
+  const { data: activeJob } = await supabase
+    .from('financial_comparison_jobs')
+    .select('id, status, created_at, mode')
+    .eq('client_id', clientId)
+    .in('status', ['pending', 'processing'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!activeJob) return null
+  if (isJobDead(activeJob)) {
+    await closeDeadJob(supabase, activeJob.id)
+    return null
+  }
+  return activeJob
+}

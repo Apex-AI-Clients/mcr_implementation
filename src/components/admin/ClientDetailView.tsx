@@ -5,10 +5,8 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
-import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
-import { buildCoverage } from '@/lib/financials/coverage'
-import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { StoredStatementSlot } from '@/lib/financials/types'
+import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
+import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { getLeadIdForClient } from '@/lib/leads/queries'
 import { formatPhone } from '@/lib/leads/format'
@@ -22,7 +20,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import Link from 'next/link'
-import { Archive, ArrowLeft, Building, FileSpreadsheet, Landmark, Pencil } from 'lucide-react'
+import { Archive, ArrowLeft, Building, Landmark, Pencil } from 'lucide-react'
 
 interface ClientDetailViewProps {
   id: string
@@ -54,8 +52,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     { data: rawAccountant },
     { data: rawCompany },
     originLeadId,
-    slots,
-    failures,
+    comparisonJob,
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -67,11 +64,10 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     // Was a scan of the client-side lead list, which only worked while the
     // browser held every lead and was lost on reload.
     getLeadIdForClient(id),
-    // The coverage table. A failed read just leaves it out.
-    loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
-    loadColumnFailures(supabase, id),
+    // A comparison running in the background, shown as a banner. Archived
+    // files cannot start one.
+    archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
   ])
-  const coverage = buildCoverage(slots, failures)
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
@@ -187,6 +183,15 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
             <PredictOutcomeButton clientId={client.id} />
           </div>
         </div>
+      )}
+
+      {comparisonJob && (
+        <ComparisonJobStatus
+          clientId={client.id}
+          jobId={comparisonJob.id}
+          mode={comparisonJob.mode === 'compare' ? 'compare' : 'full'}
+          startedAt={comparisonJob.created_at}
+        />
       )}
 
       <Card className="mb-4">
@@ -308,26 +313,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
           <p className="text-xs text-foreground/30 italic">Not yet provided by client</p>
         )}
       </Card>
-
-      {coverage.columns.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4 text-foreground/50" />
-              <CardTitle>Financial Statements on File</CardTitle>
-            </div>
-            {!archived && (
-              <Link
-                href={`/clients/${id}/financials-comparison`}
-                className="text-xs text-accent hover:underline"
-              >
-                Compare across years
-              </Link>
-            )}
-          </CardHeader>
-          <StatementCoverageTable coverage={coverage} />
-        </Card>
-      )}
 
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
