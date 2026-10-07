@@ -4,7 +4,13 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, CheckCircle, FileText, ExternalLink, AlertCircle, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { CATEGORY_META, getCurrentFinancialPeriod, getHistoricalFinancialPeriod } from '@/lib/constants'
+import {
+  CATEGORY_META,
+  MAX_FILE_SIZE_BYTES,
+  getCurrentFinancialPeriod,
+  getHistoricalFinancialPeriod,
+} from '@/lib/constants'
+import { uploadClientDocument } from '@/lib/storage/browserUpload'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { cn } from '@/lib/utils'
@@ -48,19 +54,9 @@ export function CategoryUploadSection({
 
       for (const file of acceptedFiles) {
         try {
-          const formData = new FormData()
-          formData.append('file', file)
-          formData.append('doc_category', category)
-          formData.append('client_id', clientId)
-
-          const res = await fetch('/api/portal/upload', {
-            method: 'POST',
-            body: formData,
-          })
-
-          if (!res.ok) {
-            const data = await res.json()
-            setError(data.error ?? 'Upload failed')
+          const uploadError = await uploadClientDocument(file, clientId, category)
+          if (uploadError) {
+            setError(uploadError)
             break
           }
 
@@ -102,7 +98,7 @@ export function CategoryUploadSection({
   const { getRootProps, getInputProps, isDragActive, fileRejections } = useDropzone({
     onDrop,
     accept: Object.fromEntries(meta.acceptedFormats.map((mime) => [mime, []])),
-    maxSize: 50 * 1024 * 1024,
+    maxSize: MAX_FILE_SIZE_BYTES,
     multiple: meta.multipleFiles,
     disabled: uploading,
   })

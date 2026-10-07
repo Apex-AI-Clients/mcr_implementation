@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
-import { CheckCircle2, XCircle, Download, Trash2, X, Upload, Loader2 } from 'lucide-react'
+import { uploadClientDocument } from '@/lib/storage/browserUpload'
+import { CheckCircle2, XCircle, Download, Trash2, X, Upload } from 'lucide-react'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
 import { formatBytes } from '@/lib/utils'
@@ -246,7 +247,7 @@ function DocumentRow({
 /**
  * Inline uploader for a single document category on the client detail page.
  * Staff can add or replace files without leaving the detail view. Posts to the
- * staff-authenticated /api/portal/upload with the client id + category.
+ * staff-authenticated upload routes with the client id + category.
  */
 function CategoryUploader({
   clientId,
@@ -270,14 +271,9 @@ function CategoryUploader({
     setUploading(true)
     try {
       for (const file of Array.from(files)) {
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('doc_category', category)
-        formData.append('client_id', clientId)
-        const res = await fetch('/api/portal/upload', { method: 'POST', body: formData })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          setError(data.error ?? 'Upload failed')
+        const uploadError = await uploadClientDocument(file, clientId, category)
+        if (uploadError) {
+          setError(uploadError)
           break
         }
       }
@@ -307,11 +303,8 @@ function CategoryUploader({
         loading={uploading}
         onClick={() => inputRef.current?.click()}
       >
-        {uploading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Upload className="h-3.5 w-3.5" />
-        )}
+        {/* Button draws its own spinner while loading. */}
+        {!uploading && <Upload className="h-3.5 w-3.5" />}
         {hasFiles ? 'Upload / replace' : 'Upload file'}
       </Button>
       {error && <p className="mt-1 text-xs text-destructive">{error}</p>}

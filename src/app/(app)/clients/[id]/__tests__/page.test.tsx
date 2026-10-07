@@ -18,6 +18,8 @@ vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
+vi.mock('@/components/admin/ComparisonJobStatus', () => ({ ComparisonJobStatus: () => null }))
+vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn(async () => null) }))
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import ClientDetailPage from '../page'
