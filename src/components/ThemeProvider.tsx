@@ -8,7 +8,7 @@ const ThemeContext = createContext<{
   theme: Theme
   toggle: () => void
 }>({
-  theme: 'dark',
+  theme: 'light',
   toggle: () => {},
 })
 
@@ -17,11 +17,11 @@ export function useTheme() {
 }
 
 function getSnapshot(): Theme {
-  return (localStorage.getItem('mcr-theme') as Theme | null) ?? 'dark'
+  return (localStorage.getItem('mcr-theme') as Theme | null) ?? 'light'
 }
 
 function getServerSnapshot(): Theme {
-  return 'dark'
+  return 'light'
 }
 
 function subscribe(callback: () => void) {

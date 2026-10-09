@@ -3,7 +3,6 @@ import {
   emptyConversionForm,
   identityOf,
   toCompanyDetails,
-  validateConversion,
   type ConversionForm,
 } from '../conversionForm'
 import {
@@ -16,11 +15,16 @@ import {
   withPick,
 } from '@/lib/clients/identityForm'
 import { acnDiffers, pendingIdentityChoices } from '@/lib/asic/fill'
-import { canMoveAbnToTrust } from '@/lib/clients/identity'
+import { canMoveAbnToTrust, validateIdentity } from '@/lib/clients/identity'
 import { acnToLookUp } from '@/lib/abr/acnAbn'
 import { candidateAbnsForAcn } from '@/lib/asic/identifiers'
 import type { AsicExtract } from '@/lib/asic/types'
 import type { AbrPrefill } from '@/lib/abr/types'
+
+/** The shared company/trust rules intake applies (the conversion form checks nothing). */
+function checkIdentity(form: ConversionForm) {
+  return validateIdentity(identityOf(form), { companyAbnRequired: false })
+}
 
 /**
  * Every company / trust combination, end to end through the same pure steps
@@ -90,7 +94,7 @@ describe('company with its own ABN, no trust', () => {
     expect(acnDiffers(COMPANY_PICK.acnNumber!, afterPdf.form.asicFill!.acn)).toBe(false)
     const afterPick = withPick(afterPdf.form, 'company', COMPANY_PICK)
     expect(afterPick.suggestTrustee).toBe(false)
-    expect(validateConversion(afterPick.form)).toEqual({})
+    expect(checkIdentity(afterPick.form)).toEqual({})
   })
 
   it('ABR then PDF: every identity field "matches the ASIC extract"', () => {
@@ -101,7 +105,7 @@ describe('company with its own ABN, no trust', () => {
     expect(fields.acnNumber.status).toBe('matches')
     expect(fields.abnNumber.status).toBe('matches')
     expect(pendingIdentityChoices(afterPdf.asicFill)).toEqual([])
-    expect(validateConversion(afterPdf)).toEqual({})
+    expect(checkIdentity(afterPdf)).toEqual({})
   })
 
   it('saves the company ABN and no trust', () => {
@@ -133,13 +137,13 @@ describe('trustee company with no ABN of its own, plus the trust', () => {
     expect(form.trustName).toBe('Sample Family Trust')
     expect(form.trustAbnNumber).toBe(TRUST_ABN)
     expect(form.abnNumber).toBe('')
-    expect(validateConversion(form)).toEqual({})
+    expect(checkIdentity(form)).toEqual({})
     expect(toCompanyDetails(form)).toMatchObject({ abnNumber: '', trustAbnNumber: TRUST_ABN })
   })
 
   it('a Company with no ABN still converts — the ABN is optional at conversion', () => {
     const { form } = withExtract(blank(), TRUSTEE_EXTRACT)
-    expect(validateConversion(form).abnNumber).toBeUndefined()
+    expect(checkIdentity(form).abnNumber).toBeUndefined()
   })
 })
 
@@ -148,7 +152,7 @@ describe('trustee company with its own ABN, plus the trust', () => {
     const afterPdf = withExtract(blank({ entityType: 'trust' }), COMPANY_EXTRACT)
     expect(afterPdf.suggestTrustee).toBe(false)
     const { form } = withPick(afterPdf.form, 'trust', TRUST_PICK)
-    expect(validateConversion(form)).toEqual({})
+    expect(checkIdentity(form)).toEqual({})
     expect(toCompanyDetails(form)).toMatchObject({
       entityType: 'trust',
       abnNumber: COMPANY_ABN,
@@ -174,7 +178,7 @@ describe('a trust picked from the company box', () => {
 describe('a trust ABN typed into the company ABN field', () => {
   it('is an error with a move fix; moving it offers trustee and then validates', () => {
     const typed = blank({ companyName: 'Sample Holdings Pty Ltd', acnNumber: ACN, abnNumber: TRUST_ABN })
-    expect(validateConversion(typed).abnNumber).toMatch(/move it to the trust ABN/)
+    expect(checkIdentity(typed).abnNumber).toMatch(/move it to the trust ABN/)
     expect(canMoveAbnToTrust(identityOf(typed))).toBe(true)
 
     const moved = withAbnMovedToTrust(typed)
@@ -183,7 +187,7 @@ describe('a trust ABN typed into the company ABN field', () => {
     expect(moved.form.trustAbnNumber).toBe(TRUST_ABN)
 
     const accepted = { ...moved.form, entityType: 'trust' as const, trustName: 'Sample Family Trust' }
-    expect(validateConversion(accepted)).toEqual({})
+    expect(checkIdentity(accepted)).toEqual({})
   })
 })
 
@@ -201,7 +205,7 @@ describe('extract for a different ACN than the form', () => {
       acnNumber: ACN,
       abnNumber: COMPANY_ABN,
     })
-    expect(validateConversion(form)).toEqual({})
+    expect(checkIdentity(form)).toEqual({})
   })
 
   it('replacing with an extract that has no ABN clears the other company’s ABN', () => {
@@ -287,8 +291,8 @@ describe('manual mode', () => {
 
   it('validation is the same either way', () => {
     const form = blank({ companyName: 'Sample Trading Pty Ltd', acnNumber: ACN, abnNumber: TRUST_ABN })
-    expect(validateConversion({ ...form, companyManual: true, trustManual: true })).toEqual(
-      validateConversion(form),
+    expect(checkIdentity({ ...form, companyManual: true, trustManual: true })).toEqual(
+      checkIdentity(form),
     )
   })
 })

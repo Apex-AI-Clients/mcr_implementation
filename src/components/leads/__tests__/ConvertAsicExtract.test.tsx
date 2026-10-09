@@ -477,21 +477,21 @@ describe('Convert to client — directors by hand', () => {
     expect(within(dialog).queryByLabelText('Director 2 name')).toBeNull()
   })
 
-  it('will not convert with a date of birth it cannot read', async () => {
+  it('still converts with a date of birth it cannot read, sending the director without it', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     const dialog = renderDialog()
-    await user.type(field(dialog, 'Company name'), 'Sample Trading Pty Ltd')
-    await user.type(field(dialog, 'ACN'), '123456780')
-    await user.type(field(dialog, 'Company ABN'), '11123456780')
     await user.click(within(dialog).getByRole('button', { name: 'Add director' }))
     await user.type(field(dialog, 'Director 1 name'), 'Jane Sample')
     await user.type(field(dialog, 'Director 1 date of birth'), '14 March 1970')
 
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
-    expect(within(dialog).getByText('Use DD/MM/YYYY, MM/YYYY or YYYY.')).toBeTruthy()
-    expect(callsTo(fetchMock, '/api/admin/clients')).toHaveLength(0)
+    await waitFor(() => expect(callsTo(fetchMock, '/api/admin/clients')).toHaveLength(1))
+    const [[, init]] = callsTo(fetchMock, '/api/admin/clients') as [string, RequestInit][]
+    expect(JSON.parse(init.body as string).companyDetails.directors).toEqual([
+      { name: 'Jane Sample', dateOfBirth: null },
+    ])
   })
 })
 

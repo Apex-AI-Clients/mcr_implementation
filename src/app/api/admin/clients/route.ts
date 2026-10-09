@@ -11,7 +11,7 @@ import { CONVERSION_ACTIVITY_BODY } from '@/lib/leads/constants'
  *
  * Every field is optional here because this endpoint serves two callers: the
  * intake wizard, which creates a bare client and fills these in later, and
- * lead conversion, which will not let anyone through without them. Which
+ * lead conversion, which offers them but requires none of them. Which
  * fields are required is a decision about the conversion form, not about
  * what a client row is allowed to look like — see conversionForm.ts. The
  * schema itself is shared with the intake route (src/lib/clients/companyDetails.ts).
