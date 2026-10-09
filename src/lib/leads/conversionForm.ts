@@ -1,6 +1,6 @@
-import { formatPhone, isValidEmail } from './format'
-import { directorRowErrors, directorsForSave, sourceFor, type DirectorRow } from '@/lib/asic/fill'
-import { identityForSave, validateIdentity } from '@/lib/clients/identity'
+import { formatPhone } from './format'
+import { directorsForSave, sourceFor, type DirectorRow } from '@/lib/asic/fill'
+import { identityForSave } from '@/lib/clients/identity'
 import {
   asicFieldsOf,
   identityOf,
@@ -10,12 +10,11 @@ import {
 import type { EntityType, Lead } from '@/types/leads'
 
 /**
- * The details a lead has to carry before it can become a client file.
+ * The details that can be given when a lead becomes a client file.
  *
- * These are the same fields as steps 1 and 2 of the SBR intake wizard, asked
- * once at conversion instead of after it. The point is that a file is never
- * created half-known: what used to be a two-field confirmation now collects
- * everything intake needs, and intake opens pre-filled from it.
+ * These are the same fields as steps 1 and 2 of the SBR intake wizard, offered
+ * at conversion so intake opens pre-filled. None of them is required: a lead
+ * can be converted with all of them blank and completed on intake.
  */
 export interface ConversionForm extends IdentityFormState {
   /** Step 1 — the client record itself. */
@@ -28,7 +27,7 @@ export interface ConversionForm extends IdentityFormState {
   phone: string
   /**
    * 'company', or 'trust' meaning "a company acting as trustee of a trust".
-   * Decides whether the trust fields are shown and which ABN is required.
+   * Decides whether the trust fields are shown.
    */
   entityType: EntityType
   /** Step 2 — the company, and the trust when it is a trustee. See src/lib/clients/identity.ts. */
@@ -41,7 +40,7 @@ export interface ConversionForm extends IdentityFormState {
   /**
    * "Enter manually (don't search ABN Lookup)", one per section. Ticked: no
    * name suggestions in that section and — for the company — no ABN-by-ACN
-   * check. Validation is the same either way. Not saved.
+   * check. Not saved.
    */
   companyManual: boolean
   trustManual: boolean
@@ -62,8 +61,6 @@ export interface ConversionForm extends IdentityFormState {
   /** Offering the Trust entity type, and why. Not saved. */
   trusteeOffer: TrusteeOfferReason | null
 }
-
-export type ConversionErrors = Partial<Record<keyof ConversionForm, string>>
 
 export function emptyConversionForm(lead: Lead | null): ConversionForm {
   return {
@@ -99,44 +96,6 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
 // Shared with the intake company step; re-exported for this form's callers.
 export { asicFieldsOf, identityOf }
 
-/**
- * What is missing.
- *
- * The company and trust rules are src/lib/clients/identity.ts, shared with the
- * intake forms: a company name and ACN for both entity types, the company's
- * own ABN for a Company, and a trust name and trust ABN for a trustee.
- *
- * The client's phone and the company phone and email are optional.
- */
-export function validateConversion(form: ConversionForm): ConversionErrors {
-  const errors: ConversionErrors = {}
-
-  if (!form.name.trim()) errors.name = 'Enter a name.'
-
-  if (!form.email.trim()) errors.email = 'Enter an email address.'
-  else if (!isValidEmail(form.email)) errors.email = 'That email address does not look right.'
-
-  // The company's own ABN is optional here: some companies have only an ACN,
-  // with the ABN held by their trust.
-  Object.assign(errors, validateIdentity(identityOf(form), { companyAbnRequired: false }))
-
-  // Optional, but if given it has to be usable.
-  if (form.emailAddress.trim() && !isValidEmail(form.emailAddress)) {
-    errors.emailAddress = 'That email address does not look right.'
-  }
-
-  // Optional, every one of them — but a row somebody started has to be usable.
-  if (directorRowErrors(form.directors).some(Boolean)) {
-    errors.directors = 'Check the directors below.'
-  }
-
-  return errors
-}
-
-export function hasErrors(errors: ConversionErrors): boolean {
-  return Object.keys(errors).length > 0
-}
-
 /** The company-details half, trimmed, as the API wants it. */
 export function toCompanyDetails(form: ConversionForm) {
   return {
@@ -145,7 +104,9 @@ export function toCompanyDetails(form: ConversionForm) {
     emailAddress: form.emailAddress.trim().toLowerCase(),
     registeredOfficeAddress: form.registeredOfficeAddress.trim(),
     principalPlaceOfBusiness: form.principalPlaceOfBusiness.trim(),
-    directors: directorsForSave(form.directors),
+    // Nothing is checked at conversion, so a row with only a date of birth can
+    // arrive here; the API needs a name on every director, so it is dropped.
+    directors: directorsForSave(form.directors).filter((director) => director.name),
     // The extract's date is kept for as long as the fill is — edited or not —
     // and the source says which of those it was.
     asicExtractDate: form.asicFill?.extractedAt ?? null,

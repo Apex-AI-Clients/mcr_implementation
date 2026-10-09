@@ -3,10 +3,15 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { parseAbnDetails } from '../parse'
 import { prefillFromAbr, resolveEntityType } from '../prefill'
-import { emptyConversionForm, validateConversion } from '@/lib/leads/conversionForm'
-import { identityPatchForPick } from '@/lib/clients/identity'
+import { emptyConversionForm, identityOf } from '@/lib/leads/conversionForm'
+import { identityPatchForPick, validateIdentity } from '@/lib/clients/identity'
 import type { AbrEntityDetails, AbrPrefill } from '../types'
 import type { ConversionForm } from '@/lib/leads/conversionForm'
+
+/** The shared company/trust rules intake applies (the conversion form checks nothing). */
+function checkIdentity(form: ConversionForm) {
+  return validateIdentity(identityOf(form), { companyAbnRequired: false })
+}
 
 /**
  * A picked register entity -> what the register says about it.
@@ -67,7 +72,7 @@ describe('prefillFromAbr — company', () => {
   })
 
   it('produces values validation accepts unchanged — the ABN ends with the ACN', () => {
-    expect(validateConversion(picked(patch))).toEqual({})
+    expect(checkIdentity(picked(patch))).toEqual({})
   })
 })
 
@@ -103,7 +108,7 @@ describe('prefillFromAbr — trust', () => {
     expect(filledIn.trustAbnNumber).toBe('82653091178')
     expect(filledIn.abnNumber).toBe('')
     expect(
-      validateConversion({ ...filledIn, companyName: 'Smith Holdings Pty Ltd' }),
+      checkIdentity({ ...filledIn, companyName: 'Smith Holdings Pty Ltd' }),
     ).toEqual({})
   })
 })
@@ -115,7 +120,7 @@ describe('prefillFromAbr — cancelled ABN', () => {
     expect(source.abnStatus).toBe('Cancelled')
     expect(patch.companyName).toBe('Whitlock Civil Contracting Pty Ltd')
     expect(patch.abnNumber).toBe('30604882439')
-    expect(validateConversion(picked(patch))).toEqual({})
+    expect(checkIdentity(picked(patch))).toEqual({})
   })
 })
 

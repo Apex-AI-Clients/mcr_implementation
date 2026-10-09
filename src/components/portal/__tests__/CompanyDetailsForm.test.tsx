@@ -184,7 +184,7 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
     })
   })
 
-  it('will not save a date of birth it cannot read', async () => {
+  it('still saves with a date of birth it cannot read, without the date', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(<CompanyDetailsForm clientId="cl_1" initial={BEFORE} />)
@@ -192,12 +192,10 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
     await user.click(screen.getByRole('button', { name: 'Add director' }))
     await user.type(field('Director 1 name'), 'Typed Person')
     await user.type(field('Director 1 date of birth'), 'March 1970')
-    await user.click(screen.getByRole('button', { name: 'Save Details' }))
 
-    expect(screen.getByText('Use DD/MM/YYYY, MM/YYYY or YYYY.')).toBeTruthy()
-    expect(
-      fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/portal/company-details')),
-    ).toBe(false)
+    expect((await save(user, fetchMock)).directors).toEqual([
+      { name: 'Typed Person', dateOfBirth: null },
+    ])
   })
 })
 
@@ -313,19 +311,23 @@ describe('CompanyDetailsForm — company and trust', () => {
     })
   })
 
-  it('applies the same validation as conversion, and sends nothing until it passes', async () => {
+  it('saves with nothing checked — blank or unusual values go through as typed', async () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(<CompanyDetailsForm clientId="cl_1" initial={TRUSTEE} />)
 
+    await user.clear(field('Company name'))
+    await user.clear(field('ACN'))
+    await user.clear(field('Trust name'))
     // The company's own ABN (11 + its ACN) typed as the trust's.
     await user.clear(field('Trust ABN'))
     await user.type(field('Trust ABN'), '11123456780')
-    await user.click(screen.getByRole('button', { name: 'Save Details' }))
 
-    expect(screen.getByText(/That's the company's own ABN/)).toBeTruthy()
-    expect(
-      fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/portal/company-details')),
-    ).toBe(false)
+    expect(await save(user, fetchMock)).toMatchObject({
+      companyName: '',
+      acnNumber: '',
+      trustName: '',
+      trustAbnNumber: '11123456780',
+    })
   })
 })

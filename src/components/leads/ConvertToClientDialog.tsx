@@ -10,15 +10,9 @@ import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
 import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections'
-import { changedKeys, commitChange, withExtract, withoutExtract } from '@/lib/clients/identityForm'
+import { commitChange, withExtract, withoutExtract } from '@/lib/clients/identityForm'
 import { createClientFromLead } from '@/lib/leads/convert'
-import {
-  emptyConversionForm,
-  hasErrors,
-  validateConversion,
-  type ConversionErrors,
-  type ConversionForm,
-} from '@/lib/leads/conversionForm'
+import { emptyConversionForm, type ConversionForm } from '@/lib/leads/conversionForm'
 import type { Lead } from '@/types/leads'
 
 interface ConvertToClientDialogProps {
@@ -35,14 +29,16 @@ type Phase =
   | { kind: 'orphaned'; clientId: string }
   | { kind: 'failed'; message: string }
 
+/** Nothing on this form is required, so no field ever carries an error. */
+const NO_ERRORS = {}
+
 /**
- * Conversion, and the details it now requires.
+ * Conversion, and the details it can collect.
  *
- * This used to be a two-field confirmation. It collects steps 1 and 2 of the
- * SBR intake up front instead, because a client file created from a lead
- * arrived knowing only a name and an email, and somebody had to go and find
- * the ACN afterwards. Asking here means intake opens already filled in, and
- * everything on it stays editable there.
+ * Offers steps 1 and 2 of the SBR intake up front so intake can open already
+ * filled in — but every field is optional. A lead can be converted with the
+ * form left exactly as it opened; anything missing is filled in on intake.
+ * A cleared name or email falls back to the lead's own.
  *
  * Still the most consequential action in the CRM — it writes into the
  * restructuring workspace — so it never happens on a stray select change.
@@ -52,7 +48,6 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   const { toast } = useToast()
   const [phase, setPhase] = useState<Phase>({ kind: 'form' })
   const [form, setForm] = useState<ConversionForm>(() => emptyConversionForm(lead))
-  const [errors, setErrors] = useState<ConversionErrors>({})
 
   // Reset when a different lead is opened. React-sanctioned "adjust state
   // during render" — same pattern as ClientsPageClient, no effect needed.
@@ -61,26 +56,10 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
     setPrevLeadId(lead?.id ?? null)
     setPhase({ kind: 'form' })
     setForm(emptyConversionForm(lead))
-    setErrors({})
   }
 
   function patch(change: Partial<ConversionForm>) {
     setForm((current) => ({ ...current, ...change }))
-  }
-
-  /**
-   * Take the next form state, clearing the errors on whatever it changed —
-   * those values have just been typed, picked or filled, and are judged again
-   * on Convert.
-   */
-  function update(next: ConversionForm, changed: (keyof ConversionForm)[] = changedKeys(form, next)) {
-    setForm(next)
-    if (changed.length === 0) return
-    setErrors((current) => {
-      const cleared = { ...current }
-      for (const key of changed) delete cleared[key]
-      return cleared
-    })
   }
 
   async function link(clientId: string) {
@@ -101,16 +80,13 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   async function handleConvert() {
     if (!lead) return
 
-    const found = validateConversion(form)
-    setErrors(found)
-    if (hasErrors(found)) {
-      // Back to the form rather than through to the API — this is the gate.
-      setPhase({ kind: 'form' })
-      return
-    }
-
     setPhase({ kind: 'working' })
-    const result = await createClientFromLead(form, lead.id)
+    // No checks: the client row only needs a name and an email, and the lead
+    // always has both.
+    const result = await createClientFromLead(
+      { ...form, name: form.name.trim() || lead.name, email: form.email.trim() || lead.email },
+      lead.id,
+    )
 
     if (result.kind === 'failed') {
       setPhase({ kind: 'failed', message: result.message })
@@ -186,9 +162,9 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                 fill={form.asicFill}
                 disabled={working}
                 onFill={(extract, mode) =>
-                  update(commitChange(withExtract(form, extract, mode), 'no_abn'))
+                  setForm(commitChange(withExtract(form, extract, mode), 'no_abn'))
                 }
-                onUndo={() => update(withoutExtract(form))}
+                onUndo={() => setForm(withoutExtract(form))}
               />
 
               <Fieldset legend="Client">
@@ -196,7 +172,6 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   id="convert-name"
                   label="Lead name"
                   value={form.name}
-                  error={errors.name}
                   disabled={working}
                   onChange={(event) => patch({ name: event.target.value })}
                 />
@@ -205,7 +180,6 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   label="Email"
                   type="email"
                   value={form.email}
-                  error={errors.email}
                   disabled={working}
                   onChange={(event) => patch({ email: event.target.value })}
                 />
@@ -226,10 +200,10 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
               <CompanyTrustSections
                 idPrefix="convert"
                 value={form}
-                errors={errors}
-                showDirectorErrors={Boolean(errors.directors)}
+                errors={NO_ERRORS}
+                showDirectorErrors={false}
                 disabled={working}
-                onChange={(next, changed) => update(next, changed)}
+                onChange={(next) => setForm(next)}
                 companyExtras={
                   <>
                     <Input
@@ -244,7 +218,6 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                       label="Company email (optional)"
                       type="email"
                       value={form.emailAddress}
-                      error={errors.emailAddress}
                       disabled={working}
                       onChange={(event) => patch({ emailAddress: event.target.value })}
                     />

@@ -1,20 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   emptyConversionForm,
-  hasErrors,
   toCompanyDetails,
-  validateConversion,
   type ConversionForm,
 } from '../conversionForm'
 import type { Lead } from '@/types/leads'
 
 /**
- * The gate on conversion.
- *
- * Required-ness follows the entity rather than a flat list, which is the one
- * thing here worth pinning: demanding an ACN from a trust and a trust name
- * from a company would mean somebody typing "N/A" on every conversion, and
- * that junk would then auto-fill the intake form.
+ * The conversion form: what it starts from and what it sends. Nothing on it is
+ * required, so there is no validation to pin here.
  */
 
 function lead(overrides: Partial<Lead> = {}): Lead {
@@ -117,104 +111,8 @@ describe('emptyConversionForm', () => {
     expect(form.emailAddress).toBe('')
   })
 
-  it('does not require the client phone', () => {
-    const errors = validateConversion({ ...emptyConversionForm(lead()), phone: '' })
-    expect(errors.phone).toBeUndefined()
-  })
-
   it('falls back to company when the lead never said', () => {
     expect(emptyConversionForm(lead({ entityType: null })).entityType).toBe('company')
-  })
-})
-
-describe('validateConversion — a company', () => {
-  it('accepts a complete one', () => {
-    expect(hasErrors(validateConversion(company()))).toBe(false)
-  })
-
-  it('requires the name, email, company name and ACN', () => {
-    const errors = validateConversion(
-      company({ name: '', email: '', companyName: '', acnNumber: '', abnNumber: '' }),
-    )
-    expect(errors.name).toBeTruthy()
-    expect(errors.email).toBeTruthy()
-    expect(errors.companyName).toBeTruthy()
-    expect(errors.acnNumber).toBeTruthy()
-  })
-
-  it('does not require the company ABN — a company can have only an ACN', () => {
-    expect(hasErrors(validateConversion(company({ abnNumber: '' })))).toBe(false)
-  })
-
-  it('does not require the trust fields, but checks a trust ABN that is typed', () => {
-    expect(hasErrors(validateConversion(company({ trustName: '', trustAbnNumber: '' })))).toBe(false)
-    const errors = validateConversion(company({ trustName: '', trustAbnNumber: 'junk' }))
-    expect(errors.trustName).toBeUndefined()
-    expect(errors.trustAbnNumber).toBeTruthy()
-  })
-
-  it('checks length and checksum, spacing aside', () => {
-    expect(validateConversion(company({ acnNumber: '12345' })).acnNumber).toBeTruthy()
-    expect(validateConversion(company({ acnNumber: '123 456 789' })).acnNumber).toMatch(/check digit/)
-    expect(validateConversion(company({ abnNumber: '123456789' })).abnNumber).toBeTruthy()
-    expect(validateConversion(company({ abnNumber: '12 345 678 901' })).abnNumber).toMatch(
-      /check digits/,
-    )
-  })
-
-  it("rejects a company ABN that doesn't end with the ACN", () => {
-    expect(validateConversion(company({ abnNumber: TRUST_ABN })).abnNumber).toMatch(
-      /move it to the trust ABN/,
-    )
-  })
-})
-
-describe('validateConversion — a company acting as trustee', () => {
-  it('accepts one whose company has no ABN of its own', () => {
-    expect(hasErrors(validateConversion(trustee()))).toBe(false)
-  })
-
-  it('accepts one whose company has its own ABN as well', () => {
-    expect(hasErrors(validateConversion(trustee({ abnNumber: COMPANY_ABN })))).toBe(false)
-  })
-
-  it('still requires the company name and ACN', () => {
-    const errors = validateConversion(trustee({ companyName: '', acnNumber: '' }))
-    expect(errors.companyName).toBeTruthy()
-    expect(errors.acnNumber).toBeTruthy()
-  })
-
-  it('requires the trust name and trust ABN', () => {
-    const errors = validateConversion(trustee({ trustName: '', trustAbnNumber: '' }))
-    expect(errors.trustName).toBeTruthy()
-    expect(errors.trustAbnNumber).toBeTruthy()
-  })
-
-  it("rejects a trust ABN that is the company's own", () => {
-    expect(validateConversion(trustee({ trustAbnNumber: COMPANY_ABN })).trustAbnNumber).toMatch(
-      /company's own ABN/,
-    )
-  })
-})
-
-describe('validateConversion — the optional pair', () => {
-  it('lets the phone and email be blank', () => {
-    const errors = validateConversion(company({ phoneNumber: '', emailAddress: '' }))
-    expect(errors.phoneNumber).toBeUndefined()
-    expect(errors.emailAddress).toBeUndefined()
-  })
-
-  it('still checks the entity email when one is given', () => {
-    expect(validateConversion(company({ emailAddress: 'nope' })).emailAddress).toBeTruthy()
-    expect(
-      validateConversion(company({ emailAddress: 'accounts@whitlock.com.au' })).emailAddress,
-    ).toBeUndefined()
-  })
-
-  it('accepts any phone shape, as the rest of the CRM does', () => {
-    // A landline or a switchboard extension is still a real number, and
-    // dropping a conversion over a format rule would be absurd.
-    expect(validateConversion(company({ phoneNumber: '07 4535 9847' })).phoneNumber).toBeUndefined()
   })
 })
 
@@ -247,6 +145,24 @@ describe('toCompanyDetails', () => {
     expect(details.entityType).toBe('company')
     expect(details.trustName).toBe('Whitlock Family Trust')
     expect(details.trustAbnNumber).toBe(TRUST_ABN)
+  })
+
+  it('drops a director row with no name, which the API would refuse', () => {
+    const details = toCompanyDetails(
+      company({
+        directors: [
+          { name: '', dateOfBirth: '1970' },
+          { name: 'Dean Whitlock', dateOfBirth: 'not a date' },
+        ],
+      }),
+    )
+    expect(details.directors).toEqual([{ name: 'Dean Whitlock', dateOfBirth: null }])
+  })
+
+  it('sends whatever was typed, unchecked — nothing at conversion is validated', () => {
+    const details = toCompanyDetails(company({ acnNumber: '12345', abnNumber: 'junk' }))
+    expect(details.acnNumber).toBe('12345')
+    expect(details.abnNumber).toBe('junk')
   })
 
   it('never saves the manual-mode checkboxes', () => {

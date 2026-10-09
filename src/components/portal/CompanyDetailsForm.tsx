@@ -4,13 +4,9 @@ import { useState } from 'react'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
-import {
-  CompanyTrustSections,
-  type IdentitySectionErrors,
-} from '@/components/identity/CompanyTrustSections'
+import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections'
 import { formatExtractDate } from '@/lib/asic/dates'
 import {
-  directorRowErrors,
   directorRows,
   directorsForSave,
   resolveOrigin,
@@ -19,10 +15,9 @@ import {
   type SavedAsicOrigin,
 } from '@/lib/asic/fill'
 import type { Director } from '@/lib/asic/types'
-import { identityForSave, validateIdentity } from '@/lib/clients/identity'
+import { identityForSave } from '@/lib/clients/identity'
 import {
   asicFieldsOf,
-  changedKeys,
   commitChange,
   identityOf,
   withExtract,
@@ -55,6 +50,9 @@ export interface CompanyDetails {
   asicExtractDate?: string | null
   companyDetailsSource?: string | null
 }
+
+/** Nothing on this form is required, so no field ever carries an error. */
+const NO_ERRORS = {}
 
 /** The form's state: the shared company / trust state, plus the company's phone and email. */
 interface IntakeCompanyState extends IdentityFormState {
@@ -107,15 +105,14 @@ interface CompanyDetailsFormProps {
 
 /**
  * The intake wizard's company step: the company, the trust when it is a
- * trustee, and the company's phone and email. Same sections and rules as lead
- * conversion (src/components/identity/CompanyTrustSections.tsx).
+ * trustee, and the company's phone and email. Same sections as lead
+ * conversion (src/components/identity/CompanyTrustSections.tsx), and like it,
+ * nothing here is required: whatever is typed is saved as it is.
  */
 export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDetailsFormProps) {
   const [state, setState] = useState<IntakeCompanyState>(() => stateOf(initial))
   /** What the saved record says about where its ASIC fields came from. */
   const [origin, setOrigin] = useState<SavedAsicOrigin | null>(() => originOf(initial))
-  const [errors, setErrors] = useState<IdentitySectionErrors>({})
-  const [showDirectorErrors, setShowDirectorErrors] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(!!initial)
   const [error, setError] = useState('')
@@ -139,8 +136,6 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
     setAdoptedId(initial?.id ?? null)
     setState(stateOf(initial))
     setOrigin(originOf(initial))
-    setErrors({})
-    setShowDirectorErrors(false)
     setSaved(!!initial)
     setError('')
   }
@@ -149,29 +144,14 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
   // screen now — so the line under the fields says ", edited" as soon as it is.
   const resolved = resolveOrigin(state.asicFill, origin, asicFieldsOf(state))
 
-  function update(next: IntakeCompanyState, changed = changedKeys(state, next)) {
+  function update(next: IntakeCompanyState) {
     setState(next)
     setSaved(false)
-    if (changed.length === 0) return
-    setErrors((current) => {
-      const cleared = { ...current }
-      for (const key of changed) delete cleared[key as keyof IdentitySectionErrors]
-      return cleared
-    })
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-
-    const found = validateIdentity(identityOf(state))
-    const directorsWrong = directorRowErrors(state.directors).some(Boolean)
-    setErrors(found)
-    setShowDirectorErrors(directorsWrong)
-    if (Object.keys(found).length > 0 || directorsWrong) {
-      setError('Check the fields marked above.')
-      return
-    }
     setSaving(true)
 
     try {
@@ -187,7 +167,9 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
           emailAddress: state.emailAddress,
           registeredOfficeAddress: state.registeredOfficeAddress.trim(),
           principalPlaceOfBusiness: state.principalPlaceOfBusiness.trim(),
-          directors: directorsForSave(state.directors),
+          // A row with no name is dropped: nothing is checked before saving,
+          // and the API needs a name on every director.
+          directors: directorsForSave(state.directors).filter((director) => director.name),
           asicExtractDate: resolved.extractedAt,
           companyDetailsSource: resolved.source,
         }),
@@ -208,7 +190,6 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
         fields: asicFieldsOf(state),
       })
       setState((current) => ({ ...current, asicFill: null }))
-      setShowDirectorErrors(false)
       setSaved(true)
       setSaving(false)
       onComplete?.()
@@ -238,10 +219,10 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
         <CompanyTrustSections
           idPrefix="company"
           value={state}
-          errors={errors}
-          showDirectorErrors={showDirectorErrors}
+          errors={NO_ERRORS}
+          showDirectorErrors={false}
           disabled={saving}
-          onChange={(next, changed) => update(next, changed)}
+          onChange={(next) => update(next)}
           afterIdentity={
             <AsicExtractUpload
               id="company-asic-extract"

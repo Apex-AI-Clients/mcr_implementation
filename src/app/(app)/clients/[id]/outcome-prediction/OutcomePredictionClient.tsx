@@ -962,12 +962,47 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           )}
         </div>
 
-        {/* 3. Risk band — traffic-light label only, never a probability */}
+        {/* 3. Risk band — traffic-light label only, never a probability. Says
+            it in plain words: at this amount it is X, and what to change to
+            get it accepted. */}
         <div className={cn('rounded-lg border p-4 text-center', band.tile)}>
-          <p className={cn('text-lg font-bold', band.text)}>
+          {suggestedRounded != null && (
+            <p className="text-xs text-foreground/60">
+              At <span className="font-semibold text-foreground">{formatAud(suggestedRounded)}</span>{' '}
+              this offer is
+            </p>
+          )}
+          <p className={cn('text-lg font-bold', suggestedRounded != null && 'mt-0.5', band.text)}>
             {band.emoji} {band.label}
           </p>
-          <p className="mt-1 text-xs text-foreground/60">{prediction.riskBandReasoning}</p>
+
+          {prediction.creditorAmount == null ? (
+            <p className="mt-2 text-xs text-warning">
+              Enter the ATO debt above to see the amount needed to get it accepted.
+            </p>
+          ) : !isRisky ? (
+            <p className="mt-2 rounded-md bg-success/10 px-2 py-1.5 text-xs font-medium text-success">
+              No change needed — similar deals at this level were accepted.
+            </p>
+          ) : showRaise ? (
+            <div className="mt-2 rounded-md border border-success/30 bg-success/10 px-2 py-1.5">
+              <p className="text-[11px] text-foreground/70">To get it accepted, offer</p>
+              <p className="text-xl font-bold tabular-nums text-success">
+                {formatAud(targetRounded)}
+              </p>
+              <p className="text-[11px] text-foreground/60">
+                {formatAud(Math.max(0, (targetRounded ?? 0) - (suggestedRounded ?? 0)))} more than
+                now
+              </p>
+            </div>
+          ) : showAlreadyStrong ? (
+            <p className="mt-2 rounded-md bg-surface/60 px-2 py-1.5 text-xs text-foreground/80">
+              The amount is already high enough — offering more won&rsquo;t help. Pay sooner or
+              upfront instead to improve the odds.
+            </p>
+          ) : null}
+
+          <p className="mt-2 text-[11px] text-foreground/50">{prediction.riskBandReasoning}</p>
           <p className="mt-2 text-xs text-foreground/40">Risk band</p>
         </div>
 
