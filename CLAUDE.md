@@ -297,8 +297,8 @@ Use the token classes only; never hardcode hex in components.
 | `warning` | `#F39C12` | Needs attention, format warnings |
 | `destructive` | `#E74C3C` | Missing docs, errors |
 
-**Theme-aware** — driven by `--mcr-*` CSS variables; the app ships dark by
-default and switches on `[data-theme="light"]`:
+**Theme-aware** — driven by `--mcr-*` CSS variables; the app ships light by
+default and switches on `[data-theme="dark"]`:
 
 | Token | Dark | Light | Usage |
 |---|---|---|---|
