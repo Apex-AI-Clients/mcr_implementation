@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Activity, ChevronDown, ChevronUp, Download, Info, X } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
+import { RECONCILIATION_LABEL, reconciliationGap } from '@/lib/analysis/debtReconciliation'
+import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate } from '@/lib/analysis/config'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { DpnRiskPanel } from '@/components/admin/lodgement/DpnRiskPanel'
@@ -94,6 +97,9 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
   if (analysis.debtBreakdown) {
     const db = analysis.debtBreakdown
     lines.push(csvRow('Debt Composition'))
+    if (Math.abs(db.openingBalance ?? 0) > 1) {
+      lines.push(csvRow('Balance brought forward (before this statement starts)', formatBalanceExport(db.openingBalance)))
+    }
     lines.push(csvRow('Principal (gross debits)', formatCurrencyExport(db.principalDebits)))
     lines.push(csvRow('Less: amendment credits', formatCurrencyExport(db.principalCredits)))
     lines.push(csvRow('Principal (net)', formatCurrencyExport(db.principalNet)))
@@ -102,10 +108,18 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
     lines.push(csvRow('Interest (net)', formatCurrencyExport(db.interestNet)))
     lines.push(csvRow('Penalties (net)', formatCurrencyExport(db.penaltyNet)))
     lines.push(csvRow('Total ATO debt accrued', formatCurrencyExport(db.totalAtoDebt)))
+    if ((db.refundsPaid ?? 0) > 0) lines.push(csvRow('Add: refunds paid to the company', `+${formatCurrencyExport(db.refundsPaid)}`))
     lines.push(csvRow('Payments received', formatCurrencyExport(db.paymentsReceived)))
     lines.push(csvRow('Government credits (Cash Flow Boost etc)', formatCurrencyExport(db.governmentCredits)))
     lines.push(csvRow('Other credits', formatCurrencyExport(db.otherCredits)))
-    lines.push(csvRow('Current balance owing', formatCurrencyExport(db.currentBalance)))
+    const gap = reconciliationGap(db)
+    if (gap !== null) lines.push(csvRow(RECONCILIATION_LABEL, `${gap < 0 ? '-' : '+'}${formatCurrencyExport(gap)}`))
+    lines.push(
+      csvRow(
+        db.atoBalanceDate ? `Current balance owing (ATO, as at ${formatIsoExport(db.atoBalanceDate)})` : 'Current balance owing',
+        formatBalanceExport(db.currentBalance),
+      ),
+    )
     lines.push('')
   }
 
@@ -198,8 +212,7 @@ function getSeverity(numberOfLate: number): 'ok' | 'warning' | 'danger' {
   return 'warning'
 }
 
-function ContributingTable({ rows }: { rows: EnrichedRow[] }) {
-  const late = rows.filter((r) => r.lateLodgeDaysCleaned > 0)
+function ContributingTable({ late }: { late: EnrichedRow[] }) {
   if (late.length === 0) return <p className="text-xs text-foreground/40 italic">No late lodgements.</p>
 
   return (
@@ -209,6 +222,7 @@ function ContributingTable({ rows }: { rows: EnrichedRow[] }) {
           <tr className="border-b border-border text-left text-foreground/40">
             <th className="pb-2 pr-4 font-medium">Processed</th>
             <th className="pb-2 pr-4 font-medium">Effective</th>
+            <th className="pb-2 pr-4 font-medium">Type</th>
             <th className="pb-2 pr-4 font-medium">Description</th>
             <th className="pb-2 font-medium text-right">Days Late</th>
           </tr>
@@ -221,6 +235,18 @@ function ContributingTable({ rows }: { rows: EnrichedRow[] }) {
               </td>
               <td className="py-1.5 pr-4 text-foreground/70 whitespace-nowrap">
                 {row.effectiveDate ? formatDate(new Date(row.effectiveDate as unknown as string).toISOString()) : '—'}
+              </td>
+              <td className="py-1.5 pr-4 whitespace-nowrap">
+                {row.lodgementType === 'ClientAmended' ? (
+                  <span
+                    className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning"
+                    title="A client-initiated amendment, measured from the original period's due date"
+                  >
+                    Amendment
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-foreground/70">Original</span>
+                )}
               </td>
               <td className="py-1.5 pr-4 text-foreground/70 max-w-xs truncate" title={row.description}>
                 {row.description}
@@ -442,6 +468,7 @@ function SummaryModal({
 // ─── Main card ────────────────────────────────────────────────────────────────
 
 export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivityStatementCsv }: Props) {
+  const router = useRouter()
   const [analysis, setAnalysis] = useState<LodgementAnalysisPayload | null>(initialAnalysis)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -461,6 +488,8 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
         return
       }
       setAnalysis(data as LodgementAnalysisPayload)
+      // The page's header badge is server-rendered: refresh it now an analysis exists.
+      router.refresh()
     } catch {
       setError('Network error. Please try again.')
     } finally {
@@ -492,7 +521,13 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
 
   const countSeverity = analysis ? getSeverity(analysis.summary.numberOfLateLodgements) : 'ok'
   const daysSeverity = analysis ? getDaysSeverity(analysis.summary.cumulativeDaysLate) : 'ok'
-  const lateRows = analysis ? analysis.rows.filter((r) => r.lateLodgeDaysCleaned > 0) : []
+  // The lodgements the count includes, under the late-lodgement setting (config.ts)…
+  const lateRows = analysis ? analysis.rows.filter((r) => countsAsLate(r)) : []
+  // …and, when amendments are not counted, the late amendments shown separately.
+  const lateAmendments =
+    analysis && LATE_LODGEMENT_SCOPE === 'originals_only'
+      ? analysis.rows.filter((r) => r.lodgementType === 'ClientAmended' && r.lateLodgeDaysCleaned > 0)
+      : []
 
   return (
     <Card>
@@ -589,9 +624,11 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
             </div>
           )}
 
-          {/* Contributing lodgements table (all late rows) */}
-          {lateRows.length > 0 && (
-            <div className="border-t border-border/40 pt-4">
+          {/* Contributing lodgements, and the rule that decides them */}
+          <div className="border-t border-border/40 pt-4">
+            <p className="mb-2 text-xs text-foreground/50">{LATE_LODGEMENT_RULE[LATE_LODGEMENT_SCOPE]}.</p>
+          {(lateRows.length > 0 || lateAmendments.length > 0) && (
+            <div>
               <button
                 onClick={() => setShowTable((v) => !v)}
                 className="flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
@@ -604,12 +641,22 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
                 {showTable ? 'Hide' : 'Show'} contributing lodgements ({lateRows.length})
               </button>
               {showTable && (
-                <div className="mt-3">
-                  <ContributingTable rows={analysis.rows} />
+                <div className="mt-3 space-y-4">
+                  <ContributingTable late={lateRows} />
+                  {lateAmendments.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-foreground/60">
+                        Amendments ({lateAmendments.length}), listed separately: corrections to statements already
+                        lodged, not counted as late lodgements. Days are from the original period&apos;s due date.
+                      </p>
+                      <ContributingTable late={lateAmendments} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
+          </div>
 
           <p className="text-xs text-foreground/30">
             Analysed {formatDateRelative(analysis.analysedAt)} · Source: {analysis.sourceFilename}

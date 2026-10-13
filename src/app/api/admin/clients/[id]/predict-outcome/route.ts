@@ -39,6 +39,7 @@ import {
   type TrainingRow,
 } from '@/lib/sbr/historicalCases'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
+import { storedLateLodgements } from '@/lib/analysis/config'
 import {
   creditorDebt,
   describeDecision,
@@ -204,8 +205,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Auto features.
-    const cumulativeDaysLate = lodgement!.cumulative_days_late
-    const numberOfLateLodgements = lodgement!.number_of_late_lodgements
+    // Counted now from the stored rows under the late-lodgement setting
+    // (analysis/config.ts), the same rule the lodgement report uses.
+    const { cumulativeDaysLate, numberOfLateLodgements } = storedLateLodgements(lodgement!.rows, {
+      numberOfLateLodgements: lodgement!.number_of_late_lodgements,
+      cumulativeDaysLate: lodgement!.cumulative_days_late,
+    })
     // Measured to the account's statement date, not today (creditorDebt.ts).
     // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
     const ica = await loadIcaRows(supabase, lodgement)

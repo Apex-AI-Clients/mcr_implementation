@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { RECONCILIATION_LABEL, reconciliationGap } from '@/lib/analysis/debtReconciliation'
 import type { DebtBreakdown } from '@/lib/analysis/types'
 
 const AUD = new Intl.NumberFormat('en-AU', {
@@ -15,6 +16,22 @@ function fmt(value: number): string {
 
 function fmtParen(value: number): string {
   return `(${AUD.format(value)})`
+}
+
+/** +$357 / −$357: a line that adds to or takes from the total. */
+function fmtSigned(value: number): string {
+  return `${value < 0 ? '−' : '+'}${AUD.format(Math.abs(value))}`
+}
+
+/** The balance owing; a credit (ATO owes the client) shows as "$X CR". */
+function fmtBalance(value: number): string {
+  return value < 0 ? `${AUD.format(-value)} CR` : AUD.format(value)
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const longDate = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  return `${d} ${MONTHS[m - 1]} ${y}`
 }
 
 interface RowProps {
@@ -51,6 +68,8 @@ function Row({ label, display, bold, indent, separator, colorClass }: RowProps) 
 }
 
 export function DebtCompositionPanel({ debtBreakdown: db }: { debtBreakdown: DebtBreakdown }) {
+  // The balance is the ATO's printed figure; this line makes the table add up to it.
+  const gap = reconciliationGap(db)
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-foreground">Debt Composition</h3>
@@ -58,6 +77,11 @@ export function DebtCompositionPanel({ debtBreakdown: db }: { debtBreakdown: Deb
       <div className="overflow-x-auto rounded-lg border border-border bg-surface/50">
         <table className="w-full">
           <tbody>
+            {/* Owed before the statement's first row (an export that starts part-way through) */}
+            {Math.abs(db.openingBalance ?? 0) > 1 && (
+              <Row label="Balance brought forward (before this statement starts)" display={fmtBalance(db.openingBalance)} />
+            )}
+
             {/* Principal */}
             <Row label="Principal (gross debits)" display={fmt(db.principalDebits)} />
             {db.principalCredits > 0 && (
@@ -95,6 +119,11 @@ export function DebtCompositionPanel({ debtBreakdown: db }: { debtBreakdown: Deb
               separator
             />
 
+            {/* Refunds the ATO paid out add to what is owed */}
+            {(db.refundsPaid ?? 0) > 0 && (
+              <Row label="Add: refunds paid to the company" display={fmtSigned(db.refundsPaid)} indent colorClass="text-foreground/70" />
+            )}
+
             {/* Reductions */}
             {db.paymentsReceived > 0 && (
               <Row label="Less: payments received" display={fmtParen(db.paymentsReceived)} indent />
@@ -106,10 +135,14 @@ export function DebtCompositionPanel({ debtBreakdown: db }: { debtBreakdown: Deb
               <Row label="Less: other credits" display={fmtParen(db.otherCredits)} indent />
             )}
 
-            {/* Current balance — always shown */}
+            {gap !== null && (
+              <Row label={RECONCILIATION_LABEL} display={fmtSigned(gap)} indent colorClass="text-foreground/70" />
+            )}
+
+            {/* Current balance — always shown: the ATO's own balance where the export prints one */}
             <Row
-              label="Current balance owing"
-              display={fmt(db.currentBalance)}
+              label={db.atoBalanceDate ? `Current balance owing (ATO, as at ${longDate(db.atoBalanceDate)})` : 'Current balance owing'}
+              display={fmtBalance(db.currentBalance)}
               bold
               separator
               colorClass={db.currentBalance === 0 ? 'text-success font-bold' : 'text-warning font-bold'}
