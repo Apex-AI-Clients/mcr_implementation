@@ -5,8 +5,9 @@
  * k-NN (k=8) over a 7-feature standardised vector. Predicted outcome = mean of
  * the 8 nearest neighbours' historical outcomes. The range (min/max) is
  * presented to practitioners as a "comparable cases" interval rather than a
- * single number, because the dataset (59 cases) does not support precision
- * tighter than ±8 percentage points (leave-one-out MAE 7.7pp).
+ * single number, because the dataset does not support much precision: at 59
+ * cases leave-one-out MAE was 7.7pp. Since Oct 2026 the figure is computed
+ * from the cases in use on every request (accuracy.ts).
  *
  * v2 changes:
  *   - the director-loan-sent-to-ATO flag dropped (only knowable ~6 weeks post-appointment,
@@ -145,8 +146,10 @@ export interface ImprovementLever {
 }
 
 export interface SbrAccuracyDisclosure {
-  meanAbsoluteError: number // 7.7 (was hardcoded 6.1)
-  intervalCoverage: string // '75%' (was '76%')
+  /** Leave-one-out mean absolute error (pp); null when the caller had none. */
+  meanAbsoluteError: number | null
+  /** e.g. '73%': actual outcomes inside the neighbours' range; null as above. */
+  intervalCoverage: string | null
   sampleSize: number
   knownLimitations: string[]
   riskBandDisclaimer: string // explicit caveat about the risk band
@@ -161,9 +164,17 @@ export interface SbrPrediction {
   suggestedOfferAmount: number | null
   neighbourStdev: number
   trainingSetSize: number
+  trainingSetAccepted: number
+  trainingSetRejected: number
+  /** The practitioner fee the offer was grossed up for (fees.ts). */
+  practitionerFeeRate: number
+  /** "No payments ever" counts as this many days in the distance (null: no cap). */
+  daysSinceLastPaymentCap: number | null
   // v2 fields
   riskBand: SbrRiskBand
   riskBandReasoning: string
+  /** The band rule in one line (riskBands.ts). */
+  riskBandRule: string
   rejectedNeighbours: ComparableCase[]
   paymentStructureRecommendation: PaymentStructureRecommendation
   rejectionLearning: RejectionLearning

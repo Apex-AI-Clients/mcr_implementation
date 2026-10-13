@@ -22,20 +22,6 @@
 }
 
 /* ============================================================
-   DARK THEME
-   ============================================================ */
-[data-theme="dark"] {
-  --mcr-primary: #0F1322;
-  --mcr-surface: #171D2E;
-  --mcr-card: #1C2333;
-  --mcr-foreground: #E8ECF1;
-  --mcr-border: rgba(255, 255, 255, 0.08);
-  --mcr-muted: rgba(255, 255, 255, 0.45);
-  --mcr-input-bg: #0F1322;
-  color-scheme: dark;
-}
-
-/* ============================================================
    LIGHT THEME (default)
    ============================================================ */
 :root,
@@ -48,6 +34,24 @@
   --mcr-muted: rgba(11, 14, 22, 0.72);
   --mcr-input-bg: #F0F2F5;
   color-scheme: light;
+}
+
+/* ============================================================
+   DARK THEME
+   Declared after the light defaults on purpose: `:root` and
+   `[data-theme="dark"]` weigh the same, so whichever comes later wins. With
+   dark first (9 Oct 2026), the light block overrode it and the theme toggle
+   did nothing.
+   ============================================================ */
+[data-theme="dark"] {
+  --mcr-primary: #0F1322;
+  --mcr-surface: #171D2E;
+  --mcr-card: #1C2333;
+  --mcr-foreground: #E8ECF1;
+  --mcr-border: rgba(255, 255, 255, 0.08);
+  --mcr-muted: rgba(255, 255, 255, 0.45);
+  --mcr-input-bg: #0F1322;
+  color-scheme: dark;
 }
 
 /* Stronger body weight in light mode for readability on LCD displays */

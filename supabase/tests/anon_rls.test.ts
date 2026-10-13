@@ -4,7 +4,7 @@ import type { Database } from '@/types/database'
 
 /**
  * The publishable (anon) key sees nothing in the tables migration 0021 closed,
- * nor in the ones closed the same way since (0026).
+ * nor in the ones closed the same way since (0026, 0028).
  *
  * Run with `npm run test:db` after setting SUPABASE_TEST_URL,
  * SUPABASE_TEST_SERVICE_ROLE_KEY and SUPABASE_TEST_ANON_KEY for a DEV project.
@@ -29,6 +29,8 @@ const CLOSED_TABLES = [
   'sbr_outcome_predictions',
   'financial_comparison_jobs',
   'financial_document_extractions',
+  'sbr_case_imports',
+  'sbr_case_import_corrections',
 ] as const
 
 /** The column each one-row select asks for. Every table has an `id` but this one. */
@@ -82,6 +84,32 @@ describe.skipIf(!configured)('anon key and the tables 0021 closed', () => {
     expect(error).not.toBeNull()
     // PGRST202 = not exposed at all; 42501 = exposed but not permitted.
     expect(['PGRST202', '42501']).toContain(error?.code)
+  })
+
+  // 0028's functions, called with real arguments so that "not permitted" is
+  // what stops them: an argument mismatch (PGRST202) would pass even if they
+  // were exposed. None of these calls could write anything if it got through:
+  // the import has no uploader (NOT NULL) and the upload id cannot exist.
+  it('sbr_name_key: anon cannot call it', async () => {
+    const { error } = await anon.rpc('sbr_name_key', { p_name: 'Example Pty Ltd' })
+    expect(error?.code).toBe('42501')
+  })
+
+  it('sbr_apply_case_import: anon cannot call it', async () => {
+    const { error } = await anon.rpc('sbr_apply_case_import', {
+      p_import: {},
+      p_new_cases: [],
+      p_corrections: [],
+    })
+    expect(error?.code).toBe('42501')
+  })
+
+  it('sbr_undo_case_import: anon cannot call it', async () => {
+    const { error } = await anon.rpc('sbr_undo_case_import', {
+      p_import_id: '00000000-0000-0000-0000-000000000000',
+      p_undone_by: 'anon',
+    })
+    expect(error?.code).toBe('42501')
   })
 
   it('anon cannot write company_details', async () => {

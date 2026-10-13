@@ -6,6 +6,8 @@ import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
+import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
+import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
 import type { Json } from '@/types/database'
 
 
@@ -28,7 +30,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [lodgement, slots, cached] = await Promise.all([
+  const [lodgement, slots, cached, imports] = await Promise.all([
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
@@ -43,7 +45,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
       .select('*')
       .eq('client_id', id)
       .maybeSingle(),
+    // When the historical cases last changed: a saved prediction older than
+    // that is stale (staleness.ts).
+    supabase.from('sbr_case_imports').select('uploaded_at, undone_at, counts'),
   ])
+  const changedAt = trainingDataChangedAt((imports.data ?? []) as ImportChange[])
 
   const statement = latestBalanceSheet(slots)
   const balanceSheet = statement?.balanceSheet ?? null
@@ -94,7 +100,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
         clientId={id}
         clientName={client.name}
         initialAuto={initialAuto}
-        initialPrediction={cached.data ? serialiseCachedPrediction(cached.data) : null}
+        initialPrediction={cached.data ? serialiseCachedPrediction(cached.data, changedAt) : null}
       />
     </div>
   )
@@ -108,9 +114,10 @@ interface CachedRow {
   comparable_case_ids: string[]
   training_set_size: number
   computed_at: string
+  practitioner_fee_rate?: number | null
 }
 
-function serialiseCachedPrediction(row: CachedRow) {
+function serialiseCachedPrediction(row: CachedRow, changedAt: string | null) {
   return {
     inputFeatures: row.input_features as unknown as Record<string, unknown>,
     predictedOutcomePercent: Number(row.predicted_outcome_percent),
@@ -119,5 +126,7 @@ function serialiseCachedPrediction(row: CachedRow) {
     comparableCaseIds: row.comparable_case_ids,
     trainingSetSize: row.training_set_size,
     computedAt: row.computed_at,
+    practitionerFeeRate: Number(row.practitioner_fee_rate ?? DEFAULT_PRACTITIONER_FEE_RATE),
+    stale: isPredictionStale(row.computed_at, changedAt),
   }
 }

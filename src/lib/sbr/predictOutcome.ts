@@ -12,6 +12,12 @@
  * v2 (28 May 2026): 7-feature vector (the dl-to-ATO flag dropped), plus the
  * neighbour-rule risk band and accepted-neighbour payment-structure
  * recommendation. See types.ts for the rationale.
+ *
+ * Oct 2026 (Prediction Data): the risk band follows riskBands.ts; days since
+ * last payment is capped, for the distance only, at the longest real gap in
+ * the training set, so "no payments ever" (9999) sits at that cap instead of
+ * dwarfing every other value; the accuracy text is computed (leave-one-out,
+ * passed in by the caller) rather than written in; the fee defaults to fees.ts.
  */
 
 import type {
@@ -28,9 +34,12 @@ import type {
   SbrPredictionInput,
   SbrRiskBand,
 } from './types'
+import type { LeaveOneOutResult } from './accuracy'
+import { DEFAULT_PRACTITIONER_FEE_RATE } from './fees'
+import { RISK_BAND_LABELS, bandForRejectedNeighbours, describeRiskBandRule } from './riskBands'
+import { daysSinceLastPaymentCap, rankBySimilarity } from './similarity'
 
 const K_NEIGHBOURS = 8
-const NUM_FEATURES = 7 // was 8
 
 const FEATURE_LABELS: Record<SbrFeatureKey, string> = {
   dpn: 'Director Penalty Notice',
@@ -62,7 +71,15 @@ const FEATURE_DIRECTION: Record<SbrFeatureKey, 1 | -1 | 0> = {
 interface PredictOptions {
   creditorAmount?: number
   sbrPractitionerFeeRate?: number
+  /**
+   * Leave-one-out accuracy of the dataset (accuracy.ts). Computed by the
+   * caller, once per request: computing it here would recurse.
+   */
+  accuracy?: Pick<LeaveOneOutResult, 'meanAbsoluteError' | 'rangeCoverage' | 'sampleSize'> | null
 }
+
+// Kept exported from here for the callers that already import it.
+export { daysSinceLastPaymentCap }
 
 export function predictSbrOutcome(
   input: SbrPredictionInput,
@@ -74,33 +91,9 @@ export function predictSbrOutcome(
   }
 
   const k = Math.min(K_NEIGHBOURS, trainingSet.length)
-  const sbrPractitionerFeeRate = options?.sbrPractitionerFeeRate ?? 0.125
-
-  const trainMatrix = trainingSet.map((c) => toVector(c.features))
-
-  // Z-score standardisation per feature, computed from the training set only.
-  const means: number[] = []
-  const stdevs: number[] = []
-  for (let j = 0; j < NUM_FEATURES; j++) {
-    const col = trainMatrix.map((row) => row[j])
-    const m = col.reduce((s, v) => s + v, 0) / col.length
-    const variance = col.reduce((s, v) => s + (v - m) ** 2, 0) / col.length
-    // Guard divide-by-zero for constant features.
-    const sd = Math.sqrt(variance) || 1
-    means.push(m)
-    stdevs.push(sd)
-  }
-  const standardise = (vec: number[]) => vec.map((v, j) => (v - means[j]) / stdevs[j])
-
-  const targetVec = standardise(toVector(input))
-  const trainStandardised = trainMatrix.map(standardise)
-
-  const distances = trainStandardised.map((row, i) => {
-    let sumSq = 0
-    for (let j = 0; j < NUM_FEATURES; j++) sumSq += (row[j] - targetVec[j]) ** 2
-    return { idx: i, distance: Math.sqrt(sumSq) }
-  })
-  distances.sort((a, b) => a.distance - b.distance)
+  const sbrPractitionerFeeRate = options?.sbrPractitionerFeeRate ?? DEFAULT_PRACTITIONER_FEE_RATE
+  // The ranking is shared with the Prediction Data page's chart (similarity.ts).
+  const { ranked: distances, daysCap } = rankBySimilarity(input, trainingSet)
   const top = distances.slice(0, k)
 
   const comparableCases: ComparableCase[] = top.map(({ idx, distance }) => {
@@ -151,6 +144,11 @@ export function predictSbrOutcome(
     suggestedOfferAmount,
   )
 
+  const trainingSetAccepted = trainingSet.filter((c) => c.accepted).length
+  const trainingSetRejected = trainingSet.length - trainingSetAccepted
+  const accuracy = options?.accuracy ?? null
+  const rejectedOffers = trainingSet.filter((c) => !c.accepted).map((c) => c.outcomePercent)
+
   return {
     predictedOutcomePercent: round(predictedOutcomePercent, 1),
     predictedLowPercent: round(predictedLowPercent, 1),
@@ -160,42 +158,46 @@ export function predictSbrOutcome(
     suggestedOfferAmount,
     neighbourStdev: round(neighbourStdev, 1),
     trainingSetSize: trainingSet.length,
+    trainingSetAccepted,
+    trainingSetRejected,
+    practitionerFeeRate: sbrPractitionerFeeRate,
+    daysSinceLastPaymentCap: daysCap,
     riskBand: band,
     riskBandReasoning,
+    riskBandRule: describeRiskBandRule(),
     rejectedNeighbours,
     paymentStructureRecommendation,
     rejectionLearning,
     acceptedAlignedOffer,
     improvementLevers,
     accuracyDisclosure: {
-      meanAbsoluteError: 7.7,
-      intervalCoverage: '75%',
-      sampleSize: trainingSet.length,
+      meanAbsoluteError: accuracy?.meanAbsoluteError ?? null,
+      intervalCoverage: accuracy ? `${Math.round(accuracy.rangeCoverage * 100)}%` : null,
+      sampleSize: accuracy?.sampleSize ?? trainingSet.length,
       knownLimitations: [
-        `Based on ${trainingSet.length} historical cases (41 accepted, 18 rejected). Predictions are typically within ±8 percentage points of the actual outcome.`,
-        '75% of historical actual outcomes fell within the predicted range of the 8 nearest neighbours.',
+        `Based on ${trainingSet.length} historical cases (${trainingSetAccepted} accepted, ${trainingSetRejected} rejected).` +
+          (accuracy
+            ? ` Predictions are typically within ±${accuracy.meanAbsoluteError} percentage points of the actual outcome.`
+            : ''),
+        ...(accuracy
+          ? [
+              `${Math.round(accuracy.rangeCoverage * 100)}% of historical actual outcomes fell within the predicted range of the ${K_NEIGHBOURS} nearest neighbours.`,
+            ]
+          : []),
         'The model does not consider revenue size, ATO debt size, industry, or qualitative factors (ATO assessor variance, documentation quality, contested debts) — these may affect real-world outcomes.',
-        'In the historical data, rejected cases were offered amounts between 19.7% and 61.7% — they were not systematically lower than accepted offers. The model therefore does NOT recommend "offer more" to flip a rejection risk; instead it surfaces the risk via the risk band.',
+        ...(rejectedOffers.length >= 2
+          ? [
+              `In the historical data, rejected cases were offered amounts between ${round(Math.min(...rejectedOffers), 1)}% and ${round(Math.max(...rejectedOffers), 1)}% — they were not systematically lower than accepted offers. The model therefore does NOT recommend "offer more" to flip a rejection risk; instead it surfaces the risk via the risk band.`,
+            ]
+          : []),
         'Model accuracy improves as more historical cases are logged.',
       ],
       riskBandDisclaimer:
-        'Risk band is based on whether similar past cases were rejected. It is a coarse signal, NOT a calibrated probability. Always apply practitioner judgement before quoting any number to a client.',
+        'Risk band is based on whether similar past cases were rejected. It is indicative: a coarse signal, NOT a calibrated probability. Always apply practitioner judgement before quoting any number to a client.',
     },
   }
 }
 
-function toVector(f: SbrPredictionInput): number[] {
-  return [
-    f.dpn ? 1 : 0,
-    f.paymentPlanType === 'plan' ? 1 : 0,
-    f.directorLoanAtAppointment ? 1 : 0,
-    // REMOVED in v2: the director-loan-sent-to-ATO flag
-    f.directorLoanReceivableAmount,
-    f.cumulativeDaysLate,
-    f.numberOfLateLodgements,
-    f.daysSinceLastPayment,
-  ]
-}
 
 /**
  * Produces a plain-English one-sentence explanation of why a historical case
@@ -226,14 +228,15 @@ function explainHistoricalCaseOutcome(c: HistoricalSbrCase): string {
 }
 
 /**
- * Classify the 3-tier risk band from the 8 nearest neighbours.
+ * Classify the 3-tier risk band from the 8 nearest neighbours, by the rule in
+ * riskBands.ts (one config, with its evidence on the Prediction Data page).
  *
  * This is intentionally a simple count-based rule, not a ML probability.
  * Validation against the 59-row dataset showed that a Random Forest
  * classifier (without offer as input, to avoid target leakage) only matches
  * baseline accuracy. A rule based on "what fraction of similar past cases
  * were rejected" is more honest given the data and easier for practitioners
- * to interpret.
+ * to interpret. The bands are indicative.
  */
 function classifyRiskBand(comparableCases: ComparableCase[]): {
   band: SbrRiskBand
@@ -242,32 +245,26 @@ function classifyRiskBand(comparableCases: ComparableCase[]): {
   const k = comparableCases.length
   const rejectedCount = comparableCases.filter((c) => !c.accepted).length
   const acceptedCount = k - rejectedCount
+  const band = bandForRejectedNeighbours(rejectedCount)
 
-  if (rejectedCount === 0) {
+  if (band === 'likely_accepted') {
     return {
-      band: 'likely_accepted',
-      reasoning: `All ${k} closest historical cases were accepted. This profile resembles deals that have gone through.`,
+      band,
+      reasoning:
+        rejectedCount === 0
+          ? `All ${k} closest historical cases were accepted. This profile resembles deals that have gone through.`
+          : `${rejectedCount} of ${k} similar past cases were rejected, ${acceptedCount} were accepted. Profile mostly resembles accepted deals.`,
     }
   }
-
-  if (rejectedCount >= 4) {
+  if (band === 'high_rejection_risk') {
     return {
-      band: 'high_rejection_risk',
+      band,
       reasoning: `${rejectedCount} of ${k} similar past cases were rejected. This profile resembles deals that have struggled — practitioner judgement strongly advised.`,
     }
   }
-
-  if (rejectedCount <= 2) {
-    return {
-      band: 'likely_accepted',
-      reasoning: `${rejectedCount} of ${k} similar past cases were rejected, ${acceptedCount} were accepted. Profile mostly resembles accepted deals.`,
-    }
-  }
-
-  // rejectedCount === 3
   return {
-    band: 'borderline',
-    reasoning: `${rejectedCount} of ${k} similar past cases were rejected, ${acceptedCount} were accepted. Mixed signal — practitioner judgement needed.`,
+    band,
+    reasoning: `${rejectedCount} of ${k} similar past cases were rejected, ${acceptedCount} were accepted. Mixed signal (${RISK_BAND_LABELS.borderline}) — practitioner judgement needed.`,
   }
 }
 

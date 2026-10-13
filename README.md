@@ -20,6 +20,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Dependencies to watch by hand
+
+- **SheetJS (`xlsx`)** reads uploaded Excel files on the Prediction Data page
+  (`src/lib/sbr/import/parseUpload.ts`). It is installed from the official
+  tarball, pinned to 0.20.3 with its integrity hash in `package-lock.json`,
+  because the npm `xlsx` package stopped at 0.18.5, which has known
+  vulnerabilities (CVE-2023-30533, CVE-2024-22363). Dependabot and `npm audit`
+  do not track the tarball, so check https://cdn.sheetjs.com/ and
+  https://docs.sheetjs.com/docs/getting-started/installation/nodejs for a newer
+  release every few months, and after any SheetJS security advisory. To
+  upgrade: `npm install --save-exact https://cdn.sheetjs.com/xlsx-<version>/xlsx-<version>.tgz`,
+  then `npm run test -- src/lib/sbr/import`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
