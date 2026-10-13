@@ -15,17 +15,29 @@
  * setup page (run lodgement analysis, run financials extraction).
  *
  * Cached predictions live in sbr_outcome_predictions (UNIQUE on client_id);
- * re-running overwrites the row.
+ * re-running overwrites the row, with the practitioner fee staff chose.
+ *
+ * The training set is the shared one (historicalCases.ts): excluded cases are
+ * never used, and a client is never matched with its own past record — a case
+ * whose normalised name equals the client's name, company name or trust name
+ * is left out. The accuracy text comes from leave-one-out on all cases in use
+ * (accuracy.ts), the same figure the Prediction Data page shows.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/server'
 import { predictSbrOutcome } from '@/lib/sbr/predictOutcome'
-import type {
-  HistoricalSbrCase,
-  SbrPrediction,
-  SbrPredictionInput,
-} from '@/lib/sbr/types'
+import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
+import { leaveOneOut } from '@/lib/sbr/accuracy'
+import { DEFAULT_PRACTITIONER_FEE_RATE, MAX_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
+import {
+  TRAINING_COLUMNS,
+  clientNames,
+  trainingSet as toTrainingSet,
+  withoutOwnRecord,
+  type ClientNameRow,
+  type TrainingRow,
+} from '@/lib/sbr/historicalCases'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import {
   creditorDebt,
@@ -61,6 +73,8 @@ const BodySchema = z.object({
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
   // REMOVED in v2: the director-loan-sent-to-ATO flag
+  /** The practitioner fee for this client, e.g. 0.1; default fees.ts. */
+  practitionerFeeRate: z.number().min(0).lt(MAX_PRACTITIONER_FEE_RATE).optional(),
 })
 
 interface AutoDetectedDirectorLoan {
@@ -117,6 +131,8 @@ interface PredictResponse extends SbrPrediction {
   computedAt: string
   cached: false
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
+  /** Past cases left out because they are this client's own record. */
+  selfMatchExcluded: number
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -140,7 +156,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const { data: client } = await supabase
       .from('clients')
-      .select('id')
+      .select('id, name, company_details(company_name, trust_name)')
       .eq('id', clientId)
       .maybeSingle()
     if (!client) {
@@ -231,12 +247,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       daysSinceLastPayment,
     }
 
-    // Load the historical training set.
+    // Load the historical training set: every case in use (not excluded).
     const { data: rawCases, error: casesError } = await supabase
       .from('sbr_historical_cases')
-      .select('*')
+      .select(TRAINING_COLUMNS)
+    const inUse = toTrainingSet((rawCases ?? []) as unknown as TrainingRow[])
 
-    if (casesError || !rawCases || rawCases.length === 0) {
+    // Never match the client with its own past record.
+    const trainingSet = withoutOwnRecord(inUse, clientNames(client as unknown as ClientNameRow))
+    const selfMatchExcluded = inUse.length - trainingSet.length
+
+    if (casesError || trainingSet.length === 0) {
       console.error('[POST predict-outcome] failed to load training set', casesError)
       return NextResponse.json(
         { error: 'Historical training set is unavailable.' },
@@ -244,27 +265,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       )
     }
 
-    const trainingSet: HistoricalSbrCase[] = rawCases.map((row) => ({
-      id: row.id,
-      clientName: row.client_name,
-      features: {
-        dpn: row.dpn,
-        paymentPlanType: row.payment_plan_type as 'plan' | 'upfront',
-        directorLoanAtAppointment: row.director_loan_at_appointment,
-        directorLoanReceivableAmount: Number(row.director_loan_receivable_amount),
-        cumulativeDaysLate: row.cumulative_days_late,
-        numberOfLateLodgements: row.number_of_late_lodgements,
-        daysSinceLastPayment: row.days_since_last_payment,
-      },
-      outcomePercent: Number(row.outcome_percent),
-      accepted: row.accepted,
-      creditorAmount: Number(row.creditor_amount),
-      sbrPayment: Number(row.sbr_payment),
-    }))
-
+    const practitionerFeeRate = body.practitionerFeeRate ?? DEFAULT_PRACTITIONER_FEE_RATE
     const prediction = predictSbrOutcome(inputFeatures, trainingSet, {
       creditorAmount: creditorAmount ?? undefined,
-      sbrPractitionerFeeRate: 0.125,
+      sbrPractitionerFeeRate: practitionerFeeRate,
+      accuracy: leaveOneOut(inUse),
     })
 
     const now = new Date().toISOString()
@@ -280,6 +285,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           predicted_high_percent: prediction.predictedHighPercent,
           comparable_case_ids: prediction.comparableCases.map((c) => c.id),
           training_set_size: prediction.trainingSetSize,
+          practitioner_fee_rate: practitionerFeeRate,
           computed_at: now,
         },
         { onConflict: 'client_id' },
@@ -298,6 +304,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       computedAt: now,
       cached: false,
       autoDetectedDirectorLoan,
+      selfMatchExcluded,
     }
     return NextResponse.json(response)
   } catch (err) {

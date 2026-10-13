@@ -1,4 +1,4 @@
-import { Archive, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
+import { Archive, ChartScatter, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
 
 /**
  * The two workspaces behind the single staff login.
@@ -62,6 +62,8 @@ export const WORKSPACES: Workspace[] = [
     nav: [
       { href: '/sbr', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/clients', label: 'Clients', icon: Users },
+      // The historical cases the outcome prediction learns from (migration 0028).
+      { href: '/sbr/prediction-data', label: 'Prediction data', icon: ChartScatter },
       // Client files taken off the client list (migration 0024).
       { href: '/sbr/archive', label: 'Archive', icon: Archive },
     ],

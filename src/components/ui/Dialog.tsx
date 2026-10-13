@@ -13,6 +13,10 @@ interface DialogProps {
   /** Action row, rendered right-aligned under the body. */
   footer?: React.ReactNode
   className?: string
+  /** A small label above the title (e.g. "Glossary"). */
+  eyebrow?: React.ReactNode
+  /** Overrides the title's size and weight (e.g. a larger display title). */
+  titleClassName?: string
 }
 
 const FOCUSABLE =
@@ -30,6 +34,8 @@ export function Dialog({
   children,
   footer,
   className,
+  eyebrow,
+  titleClassName,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -129,7 +135,8 @@ export function Dialog({
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 id={titleId} className="text-base font-semibold text-foreground">
+            {eyebrow}
+            <h2 id={titleId} className={cn('text-base font-semibold text-foreground', titleClassName)}>
               {title}
             </h2>
             {description && (

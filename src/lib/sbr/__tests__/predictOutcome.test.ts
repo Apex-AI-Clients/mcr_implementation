@@ -164,13 +164,24 @@ describe('predictSbrOutcome', () => {
     expect(result.suggestedOfferAmount).toBeNull()
   })
 
-  it('always populates the accuracy disclosure', () => {
+  it('always populates the accuracy disclosure, without inventing an accuracy figure', () => {
     const only = makeCase('case-1', 'Only Co', sampleInput, 40)
     const result = predictSbrOutcome(sampleInput, [only])
-    expect(result.accuracyDisclosure.meanAbsoluteError).toBe(7.7)
-    expect(result.accuracyDisclosure.intervalCoverage).toBe('75%')
+    expect(result.accuracyDisclosure.meanAbsoluteError).toBeNull()
+    expect(result.accuracyDisclosure.intervalCoverage).toBeNull()
     expect(result.accuracyDisclosure.sampleSize).toBe(1)
-    expect(result.accuracyDisclosure.knownLimitations.length).toBeGreaterThan(0)
+    expect(result.accuracyDisclosure.knownLimitations[0]).toBe(
+      'Based on 1 historical cases (1 accepted, 0 rejected).',
+    )
+  })
+
+  it('defaults the practitioner fee to 12.5% and uses a chosen one', () => {
+    const only = makeCase('case-1', 'Only Co', sampleInput, 40)
+    expect(predictSbrOutcome(sampleInput, [only]).practitionerFeeRate).toBe(0.125)
+    const r = predictSbrOutcome(sampleInput, [only], { creditorAmount: 200_000, sbrPractitionerFeeRate: 0.1 })
+    expect(r.practitionerFeeRate).toBe(0.1)
+    // 80k / 0.9 = 88,888.89
+    expect(r.suggestedOfferAmount).toBe(88889)
   })
 
   it('uses fewer than k neighbours when the training set is small', () => {
@@ -202,22 +213,17 @@ describe('predictSbrOutcome', () => {
 })
 
 describe('v2 — risk banding and payment-structure recommendation', () => {
-  it('riskBand=likely_accepted when 0-2 of 8 neighbours rejected', () => {
-    const ts = buildSyntheticTrainingSet({ rejectedCount: 1 })
-    const r = predictSbrOutcome(sampleInput, ts)
-    expect(r.riskBand).toBe('likely_accepted')
-  })
-
-  it('riskBand=borderline when 3 of 8 neighbours rejected', () => {
-    const ts = buildSyntheticTrainingSet({ rejectedCount: 3 })
-    const r = predictSbrOutcome(sampleInput, ts)
-    expect(r.riskBand).toBe('borderline')
-  })
-
-  it('riskBand=high_rejection_risk when 4+ of 8 neighbours rejected', () => {
-    const ts = buildSyntheticTrainingSet({ rejectedCount: 5 })
-    const r = predictSbrOutcome(sampleInput, ts)
-    expect(r.riskBand).toBe('high_rejection_risk')
+  // The rule is riskBands.ts (decided 13 Oct 2026): 0–1 / 2 / 3+.
+  it.each([
+    [0, 'likely_accepted'],
+    [1, 'likely_accepted'],
+    [2, 'borderline'],
+    [3, 'high_rejection_risk'],
+    [5, 'high_rejection_risk'],
+  ] as const)('%i of 8 neighbours rejected → %s', (rejectedCount, band) => {
+    const r = predictSbrOutcome(sampleInput, buildSyntheticTrainingSet({ rejectedCount }))
+    expect(r.riskBand).toBe(band)
+    expect(r.riskBandRule).toBe('0–1 rejected: Likely accepted · 2: Borderline · 3+: High rejection risk')
   })
 
   it('paymentStructureRecommendation respects 2:1 majority threshold', () => {
@@ -254,11 +260,38 @@ describe('v2 — risk banding and payment-structure recommendation', () => {
     expect(() => predictSbrOutcome(input, syntheticTrainingSet)).not.toThrow()
   })
 
-  it('accuracyDisclosure exposes the updated MAE and coverage', () => {
-    const r = predictSbrOutcome(sampleInput, syntheticTrainingSet)
-    expect(r.accuracyDisclosure.meanAbsoluteError).toBe(7.7)
-    expect(r.accuracyDisclosure.intervalCoverage).toBe('75%')
-    expect(r.accuracyDisclosure.knownLimitations.some((s) => s.includes('19.7%'))).toBe(true)
+  it('accuracyDisclosure carries the leave-one-out figures it is given, and computed counts', () => {
+    const r = predictSbrOutcome(sampleInput, syntheticTrainingSet, {
+      accuracy: { meanAbsoluteError: 7.2, rangeCoverage: 0.734, sampleSize: 83 },
+    })
+    expect(r.accuracyDisclosure.meanAbsoluteError).toBe(7.2)
+    expect(r.accuracyDisclosure.intervalCoverage).toBe('73%')
+    expect(r.accuracyDisclosure.sampleSize).toBe(83)
+    expect(r.trainingSetAccepted).toBe(6)
+    expect(r.trainingSetRejected).toBe(2)
+    expect(r.accuracyDisclosure.knownLimitations[0]).toBe(
+      'Based on 8 historical cases (6 accepted, 2 rejected). Predictions are typically within ±7.2 percentage points of the actual outcome.',
+    )
+    // The rejected-offer range is the training set's, not a fixed figure.
+    expect(r.accuracyDisclosure.knownLimitations.some((s) => s.includes('between 40% and 40%'))).toBe(true)
+  })
+
+  it('caps days since last payment at the longest real gap, for the distance only', () => {
+    const near = { ...sampleInput, daysSinceLastPayment: 400 }
+    const ts = [
+      makeCase('never', 'Never Paid', { ...sampleInput, daysSinceLastPayment: 9999 }, 30),
+      makeCase('long', 'Long Gap', { ...sampleInput, daysSinceLastPayment: 400 }, 40),
+      makeCase('short', 'Short Gap', { ...sampleInput, daysSinceLastPayment: 10 }, 50),
+    ]
+    const r = predictSbrOutcome(near, ts)
+    expect(r.daysSinceLastPaymentCap).toBe(400)
+    // "No payments ever" now sits at 400 days: as close to this client as the
+    // 400-day case, and both closer than the 10-day one.
+    const byId = Object.fromEntries(r.comparableCases.map((c) => [c.id, c.distance]))
+    expect(byId.never).toBeCloseTo(byId.long, 9)
+    expect(byId.never).toBeLessThan(byId.short)
+    // Display is untouched.
+    expect(r.comparableCases.find((c) => c.id === 'never')!.features.daysSinceLastPayment).toBe(9999)
   })
 
   it('rejectionLearning verdict=higher_offer_may_help when rejected offers were lower', () => {

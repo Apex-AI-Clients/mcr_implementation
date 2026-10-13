@@ -24,6 +24,13 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { cn, formatDateRelative } from '@/lib/utils'
+import {
+  DEFAULT_PRACTITIONER_FEE_RATE,
+  MAX_PRACTITIONER_FEE_RATE,
+  PRACTITIONER_FEE_OPTIONS,
+  formatFeeRate,
+  isValidFeeRate,
+} from '@/lib/sbr/fees'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
 
 interface InitialAuto {
@@ -51,6 +58,10 @@ interface CachedSummary {
   comparableCaseIds: string[]
   trainingSetSize: number
   computedAt: string
+  /** The fee chosen for this client when it was saved. */
+  practitionerFeeRate: number
+  /** The historical cases changed after it was saved (staleness.ts). */
+  stale: boolean
 }
 
 interface Props {
@@ -69,6 +80,8 @@ interface FullPrediction extends SbrPrediction {
     detected: boolean | null
     reasoning: string | null
   }
+  /** Past cases left out because they are this client's own record. */
+  selfMatchExcluded?: number
 }
 
 interface MissingPrereq {
@@ -146,6 +159,12 @@ export function OutcomePredictionClient({
     return creditorText.trim() !== '' && Number.isFinite(n) && n >= 0 ? n : undefined
   })()
 
+  // The practitioner fee for this client: saved with its prediction, default
+  // 12.5% (fees.ts). Null while a custom entry is not a valid percentage.
+  const [feeRate, setFeeRate] = useState<number | null>(
+    initialPrediction?.practitionerFeeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
+  )
+
   const [prediction, setPrediction] = useState<FullPrediction | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,7 +176,7 @@ export function OutcomePredictionClient({
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
   const lodgementReady = auto.hasLodgement
-  const canRun = lodgementReady
+  const canRun = lodgementReady && feeRate !== null
 
   async function runPrediction() {
     setRunning(true)
@@ -171,6 +190,7 @@ export function OutcomePredictionClient({
           dpn,
           paymentPlanType,
           directorLoanAtAppointment,
+          practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
         }),
       })
@@ -194,10 +214,12 @@ export function OutcomePredictionClient({
   // On mount: if there's a cached prediction, hydrate the full payload (the DB
   // cache only stores the summary — the comparable cases + breakdown have to
   // be recomputed). This is fast (~10ms server-side) and idempotent.
+  // Not when it is stale: new historical data would silently change the
+  // figures, so staff see the saved ones with a banner and re-run themselves.
   const hydrated = useRef(false)
   useEffect(() => {
     if (hydrated.current) return
-    if (!initialPrediction) return
+    if (!initialPrediction || initialPrediction.stale) return
     if (!lodgementReady) return
     hydrated.current = true
     runPrediction()
@@ -259,6 +281,30 @@ export function OutcomePredictionClient({
         </div>
       )}
 
+      {initialPrediction?.stale && !prediction && (
+        <Card className="border-warning/30 bg-warning/5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <div>
+                <p className="text-sm font-medium text-foreground">New historical data added — re-run</p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  The saved prediction ({initialPrediction.predictedOutcomePercent.toFixed(1)}%, range{' '}
+                  {initialPrediction.predictedLowPercent.toFixed(1)}%–
+                  {initialPrediction.predictedHighPercent.toFixed(1)}%, from{' '}
+                  {initialPrediction.trainingSetSize} cases) was made before the historical cases
+                  changed. Re-run it to use the current data.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={runPrediction} loading={running} disabled={!canRun}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-run
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {missing.length > 0 && <PrereqMissingBlock clientId={clientId} missing={missing} />}
 
       {!lodgementReady && (
@@ -304,6 +350,8 @@ export function OutcomePredictionClient({
           setCreditorText={setCreditorText}
           creditorEdited={creditorEdited}
           setCreditorEdited={setCreditorEdited}
+          feeRate={feeRate}
+          setFeeRate={setFeeRate}
         />
       </div>
 
@@ -315,6 +363,16 @@ export function OutcomePredictionClient({
             <p className="-mt-2 text-xs text-foreground/60">
               ATO debt <span className="font-medium text-foreground">{formatAud(prediction.creditorAmount)}</span>
               {prediction.creditorDebt ? ` — ${prediction.creditorDebt.description}` : ''}
+              {' · '}practitioner fee{' '}
+              <span className="font-medium text-foreground">{formatFeeRate(prediction.practitionerFeeRate)}</span>
+            </p>
+          )}
+          {(prediction.selfMatchExcluded ?? 0) > 0 && (
+            <p className="-mt-2 text-xs text-foreground/50">
+              {prediction.selfMatchExcluded === 1
+                ? "1 past case with this client's name was left out"
+                : `${prediction.selfMatchExcluded} past cases with this client's name were left out`}
+              : a client is never compared with its own record.
             </p>
           )}
           {/* Temporarily hidden (client request): "What the rejections tell us"
@@ -408,6 +466,8 @@ interface InputPanelProps {
   setCreditorText: (v: string) => void
   creditorEdited: boolean
   setCreditorEdited: (v: boolean) => void
+  feeRate: number | null
+  setFeeRate: (v: number | null) => void
 }
 
 function InputPanel(props: InputPanelProps) {
@@ -429,6 +489,8 @@ function InputPanel(props: InputPanelProps) {
     setCreditorText,
     creditorEdited,
     setCreditorEdited,
+    feeRate,
+    setFeeRate,
   } = props
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -444,6 +506,9 @@ function InputPanel(props: InputPanelProps) {
             <span className="text-foreground/30"> · </span>
             Director loan at appointment:{' '}
             <span className="text-foreground">{directorLoanAtAppointment ? 'Yes' : 'No'}</span>
+            <span className="text-foreground/30"> · </span>
+            Practitioner fee:{' '}
+            <span className="text-foreground">{feeRate !== null ? formatFeeRate(feeRate) : '—'}</span>
           </div>
           <button
             type="button"
@@ -585,6 +650,7 @@ function InputPanel(props: InputPanelProps) {
                 </label>
               </div>
             </fieldset>
+            <FeeSelector rate={feeRate} onChange={setFeeRate} />
           </div>
         </div>
       </div>
@@ -609,6 +675,80 @@ function InputPanel(props: InputPanelProps) {
 
       {helpOpen && <ManualInputsHelpModal onClose={() => setHelpOpen(false)} />}
     </Card>
+  )
+}
+
+/**
+ * The SBR practitioner fee for this client: 12.5% (the default), 10%, 7.5%,
+ * 5% or a custom percentage. Saved with the prediction; the offer is grossed
+ * up for it. A custom entry that is not a valid percentage reports null, and
+ * the prediction cannot be run until it is fixed.
+ */
+function FeeSelector({ rate, onChange }: { rate: number | null; onChange: (v: number | null) => void }) {
+  const isPreset = rate !== null && (PRACTITIONER_FEE_OPTIONS as readonly number[]).includes(rate)
+  const [custom, setCustom] = useState(!isPreset)
+  const [customText, setCustomText] = useState(
+    !isPreset && rate !== null ? String(Number((rate * 100).toFixed(2))) : '',
+  )
+  const maxPercent = MAX_PRACTITIONER_FEE_RATE * 100
+
+  function setCustomPercent(text: string) {
+    setCustomText(text)
+    const n = Number(text.replace('%', '').trim()) / 100
+    onChange(text.trim() !== '' && isValidFeeRate(n) ? n : null)
+  }
+
+  return (
+    <fieldset className="rounded-lg border border-border bg-surface/30 px-3 py-2">
+      <legend className="px-1 text-xs text-foreground/50">SBR practitioner fee</legend>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
+        {PRACTITIONER_FEE_OPTIONS.map((option) => (
+          <label key={option} className="flex items-center gap-2 text-xs text-foreground/80">
+            <input
+              type="radio"
+              name="practitionerFee"
+              checked={!custom && rate === option}
+              onChange={() => {
+                setCustom(false)
+                onChange(option)
+              }}
+              className="accent-accent"
+            />
+            {formatFeeRate(option)}
+            {option === DEFAULT_PRACTITIONER_FEE_RATE && <span className="text-foreground/40">(default)</span>}
+          </label>
+        ))}
+        <label className="flex items-center gap-2 text-xs text-foreground/80">
+          <input
+            type="radio"
+            name="practitionerFee"
+            checked={custom}
+            onChange={() => {
+              setCustom(true)
+              setCustomPercent(customText)
+            }}
+            className="accent-accent"
+          />
+          Custom
+        </label>
+        {custom && (
+          <span className="flex items-center gap-1 text-xs">
+            <input
+              aria-label="Custom practitioner fee, percent"
+              inputMode="decimal"
+              value={customText}
+              onChange={(event) => setCustomPercent(event.target.value)}
+              placeholder="e.g. 8"
+              className="h-7 w-16 rounded-md border border-border bg-input-bg px-2 text-sm tabular-nums text-foreground focus:border-accent focus:outline-none"
+            />
+            %
+          </span>
+        )}
+      </div>
+      {custom && rate === null && (
+        <p className="mt-1 text-[11px] text-warning">Enter a fee from 0% to below {maxPercent}%.</p>
+      )}
+    </fieldset>
   )
 }
 
@@ -1003,7 +1143,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           ) : null}
 
           <p className="mt-2 text-[11px] text-foreground/50">{prediction.riskBandReasoning}</p>
-          <p className="mt-2 text-xs text-foreground/40">Risk band</p>
+          <p className="mt-2 text-xs text-foreground/40">Risk band (indicative)</p>
         </div>
 
         {/* 4. Payment structure recommendation */}
@@ -1027,8 +1167,10 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-foreground/40">
-          Prediction based on the {prediction.comparableCases.length} most similar historical
-          cases. Typical accuracy: ±8 percentage points.
+          Prediction based on the {prediction.comparableCases.length} most similar of{' '}
+          {prediction.trainingSetSize} historical cases.
+          {prediction.accuracyDisclosure.meanAbsoluteError != null &&
+            ` Typical accuracy: ±${prediction.accuracyDisclosure.meanAbsoluteError} percentage points.`}
         </p>
         <button
           type="button"
@@ -1102,7 +1244,7 @@ function CalculationsContent({
   const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
   const sum = outcomes.reduce((s, v) => s + v, 0)
   const mean = sum / outcomes.length
-  const sbrPractitionerFeeRate = 0.125
+  const sbrPractitionerFeeRate = prediction.practitionerFeeRate
   const k = prediction.comparableCases.length
   const rejectedCount = prediction.rejectedNeighbours.length
   const acceptedCount = k - rejectedCount
@@ -1212,7 +1354,16 @@ function CalculationsContent({
                     {prediction.predictedOutcomePercent.toFixed(1)}%
                   </span>
                 </div>
-                <div>SBR practitioner fee = 12.5% (so creditors receive 87.5% of the offer)</div>
+                <div>
+                  SBR practitioner fee = {formatFeeRate(sbrPractitionerFeeRate)} (so creditors receive{' '}
+                  {formatFeeRate(1 - sbrPractitionerFeeRate)} of the offer)
+                  {sbrPractitionerFeeRate !== DEFAULT_PRACTITIONER_FEE_RATE && (
+                    <span className="text-foreground/45">
+                      {' '}
+                      — chosen for this client; the default is {formatFeeRate(DEFAULT_PRACTITIONER_FEE_RATE)}
+                    </span>
+                  )}
+                </div>
                 <div className="mt-2 border-t border-border/60 pt-2">
                   Creditor receipt ={' '}
                   {(prediction.predictedOutcomePercent / 100).toFixed(3)} ×{' '}
@@ -1242,7 +1393,8 @@ function CalculationsContent({
               </div>
               <p className="mt-2 text-xs text-foreground/45">
                 The SBR practitioner fee comes off the gross offer before creditors are paid, so the
-                offer is back-calculated by dividing the creditor receipt by 0.875.
+                offer is back-calculated by dividing the creditor receipt by{' '}
+                {(1 - sbrPractitionerFeeRate).toFixed(3)}.
               </p>
 
               {/* 2b. Amount to make it acceptable */}
@@ -1318,11 +1470,11 @@ function CalculationsContent({
         {/* 3. Risk band */}
         <section className="mb-5">
           <h3 className="mb-1 text-sm font-semibold text-foreground">
-            3. Risk band ({band.emoji} {band.label})
+            3. Risk band ({band.emoji} {band.label}, indicative)
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
             What it is: a traffic-light read on how risky this profile looks — based purely on how
-            many similar past deals were rejected. It is not a probability.
+            many similar past deals were rejected. It is indicative, not a probability.
           </p>
           <p className="mb-2 text-xs text-foreground/65">
             Rule:{' '}
@@ -1337,9 +1489,12 @@ function CalculationsContent({
               <span className="text-warning">{rejectedCount} rejected</span>.
             </div>
             <div className="mt-2 border-t border-border/60 pt-2">
-              Bands: <span className="text-foreground">0–2 rejected → 🟢 Likely accepted</span> ·{' '}
-              <span className="text-foreground">3 rejected → 🟡 Borderline</span> ·{' '}
-              <span className="text-foreground">4+ rejected → 🔴 High rejection risk</span>
+              Bands: <span className="text-foreground">{prediction.riskBandRule}</span>
+              <span className="text-foreground/45">
+                {' '}
+                (set from how often similar past cases were actually rejected, over{' '}
+                {prediction.accuracyDisclosure.sampleSize} cases — see Prediction data)
+              </span>
             </div>
             <div>
               {rejectedCount} rejected →{' '}
@@ -1830,26 +1985,39 @@ function MethodologyModal({
             <p>
               We compare the client&apos;s profile across 7 factors (late lodgement history,
               payment behaviour, DPN status, director loan, and payment-plan type) against{' '}
-              {prediction.trainingSetSize} historical MCR cases (41 accepted, 18 rejected). The
-              recommended offer is the average outcome of the {prediction.comparableCases.length}{' '}
-              most similar past cases.
+              {prediction.trainingSetSize} historical MCR cases ({prediction.trainingSetAccepted}{' '}
+              accepted, {prediction.trainingSetRejected} rejected). The recommended offer is the
+              average outcome of the {prediction.comparableCases.length} most similar past cases.
+              {prediction.daysSinceLastPaymentCap != null &&
+                ` When measuring similarity, "no payments ever" counts as ${prediction.daysSinceLastPaymentCap.toLocaleString('en-AU')} days, the longest real gap in the data.`}
             </p>
           </div>
           <div>
             <p className="text-foreground/90 font-medium mb-1">About the risk band</p>
             <p>
-              The risk band is a coarse signal based on how many of the{' '}
-              {prediction.comparableCases.length} closest past cases were rejected. It is NOT a
-              calibrated probability. In the historical data, rejected cases were offered amounts
-              between 19.7% and 61.7% — they were not systematically lower than accepted offers,
-              so offering more does not automatically reduce rejection risk.
+              The risk band is an indicative signal based on how many of the{' '}
+              {prediction.comparableCases.length} closest past cases were rejected (
+              {prediction.riskBandRule}). It is NOT a calibrated probability. In the historical
+              data, rejected cases were not systematically offered less than accepted ones, so
+              offering more does not automatically reduce rejection risk.
             </p>
           </div>
           <div>
             <p className="text-foreground/90 font-medium mb-1">Accuracy</p>
             <ul className="list-disc space-y-1 pl-5">
-              <li>Predictions are typically within ±8 percentage points of the actual outcome.</li>
-              <li>75% of historical outcomes fell inside the predicted range.</li>
+              {prediction.accuracyDisclosure.meanAbsoluteError != null && (
+                <li>
+                  Predictions are typically within ±{prediction.accuracyDisclosure.meanAbsoluteError}{' '}
+                  percentage points of the actual outcome (each of{' '}
+                  {prediction.accuracyDisclosure.sampleSize} past cases predicted from the others).
+                </li>
+              )}
+              {prediction.accuracyDisclosure.intervalCoverage != null && (
+                <li>
+                  {prediction.accuracyDisclosure.intervalCoverage} of historical outcomes fell inside
+                  the predicted range.
+                </li>
+              )}
               <li>
                 The model does not consider revenue size, ATO debt size, industry, ATO assessor
                 variance, documentation quality, or contested debts.
@@ -1897,6 +2065,7 @@ function ExportButton({
     push('SBR Outcome Prediction', clientName)
     push('Generated', prediction.computedAt)
     push('Training set size', prediction.trainingSetSize)
+    push('SBR practitioner fee', formatFeeRate(prediction.practitionerFeeRate))
     push('')
 
     push('SUMMARY')
@@ -2017,11 +2186,11 @@ function ExportButton({
     push('METHODOLOGY')
     push(
       'How this prediction works',
-      `We compare the client's profile across 7 factors (late lodgement history, payment behaviour, DPN status, director loan, and payment-plan type) against ${prediction.trainingSetSize} historical MCR cases (41 accepted, 18 rejected). The recommended offer is the average outcome of the ${prediction.comparableCases.length} most similar past cases.`,
+      `We compare the client's profile across 7 factors (late lodgement history, payment behaviour, DPN status, director loan, and payment-plan type) against ${prediction.trainingSetSize} historical MCR cases (${prediction.trainingSetAccepted} accepted, ${prediction.trainingSetRejected} rejected). The recommended offer is the average outcome of the ${prediction.comparableCases.length} most similar past cases.`,
     )
     push(
       'About the risk band',
-      `The risk band is a coarse signal based on how many of the ${prediction.comparableCases.length} closest past cases were rejected. It is NOT a calibrated probability. In the historical data, rejected cases were offered amounts between 19.7% and 61.7% — they were not systematically lower than accepted offers, so offering more does not automatically reduce rejection risk.`,
+      `The risk band is an indicative signal based on how many of the ${prediction.comparableCases.length} closest past cases were rejected (${prediction.riskBandRule}). It is NOT a calibrated probability. In the historical data, rejected cases were not systematically offered less than accepted ones, so offering more does not automatically reduce rejection risk.`,
     )
     push('Mean absolute error (pp)', prediction.accuracyDisclosure.meanAbsoluteError)
     push('Interval coverage', prediction.accuracyDisclosure.intervalCoverage)

@@ -60,3 +60,10 @@ graphify-out
 # Exported reports of real clients, dropped in for review. Never committed.
 /pdfs/
 /pdfs2/
+
+# Gabby's historical SBR workbook (real client names and figures), used only
+# for local dry runs of the Prediction Data import. Never committed.
+/GABI AI DATA*.xlsx
+
+# Database dumps dropped in the repo root. Never committed.
+/*.sql
