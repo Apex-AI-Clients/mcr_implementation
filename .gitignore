@@ -67,3 +67,7 @@ graphify-out
 
 # Database dumps dropped in the repo root. Never committed.
 /*.sql
+
+# Real clients' ATO activity statement exports, dropped in for local checks. Never committed.
+/Activity statement*.csv
+/Activity Statement*.csv

@@ -198,9 +198,22 @@ describe('computeLateLodgement — summary statistics', () => {
         makeRow('2026-02-26', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
         makeRow('2021-03-26', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
       ]),
+      'originals_and_amendments',
     )
     expect(result.summary.numberOfLateLodgements).toBe(2)
     expect(result.summary.cumulativeDaysLate).toBe(474 + 24)
+  })
+
+  it('counts original statements only under the default setting (amendments are corrections)', () => {
+    const result = computeLateLodgement(
+      makeCsv([
+        makeRow('2024-12-11', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
+        makeRow('2026-02-26', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
+        makeRow('2021-03-26', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
+      ]),
+    )
+    expect(result.summary.numberOfLateLodgements).toBe(1)
+    expect(result.summary.cumulativeDaysLate).toBe(24)
   })
 })
 
@@ -211,9 +224,11 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
       'utf-8',
     )
     const parsed = parseActivityStatementCsv(csvText)
-    const result = computeLateLodgement(parsed)
+    const result = computeLateLodgement(parsed, 'originals_and_amendments')
+    // Under the default (originals only), just the original: 1 lodgement, 24 days.
+    expect(computeLateLodgement(parsed).summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 24 })
 
-    // 4 lodgement rows are late in the sample fixture:
+    // 4 lodgement rows are late in the sample fixture when amendments count:
     // ClientAmended 30 Jun 23: 474 days
     // ClientAmended 30 Jun 22: 84 days
     // Original 31 Dec 20: 24 days
@@ -245,7 +260,13 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     expect(result.debtBreakdown.penaltyDebits).toBe(0)
     expect(result.debtBreakdown.paymentsReceived).toBe(3500)
     expect(result.debtBreakdown.totalAtoDebt).toBeCloseTo(6571.56 + 45, 1)
-    expect(result.debtBreakdown.currentBalance).toBeCloseTo(6571.56 + 45 - 3500, 1)
+    // The rows add up to this…
+    expect(result.debtBreakdown.composedBalance).toBeCloseTo(6571.56 + 45 - 3500, 1)
+    // …but the balance owing is the ATO's own printed balance on the newest row.
+    expect(result.debtBreakdown.currentBalance).toBe(1234.56)
+    expect(result.debtBreakdown.atoBalance).toBe(1234.56)
+    expect(result.debtBreakdown.atoBalanceDate).toBe('2026-02-26')
+    expect(result.debtBreakdown.unexplainedDifference).toBeCloseTo(1234.56 - (6571.56 + 45 - 3500), 1)
   })
 })
 
@@ -256,9 +277,17 @@ describe('computeLateLodgement — integration with PARKCON fixture CSV', () => 
       'utf-8',
     )
     const parsed = parseActivityStatementCsv(csvText)
-    const result = computeLateLodgement(parsed)
+    // The reference figures below count amendments (originals_and_amendments).
+    const result = computeLateLodgement(parsed, 'originals_and_amendments')
 
-    // 6 late lodgements: 178 + 471 + 24 + 84 + 89 + 474 = 1320 days
+    // Under the default (originals only): this fixture's three late originals
+    // (178 + 24 + 89 days). The fixture is a cut-down file; the full statement
+    // is checked by `npm run figures:check` (client-b).
+    const originalsOnly = computeLateLodgement(parsed)
+    expect(originalsOnly.summary).toEqual({ numberOfLateLodgements: 3, cumulativeDaysLate: 178 + 24 + 89 })
+    expect(originalsOnly.dpnRisk.totalGrossLate).toBe(9408)
+
+    // 6 late lodgements when amendments count: 178 + 471 + 24 + 84 + 89 + 474 = 1320 days
     expect(result.summary.numberOfLateLodgements).toBe(6)
     expect(result.summary.cumulativeDaysLate).toBe(1320)
 

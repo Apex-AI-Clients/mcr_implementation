@@ -5,6 +5,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { LodgementAnalysisCard } from '@/components/admin/LodgementAnalysisCard'
 import { Badge } from '@/components/ui/Badge'
 import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
+import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +43,12 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       d.original_filename.toLowerCase().endsWith('.csv'),
   )
 
+  // The saved totals are whatever the code computed on the day; re-run today's
+  // code (and late-lodgement setting) over the saved rows instead, so a saved
+  // analysis follows every fix without being re-analysed. The saved totals are
+  // used only when the rows cannot be read.
+  const current = rawAnalysis ? reanalyseStoredRows(rawAnalysis.rows) : null
+
   const initialAnalysis: LodgementAnalysisPayload | null = rawAnalysis
     ? {
         id: rawAnalysis.id,
@@ -51,23 +58,23 @@ export default async function LodgementAnalysisPage({ params }: Props) {
         statementLabel: rawAnalysis.statement_label,
         companyNameInCsv: rawAnalysis.company_name_in_csv,
         rowCount: rawAnalysis.row_count,
-        summary: {
+        summary: current?.summary ?? {
           numberOfLateLodgements: rawAnalysis.number_of_late_lodgements,
           cumulativeDaysLate: rawAnalysis.cumulative_days_late,
         },
-        dpnRisk: (() => {
+        dpnRisk: current?.dpnRisk ?? (() => {
           const raw = rawAnalysis.dpn_risk as Record<string, unknown> | null
           if (!raw || !Array.isArray(raw['contributingDebits'])) return null
           return raw as unknown as LodgementAnalysisPayload['dpnRisk']
         })(),
-        debtBreakdown: (() => {
+        debtBreakdown: current?.debtBreakdown ?? (() => {
           const raw = rawAnalysis.debt_breakdown as Record<string, unknown> | null
           if (!raw || typeof raw['principalDebits'] !== 'number') return null
           return raw as unknown as LodgementAnalysisPayload['debtBreakdown']
         })(),
         aiSummary: rawAnalysis.ai_summary ?? null,
         aiSummaryGeneratedAt: rawAnalysis.ai_summary_generated_at ?? null,
-        rows: rawAnalysis.rows as LodgementAnalysisPayload['rows'],
+        rows: (current?.rows ?? rawAnalysis.rows) as LodgementAnalysisPayload['rows'],
         warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
         analysedAt: rawAnalysis.analysed_at,
       }

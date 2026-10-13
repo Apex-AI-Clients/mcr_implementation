@@ -13,7 +13,7 @@ const EXPECTED_HEADER = [
 
 const DATE_FORMAT = 'dd MMM yyyy'
 
-function parseAtoDate(raw: string): Date | null {
+export function parseAtoDate(raw: string): Date | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
   const d = parseDate(trimmed, DATE_FORMAT, new Date())

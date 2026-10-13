@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { computeDpnRisk } from '../computeLateLodgement'
+import { computeDpnRisk as dpnRiskOf } from '../computeLateLodgement'
+import type { EnrichedRow as Row } from '../types'
+
+// These tests cover the DPN mechanics with amendment debits, so they run with
+// amendments counted; the default setting (originals only) is covered in
+// lateLodgementScope.test.ts and computeLateLodgement.test.ts.
+const computeDpnRisk = (rows: Row[]) => dpnRiskOf(rows, 'originals_and_amendments')
 import type { EnrichedRow, LodgementType } from '../types'
 
 let _rowIdx = 0
