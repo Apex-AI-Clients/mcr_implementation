@@ -21,7 +21,9 @@ describe('classifyLodgement', () => {
     ['Payment received - EFT', 'Payment'],
     ['Payment received', 'Payment'],
     ['Some other transaction', 'Other'],
-    ['Refund issued', 'Other'],
+    ['Refund issued', 'Refund'],
+    ['Refund', 'Refund'],
+    ["' EFT refund for GST for the period from 01 Jul 20 to 30 Sep 20", 'Refund'],
   ] as const)('classifies "%s" as %s', (description, expected) => {
     expect(classifyLodgement(description)).toBe(expected)
   })

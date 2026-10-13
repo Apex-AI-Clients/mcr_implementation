@@ -5,6 +5,19 @@ export type LodgementType =
   | 'SubLine'
   | 'GIC'
   | 'Payment'
+  /**
+   * A "Payment received" row that only shows how a payment above it was
+   * allocated (no balance; same dates; it and its siblings add up to that
+   * payment). Not money received: excluded from every payment count and total
+   * (paymentAllocations.ts).
+   */
+  | 'PaymentAllocation'
+  /** Money the ATO paid out to the company ("EFT refund for GST…", "Refund"): adds to the balance owing. */
+  | 'Refund'
+  /** An "EFT refund for…" row that only breaks down a "Refund" total above it (paymentAllocations.ts). */
+  | 'RefundDetail'
+  /** A GIC row (e.g. a remission) that only breaks down a "General interest charge" total above it. */
+  | 'GICDetail'
   | 'FTLPenalty'
   | 'GeneralPenalty'
   | 'CreditTransfer'
@@ -90,10 +103,37 @@ export interface DebtBreakdown {
   penaltyDebits: number
   penaltyCredits: number
   penaltyNet: number
+  /** Cash payments, allocation rows excluded (paymentAllocations.ts). */
   paymentsReceived: number
+  /** How many payments that is. */
+  paymentsCount: number
+  /** First and last payment, by effective date (ISO yyyy-mm-dd); null without payments. */
+  firstPaymentDate: string | null
+  lastPaymentDate: string | null
   governmentCredits: number
   otherCredits: number
+  /** Refunds the ATO paid to the company (debits less any reversals). They increase the balance owing. */
+  refundsPaid: number
+  /**
+   * What was already owed before the export's first row (an export that starts
+   * part-way through the account's history): the first printed balance less
+   * what the rows up to it account for. 0 when the export starts from nothing.
+   */
+  openingBalance: number
   totalAtoDebt: number
+  /** What the composition above adds up to: opening balance plus total debt and refunds, less payments and credits. Not floored. */
+  composedBalance: number
+  /** The ATO's own running balance on the newest row that prints one (icaPosition). Positive = owed. */
+  atoBalance: number | null
+  /** The date of that row (ISO yyyy-mm-dd). */
+  atoBalanceDate: string | null
+  /** atoBalance less composedBalance, when there is an ATO balance: what the composition does not explain. */
+  unexplainedDifference: number | null
+  /**
+   * The balance owing the report shows: the ATO's printed balance, never
+   * floored at $0 (a credit is negative). The composition is used only when
+   * the rows carry no balance at all.
+   */
   currentBalance: number
 }
 

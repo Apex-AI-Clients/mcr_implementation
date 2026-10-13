@@ -142,13 +142,15 @@ describe('computeDebtBreakdown — totalAtoDebt and currentBalance', () => {
     expect(result.currentBalance).toBe(2700)
   })
 
-  it('currentBalance is floored at 0, never negative', () => {
+  it('currentBalance is never floored at 0: an overpaid account shows its credit', () => {
     const rows: EnrichedRow[] = [
       makeRow({ rowIndex: 0, lodgementType: 'Original', debit: 100 }),
       makeRow({ rowIndex: 1, lodgementType: 'Payment', credit: 99999 }),
     ]
     const result = computeDebtBreakdown(rows)
-    expect(result.currentBalance).toBe(0)
+    // No row prints a balance here, so the composition is used, unfloored.
+    expect(result.atoBalance).toBeNull()
+    expect(result.currentBalance).toBe(-99899)
   })
 })
 
