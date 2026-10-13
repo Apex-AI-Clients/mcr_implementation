@@ -6,6 +6,7 @@ import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
+import { storedLateLodgements } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
 import type { Json } from '@/types/database'
@@ -79,9 +80,17 @@ export default async function OutcomePredictionPage({ params }: Props) {
         }.`
       : 'No director loan line item found on most recent balance sheet.'
 
+  const late = lodgement.data
+    ? storedLateLodgements(lodgement.data.rows, {
+        numberOfLateLodgements: lodgement.data.number_of_late_lodgements,
+        cumulativeDaysLate: lodgement.data.cumulative_days_late,
+      })
+    : null
+
   const initialAuto = {
-    cumulativeDaysLate: lodgement.data?.cumulative_days_late ?? null,
-    numberOfLateLodgements: lodgement.data?.number_of_late_lodgements ?? null,
+    // The same count the prediction route makes (analysis/config.ts).
+    cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
+    numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
     daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
