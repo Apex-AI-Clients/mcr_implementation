@@ -7,6 +7,11 @@ import { correctFile, type FileColumn } from '@/lib/financials/lineCorrections'
 import type { FinancialsComparison, StatementLine, StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { computeLateLodgement, reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
+import type { LateLodgementScope } from '@/lib/analysis/config'
+import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
+import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
+import type { LodgementAnalysisResult } from '@/lib/analysis/types'
 
 /**
  * Shared by the snapshot and check scripts. Nothing here prints a client's
@@ -184,4 +189,57 @@ export function tag(text: string): string {
 
 export function out(line = '') {
   process.stdout.write(`${line}\n`)
+}
+
+// ── Lodgement analysis ──────────────────────────────────────────────────────
+
+/** Lodgement figures, compared to the cent (amounts) or exactly (counts, dates). */
+export type LodgementFigures = Record<string, number | string | null>
+
+/** Clients whose ATO account comes from a CSV kept here: `<alias>.ica.csv`. */
+export function icaCsvAliases(): string[] {
+  if (!existsSync(DIR)) return []
+  return readdirSync(DIR)
+    .filter((f) => f.endsWith('.ica.csv'))
+    .map((f) => f.slice(0, -'.ica.csv'.length))
+    .sort()
+}
+
+/**
+ * The lodgement analysis with the CURRENT code: from `<alias>.ica.csv` when
+ * there is one, else from the rows stored with the snapshot's analysis.
+ */
+export function analyseLodgements(alias: string, snapshot: Snapshot | null, scope: LateLodgementScope): LodgementAnalysisResult | null {
+  const csv = path.join(DIR, `${alias}.ica.csv`)
+  if (existsSync(csv)) return computeLateLodgement(parseActivityStatementCsv(readFileSync(csv, 'utf8')), scope)
+  return snapshot?.icaRows ? reanalyseStoredRows(snapshot.icaRows, scope) : null
+}
+
+export function lodgementFigures(r: LodgementAnalysisResult): LodgementFigures {
+  const db = r.debtBreakdown
+  return {
+    lateLodgements: r.summary.numberOfLateLodgements,
+    cumulativeDaysLate: r.summary.cumulativeDaysLate,
+    dpnGrossOver90: r.dpnRisk.totalGrossLate,
+    payments: db.paymentsCount,
+    paymentsTotal: db.paymentsReceived,
+    firstPayment: db.firstPaymentDate,
+    lastPayment: db.lastPaymentDate,
+    refundsPaid: db.refundsPaid,
+    balanceBroughtForward: db.openingBalance,
+    atoBalance: db.atoBalance,
+    atoBalanceDate: db.atoBalanceDate,
+    unexplained: reconciliationGap(db) ?? 0,
+  }
+}
+
+export function compareLodgement(expected: LodgementFigures, actual: LodgementFigures): string[] {
+  const out: string[] = []
+  for (const key of Object.keys(expected)) {
+    const want = expected[key]
+    const got = actual[key]
+    const same = typeof want === 'number' ? typeof got === 'number' && Math.abs(got - want) < 0.005 : got === want
+    if (!same) out.push(`lodgement  ${key}: verified ${want}, now ${got ?? 'missing'}`)
+  }
+  return out
 }
