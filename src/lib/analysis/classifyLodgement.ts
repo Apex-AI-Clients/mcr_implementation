@@ -22,6 +22,8 @@ export function classifyLodgement(description: string): LodgementType {
   if (s.startsWith('ato initiated amended activity statement')) return 'ATOAmended'
   if (s.startsWith('- ')) return 'SubLine'
   if (s.includes('general interest charge')) return 'GIC'
+  // "EFT refund for GST for the period…", "Refund": money paid out to the company.
+  if (/\brefund\b/.test(s)) return 'Refund'
   // ATO uses both "Payment received" and bare "Payment" labels — match either.
   if (s === 'payment' || s.startsWith('payment received') || s.startsWith('payment ')) return 'Payment'
   if (s.includes('failure to lodge')) return 'FTLPenalty'

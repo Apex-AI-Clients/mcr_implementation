@@ -1,7 +1,12 @@
 import { differenceInCalendarDays } from 'date-fns'
+import { icaPosition, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { classifyLodgement } from './classifyLodgement'
+import { LATE_LODGEMENT_SCOPE, isCountedLodgement, lateLodgementSummary, type LateLodgementScope } from './config'
+import { extractPeriodEnding, parseAtoDate } from './parseActivityStatement'
+import { markBreakdownRows } from './paymentAllocations'
 import type {
   ParsedCsv,
+  ParsedRow,
   EnrichedRow,
   AnalysisWarning,
   LodgementAnalysisResult,
@@ -58,15 +63,17 @@ import type {
  *   - Credit-only late amendments themselves are NOT contributing debits
  *     (debit = 0), but their credit amount IS added to the credit pool.
  */
-export function computeDpnRisk(rows: EnrichedRow[]): DpnRiskBreakdown {
+export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
   const lateOriginalAmend = rows.filter(
     (r) =>
       (r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended') &&
       r.lateLodgementDays > 90,
   )
 
+  // Debits follow the late-lodgement scope (config.ts); the credit pool below
+  // does not: an amendment that reduces a liability is relief either way.
   const lateDebitRows = lateOriginalAmend
-    .filter((r) => (r.debit ?? 0) > 0)
+    .filter((r) => (r.debit ?? 0) > 0 && isCountedLodgement(r, scope))
     .slice()
     .sort((a, b) => {
       const ta = a.processedDate ? (a.processedDate as Date).getTime() : 0
@@ -132,8 +139,15 @@ export function computeDpnRisk(rows: EnrichedRow[]): DpnRiskBreakdown {
  * Principal: Original + ClientAmended debits/credits
  * Interest:  GIC debits/credits (includes remissions as credits)
  * Penalties: FTLPenalty + GeneralPenalty debits/credits
- * Payments:  Payment credits only
+ * Payments:  Payment credits only — allocation rows (PaymentAllocation) are
+ *            not payments and are skipped (paymentAllocations.ts)
  * Other:     CreditTransfer + Other credits only
+ *
+ * The balance owing is the ATO's own printed running balance on the newest
+ * row that shows one (icaPosition — the same function the prediction's ATO
+ * debt uses), never floored at $0. The composition is kept beside it; when it
+ * does not reach the ATO balance, the gap is reported as an unexplained
+ * difference rather than hidden.
  */
 export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
   let principalDebits = 0
@@ -143,7 +157,11 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
   let penaltyDebits = 0
   let penaltyCredits = 0
   let paymentsReceived = 0
+  let paymentsCount = 0
+  let firstPayment: Date | null = null
+  let lastPayment: Date | null = null
   let governmentCredits = 0
+  let refundsPaid = 0
   let otherCredits = 0
 
   for (const row of rows) {
@@ -163,7 +181,18 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
         penaltyCredits += row.credit ?? 0
         break
       case 'Payment':
-        paymentsReceived += row.credit ?? 0
+        if ((row.credit ?? 0) > 0) {
+          paymentsReceived += row.credit ?? 0
+          paymentsCount += 1
+          const d = row.effectiveDate ?? row.processedDate
+          if (d) {
+            if (!firstPayment || d < firstPayment) firstPayment = d
+            if (!lastPayment || d > lastPayment) lastPayment = d
+          }
+        }
+        break
+      case 'Refund':
+        refundsPaid += (row.debit ?? 0) - (row.credit ?? 0)
         break
       case 'GovernmentCredit':
         governmentCredits += row.credit ?? 0
@@ -172,7 +201,8 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
       case 'Other':
         otherCredits += row.credit ?? 0
         break
-      // SubLine and ATOAmended intentionally excluded
+      // SubLine, ATOAmended and the breakdown rows (PaymentAllocation,
+      // RefundDetail, GICDetail) intentionally excluded
     }
   }
 
@@ -180,10 +210,12 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
   const interestNet = interestDebits - interestCredits
   const penaltyNet = penaltyDebits - penaltyCredits
   const totalAtoDebt = principalNet + interestNet + penaltyNet
-  const currentBalance = Math.max(
-    totalAtoDebt - paymentsReceived - otherCredits - governmentCredits,
-    0,
-  )
+  const openingBalance = openingBalanceOf(rows)
+  const composedBalance = round2(openingBalance + totalAtoDebt + refundsPaid - paymentsReceived - otherCredits - governmentCredits)
+  const ato = icaPosition(rows as unknown as IcaRow[])
+  const atoBalance = ato.balance
+  const unexplainedDifference = atoBalance === null ? null : round2(atoBalance - composedBalance)
+  const currentBalance = atoBalance ?? composedBalance
 
   return {
     principalDebits,
@@ -195,15 +227,78 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
     penaltyDebits,
     penaltyCredits,
     penaltyNet,
-    paymentsReceived,
+    paymentsReceived: round2(paymentsReceived),
+    paymentsCount,
+    firstPaymentDate: firstPayment ? calendarDay(firstPayment) : null,
+    lastPaymentDate: lastPayment ? calendarDay(lastPayment) : null,
     governmentCredits,
     otherCredits,
+    refundsPaid: round2(refundsPaid),
+    openingBalance,
     totalAtoDebt,
+    composedBalance,
+    atoBalance,
+    atoBalanceDate: ato.balanceDate,
+    unexplainedDifference,
     currentBalance,
   }
 }
 
-export function computeLateLodgement(parsed: ParsedCsv): LodgementAnalysisResult {
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** A row's effect on the balance, as the composition counts it (credit-only kinds count credits only). */
+function compositionEffect(row: EnrichedRow): number {
+  switch (row.lodgementType) {
+    case 'Original':
+    case 'ClientAmended':
+    case 'GIC':
+    case 'FTLPenalty':
+    case 'GeneralPenalty':
+    case 'Refund':
+      return (row.debit ?? 0) - (row.credit ?? 0)
+    case 'Payment':
+    case 'GovernmentCredit':
+    case 'CreditTransfer':
+    case 'Other':
+      return -(row.credit ?? 0)
+    default:
+      return 0
+  }
+}
+
+/**
+ * The balance owed before the export's first row: the first day that prints a
+ * balance, less what the rows up to and including that day account for. The
+ * ATO lists newest first, so the day's balance is the first one printed on it.
+ */
+function openingBalanceOf(rows: EnrichedRow[]): number {
+  const days = new Map<number, EnrichedRow[]>()
+  for (const row of rows) {
+    if (!row.processedDate) continue
+    const key = row.processedDate.getTime()
+    const list = days.get(key)
+    if (list) list.push(row)
+    else days.set(key, [row])
+  }
+  let counted = 0
+  for (const key of [...days.keys()].sort((a, b) => a - b)) {
+    const day = days.get(key)!
+    counted += day.reduce((s, r) => s + compositionEffect(r), 0)
+    const printed = day.find((r) => r.balance !== null)
+    if (printed) {
+      const opening = round2(printed.balance! - counted)
+      return Math.abs(opening) < 0.005 ? 0 : opening
+    }
+  }
+  return 0
+}
+
+/** A parser date (local midnight) as its calendar day, yyyy-mm-dd, whatever the time zone. */
+function calendarDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function computeLateLodgement(parsed: ParsedCsv, scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): LodgementAnalysisResult {
   const warnings: AnalysisWarning[] = []
   const rows: EnrichedRow[] = []
 
@@ -232,10 +327,14 @@ export function computeLateLodgement(parsed: ParsedCsv): LodgementAnalysisResult
     rows.push({ ...row, lodgementType, lateLodgementDays, lateLodgeDaysCleaned })
   }
 
-  const numberOfLateLodgements = rows.filter((r) => r.lateLodgeDaysCleaned > 0).length
-  const cumulativeDaysLate = rows.reduce((sum, r) => sum + r.lateLodgeDaysCleaned, 0)
+  // A total listed with the rows that break it down is one amount (paymentAllocations.ts).
+  const marked = markBreakdownRows(rows)
+  rows.splice(0, rows.length, ...marked)
 
-  const dpnRisk = computeDpnRisk(rows)
+  // Which lodgements count: one setting (config.ts), shared with the prediction.
+  const { numberOfLateLodgements, cumulativeDaysLate } = lateLodgementSummary(rows, scope)
+
+  const dpnRisk = computeDpnRisk(rows, scope)
   const debtBreakdown = computeDebtBreakdown(rows)
 
   return {
@@ -245,4 +344,36 @@ export function computeLateLodgement(parsed: ParsedCsv): LodgementAnalysisResult
     rows,
     warnings,
   }
+}
+
+/**
+ * The analysis again, from rows stored in lodgement_analyses.rows: the stored
+ * totals (dpn_risk, debt_breakdown) are whatever the code computed on the day,
+ * so the report re-runs the current code over the stored rows instead. Dates
+ * are re-read from the raw cells, as the parser reads them. Null when the rows
+ * are not in the stored shape.
+ */
+export function reanalyseStoredRows(stored: unknown, scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): LodgementAnalysisResult | null {
+  if (!Array.isArray(stored) || stored.length === 0) return null
+  const rows: ParsedRow[] = []
+  for (const [i, raw] of stored.entries()) {
+    const r = raw as Record<string, unknown>
+    if (typeof r.description !== 'string' || typeof r.rawProcessed !== 'string' || typeof r.rawEffective !== 'string') {
+      return null
+    }
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+    rows.push({
+      rowIndex: typeof r.rowIndex === 'number' ? r.rowIndex : i,
+      processedDate: parseAtoDate(r.rawProcessed),
+      effectiveDate: parseAtoDate(r.rawEffective),
+      rawProcessed: r.rawProcessed,
+      rawEffective: r.rawEffective,
+      description: r.description,
+      debit: num(r.debit),
+      credit: num(r.credit),
+      balance: num(r.balance),
+      periodEnding: extractPeriodEnding(r.description),
+    })
+  }
+  return computeLateLodgement({ statementLabel: '', companyName: '', rows }, scope)
 }
