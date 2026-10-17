@@ -17,6 +17,7 @@
     "test:db": "vitest run --config vitest.db.config.ts",
     "figures:snapshot": "vitest run --config vitest.figures.config.ts snapshot",
     "figures:check": "vitest run --config vitest.figures.config.ts check",
+    "figures:dpn": "vitest run --config vitest.figures.config.ts dpn",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },

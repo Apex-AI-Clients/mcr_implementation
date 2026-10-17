@@ -33,6 +33,22 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
   upgrade: `npm install --save-exact https://cdn.sheetjs.com/xlsx-<version>/xlsx-<version>.tgz`,
   then `npm run test -- src/lib/sbr/import`.
 
+## Open reminder: OpenRouter and ATO data
+
+**Unconfirmed (17 Oct 2026):** whether OpenRouter, or the model provider behind
+it, retains or trains on what we send has not yet been confirmed with the
+company's AI team for ATO data. Until it is, keep what goes to it to a minimum:
+
+- The AI summaries (lodgement analysis, financials comparison) are generated
+  only when staff open those pages, never in an automatic run.
+- Director penalty notices are never sent to any AI model. They are read with
+  deterministic text parsing (`src/lib/dpn/`), in memory, on our own server.
+- The financial statement extraction still sends statement PDFs to OpenRouter,
+  as before.
+
+Remove this section once the AI team has confirmed the terms, and record what
+they confirmed.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
