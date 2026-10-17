@@ -141,9 +141,25 @@ export function mergeAnnualYears(slots: StoredStatementSlot[]): MergedStatement[
     .filter((m): m is MergedStatement => m !== null)
 }
 
-/** The latest FY's current-period statement, its halves merged. */
+/**
+ * Financial years whose current-period statement is superseded: the year
+ * already has an annual statement (its own file, or a later file's
+ * comparative column). A part-year snapshot of a year that has since been
+ * reported in full is not used anywhere.
+ */
+export function supersededCurrentPeriodYears(slots: StoredStatementSlot[]): Set<number> {
+  const annualYears = new Set(mergeAnnualYears(slots).map((m) => m.statement.financialYear))
+  return new Set(
+    slots
+      .filter((s) => s.sourceColumn === 'current_period' && annualYears.has(s.financialYear))
+      .map((s) => s.financialYear),
+  )
+}
+
+/** The latest FY's current-period statement, its halves merged. Superseded years are skipped. */
 export function mergeCurrentPeriod(slots: StoredStatementSlot[]): MergedStatement | null {
-  const current = slots.filter((s) => s.sourceColumn === 'current_period')
+  const superseded = supersededCurrentPeriodYears(slots)
+  const current = slots.filter((s) => s.sourceColumn === 'current_period' && !superseded.has(s.financialYear))
   if (current.length === 0) return null
   const latest = Math.max(...current.map((s) => s.financialYear))
   return merge(current.filter((s) => s.financialYear === latest))
@@ -159,7 +175,11 @@ export function latestBalanceSheet(
   { preferCurrentPeriod = false } = {},
 ): { slot: StoredStatementSlot; balanceSheet: ExtractedBalanceSheet } | null {
   const rank: Record<FinancialStatementSourceColumn, number> = { primary: 0, current_period: 1, comparative: 2 }
-  const withBs = slots.filter((s) => s.balanceSheet !== null)
+  // A superseded current period is not used, so its balance sheet cannot win.
+  const superseded = supersededCurrentPeriodYears(slots)
+  const withBs = slots.filter(
+    (s) => s.balanceSheet !== null && !(s.sourceColumn === 'current_period' && superseded.has(s.financialYear)),
+  )
   if (withBs.length === 0) return null
   const ordered = [...withBs].sort((a, b) => {
     if (preferCurrentPeriod) {

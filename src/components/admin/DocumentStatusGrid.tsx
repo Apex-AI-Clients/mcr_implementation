@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
+import { CHECKLIST_ORDER, CATEGORY_META, displayCategory } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { uploadClientDocument } from '@/lib/storage/browserUpload'
@@ -36,8 +36,10 @@ export function DocumentStatusGrid({
   const refresh = onDocumentDeleted ?? (() => router.refresh())
   const byCategory = new Map<string, DocumentRecord[]>()
   for (const doc of documents) {
-    const existing = byCategory.get(doc.docCategory) ?? []
-    byCategory.set(doc.docCategory, [...existing, doc])
+    // Files uploaded under the two older financials categories show under
+    // the one Financial Statements card.
+    const card = displayCategory(doc.docCategory)
+    byCategory.set(card, [...(byCategory.get(card) ?? []), doc])
   }
 
   return (
@@ -99,7 +101,7 @@ export function DocumentStatusGrid({
             )}
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
-            {category === 'historical_financials' && clientId && !readOnly && (
+            {category === 'financial_statements' && clientId && !readOnly && (
               <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
             )}
 

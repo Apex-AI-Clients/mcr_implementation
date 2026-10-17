@@ -20,6 +20,8 @@
  *
  * Nothing in this module does auth — callers are responsible for that.
  */
+import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
+import { applyPeriodOverride, periodOverrideOf } from '@/lib/financials/periodOverride'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
@@ -100,6 +102,8 @@ interface DocumentRow {
   original_filename: string
   doc_category: string
   uploaded_at: string | null
+  fs_override_kind: string | null
+  fs_override_fy: number | null
 }
 
 interface ExtractOptions {
@@ -125,9 +129,9 @@ export async function extractAllFinancials(
 
   let docsQuery = supabase
     .from('documents')
-    .select('id, file_path, original_filename, doc_category, uploaded_at')
+    .select('id, file_path, original_filename, doc_category, uploaded_at, fs_override_kind, fs_override_fy')
     .eq('client_id', clientId)
-    .in('doc_category', ['historical_financials', 'current_financials'])
+    .in('doc_category', FINANCIAL_STATEMENT_CATEGORIES)
     .order('uploaded_at', { ascending: true })
 
   if (Array.isArray(options.documentIds) && options.documentIds.length > 0) {
@@ -246,9 +250,13 @@ async function processDocument(
     const pdfBytes = new Uint8Array(arrayBuffer)
     const sizeMb = (pdfBytes.length / (1024 * 1024)).toFixed(2)
 
-    // Our own read of the text layer first: what the file is, and where.
-    const prepass = await runFinancialsPrepass(pdfBytes)
+    // Our own read of the text layer first: what the file is, and where. A
+    // year or role staff set for this file replaces what its headings say.
+    const override = applyPeriodOverride(await runFinancialsPrepass(pdfBytes), periodOverrideOf(doc))
+    const prepass = override.prepass
     const plan = planDocument(prepass)
+    // A file that is not extracted (a trust deed, a bare tax return) ignores it.
+    if (override.warning && plan.extract) plan.warnings.push(override.warning)
     console.log(
       `${tag} downloaded ${sizeMb}MB; pre-pass kind=${prepass.classification.kind} failure=${prepass.failure ?? 'none'} encrypted=${prepass.encrypted}`,
     )
@@ -640,8 +648,10 @@ export async function runComparisonJob(params: {
   clientId: string
   mode: 'full' | 'compare'
   supabase: SupabaseClient
+  /** Full mode only: extract just these files (one whose year was overridden), then compare. */
+  documentIds?: string[]
 }): Promise<void> {
-  const { jobId, clientId, mode, supabase } = params
+  const { jobId, clientId, mode, supabase, documentIds } = params
   // The function's clock starts with the request; extraction must leave room
   // for the comparison and summary after it.
   const jobStart = Date.now()
@@ -674,6 +684,7 @@ export async function runComparisonJob(params: {
       // Keep pacing light in the background so most of the duration budget goes
       // to extraction rather than idle waiting.
       const ext = await extractAllFinancials(clientId, supabase, {
+        documentIds,
         interDocumentDelayMs: 2_000,
         deadline: jobStart + EXTRACTION_PHASE_BUDGET_MS,
       })

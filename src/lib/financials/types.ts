@@ -105,6 +105,8 @@ export interface ExtractionWarning {
     | 'loan_unconfirmed'
     | 'lines_incomplete'
     | 'column_not_extracted'
+    // Staff set this file's year, or annual vs current period (migration 0031).
+    | 'period_override'
   message: string
   rawLabel?: string
   rawValue?: string

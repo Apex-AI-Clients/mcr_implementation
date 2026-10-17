@@ -10,7 +10,7 @@ interface Props {
 }
 
 /**
- * Rendered inside the historical-financials card of DocumentStatusGrid.
+ * Rendered inside the Financial Statements card of DocumentStatusGrid.
  * Navigates to the comparison page. Renders nothing if fewer than 2 PDFs
  * are present — comparison needs at least two years.
  */

@@ -24,6 +24,8 @@ import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
 import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
 import type { StatementCoverage } from '@/lib/financials/coverage'
+import type { FinancialFileRow } from '@/lib/financials/financialFiles'
+import { FinancialFilesTable } from '@/components/admin/financials/FinancialFilesTable'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -43,6 +45,10 @@ interface Props {
   initialJobId: string | null
   /** Which statement each year has, from the stored statements as they are now. */
   coverage: StatementCoverage
+  /** Each financial statement file, what it was read as, and whether it is used. */
+  files: FinancialFileRow[]
+  /** The financial years a file's override can name. */
+  overrideYears: number[]
   /** Set when a financials document was deleted after the comparison was built. */
   initialStaleSince: string | null
   /**
@@ -87,6 +93,8 @@ export function ComparisonClient({
   initialExtraction,
   initialJobId,
   coverage,
+  files,
+  overrideYears,
   initialStaleSince,
   showDiagnostics,
 }: Props) {
@@ -186,7 +194,7 @@ export function ComparisonClient({
   )
 
   const startJob = useCallback(
-    async (mode: JobMode) => {
+    async (mode: JobMode, documentIds?: string[]) => {
       clearPoll()
       setError(null)
       setErrors([])
@@ -198,7 +206,7 @@ export function ComparisonClient({
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode }),
+            body: JSON.stringify(documentIds ? { mode, documentIds } : { mode }),
           },
         )
         const data = (await res.json()) as { jobId?: string; error?: string }
@@ -393,11 +401,20 @@ export function ComparisonClient({
         </div>
       )}
 
-      {/* Which statement each year has. Built fresh from storage on every load. */}
-      {showDiagnostics && coverage.columns.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-3">Statements on file</h3>
+      {/* Which statement each year has, and what each file was read as.
+          Built fresh from storage on every load. Shown to everyone: the year
+          and type of a file whose headings mislead are set here. */}
+      {(coverage.columns.length > 0 || files.length > 0) && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
           <StatementCoverageTable coverage={coverage} />
+          <FinancialFilesTable
+            clientId={clientId}
+            files={files}
+            yearOptions={overrideYears}
+            running={running}
+            onReread={(documentIds) => void startJob('full', documentIds)}
+          />
         </div>
       )}
 

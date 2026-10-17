@@ -10,6 +10,8 @@
  * Body (optional): { mode?: 'full' | 'compare' }
  *   - 'full'    (default) — extract all PDFs, then build the comparison.
  *   - 'compare'           — rebuild the comparison from existing statements only.
+ * With 'full', documentIds (optional) limits extraction to those files — one
+ * whose year staff just set — and the rest keep what was extracted before.
  *
  * Returns: { jobId, reused } — reused=true when an active job already existed.
  *
@@ -21,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { runComparisonJob } from '@/lib/financials/comparisonJob'
+import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { closeDeadJob, isJobDead } from '@/lib/financials/jobLiveness'
 
 export const maxDuration = 800
@@ -48,13 +51,20 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const { id: clientId } = await params
 
-    let body: { mode?: 'full' | 'compare' } = {}
+    let body: { mode?: 'full' | 'compare'; documentIds?: unknown } = {}
     try {
-      body = (await req.json()) as { mode?: 'full' | 'compare' }
+      body = (await req.json()) as typeof body
     } catch {
       // optional body
     }
     const mode: 'full' | 'compare' = body.mode === 'compare' ? 'compare' : 'full'
+    // Full mode may name the files to extract (one whose year staff just
+    // set); the rest keep what was extracted before. Checked below to be
+    // this client's financial statements.
+    const documentIds =
+      mode === 'full' && Array.isArray(body.documentIds)
+        ? body.documentIds.filter((id): id is string => typeof id === 'string').slice(0, 50)
+        : undefined
 
     const supabase = getSupabaseServerClient()
 
@@ -65,6 +75,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       .maybeSingle()
     if (!client) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
+    }
+
+    if (documentIds && documentIds.length > 0) {
+      const { data: owned } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('client_id', clientId)
+        .in('doc_category', FINANCIAL_STATEMENT_CATEGORIES)
+        .in('id', documentIds)
+      if ((owned?.length ?? 0) !== new Set(documentIds).size) {
+        return NextResponse.json({ error: 'Unknown document for this client.' }, { status: 400 })
+      }
     }
 
     // Guard against duplicate runs (e.g. double-click). If a live job already
@@ -112,7 +134,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // Run the work after the response is sent. Bounded by maxDuration above.
     after(async () => {
-      await runComparisonJob({ jobId: job.id, clientId, mode, supabase })
+      await runComparisonJob({ jobId: job.id, clientId, mode, supabase, documentIds })
     })
 
     return NextResponse.json({ jobId: job.id, reused: false })

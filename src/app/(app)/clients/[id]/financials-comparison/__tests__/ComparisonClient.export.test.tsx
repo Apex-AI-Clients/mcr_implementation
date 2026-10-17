@@ -76,6 +76,8 @@ function renderPage({ showDiagnostics = true, withCoverage = false } = {}) {
       initialExtraction={{ extractedCount: 2, documentCount: 2, hasUnextracted: false }}
       initialJobId={null}
       coverage={withCoverage ? coverage : { columns: [], rows: { income_statement: [], balance_sheet: [] } }}
+      files={[]}
+      overrideYears={[2027, 2026, 2025]}
       initialStaleSince={null}
       showDiagnostics={showDiagnostics}
     />,
@@ -114,9 +116,10 @@ describe('diagnostics (SHOW_FINANCIALS_DIAGNOSTICS)', () => {
     expect(screen.getByRole('checkbox', { name: 'Include checks in PDF' })).toBeTruthy()
   })
 
-  it('hides them in production (flag off)', () => {
+  it('hides the statement checks in production (flag off), but not "Statements on file"', () => {
+    // Staff set a misread file's year and type there, so it shows for everyone.
     renderPage({ showDiagnostics: false, withCoverage: true })
-    expect(screen.queryByText('Statements on file')).toBeNull()
+    expect(screen.getByText('Statements on file')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Statement checks/ })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Include checks in PDF' })).toBeNull()
     // The comparison itself is still there.

@@ -11,7 +11,7 @@ import { CompanyDetailsForm, type CompanyDetails } from '@/components/portal/Com
 import { ClientDetailsForm } from '@/components/admin/intake/ClientDetailsForm'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
+import { CHECKLIST_ORDER, CATEGORY_META, displayCategory } from '@/lib/constants'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 import type { DocCategory } from '@/lib/constants'
 import { IdentitySummary } from '@/components/identity/IdentitySummary'
@@ -102,7 +102,7 @@ export function IntakeClient({
 
     const ready = state.phase === 'ready' ? state : null
     const docs = ready ? ready.documents : []
-    const uploadedCategories = new Set(docs.map((d) => d.docCategory))
+    const uploadedCategories = new Set(docs.map((d) => displayCategory(d.docCategory)))
     const detailsComplete = ready ? Boolean(ready.clientName && ready.clientEmail) : false
 
     const trustDeedIdx = CHECKLIST_ORDER.indexOf('trust_deed')

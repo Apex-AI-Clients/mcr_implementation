@@ -1,5 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { REQUIRED_CATEGORIES } from '@/lib/constants'
+import { REQUIRED_CATEGORIES, displayCategory, type DocCategory } from '@/lib/constants'
 
 /**
  * Single definition of "complete" for a client file.
@@ -62,7 +62,7 @@ export async function getCompletenessSummary(): Promise<CompletenessSummary> {
     if (doc.status === 'rejected' || !active.has(doc.client_id)) continue
     totalDocuments++
     if (!docsPerClient.has(doc.client_id)) docsPerClient.set(doc.client_id, new Set())
-    docsPerClient.get(doc.client_id)!.add(doc.doc_category)
+    docsPerClient.get(doc.client_id)!.add(displayCategory(doc.doc_category as DocCategory))
   }
 
   const requiredTotal = REQUIRED_CATEGORIES.length

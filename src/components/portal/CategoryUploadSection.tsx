@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import {
   CATEGORY_META,
   MAX_FILE_SIZE_BYTES,
+  displayCategory,
   getCurrentFinancialPeriod,
   getHistoricalFinancialPeriod,
 } from '@/lib/constants'
@@ -41,7 +42,8 @@ export function CategoryUploadSection({
   const [uploadedCount, setUploadedCount] = useState(0)
   const [totalFiles, setTotalFiles] = useState(0)
 
-  const categoryDocs = documents.filter((d) => d.docCategory === category)
+  // Older financials uploads show under the one Financial Statements step.
+  const categoryDocs = documents.filter((d) => displayCategory(d.docCategory) === category)
   const hasFiles = categoryDocs.length > 0
 
   const onDrop = useCallback(
@@ -131,15 +133,11 @@ export function CategoryUploadSection({
             <p className="text-sm font-semibold text-foreground leading-relaxed">
               <StyledDescription text={meta.description} />
             </p>
-            {category === 'current_financials' && (
-              <p className="mt-3 text-base font-bold text-destructive">
-                {getCurrentFinancialPeriod()}
-              </p>
-            )}
-            {category === 'historical_financials' && (
-              <p className="mt-3 text-base font-bold text-destructive">
-                {getHistoricalFinancialPeriod()}
-              </p>
+            {category === 'financial_statements' && (
+              <div className="mt-3 space-y-0.5 text-base font-bold text-destructive">
+                <p>Last 4 years: {getHistoricalFinancialPeriod()}</p>
+                <p>Current period: {getCurrentFinancialPeriod()}</p>
+              </div>
             )}
           </div>
           {meta.externalLink && (
