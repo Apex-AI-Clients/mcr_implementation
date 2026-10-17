@@ -119,11 +119,25 @@ async function fillRequired(
   dialog: HTMLElement,
 ) {
   // Synthetic numbers that pass their check digits: the company's own ABN is
-  // 11 + its ACN.
-  await user.type(within(dialog).getByLabelText('Company name'), 'Whitlock Civil Pty Ltd')
-  await user.type(within(dialog).getByLabelText('ACN'), '123456780')
-  await user.type(within(dialog).getByLabelText('Company ABN'), '11123456780')
+  // 11 + its ACN. Pasted, not typed: these cases are about what happens after
+  // Convert, and typing re-renders the whole dialog on every keystroke, which
+  // under a full parallel run took them past the timeout.
+  for (const [label, value] of [
+    ['Company name', 'Whitlock Civil Pty Ltd'],
+    ['ACN', '123456780'],
+    ['Company ABN', '11123456780'],
+  ] as const) {
+    await user.click(within(dialog).getByLabelText(label))
+    await user.paste(value)
+  }
 }
+
+/**
+ * For the cases built on openAndFill: they render the leads table and the
+ * full conversion dialog, then drive it. Comfortably inside this alone, but
+ * a full parallel run on a laptop has taken them past the 20s default.
+ */
+const SLOW = { timeout: 60_000 }
 
 /** Open the dialog and complete it, for the cases that are about what
  *  happens after Convert rather than about the form itself. */
@@ -249,7 +263,7 @@ describe('ConvertToClientDialog', () => {
     expect(within(dialog).queryByText(/Fill it in if the company acts as trustee of a trust/)).toBeNull()
   })
 
-  it('converts a Company with no trust, and sends a trust typed for one', async () => {
+  it('converts a Company with no trust, and sends a trust typed for one', SLOW, async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch(201, { id: 'client-1' })
     renderList()
@@ -393,7 +407,7 @@ describe('ConvertToClientDialog', () => {
     expect(abr.getAttribute('href')).toBe('https://abr.business.gov.au/ABN/View?abn=51824753556')
   })
 
-  it('sends the details with the client so intake opens filled in', async () => {
+  it('sends the details with the client so intake opens filled in', SLOW, async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch(201, { id: 'client-1' })
     renderList()
@@ -424,7 +438,7 @@ describe('ConvertToClientDialog', () => {
     expect(stageSelect().value).toBe('prospect')
   })
 
-  it('creates the file, moves the lead to client and offers a link', async () => {
+  it('creates the file, moves the lead to client and offers a link', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(201, { id: 'client-1' })
     renderList()
@@ -443,7 +457,7 @@ describe('ConvertToClientDialog', () => {
     )
   })
 
-  it('offers to link to the existing file on a 409 instead of showing a raw error', async () => {
+  it('offers to link to the existing file on a 409 instead of showing a raw error', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(409, { error: 'A client with this email already exists', clientId: 'client-9' })
     renderList()
@@ -459,7 +473,7 @@ describe('ConvertToClientDialog', () => {
     expect(stageSelect().value).toBe('prospect')
   })
 
-  it('points to the Archive, and offers no link, when the email belongs to an archived file', async () => {
+  it('points to the Archive, and offers no link, when the email belongs to an archived file', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(409, {
       error: 'An archived client file has this email',
@@ -477,7 +491,7 @@ describe('ConvertToClientDialog', () => {
     expect(stageSelect().value).toBe('prospect')
   })
 
-  it('links the lead to the existing file without creating a second one', async () => {
+  it('links the lead to the existing file without creating a second one', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(409, { error: 'exists', clientId: 'client-9' })
     renderList()
@@ -491,7 +505,7 @@ describe('ConvertToClientDialog', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('reports a failure and allows a retry when nothing was created', async () => {
+  it('reports a failure and allows a retry when nothing was created', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(500, { error: 'Failed to create client' })
     renderList()
@@ -506,7 +520,7 @@ describe('ConvertToClientDialog', () => {
     expect(stageSelect().value).toBe('prospect')
   })
 
-  it('says so, and offers no retry, when the file was created but the lead was not updated', async () => {
+  it('says so, and offers no retry, when the file was created but the lead was not updated', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(201, { id: 'client-1' })
     // The Stage 4 shape of this failure: the client file is created, then the
@@ -544,7 +558,7 @@ describe('ConvertToClientDialog', () => {
  * convert.
  */
 describe('ConvertToClientDialog: the lead is linked by the create request', () => {
-  it('sends the lead id with the create request, and nothing after it', async () => {
+  it('sends the lead id with the create request, and nothing after it', SLOW, async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch(201, {
       id: 'client-1',
@@ -573,7 +587,7 @@ describe('ConvertToClientDialog: the lead is linked by the create request', () =
     expect(stageSelect().value).toBe('client')
   })
 
-  it('still marks the lead itself when an older route did not', async () => {
+  it('still marks the lead itself when an older route did not', SLOW, async () => {
     const user = userEvent.setup()
     mockFetch(201, { id: 'client-1' })
     const conversion = vi.fn(async () => {})

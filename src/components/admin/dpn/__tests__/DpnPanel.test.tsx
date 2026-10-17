@@ -105,8 +105,14 @@ describe('DpnPanel', () => {
   })
 })
 
+/**
+ * The form renders a dialog with a row of six inputs per period. Fine alone;
+ * a full parallel run on a laptop has taken these past the 20s default.
+ */
+const SLOW = { timeout: 60_000 }
+
 describe('DpnManualForm', () => {
-  it('opens prefilled with what was read, and saves cents as entered manually', async () => {
+  it('opens prefilled with what was read, and saves cents as entered manually', SLOW, async () => {
     const user = userEvent.setup()
     render(<DpnPanel clientId="client-1" data={data()} />)
     await user.click(screen.getByRole('button', { name: 'Correct by hand' }))
@@ -117,7 +123,7 @@ describe('DpnManualForm', () => {
     expect(col3.value).toBe('900.00')
 
     await user.clear(col3)
-    await user.type(col3, '950')
+    await user.paste('950')
     expect(within(dialog).getByText('3 ≠ 4 + 5')).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Save as entered manually' }))
 
@@ -128,7 +134,7 @@ describe('DpnManualForm', () => {
     expect(JSON.parse(init.body).rows[0]).toMatchObject({ column3: 950_00, column4: 800_00 })
   })
 
-  it('says which row is missing an amount', async () => {
+  it('says which row is missing an amount', SLOW, async () => {
     const user = userEvent.setup()
     render(<DpnPanel clientId="client-1" data={data()} />)
     await user.click(screen.getByRole('button', { name: 'Correct by hand' }))
