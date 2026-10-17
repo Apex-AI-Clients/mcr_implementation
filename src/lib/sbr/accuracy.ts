@@ -57,3 +57,28 @@ export function leaveOneOut(cases: readonly HistoricalSbrCase[]): LeaveOneOutRes
     byRejectedNeighbours: [...buckets.values()].sort((a, b) => a.rejectedNeighbours - b.rejectedNeighbours),
   }
 }
+
+/**
+ * leaveOneOut, remembered for the case set it was computed on. It is
+ * quadratic in the number of cases (about 1s at 1,000, 10s at 3,000), and the
+ * set only changes with an import or an undo, so a prediction reuses it.
+ *
+ * Keyed by everything the result depends on: each case's id, outcome,
+ * acceptance and features. One entry per server instance; a changed case set
+ * replaces it.
+ */
+let remembered: { key: string; result: LeaveOneOutResult | null } | null = null
+
+export function caseSetKey(cases: readonly HistoricalSbrCase[]): string {
+  return cases
+    .map((c) => `${c.id}:${c.outcomePercent}:${c.accepted ? 1 : 0}:${JSON.stringify(c.features)}`)
+    .join('|')
+}
+
+export function cachedLeaveOneOut(cases: readonly HistoricalSbrCase[]): LeaveOneOutResult | null {
+  const key = caseSetKey(cases)
+  if (remembered?.key === key) return remembered.result
+  const result = leaveOneOut(cases)
+  remembered = { key, result }
+  return result
+}

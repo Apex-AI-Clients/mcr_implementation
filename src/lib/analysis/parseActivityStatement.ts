@@ -83,6 +83,31 @@ export function extractPeriodEnding(description: string): Date | null {
 }
 
 /**
+ * Whether a CSV is an ATO activity statement account export, from its own
+ * content rather than its filename: line 1 is the statement label
+ * ("Activity statement 002"), line 3 the six-column header. The income tax
+ * and super account exports share that header, so the label decides.
+ */
+export function isActivityStatementCsv(csvText: string): boolean {
+  let rows: string[][]
+  try {
+    // The first three lines are all that is needed.
+    const head = csvText.replace(/\r\n?/g, '\n').split('\n').slice(0, 6).join('\n')
+    rows = parse(head, { relax_column_count: true, relax_quotes: true, skip_empty_lines: true })
+  } catch {
+    return false
+  }
+  if (rows.length < 3) return false
+  const label = rows[0]?.[0]?.trim() ?? ''
+  const header = rows[2]
+  return (
+    /^activity statement\b/i.test(label) &&
+    header.length === EXPECTED_HEADER.length &&
+    EXPECTED_HEADER.every((col, i) => header[i].trim() === col)
+  )
+}
+
+/**
  * Parse an ATO Activity Statement CSV into typed rows.
  *
  * Format:

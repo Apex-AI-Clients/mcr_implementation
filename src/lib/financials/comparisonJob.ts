@@ -508,6 +508,12 @@ async function recordDocumentExtraction(
 export async function buildAndPersistComparison(
   clientId: string,
   supabase: SupabaseClient,
+  /**
+   * false for automatic runs (on upload or delete): the figures only, and the
+   * old summary cleared because it described the comparison before. Staff get
+   * the summary when they open the page (ensureComparisonSummary).
+   */
+  options: { aiSummary: boolean } = { aiSummary: true },
 ): Promise<BuildComparisonResult> {
   let slots: StoredStatementSlot[]
   try {
@@ -541,12 +547,14 @@ export async function buildAndPersistComparison(
   // AI summary — best-effort; a failure here must not fail the job.
   let aiText: string | null = null
   let aiModel: string | null = null
-  try {
-    const summary = await generateFinancialsComparisonSummary({ comparison })
-    aiText = summary.text
-    aiModel = summary.model
-  } catch (err) {
-    console.error('[financials-comparison] AI summary failed', err)
+  if (options.aiSummary) {
+    try {
+      const summary = await generateFinancialsComparisonSummary({ comparison })
+      aiText = summary.text
+      aiModel = summary.model
+    } catch (err) {
+      console.error('[financials-comparison] AI summary failed', err)
+    }
   }
 
   const now = new Date().toISOString()

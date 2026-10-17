@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
-import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
-import { computeLateLodgement } from '@/lib/analysis/computeLateLodgement'
-import { generateLodgementAiSummary } from '@/lib/ai/lodgementSummary'
+import { analyseAndStoreLodgement, findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
+
+/**
+ * POST — analyse the client's activity statement export now, with its AI
+ * summary: staff pressed the button on the lodgement page. Automatic runs (on
+ * upload) store the figures alone; see lib/analysis/autoRun.ts.
+ *
+ * The export is found by its content, not its filename.
+ */
 
 interface Params {
   params: Promise<{ id: string }>
@@ -28,128 +34,44 @@ export async function POST(_req: NextRequest, { params }: Params) {
     const { id } = await params
     const supabase = getSupabaseServerClient()
 
-    // Verify the client exists
-    const { data: client } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('id', id)
-      .maybeSingle()
-
+    const { data: client } = await supabase.from('clients').select('id').eq('id', id).maybeSingle()
     if (!client) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
     }
 
-    // Find the most recent Activity Statement CSV for this client
-    const { data: doc } = await supabase
-      .from('documents')
-      .select('id, file_path, original_filename')
-      .eq('client_id', id)
-      .eq('doc_category', 'integrated_client_account')
-      .ilike('original_filename', '%activity statement%.csv')
-      .order('uploaded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!doc) {
+    const file = await findActivityStatementCsv(supabase, id)
+    if (!file) {
       return NextResponse.json(
         { error: 'No Activity Statement Account CSV uploaded for this client.' },
         { status: 404 },
       )
     }
 
-    // Download the file bytes from Supabase Storage server-side
-    const { data: blob, error: downloadError } = await supabase.storage
-      .from('documents')
-      .download(doc.file_path)
-
-    if (downloadError || !blob) {
-      console.error('[POST /api/admin/clients/[id]/analyse-lodgements] download error', downloadError)
-      return NextResponse.json({ error: 'Failed to download file from storage.' }, { status: 500 })
+    const outcome = await analyseAndStoreLodgement(supabase, id, file, { aiSummary: true })
+    if (!outcome.ok) {
+      return NextResponse.json({ error: outcome.error }, { status: 500 })
     }
-
-    const csvText = await blob.text()
-
-    // Parse and compute
-    const parsed = parseActivityStatementCsv(csvText)
-    const result = computeLateLodgement(parsed)
-
-    // Generate AI summary — skip if no DPN exposure
-    let aiText: string | null = null
-    let aiModel: string | null = null
-
-    if (result.dpnRisk.totalGrossLate > 0 || result.summary.numberOfLateLodgements > 0) {
-      try {
-        const aiResult = await generateLodgementAiSummary({
-          dpnRisk: result.dpnRisk,
-          debtBreakdown: result.debtBreakdown,
-          summary: result.summary,
-        })
-        aiText = aiResult.text
-        aiModel = aiResult.model
-      } catch (err) {
-        console.error('[POST /api/admin/clients/[id]/analyse-lodgements] AI summary failed', err)
-      }
-    }
-
-    const now = new Date().toISOString()
-
-    // Upsert into lodgement_analyses keyed by document_id
-    const { data: upserted, error: upsertError } = await supabase
-      .from('lodgement_analyses')
-      .upsert(
-        {
-          client_id: id,
-          document_id: doc.id,
-          source_filename: doc.original_filename,
-          statement_label: parsed.statementLabel,
-          company_name_in_csv: parsed.companyName,
-          row_count: result.rows.length,
-          number_of_late_lodgements: result.summary.numberOfLateLodgements,
-          cumulative_days_late: result.summary.cumulativeDaysLate,
-          rows: result.rows as unknown as Record<string, unknown>[],
-          warnings: result.warnings as unknown as Record<string, unknown>[],
-          dpn_risk: result.dpnRisk as unknown as Record<string, unknown>,
-          debt_breakdown: result.debtBreakdown as unknown as Record<string, unknown>,
-          ai_summary: aiText ?? null,
-          ai_summary_generated_at: aiText ? now : null,
-          ai_summary_model: aiModel ?? null,
-          analysed_at: now,
-        },
-        { onConflict: 'document_id' },
-      )
-      .select()
-      .single()
-
-    if (upsertError) {
-      console.error(
-        '[POST /api/admin/clients/[id]/analyse-lodgements] upsert error',
-        upsertError.message,
-        upsertError.details,
-        upsertError.hint,
-        upsertError.code,
-      )
-      return NextResponse.json({ error: 'Failed to persist analysis.' }, { status: 500 })
-    }
+    const { row, result } = outcome
 
     return NextResponse.json({
-      id: upserted.id,
-      clientId: upserted.client_id,
-      documentId: upserted.document_id,
-      sourceFilename: upserted.source_filename,
-      statementLabel: upserted.statement_label,
-      companyNameInCsv: upserted.company_name_in_csv,
-      rowCount: upserted.row_count,
+      id: row.id,
+      clientId: row.client_id,
+      documentId: row.document_id,
+      sourceFilename: row.source_filename,
+      statementLabel: row.statement_label,
+      companyNameInCsv: row.company_name_in_csv,
+      rowCount: row.row_count,
       summary: {
-        numberOfLateLodgements: upserted.number_of_late_lodgements,
-        cumulativeDaysLate: upserted.cumulative_days_late,
+        numberOfLateLodgements: row.number_of_late_lodgements,
+        cumulativeDaysLate: row.cumulative_days_late,
       },
       dpnRisk: result.dpnRisk,
       debtBreakdown: result.debtBreakdown,
-      aiSummary: aiText,
-      aiSummaryGeneratedAt: aiText ? now : null,
+      aiSummary: row.ai_summary,
+      aiSummaryGeneratedAt: row.ai_summary_generated_at,
       rows: result.rows,
       warnings: result.warnings,
-      analysedAt: upserted.analysed_at,
+      analysedAt: row.analysed_at,
     })
   } catch (err) {
     console.error('[POST /api/admin/clients/[id]/analyse-lodgements]', err)

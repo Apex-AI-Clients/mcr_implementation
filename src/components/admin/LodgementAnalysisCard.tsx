@@ -506,6 +506,35 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // An analysis stored by an automatic run (on upload) has its figures but no
+  // summary: write it now that someone is looking. Only when there is
+  // something late to explain, as when staff run it themselves.
+  useEffect(() => {
+    if (!initialAnalysis || initialAnalysis.aiSummary) return
+    const late =
+      initialAnalysis.summary.numberOfLateLodgements > 0 || (initialAnalysis.dpnRisk?.totalGrossLate ?? 0) > 0
+    if (!late) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/clients/${clientId}/analyse-lodgements/summary`, { method: 'POST' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { aiSummary: string | null; aiSummaryGeneratedAt: string | null }
+        if (data.aiSummary) {
+          setAnalysis((prev) =>
+            prev ? { ...prev, aiSummary: data.aiSummary, aiSummaryGeneratedAt: data.aiSummaryGeneratedAt } : prev,
+          )
+        }
+      } catch {
+        // The figures stand on their own; the summary can be written next visit.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function handleExport() {
     if (!analysis) return
     const csv = buildExportCsv(analysis)

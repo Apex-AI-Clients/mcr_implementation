@@ -244,6 +244,28 @@ export function ComparisonClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // A comparison built by an automatic run (on upload or delete) has no
+  // summary: write it now that someone is looking, unless the comparison is
+  // out of date or being rebuilt.
+  useEffect(() => {
+    if (!initialComparison || initialAiSummary || initialStaleSince || initialJobId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/clients/${clientId}/financials-comparison/summary`, { method: 'POST' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { aiSummary: string; aiSummaryGeneratedAt: string }
+        setAiSummary(data.aiSummary)
+      } catch {
+        // The figures stand on their own; the summary can be written next visit.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // A job found by a later refresh (e.g. after a start request whose answer
   // was lost) is picked up and followed like any other.
   useEffect(() => {

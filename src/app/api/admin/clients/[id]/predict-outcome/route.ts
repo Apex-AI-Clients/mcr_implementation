@@ -28,7 +28,7 @@ import { z } from 'zod'
 import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/server'
 import { predictSbrOutcome } from '@/lib/sbr/predictOutcome'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
-import { leaveOneOut } from '@/lib/sbr/accuracy'
+import { cachedLeaveOneOut } from '@/lib/sbr/accuracy'
 import { DEFAULT_PRACTITIONER_FEE_RATE, MAX_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import {
   TRAINING_COLUMNS,
@@ -274,7 +274,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const prediction = predictSbrOutcome(inputFeatures, trainingSet, {
       creditorAmount: creditorAmount ?? undefined,
       sbrPractitionerFeeRate: practitionerFeeRate,
-      accuracy: leaveOneOut(inUse),
+      accuracy: cachedLeaveOneOut(inUse),
     })
 
     const now = new Date().toISOString()

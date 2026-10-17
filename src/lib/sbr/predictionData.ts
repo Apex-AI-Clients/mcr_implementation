@@ -5,7 +5,7 @@
  */
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
-import { leaveOneOut, type LeaveOneOutResult } from './accuracy'
+import { cachedLeaveOneOut, leaveOneOut, type LeaveOneOutResult } from './accuracy'
 import { TRAINING_COLUMNS, trainingSet, type TrainingRow } from './historicalCases'
 import { NO_PAYMENTS_EVER_DAYS, SHARE_CHECK } from './import/config'
 import { listImports, type ImportHistoryEntry } from './import/store'
@@ -114,7 +114,7 @@ export async function loadPredictionData(supabase: ServerClient): Promise<Predic
       initialCases: inUse.length - rows.filter((r) => !r.excluded && r.import_id !== null).length,
       dataChecks: cases.filter((c) => c.dataCheck && !c.excluded).length,
     },
-    accuracy: leaveOneOut(inUse),
+    accuracy: cachedLeaveOneOut(inUse),
     growth: growthPoints(rows, inForce),
     history,
     cases,

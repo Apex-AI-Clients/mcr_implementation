@@ -36,11 +36,11 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       .maybeSingle(),
   ])
 
+  // Any CSV in the account category may be the activity statement export: the
+  // analysis recognises it by its content, not its filename, and says so if
+  // none of them is one.
   const hasActivityStatementCsv = (rawDocs ?? []).some(
-    (d) =>
-      d.doc_category === 'integrated_client_account' &&
-      d.original_filename.toLowerCase().includes('activity statement') &&
-      d.original_filename.toLowerCase().endsWith('.csv'),
+    (d) => d.doc_category === 'integrated_client_account' && d.original_filename.toLowerCase().endsWith('.csv'),
   )
 
   // The saved totals are whatever the code computed on the day; re-run today's

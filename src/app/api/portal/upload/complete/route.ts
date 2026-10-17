@@ -1,10 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { getStoredObjectInfo, removeFromStorage } from '@/lib/storage/upload'
 import { checkUploadRequest } from '@/lib/storage/rules'
 import { recomputeClientStatus } from '@/lib/clients/status'
 import { DPN_CATEGORY, clearNoneIssued, readAndStoreNotice } from '@/lib/dpn/store'
+import { categoryTriggersAnalysis, scheduleClientAnalysis } from '@/lib/analysis/autoRun'
+
+/**
+ * The automatic run started below works inside after(), which shares this
+ * function's time: up to 800s on Vercel Pro with Fluid Compute, as the
+ * comparison start route.
+ */
+export const maxDuration = 800
 
 /**
  * Step 2 of an upload: the browser has put the file in Storage at the path
@@ -79,6 +87,16 @@ export async function POST(req: NextRequest) {
           documentId: document.id,
           error: err instanceof Error ? err.name : 'unknown',
         })
+      }
+    }
+
+    // Work out whatever this file changes, in the background: the lodgement
+    // figures, the statement extraction and comparison. One run per client.
+    if (categoryTriggersAnalysis(String(docCategory))) {
+      try {
+        await scheduleClientAnalysis(supabase, clientId, (task) => after(task))
+      } catch (err) {
+        console.error('[POST /api/portal/upload/complete] scheduling the analysis failed', err instanceof Error ? err.name : 'unknown')
       }
     }
 
