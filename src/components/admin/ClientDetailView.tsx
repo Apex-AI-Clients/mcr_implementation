@@ -11,6 +11,7 @@ import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { getLeadIdForClient } from '@/lib/leads/queries'
 import { formatPhone } from '@/lib/leads/format'
 import { readDirectors } from '@/lib/clients/companyDetails'
+import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { describeDirector } from '@/lib/asic/fill'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { archiveReasonLabel } from '@/lib/clients/archive'
@@ -53,6 +54,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     { data: rawCompany },
     originLeadId,
     comparisonJob,
+    { data: noticeRows },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -67,6 +69,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     // A comparison running in the background, shown as a banner. Archived
     // files cannot start one.
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
+    supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
@@ -112,6 +115,15 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       }
     : null
   const identity = identityDisplay(companyDetails ?? {})
+
+  // The DPN card: each notice checked against this file's ACN and directors.
+  const dpn = buildDpnPanel({
+    documents: documents.filter((d) => d.docCategory === 'director_penalty_notices'),
+    noticeRows: noticeRows ?? [],
+    client,
+    file: { acn: companyDetails?.acnNumber ?? null, directors: companyDetails?.directors ?? [] },
+    todayIso: sydneyToday(),
+  })
 
   // Document status, naming the required categories that have no file yet.
   const statusBadge = documentStatusBadge(client.status, documents.map((d) => d.docCategory))
@@ -317,7 +329,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
         {/* Read-only in the Archive: files can be downloaded, not changed. */}
-        <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} />
+        <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} dpn={dpn} />
       </div>
     </div>
   )

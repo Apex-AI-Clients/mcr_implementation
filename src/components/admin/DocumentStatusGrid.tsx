@@ -9,6 +9,8 @@ import { uploadClientDocument } from '@/lib/storage/browserUpload'
 import { CheckCircle2, XCircle, Download, Trash2, X, Upload } from 'lucide-react'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
+import { DpnPanel } from '@/components/admin/dpn/DpnPanel'
+import type { DpnPanelData } from '@/lib/dpn/view'
 import { formatBytes } from '@/lib/utils'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -19,6 +21,8 @@ interface DocumentStatusGridProps {
   onDocumentDeleted?: () => void
   /** An archived file: downloads only — no upload, delete or analysis. */
   readOnly?: boolean
+  /** The director penalty notices card's notices and "none issued" tick. */
+  dpn?: DpnPanelData
 }
 
 export function DocumentStatusGrid({
@@ -26,6 +30,7 @@ export function DocumentStatusGrid({
   clientId,
   onDocumentDeleted,
   readOnly = false,
+  dpn,
 }: DocumentStatusGridProps) {
   const router = useRouter()
   const refresh = onDocumentDeleted ?? (() => router.refresh())
@@ -78,6 +83,10 @@ export function DocumentStatusGrid({
 
             {!received && (
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
+            )}
+
+            {category === 'director_penalty_notices' && clientId && dpn && (
+              <DpnPanel clientId={clientId} data={dpn} readOnly={readOnly} />
             )}
 
             {clientId && !readOnly && (

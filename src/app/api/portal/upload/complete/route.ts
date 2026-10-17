@@ -4,6 +4,7 @@ import { requireStaffUser } from '@/lib/auth/staff'
 import { getStoredObjectInfo, removeFromStorage } from '@/lib/storage/upload'
 import { checkUploadRequest } from '@/lib/storage/rules'
 import { recomputeClientStatus } from '@/lib/clients/status'
+import { DPN_CATEGORY, clearNoneIssued, readAndStoreNotice } from '@/lib/dpn/store'
 
 /**
  * Step 2 of an upload: the browser has put the file in Storage at the path
@@ -64,6 +65,22 @@ export async function POST(req: NextRequest) {
     if (docError || !document) throw docError
 
     await recomputeClientStatus(supabase, clientId)
+
+    // A director penalty notice is read straight away: in memory, no AI, about
+    // a second. "None issued" can no longer be true, so that tick is cleared.
+    // Neither can fail the upload: the file is stored, and an unread notice
+    // can be read again from the client page.
+    if (docCategory === DPN_CATEGORY) {
+      try {
+        await clearNoneIssued(supabase, clientId)
+        await readAndStoreNotice(supabase, document)
+      } catch (err) {
+        console.error('[POST /api/portal/upload/complete] DPN read failed', {
+          documentId: document.id,
+          error: err instanceof Error ? err.name : 'unknown',
+        })
+      }
+    }
 
     return NextResponse.json({ documentId: document.id }, { status: 201 })
   } catch (err) {
