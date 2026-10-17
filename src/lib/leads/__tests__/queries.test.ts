@@ -72,6 +72,21 @@ describe('withFilters — state', () => {
   })
 })
 
+describe('withFilters — search', () => {
+  it('adds the debt conditions when the term is an amount, read before escaping', () => {
+    const [call] = callsFor({ search: '$120,000' })
+    expect(call[0]).toBe('or')
+    expect(call[1]).toContain(
+      'and(debt_min.lte.120000,or(debt_max.gte.120000,debt_max.is.null)),and(debt_min.is.null,debt_max.gte.120000)',
+    )
+  })
+
+  it('leaves debt out of a search that is not an amount', () => {
+    const [call] = callsFor({ search: '0402 915' })
+    expect(call[1]).not.toContain('debt_')
+  })
+})
+
 describe('withFilters and withSort — latest enquiry', () => {
   it('filters the date range on the latest enquiry, not the date added', () => {
     const calls = callsFor({ dateRange: '30' })

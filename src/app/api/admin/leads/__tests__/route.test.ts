@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
-vi.mock('@/lib/auth/staff', () => ({ requireStaffUser: vi.fn() }))
+vi.mock('@/lib/auth/staff', () => ({
+  requireStaffUser: vi.fn(),
+  staffAuthorName: () => 'Sam',
+}))
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
@@ -11,7 +14,8 @@ import { POST } from '../route'
 
 /**
  * POST /api/admin/leads — the one-lead-per-email rule from migration 0020, as
- * the Add lead dialog meets it. Synthetic data only.
+ * the Add lead dialog meets it: a known email is merged onto the existing lead
+ * as a new enquiry, never refused. Synthetic data only.
  */
 
 const BODY = {
@@ -41,15 +45,17 @@ function request(body: unknown) {
 
 type Result = { data?: unknown; error: { code?: string; message: string } | null }
 
-/** leads.insert() resolves to `insert`; the follow-up lookup to `existing`. */
-function mockLeads(insert: Result, existing: Result = { data: null, error: null }) {
-  const eq = vi.fn(() => ({ maybeSingle: () => Promise.resolve(existing) }))
-  const chain = {
-    insert: vi.fn(() => Promise.resolve(insert)),
-    select: vi.fn(() => ({ eq })),
-  }
-  vi.mocked(getSupabaseServerClient).mockReturnValue({ from: () => chain } as never)
-  return { chain, eq }
+/** leads.insert() resolves to `insert`; ingest_lead_submission to `rpc`. */
+function mockLeads(insert: Result, rpc: Result = { data: null, error: null }) {
+  const chain = { insert: vi.fn(() => Promise.resolve(insert)) }
+  const rpcFn = vi.fn(() => Promise.resolve(rpc))
+  vi.mocked(getSupabaseServerClient).mockReturnValue({ from: () => chain, rpc: rpcFn } as never)
+  return { chain, rpc: rpcFn }
+}
+
+const EMAIL_TAKEN = {
+  code: '23505',
+  message: 'duplicate key value violates unique constraint "leads_email_lower_key"',
 }
 
 beforeEach(() => {
@@ -67,23 +73,52 @@ describe('POST /api/admin/leads', () => {
     )
   })
 
-  it('answers 409 with the existing lead when the email already has one', async () => {
-    const { eq } = mockLeads(
-      {
-        error: {
-          code: '23505',
-          message: 'duplicate key value violates unique constraint "leads_email_lower_key"',
-        },
-      },
-      { data: { id: 'ld_existing' }, error: null },
+  it('merges a known email onto the existing lead instead of refusing it', async () => {
+    const { rpc } = mockLeads(
+      { error: EMAIL_TAKEN },
+      { data: [{ outcome: 'appended', lead_id: 'ld_existing' }], error: null },
     )
     const response = await POST(request(BODY))
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({
-      error: 'A lead with this email already exists.',
-      leadId: 'ld_existing',
-    })
-    expect(eq).toHaveBeenCalledWith('email', 'known@example.test')
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ id: 'ld_existing', merged: true })
+    expect(rpc).toHaveBeenCalledWith(
+      'ingest_lead_submission',
+      expect.objectContaining({
+        p_submission: expect.objectContaining({
+          email: 'known@example.test',
+          source: 'manual',
+          external_id: null,
+          debt_min: 100_000,
+          state: 'QLD',
+        }),
+        p_note_author: 'Sam',
+        p_latest_touch: false,
+      }),
+    )
+  })
+
+  it('puts the opening note on the existing lead when it merges', async () => {
+    const { chain } = mockLeads(
+      { error: EMAIL_TAKEN },
+      { data: [{ outcome: 'appended', lead_id: 'ld_existing' }], error: null },
+    )
+    const activity = {
+      id: '22222222-2222-4222-8222-222222222222',
+      type: 'note',
+      body: 'Called back',
+      author: 'Sam',
+      createdAt: '2026-10-16T00:00:00.000Z',
+    }
+    await POST(request({ ...BODY, activity }))
+    expect(chain.insert).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: activity.id, lead_id: 'ld_existing' }),
+    )
+  })
+
+  it('answers 500 when the merge fails', async () => {
+    mockLeads({ error: EMAIL_TAKEN }, { data: null, error: { message: 'boom' } })
+    const response = await POST(request(BODY))
+    expect(response.status).toBe(500)
   })
 
   it('does not treat any other unique violation as a duplicate email', async () => {

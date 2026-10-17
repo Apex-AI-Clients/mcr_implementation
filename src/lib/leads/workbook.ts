@@ -1,5 +1,11 @@
-import { STAGE_META, SOURCE_META, ENTITY_TYPE_META } from './constants'
-import { countLeadNotes, formatIsoDate, formatLeadNotes, formatPhone } from './format'
+import { STAGE_META, SOURCE_META } from './constants'
+import {
+  countLeadNotes,
+  formatEntityType,
+  formatIsoDate,
+  formatLeadNotes,
+  formatPhone,
+} from './format'
 import type { Lead, LeadActivity } from '@/types/leads'
 
 /**
@@ -66,7 +72,7 @@ const COLUMNS: ColumnSpec[] = [
   {
     header: 'Entity type',
     width: 12,
-    value: (lead) => (lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : ''),
+    value: (lead) => formatEntityType(lead) ?? '',
   },
   { header: 'State', width: 8, value: (lead) => lead.state ?? '' },
   { header: 'Stage', width: 16, value: (lead) => STAGE_META[lead.stage].label },

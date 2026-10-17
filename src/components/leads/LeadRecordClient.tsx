@@ -4,40 +4,41 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { describeDirector } from '@/lib/asic/fill'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowRight, Check, Pencil, Trash2, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Clock,
+  Copy,
+  Mail,
+  Pencil,
+  Phone,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { LeadRecordHeader } from '@/components/leads/LeadRecordHeader'
 import { LeadActivityForm } from '@/components/leads/LeadActivityForm'
-import { LeadHistory } from '@/components/leads/LeadHistory'
+import { LeadActivityTimeline } from '@/components/leads/LeadActivityTimeline'
 import { LeadEnquiries } from '@/components/leads/LeadEnquiries'
+import { StageProgress } from '@/components/leads/StageProgress'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
-import { Select } from '@/components/ui/Select'
-import { ALL_ENTITY_TYPES, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { EditLeadDialog } from '@/components/leads/EditLeadDialog'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { clientHref } from '@/lib/clients/archive'
 import { reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
 import {
-  debtSelectOptions,
-  decodeDebtRange,
   describeUncertainState,
   formatAge,
   formatDebtRange,
+  formatEntityType,
   formatFullDate,
   formatPhone,
-  isValidPhone,
-  isValidEmail,
 } from '@/lib/leads/format'
-import type {
-  ConvertedClientDetails,
-  EntityType,
-  Lead,
-  LeadActivity,
-  LeadSubmission,
-} from '@/types/leads'
+import type { ConvertedClientDetails, Lead, LeadActivity, LeadSubmission } from '@/types/leads'
 
 interface LeadRecordClientProps {
   leadId: string
@@ -50,6 +51,20 @@ interface LeadRecordClientProps {
   convertedClient: ConvertedClientDetails | null
 }
 
+/**
+ * The lead record, laid out to be read top to bottom:
+ *
+ *  1. Who it is, with Edit and Delete.
+ *  2. Where they have got to: the stage track, the stage control and the
+ *     convert action together, so moving a lead on happens in one place.
+ *  3. The four facts that decide what happens next: debt, state, business
+ *     type and the next step.
+ *  4. Activity on the left (log something, then everything logged, newest
+ *     first); how to reach them, what they said, and every enquiry on the right.
+ *
+ * Details change in one place, the Edit dialog. Stage is the exception: moving
+ * a lead on is an action that is logged, not a correction.
+ */
 export function LeadRecordClient({
   leadId,
   initialLead,
@@ -61,6 +76,7 @@ export function LeadRecordClient({
   const { getLead, activitiesFor, syncFromServer, dismissReenquiry } = useLeads()
   const [convertTarget, setConvertTarget] = useState<Lead | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   // Hand the server's copy to the store, so edits made here apply to it and
   // survive a move back to the list.
@@ -99,18 +115,27 @@ export function LeadRecordClient({
   }
 
   const activities = activitiesFor(lead.id)
-  const nextStepSetAt = activities.find((activity) => activity.type === 'next_step')?.createdAt
-  const uncertainState = describeUncertainState(lead)
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <LeadRecordHeader
         lead={lead}
         actions={
-          <Button type="button" variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          </div>
         }
       />
 
@@ -118,165 +143,35 @@ export function LeadRecordClient({
         <ReenquiryNotice lead={lead} onDismiss={() => dismissReenquiry(lead.id)} />
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left — history */}
-        <div className="space-y-4 lg:order-1">
+      <ProgressCard lead={lead} onConvert={() => setConvertTarget(lead)} />
+
+      <KeyFacts lead={lead} activities={activities} />
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        {/* Activity — log something, then everything logged. One list, newest
+            first: stage changes sit among the calls and notes that led to
+            them, so the story reads in order. */}
+        <section aria-labelledby="lead-activity-heading" className="min-w-0 space-y-3">
+          <SectionHeading id="lead-activity-heading" count={activities.length}>
+            Activity
+          </SectionHeading>
           <LeadActivityForm leadId={lead.id} />
+          <LeadActivityTimeline activities={activities} editable />
+        </section>
 
-          {/* The lead's own words — read-only, and the only verbatim record of
-              what they asked for. Staff commentary goes in notes. Omitted
-              entirely when there is nothing, rather than an empty heading. */}
-          {lead.message && (
-            <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-                Their message
-              </p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">
-                {lead.message}
-              </p>
-            </div>
-          )}
-
-          <LeadEnquiries lead={lead} enquiries={enquiries} />
-
-          <LeadHistory lead={lead} activities={activities} />
-        </div>
-
-        {/* Right — the record */}
-        <div className="space-y-4 lg:order-2">
-          <div className="space-y-4 rounded-xl border border-border bg-card p-5">
-            <InlineSelect
-              label="Debt"
-              leadId={lead.id}
-              value={debtSelectOptions(lead.debtMin, lead.debtMax).value}
-              display={formatDebtRange(lead.debtMin, lead.debtMax, 'full')}
-              isEmpty={lead.debtMin === null && lead.debtMax === null}
-              options={debtSelectOptions(lead.debtMin, lead.debtMax).options}
-              patchFor={(value) => {
-                const { min, max } = decodeDebtRange(value)
-                return { debtMin: min, debtMax: max }
-              }}
-            />
-            {/* A grouping reads "One of NSW, VIC, ACT, TAS"; an answer that did
-                not resolve reads "State as given: …". Same style as a state. */}
-            <p className="text-xs text-foreground/40">
-              {uncertainState ? uncertainState.description : (lead.state ?? 'State not given')}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-5">
-            <InlineSelect
-              label="Business type"
-              leadId={lead.id}
-              value={lead.entityType ?? ''}
-              display={
-                lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : '—'
-              }
-              isEmpty={lead.entityType === null}
-              emptyLabel="Not given"
-              size="sm"
-              options={ALL_ENTITY_TYPES.map((type) => ({
-                value: type,
-                label: ENTITY_TYPE_META[type].label,
-              }))}
-              patchFor={(value) => ({ entityType: (value || null) as EntityType | null })}
-            />
-            {lead.entityType === 'trust' && (
-              <p className="mt-2 text-xs text-warning">
-                A trust cannot take the SBR path.
-              </p>
-            )}
-          </div>
-
-          {/* Read-only, like the message — the lead's own words, and free text
-              the form required of them. */}
-          {lead.preferredCallTime && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-                Preferred call time
-              </p>
-              <p className="mt-1.5 text-sm text-foreground/80">{lead.preferredCallTime}</p>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border bg-card p-5">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-foreground/40">
-              Stage
-            </p>
-            <StageSelect
-              lead={lead}
-              onRequestConvert={setConvertTarget}
-              selectSize="md"
-              className="w-full"
-            />
-            <p className="mt-2 text-xs text-foreground/40">
-              In this stage since {formatAge(lead.stageSince).toLowerCase()}
-            </p>
-          </div>
-
-          <div className="space-y-3 rounded-xl border border-border bg-card p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-              Contact
-            </p>
-            <InlineField
-              label="Email"
-              value={lead.email}
-              leadId={lead.id}
-              field="email"
-              validate={(value) =>
-                isValidEmail(value) ? null : 'That email address does not look right.'
-              }
-            />
-            <InlineField
-              label="Phone"
-              value={lead.phone}
-              display={formatPhone(lead.phone)}
-              leadId={lead.id}
-              field="phone"
-              validate={(value) =>
-                isValidPhone(value) ? null : 'Enter a phone number using digits only.'
-              }
-            />
-            {/* <InlineField
-              label="Company"
-              value={lead.company ?? ''}
-              placeholder="Not recorded"
-              leadId={lead.id}
-              field="company"
-              allowEmpty
-            /> */}
-          </div>
+        <div className="min-w-0 space-y-4">
+          <ContactCard lead={lead} />
 
           {convertedClient && convertedClient.id === lead.convertedClientId && (
             <ClientFileDetails client={convertedClient} />
           )}
 
-          <div className="rounded-xl border border-border bg-card p-5">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-              Next step
-            </p>
-            {lead.nextStep ? (
-              <>
-                <p className="mt-1.5 text-sm leading-relaxed text-foreground/80">
-                  {lead.nextStep}
-                </p>
-                {nextStepSetAt && (
-                  <p className="mt-1.5 text-xs text-foreground/40">
-                    Set {formatAge(nextStepSetAt).toLowerCase()}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="mt-1.5 text-sm text-foreground/40">
-                None set. Use the composer to add one.
-              </p>
-            )}
-          </div>
-
-          <ConversionPanel lead={lead} onConvert={() => setConvertTarget(lead)} />
+          <LeadEnquiries lead={lead} enquiries={enquiries} />
         </div>
       </div>
 
+      {/* Mounted only while open, so it prefills from the lead as it is now. */}
+      {editOpen && <EditLeadDialog lead={lead} onClose={() => setEditOpen(false)} />}
       <ConvertToClientDialog lead={convertTarget} onClose={() => setConvertTarget(null)} />
       <DeleteLeadsDialog
         leads={deleteOpen ? [lead] : null}
@@ -290,6 +185,261 @@ export function LeadRecordClient({
         }}
       />
     </div>
+  )
+}
+
+function SectionHeading({
+  id,
+  count,
+  children,
+}: {
+  id: string
+  count?: number
+  children: ReactNode
+}) {
+  return (
+    <h2 id={id} className="flex items-baseline gap-2 text-sm font-semibold text-foreground">
+      {children}
+      {count !== undefined && count > 0 && (
+        <span className="text-xs font-normal tabular-nums text-foreground/40">{count}</span>
+      )}
+    </h2>
+  )
+}
+
+/**
+ * Where the lead has got to, and the controls that move it on. The convert
+ * action sits here rather than at the bottom of a column, because it is the
+ * step the track leads to.
+ */
+function ProgressCard({ lead, onConvert }: { lead: Lead; onConvert: () => void }) {
+  return (
+    <section
+      aria-label="Progress"
+      className="mb-6 rounded-xl border border-border bg-card p-4 sm:p-5"
+    >
+      <StageProgress lead={lead} embedded />
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-border pt-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-xs font-medium text-muted">Stage</span>
+          <div className="w-52">
+            <StageSelect
+              lead={lead}
+              onRequestConvert={onConvert}
+              selectSize="md"
+              className="w-full"
+            />
+          </div>
+          <span className="text-xs text-foreground/40">
+            Since {formatAge(lead.stageSince).toLowerCase()}
+          </span>
+        </div>
+        <ConvertAction lead={lead} onConvert={onConvert} />
+      </div>
+    </section>
+  )
+}
+
+/** The join between the two halves of the product. */
+function ConvertAction({ lead, onConvert }: { lead: Lead; onConvert: () => void }) {
+  if (lead.convertedClientId) {
+    return (
+      <Link
+        href={`/clients/${lead.convertedClientId}`}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success transition-colors hover:bg-success/15"
+      >
+        Open their client file
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </Link>
+    )
+  }
+
+  // A lead can sit at a converted stage with no file behind it — an imported
+  // sheet row, or a conversion whose lead update failed. Say so rather than
+  // pretending it was never converted.
+  const markedButUnlinked = lead.stage === 'converted' || lead.stage === 'client'
+
+  return (
+    <div className="flex flex-col items-start gap-1 sm:items-end">
+      <Button type="button" onClick={onConvert}>
+        {markedButUnlinked ? 'Create their client file' : 'Convert to client'}
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
+      <p className="text-xs text-foreground/40">
+        {markedButUnlinked
+          ? 'Marked converted, but no client file is linked.'
+          : 'Creates their file in the restructuring workspace.'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The four facts that decide what happens next, as tiles. Each says plainly
+ * when nothing is known.
+ */
+function KeyFacts({ lead, activities }: { lead: Lead; activities: LeadActivity[] }) {
+  const uncertainState = describeUncertainState(lead)
+  const entityType = formatEntityType(lead)
+  const hasDebt = lead.debtMin !== null || lead.debtMax !== null
+  const nextStepSetAt = activities.find((activity) => activity.type === 'next_step')?.createdAt
+
+  return (
+    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <FactTile label="Debt" empty={!hasDebt} large>
+        {hasDebt ? formatDebtRange(lead.debtMin, lead.debtMax, 'full') : 'Not given'}
+      </FactTile>
+      <FactTile
+        label="State"
+        empty={!lead.state && !uncertainState}
+        hint={uncertainState?.description}
+        large
+      >
+        {uncertainState ? uncertainState.label : (lead.state ?? 'Not given')}
+      </FactTile>
+      <FactTile
+        label="Business type"
+        empty={entityType === null}
+        hint={
+          lead.entityType === 'trust' && !lead.entityTypeLabel ? (
+            <span className="text-warning">A trust cannot take the SBR path.</span>
+          ) : undefined
+        }
+        large
+      >
+        {entityType ?? 'Not given'}
+      </FactTile>
+      <FactTile
+        label="Next step"
+        empty={!lead.nextStep}
+        hint={
+          lead.nextStep
+            ? nextStepSetAt && `Set ${formatAge(nextStepSetAt).toLowerCase()}`
+            : 'Add one under Activity.'
+        }
+      >
+        {lead.nextStep ?? 'None set'}
+      </FactTile>
+    </dl>
+  )
+}
+
+function FactTile({
+  label,
+  empty,
+  hint,
+  large = false,
+  children,
+}: {
+  label: string
+  empty: boolean
+  hint?: ReactNode
+  large?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-card p-4">
+      <dt className="text-xs font-medium text-muted">{label}</dt>
+      <dd
+        className={`mt-1 break-words ${
+          large ? 'text-lg font-semibold tabular-nums' : 'line-clamp-3 text-sm font-medium'
+        } ${empty ? 'text-foreground/35' : 'text-foreground'}`}
+      >
+        {children}
+      </dd>
+      {hint && <dd className="mt-1 text-xs text-foreground/40">{hint}</dd>}
+    </div>
+  )
+}
+
+/**
+ * How to reach them and what they asked for, in one card. Email and phone are
+ * links (mailto, tel) with a copy button each, because ringing or emailing is
+ * what someone opens this page to do.
+ */
+function ContactCard({ lead }: { lead: Lead }) {
+  return (
+    <section
+      aria-labelledby="lead-contact-heading"
+      className="rounded-xl border border-border bg-card p-4"
+    >
+      <SectionHeading id="lead-contact-heading">Contact</SectionHeading>
+      <ul className="mt-3 space-y-2.5">
+        <ContactRow icon={Mail} label="Email" copy={lead.email}>
+          <a href={`mailto:${lead.email}`} className="truncate text-accent hover:underline">
+            {lead.email}
+          </a>
+        </ContactRow>
+        <ContactRow icon={Phone} label="Phone" copy={lead.phone}>
+          <a href={`tel:${lead.phone}`} className="tabular-nums text-accent hover:underline">
+            {formatPhone(lead.phone)}
+          </a>
+        </ContactRow>
+        {lead.preferredCallTime && (
+          <ContactRow icon={Clock} label="Best time to call">
+            <span className="text-foreground/80">{lead.preferredCallTime}</span>
+          </ContactRow>
+        )}
+      </ul>
+
+      {/* The lead's own words, and the only verbatim record of what they asked
+          for. Staff commentary goes in Activity. */}
+      {lead.message && (
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="text-xs font-medium text-muted">Their message</p>
+          <blockquote className="mt-2 whitespace-pre-wrap border-l-2 border-accent/40 pl-3 text-sm leading-relaxed text-foreground/80">
+            {lead.message}
+          </blockquote>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ContactRow({
+  icon: Icon,
+  label,
+  copy,
+  children,
+}: {
+  icon: LucideIcon
+  label: string
+  /** Text the copy button puts on the clipboard. No button when absent. */
+  copy?: string
+  children: ReactNode
+}) {
+  const { toast } = useToast()
+
+  async function handleCopy() {
+    if (!copy) return
+    try {
+      await navigator.clipboard.writeText(copy)
+      toast(`${label} copied.`)
+    } catch {
+      toast(`Could not copy the ${label.toLowerCase()}.`, { tone: 'error' })
+    }
+  }
+
+  return (
+    <li className="flex items-center gap-3 text-sm">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface">
+        <Icon className="h-4 w-4 text-muted" aria-hidden="true" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-xs text-foreground/40">{label}</span>
+        <span className="flex min-w-0">{children}</span>
+      </div>
+      {copy && (
+        <button
+          type="button"
+          onClick={handleCopy}
+          aria-label={`Copy ${label.toLowerCase()}`}
+          className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </li>
   )
 }
 
@@ -311,7 +461,7 @@ function ReenquiryNotice({ lead, onDismiss }: { lead: Lead; onDismiss: () => voi
           <p className="font-medium text-foreground">{reenquiryMarkerLabel(lead)}</p>
           <p>
             {lead.name} enquired again on {formatFullDate(lead.reenquiredAfterCloseAt!)}. The
-            stage and details were left as they were; the new enquiry is under Enquiries.
+            stage and details were left as they were; the new enquiry is under Lead history.
             Changing the stage also clears this.
           </p>
         </div>
@@ -432,307 +582,4 @@ function DetailRows({ rows }: { rows: DetailRow[] }) {
       </dd>
     </div>
   ))
-}
-
-/** The join between the two halves of the product. Reads as a destination. */
-function ConversionPanel({ lead, onConvert }: { lead: Lead; onConvert: () => void }) {
-  if (lead.convertedClientId) {
-    return (
-      <div className="rounded-xl border border-success/30 bg-success/5 p-5">
-        <p className="text-sm font-semibold text-foreground">Client file created</p>
-        <p className="mt-1.5 text-sm leading-relaxed text-foreground/60">
-          {lead.name} has a file in the restructuring workspace.
-        </p>
-        <Link
-          href={`/clients/${lead.convertedClientId}`}
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
-        >
-          Open their client file
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
-      </div>
-    )
-  }
-
-  // A lead can sit at a converted stage with no file behind it — an imported
-  // sheet row, or a conversion whose lead update failed. Say so rather than
-  // pretending it was never converted.
-  const markedButUnlinked = lead.stage === 'converted' || lead.stage === 'client'
-
-  return (
-    <div className="rounded-xl border border-accent/30 bg-accent/5 p-5">
-      <p className="text-sm font-semibold text-foreground">Convert to client</p>
-      <p className="mt-1.5 text-sm leading-relaxed text-foreground/60">
-        {markedButUnlinked
-          ? 'This lead is marked converted but has no client file linked. Creating one joins it to the restructuring workspace.'
-          : 'Converting this lead to Client creates their file in the platform.'}
-      </p>
-      <Button type="button" className="mt-4 w-full" onClick={onConvert}>
-        {markedButUnlinked ? 'Create their client file' : 'Convert to client'}
-      </Button>
-    </div>
-  )
-}
-
-interface InlineSelectProps {
-  label: string
-  /** Stored value as a select value; '' means nothing chosen. */
-  value: string
-  /** Formatted value shown when not editing. */
-  display: string
-  /** Drives the muted treatment — the display string may legitimately be an em dash. */
-  isEmpty: boolean
-  /** Leading option that clears the field. Omit when the option list carries its own. */
-  emptyLabel?: string
-  options: { value: string; label: string }[]
-  leadId: string
-  /** Maps the chosen value to the Lead patch to dispatch. */
-  patchFor: (value: string) => Partial<Lead>
-  size?: 'sm' | 'lg'
-}
-
-/**
- * Sibling to InlineField for values that come from a fixed set. Same
- * begin/save/cancel shape, same UPDATE_LEAD dispatch — Enter saves, Escape
- * cancels.
- *
- * Correcting one of these is a data correction, not contact: UPDATE_LEAD
- * deliberately leaves `lastActionAt` alone and writes no activity. Only the four
- * composer types and stage changes touch the clock.
- */
-function InlineSelect({
-  label,
-  value,
-  display,
-  isEmpty,
-  emptyLabel,
-  options,
-  leadId,
-  patchFor,
-  size = 'lg',
-}: InlineSelectProps) {
-  const { updateLead } = useLeads()
-  const { toast } = useToast()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-
-  function begin() {
-    setDraft(value)
-    setEditing(true)
-  }
-
-  function save() {
-    updateLead(leadId, patchFor(draft))
-    setEditing(false)
-    toast(`${label} updated.`)
-  }
-
-  const fieldId = `inline-${label.toLowerCase().replace(/\s+/g, '-')}`
-
-  if (editing) {
-    return (
-      <div>
-        <label
-          htmlFor={fieldId}
-          className="text-xs font-medium uppercase tracking-wide text-foreground/40"
-        >
-          {label}
-        </label>
-        <div className="mt-2 flex items-start gap-1.5">
-          <Select
-            id={fieldId}
-            autoFocus
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                save()
-              } else if (event.key === 'Escape') {
-                event.preventDefault()
-                setEditing(false)
-              }
-            }}
-            placeholder={emptyLabel}
-            options={options}
-          />
-          <button
-            type="button"
-            onClick={save}
-            aria-label={`Save ${label.toLowerCase()}`}
-            className="mt-0.5 rounded-lg p-1.5 text-success transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Check className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            aria-label={`Cancel editing ${label.toLowerCase()}`}
-            className="mt-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="group flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">{label}</p>
-        <p
-          className={`${size === 'lg' ? 'mt-1 text-2xl font-bold tabular-nums' : 'mt-1.5 text-sm'} ${
-            isEmpty ? 'text-foreground/40' : 'text-foreground'
-          }`}
-        >
-          {display}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={begin}
-        aria-label={`Edit ${label.toLowerCase()}`}
-        className="shrink-0 rounded-lg p-1.5 text-muted opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  )
-}
-
-interface InlineFieldProps {
-  label: string
-  /** Raw stored value — what the input starts from. */
-  value: string
-  /** Formatted value for display, when it differs from the raw value. */
-  display?: string
-  placeholder?: string
-  leadId: string
-  field: 'email' | 'phone' | 'company'
-  allowEmpty?: boolean
-  validate?: (value: string) => string | null
-}
-
-/**
- * Click the pencil to edit in place. Enter saves, Escape cancels.
- *
- * Editing a contact field does not reset the follow-up clock — correcting a
- * phone number is not evidence that anyone contacted the lead.
- */
-function InlineField({
-  label,
-  value,
-  display,
-  placeholder,
-  leadId,
-  field,
-  allowEmpty = false,
-  validate,
-}: InlineFieldProps) {
-  const { updateLead } = useLeads()
-  const { toast } = useToast()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const [error, setError] = useState<string | null>(null)
-
-  function begin() {
-    setDraft(value)
-    setError(null)
-    setEditing(true)
-  }
-
-  function cancel() {
-    setEditing(false)
-    setError(null)
-  }
-
-  function save() {
-    const trimmed = draft.trim()
-    if (!trimmed && !allowEmpty) {
-      setError(`${label} cannot be empty.`)
-      return
-    }
-    if (trimmed && validate) {
-      const message = validate(trimmed)
-      if (message) {
-        setError(message)
-        return
-      }
-    }
-    updateLead(leadId, { [field]: field === 'company' && !trimmed ? null : trimmed })
-    setEditing(false)
-    setError(null)
-    toast(`${label} updated.`)
-  }
-
-  if (editing) {
-    return (
-      <div>
-        <label htmlFor={`${field}-input`} className="text-xs font-medium text-muted">
-          {label}
-        </label>
-        <div className="mt-1 flex items-start gap-1.5">
-          <div className="flex-1">
-            <input
-              id={`${field}-input`}
-              autoFocus
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  save()
-                } else if (event.key === 'Escape') {
-                  event.preventDefault()
-                  cancel()
-                }
-              }}
-              className="h-8 w-full rounded-lg border border-border bg-input-bg px-2.5 text-sm text-foreground transition-colors focus:border-accent focus:outline-none"
-            />
-            {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={save}
-            aria-label={`Save ${label.toLowerCase()}`}
-            className="rounded-lg p-1.5 text-success transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Check className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={cancel}
-            aria-label={`Cancel editing ${label.toLowerCase()}`}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="group flex items-baseline justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-xs text-muted">{label}</p>
-        <p
-          className={`mt-0.5 truncate text-sm ${
-            value ? 'text-foreground' : 'text-foreground/40'
-          }`}
-        >
-          {value ? (display ?? value) : (placeholder ?? '—')}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={begin}
-        aria-label={`Edit ${label.toLowerCase()}`}
-        className="shrink-0 rounded-lg p-1.5 text-muted opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  )
 }

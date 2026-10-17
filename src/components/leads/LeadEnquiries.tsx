@@ -41,7 +41,7 @@ export function LeadEnquiries({ lead, enquiries }: LeadEnquiriesProps) {
           id="lead-enquiries-heading"
           className="text-xs font-medium uppercase tracking-wide text-foreground/40"
         >
-          Enquiries ({enquiries.length})
+          Lead history ({enquiries.length})
         </h2>
         {anyChanged && (
           <p className="text-xs text-foreground/40">

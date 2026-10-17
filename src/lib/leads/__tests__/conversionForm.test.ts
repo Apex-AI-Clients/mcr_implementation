@@ -26,6 +26,7 @@ function lead(overrides: Partial<Lead> = {}): Lead {
     stage: 'prospect',
     source: 'website',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: '2026-08-20T00:00:00.000Z',

@@ -17,6 +17,7 @@ const LEAD: Lead = {
   stage: 'prospect',
   source: 'google_form',
   sourceLabel: null,
+  entityTypeLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-01T00:00:00.000Z',

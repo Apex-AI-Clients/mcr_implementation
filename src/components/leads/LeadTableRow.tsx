@@ -17,7 +17,12 @@ import {
   reenquiryMarkerLabel,
   showsReenquiryMarker,
 } from '@/lib/leads/enquiries'
-import { describeUncertainState, formatPhone, formatShortDate } from '@/lib/leads/format'
+import {
+  describeUncertainState,
+  formatEntityType,
+  formatPhone,
+  formatShortDate,
+} from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
 
 interface LeadRowProps {
@@ -123,7 +128,9 @@ export function LeadTableRow({
       {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
           so it shouldn't take someone a phone call to find out. */}
       <td className="px-3 py-3.5 whitespace-nowrap">
-        {lead.entityType ? (
+        {lead.entityTypeLabel ? (
+          <Badge variant="muted">{lead.entityTypeLabel}</Badge>
+        ) : lead.entityType ? (
           <Badge variant={ENTITY_TYPE_META[lead.entityType].badge}>
             {ENTITY_TYPE_META[lead.entityType].label}
           </Badge>
@@ -257,10 +264,10 @@ export function LeadCard({
             <EnquiryCount lead={lead} inline />
           </>
         )}
-        {lead.entityType && (
+        {formatEntityType(lead) && (
           <>
             <span aria-hidden="true">&middot;</span>
-            <span>{ENTITY_TYPE_META[lead.entityType].label}</span>
+            <span>{formatEntityType(lead)}</span>
           </>
         )}
         <span aria-hidden="true">·</span>

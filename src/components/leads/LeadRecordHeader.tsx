@@ -28,28 +28,45 @@ export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
         All leads
       </Link>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className="text-xl font-semibold text-foreground">{lead.name}</h1>
-          <Badge variant={stage.badge}>{stage.label}</Badge>
-          {/* Follow-up badge — hidden with the rest of the follow-up UI (table
-              column, filter toggle, page-header count, top-bar pill). */}
-          {/* {needsFollowUp(lead) && <FollowUpBadge />} */}
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3.5">
+          {/* Initials, so the page is recognisably this person at a glance. */}
+          <span
+            aria-hidden="true"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10 text-base font-semibold text-accent"
+          >
+            {initials(lead.name)}
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <h1 className="text-2xl font-semibold text-foreground">{lead.name}</h1>
+              <Badge variant={stage.badge}>{stage.label}</Badge>
+              {/* Follow-up badge — hidden with the rest of the follow-up UI (table
+                  column, filter toggle, page-header count, top-bar pill). */}
+              {/* {needsFollowUp(lead) && <FollowUpBadge />} */}
+            </div>
+            <p className="mt-1 text-sm text-foreground/50">
+              {formatLeadSource(lead)}
+              <span aria-hidden="true"> · </span>
+              Added {formatFullDate(lead.createdAt)}
+              {lead.enquiryCount > 1 && (
+                <>
+                  <span aria-hidden="true"> · </span>
+                  {lead.enquiryCount} enquiries, latest {formatFullDate(lead.lastEnquiryAt)}
+                </>
+              )}
+            </p>
+          </div>
         </div>
         {actions}
       </div>
-
-      <p className="mt-1.5 text-sm text-foreground/50">
-        {formatLeadSource(lead)}
-        <span aria-hidden="true"> · </span>
-        Added {formatFullDate(lead.createdAt)}
-        {lead.enquiryCount > 1 && (
-          <>
-            <span aria-hidden="true"> · </span>
-            {lead.enquiryCount} enquiries, latest {formatFullDate(lead.lastEnquiryAt)}
-          </>
-        )}
-      </p>
     </div>
   )
+}
+
+/** "Dean Whitlock" → "DW"; one word gives one letter. */
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  const letters = words.length > 1 ? [words[0], words[words.length - 1]] : words
+  return letters.map((word) => word[0]?.toUpperCase() ?? '').join('') || '?'
 }

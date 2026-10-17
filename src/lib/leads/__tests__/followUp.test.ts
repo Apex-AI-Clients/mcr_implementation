@@ -30,6 +30,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     stage: 'lead',
     source: 'manual',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: at(60),

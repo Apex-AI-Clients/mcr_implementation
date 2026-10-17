@@ -5,7 +5,7 @@ import { normalisePhone } from '@/lib/leads/format'
 import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
 import { DATE_RANGES } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
-import type { LeadFilterState } from '@/lib/leads/filter'
+import { debtSearchAmount, type LeadFilterState } from '@/lib/leads/filter'
 import type {
   ConvertedClientDetails,
   Lead,
@@ -77,12 +77,23 @@ export function withFilters<T extends LeadsFilterable<T>>(
     // Phone matches on digits alone, so "0402 915" finds "0402915338" —
     // normalisePhone runs on both sides, at ingest and here.
     const digits = normalisePhone(term)
+    // Read from the raw search: escapeForOr turns "120,000" into "120 000".
+    // A number, so it is safe inside the filter string.
+    const amount = debtSearchAmount(filters.search)
     built = built.or(
       [
         `name.ilike."*${term}*"`,
         `email.ilike."*${term}*"`,
         `message.ilike."*${term}*"`,
         `phone.ilike."*${digits || term}*"`,
+        // debtIncludes() in SQL. A missing floor counts as 0, so "Under $50k"
+        // (stored with a floor of 0 or none) still contains $20k.
+        ...(amount === null
+          ? []
+          : [
+              `and(debt_min.lte.${amount},or(debt_max.gte.${amount},debt_max.is.null))`,
+              `and(debt_min.is.null,debt_max.gte.${amount})`,
+            ]),
       ].join(','),
     )
   }
@@ -331,7 +342,7 @@ export async function getLeadById(id: string): Promise<Lead | null> {
 }
 
 /**
- * Every enquiry a lead has made, newest first — the record's Enquiries list.
+ * Every enquiry a lead has made, newest first — the record's Lead history list.
  * Empty on a failed read, like the timeline: the record still renders.
  */
 export async function getSubmissionsForLead(leadId: string): Promise<LeadSubmission[]> {

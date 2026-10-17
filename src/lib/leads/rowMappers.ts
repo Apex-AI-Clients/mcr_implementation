@@ -38,6 +38,7 @@ export function toLead(row: LeadRow): Lead {
     metaStateRaw: row.meta_state_raw,
     metaStateOptions: row.meta_state_options as AuState[] | null,
     entityType: row.entity_type as EntityType | null,
+    entityTypeLabel: row.entity_type_label,
     message: row.message,
     preferredCallTime: row.preferred_call_time,
     stage: row.stage as LeadStage,

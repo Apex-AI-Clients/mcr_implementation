@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { DuplicateLeadError, leadsPersistence } from '../persistence'
+import { leadsPersistence } from '../persistence'
 import type { Lead, LeadActivity } from '@/types/leads'
 
 /**
@@ -24,6 +24,7 @@ const LEAD: Lead = {
   stage: 'lead',
   source: 'manual',
   sourceLabel: null,
+  entityTypeLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-01T00:00:00.000Z',
@@ -85,28 +86,31 @@ describe('leadsPersistence', () => {
     expect((body.lead as Record<string, unknown>).debtMax).toBeNull()
   })
 
-  it('turns a 409 on create into a DuplicateLeadError carrying the existing lead', async () => {
+  it('reports which lead a known email was merged onto', async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ error: 'A lead with this email already exists.', leadId: 'ld_existing' }),
-        { status: 409 },
-      ),
+      new Response(JSON.stringify({ id: 'ld_existing', merged: true }), { status: 200 }),
     )
-    const failure = leadsPersistence.createLead!({ lead: LEAD, activity: null })
-    await expect(failure).rejects.toBeInstanceOf(DuplicateLeadError)
-    await expect(failure).rejects.toMatchObject({
+    await expect(leadsPersistence.createLead!({ lead: LEAD, activity: null })).resolves.toEqual({
       leadId: 'ld_existing',
-      message: 'A lead with this email already exists.',
+      merged: true,
     })
   })
 
-  it('keeps any other failure a plain error', async () => {
+  it('reports a new lead as not merged', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: LEAD.id }), { status: 201 }))
+    await expect(leadsPersistence.createLead!({ lead: LEAD, activity: null })).resolves.toEqual({
+      leadId: LEAD.id,
+      merged: false,
+    })
+  })
+
+  it('rejects with the server message on failure', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'Failed to create lead' }), { status: 500 }),
     )
-    const failure = leadsPersistence.createLead!({ lead: LEAD, activity: null })
-    await expect(failure).rejects.not.toBeInstanceOf(DuplicateLeadError)
-    await expect(failure).rejects.toThrow('Failed to create lead')
+    await expect(leadsPersistence.createLead!({ lead: LEAD, activity: null })).rejects.toThrow(
+      'Failed to create lead',
+    )
   })
 
   it('dismisses the enquired-again marker with no activity and no name', async () => {

@@ -26,7 +26,7 @@ interface Props {
  * A converted lead also shows what its client file holds — the ABN, ACN and
  * the rest collected at conversion and in intake — so that is read here too.
  *
- * So is every enquiry the lead has made (lead_submissions), for the Enquiries
+ * So is every enquiry the lead has made (lead_submissions), for the Lead history
  * list: the lead row shows only the newest values.
  */
 export default async function LeadRecordPage({ params }: Props) {

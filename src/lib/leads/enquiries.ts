@@ -60,7 +60,7 @@ export function describeLatestEnquiry(
 }
 
 // ============================================================
-// The record's Enquiries list
+// The record's Lead history list
 // ============================================================
 
 export interface EnquiryField {
