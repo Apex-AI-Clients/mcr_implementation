@@ -1,10 +1,15 @@
 import { it, expect } from 'vitest'
-import { existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { readDirectorPenaltyNotice } from '@/lib/dpn/extractText'
 import { checkDirectorPenaltyNotice, dpnDeadline } from '@/lib/dpn/checks'
-import type { DpnAmounts, DpnType } from '@/lib/dpn/types'
-import { out, readJson } from './figures'
+import { summariseNotices } from '@/lib/dpn/summary'
+import { buildDpnCsv } from '@/lib/dpn/exportCsv'
+import { buildDpnPdf } from '@/lib/dpn/exportPdf'
+import type { DpnNoticeView } from '@/lib/dpn/view'
+import type { DirectorPenaltyNotice, DpnAmounts, DpnType } from '@/lib/dpn/types'
+import { readPdfPageCells, readPdfPageLines } from '@/lib/pdf/pageLines'
+import { DIR, out, readJson } from './figures'
 
 /**
  * `npm run figures:dpn` — no database. Parses every PDF in /dpn-samples/
@@ -33,10 +38,19 @@ it('reads the DPN samples and matches the verified figures', async () => {
   const expected = readJson<Expected>('dpn.expected.json')
   const files = readdirSync(SAMPLES).filter((name) => name.toLowerCase().endsWith('.pdf'))
   let failures = 0
+  const parsedNotices: DirectorPenaltyNotice[] = []
+  /** The lines under each notice's "TO:" line: its address. In memory only, never printed. */
+  const addressLines: string[] = []
 
   for (const [index, file] of files.entries()) {
     const label = `sample ${index + 1}`
-    const result = await readDirectorPenaltyNotice(new Uint8Array(readFileSync(path.join(SAMPLES, file))))
+    const bytes = new Uint8Array(readFileSync(path.join(SAMPLES, file)))
+    const { pages } = await readPdfPageCells(bytes, 12)
+    for (const page of pages) {
+      const to = page.findIndex((line) => /^TO:/.test(line.cells[0]?.text ?? ''))
+      if (to >= 0) addressLines.push(...page.slice(to + 1, to + 3).map((line) => line.text))
+    }
+    const result = await readDirectorPenaltyNotice(bytes)
     if (result.kind !== 'parsed') {
       out(`${label}: ${result.kind}${result.kind === 'needs_manual' ? ` (${result.reason}; missing: ${result.missing.join(', ') || 'none'})` : ''}`)
       failures++
@@ -44,6 +58,7 @@ it('reads the DPN samples and matches the verified figures', async () => {
     }
 
     const { notice } = result
+    parsedNotices.push(notice)
     const fields = (['reference', 'companyName', 'acn', 'directorName'] as const)
       .map((key) => `${key} ${notice[key] ? 'found' : 'MISSING'}`)
       .join(', ')
@@ -72,6 +87,48 @@ it('reads the DPN samples and matches the verified figures', async () => {
     out(differences.length === 0 ? '  matches expected' : `  DIFFERS: ${differences.join('; ')}`)
     failures += differences.length > 0 || rowChecks.length > 0 ? 1 : 0
   }
+
+  // ── The summary and its exports, from the real notices ──────────────────
+  const asAtIso = new Date().toISOString().slice(0, 10)
+  const views: DpnNoticeView[] = parsedNotices.map((notice, i) => ({
+    documentId: `sample-${i + 1}`,
+    filename: `sample-${i + 1}.pdf`,
+    notice: {
+      id: `n${i}`,
+      documentId: `sample-${i + 1}`,
+      source: 'parsed',
+      status: 'read',
+      manualReason: null,
+      reviewReasons: [],
+      ...notice,
+      enteredBy: null,
+      enteredAt: null,
+    },
+    issues: [],
+    deadline: dpnDeadline(notice.issuedOn),
+  }))
+  const summary = summariseNotices(views, asAtIso)
+  out('')
+  out(`summary: ${summary.notices.length} notices, ${summary.directors.length} director(s), ${summary.waiting.length} waiting`)
+  for (const t of summary.companyByType) {
+    const own = parsedNotices.find((n) => n.type === t.type)!.totals
+    const same = (['column2', 'column3', 'column4', 'column5'] as const).every((k) => own[k] === t.totals[k])
+    out(`  company ${t.type}: col3 ${dollars(t.totals.column3)} | col4 ${dollars(t.totals.column4)} | col5 ${dollars(t.totals.column5)} — ${same ? 'equals the notice' : 'DIFFERS from the notice'}`)
+    if (!same) failures++
+  }
+
+  const meta = { clientName: 'Sample client', asAtIso }
+  const csv = buildDpnCsv(summary, meta)
+  const pdf = await buildDpnPdf(summary, meta)
+  const pdfText = (await readPdfPageLines(pdf, 20)).pages.flat().join('\n')
+  const leaks = addressLines.filter((line) => line && (csv.includes(line) || pdfText.includes(line)))
+  out(`  address lines checked: ${addressLines.length}; found in CSV or PDF: ${leaks.length === 0 ? 'none' : leaks.length}`)
+  if (addressLines.length === 0 || leaks.length > 0) failures++
+
+  // For a look by eye. verified-figures/ is gitignored.
+  writeFileSync(path.join(DIR, 'dpn-summary.sample.csv'), '\uFEFF' + csv)
+  writeFileSync(path.join(DIR, 'dpn-summary.sample.pdf'), pdf)
+  out('  wrote verified-figures/dpn-summary.sample.csv and .pdf')
 
   expect(failures).toBe(0)
 })

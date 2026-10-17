@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Info } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Info } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DpnManualForm } from '@/components/admin/dpn/DpnManualForm'
@@ -49,6 +50,16 @@ export function DpnPanel({ clientId, data, readOnly = false }: DpnPanelProps) {
             onEdit={() => setEditing(view)}
           />
         ))
+      )}
+
+      {data.notices.length > 0 && (
+        <Link
+          href={`/clients/${clientId}/director-penalty-notices`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+        >
+          Open the DPN summary
+          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Link>
       )}
 
       {editing && (
