@@ -71,3 +71,11 @@ graphify-out
 # Real clients' ATO activity statement exports, dropped in for local checks. Never committed.
 /Activity statement*.csv
 /Activity Statement*.csv
+
+# Real director penalty notices, dropped in for `npm run figures:dpn`. They carry
+# the director's home address. Never committed.
+/dpn-samples/
+
+# Supabase CLI state for the linked project (project ref, pooler host, org).
+# Machine-local; never committed.
+supabase/.temp/
