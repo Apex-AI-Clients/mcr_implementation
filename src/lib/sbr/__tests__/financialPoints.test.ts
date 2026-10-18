@@ -60,15 +60,15 @@ describe('materiality', () => {
 
   it('formats whole dollars, negatives with a minus', () => {
     expect(money(1234.5)).toBe('$1,235')
-    expect(money(-36178)).toBe('-$36,178')
+    expect(money(-24517)).toBe('-$24,517')
   })
 })
 
 describe('(a) ATO-related debt — always shown, super excluded', () => {
   it('states the trend and what is included', () => {
-    const c = comparison(Y, { atoLiability: [100_000, null, null, 140_000], gstPayable: [9_301, null, null, 10_143], superannuationPayable: [50_000, null, null, 1] })
+    const c = comparison(Y, { atoLiability: [100_000, null, null, 140_000], gstPayable: [7_412, null, null, 11_208], superannuationPayable: [50_000, null, null, 1] })
     expect(rule(c, 'a')).toBe(
-      'ATO-related debt (ATO account, GST and PAYG withholding; excluding super) rose from $109,301 (FY2023) to $150,143 (FY2026).',
+      'ATO-related debt (ATO account, GST and PAYG withholding; excluding super) rose from $107,412 (FY2023) to $151,208 (FY2026).',
     )
   })
 
@@ -95,12 +95,12 @@ describe('(a) ATO-related debt — always shown, super excluded', () => {
 })
 
 describe('(b) assets bought while ATO-related debt rose', () => {
-  const base = { atoLiability: [109_301, 161_559, 107_306, 150_143] }
+  const base = { atoLiability: [97_220, 148_610, 101_975, 143_880] }
 
   it('fires on plant & equipment (client-c shape)', () => {
-    const c = comparison(Y, { ...base, propertyPlantEquipment: [138_683, 103_565, 165_562, 269_741] })
+    const c = comparison(Y, { ...base, propertyPlantEquipment: [126_450, 98_300, 152_115, 251_920] })
     expect(rule(c, 'b')).toBe(
-      'Property, plant & equipment rose from $138,683 (FY2023) to $269,741 (FY2026) while ATO-related debt (ATO account, GST and PAYG withholding; excluding super) rose from $109,301 to $150,143.',
+      'Property, plant & equipment rose from $126,450 (FY2023) to $251,920 (FY2026) while ATO-related debt (ATO account, GST and PAYG withholding; excluding super) rose from $97,220 to $143,880.',
     )
     expect(points(c)[0].rule).toBe('b')
   })
@@ -112,10 +112,10 @@ describe('(b) assets bought while ATO-related debt rose', () => {
 
   it('does not count loans to directors as assets bought (client-b shape)', () => {
     const c = comparison(Y, {
-      atoLiability: [68_000, 90_000, 136_000, 206_000],
-      propertyPlantEquipment: [159_000, 260_000, 191_000, 140_000],
-      totalNonCurrentAssets: [159_000, 260_000, 316_000, 288_000],
-      directorRelatedLoansReceivable: [29_000, 58_000, 125_000, 148_000],
+      atoLiability: [61_000, 95_000, 128_000, 194_000],
+      propertyPlantEquipment: [150_000, 250_000, 185_000, 132_000],
+      totalNonCurrentAssets: [150_000, 250_000, 305_000, 275_000],
+      directorRelatedLoansReceivable: [24_000, 55_000, 120_000, 143_000],
     })
     expect(rule(c, 'b')).toBeNull()
   })
@@ -133,9 +133,9 @@ describe('(b) assets bought while ATO-related debt rose', () => {
 
 describe('(c) and (d) related-party loans', () => {
   it('(c) loans owed to directors or related parties, with the current period', () => {
-    const c = comparison(Y, { directorRelatedLoansPayable: [92_898, null, null, 763_544] }, { directorRelatedLoansPayable: 779_948 })
+    const c = comparison(Y, { directorRelatedLoansPayable: [84_310, null, null, 702_655] }, { directorRelatedLoansPayable: 718_090 })
     expect(rule(c, 'c')).toBe(
-      'Loans owed to directors or related parties rose from $92,898 (FY2023) to $763,544 (FY2026), and were $779,948 at 30 Sept 2026 (current period).',
+      'Loans owed to directors or related parties rose from $84,310 (FY2023) to $702,655 (FY2026), and were $718,090 at 30 Sept 2026 (current period).',
     )
   })
 
@@ -151,12 +151,12 @@ describe('(c) and (d) related-party loans', () => {
 
 describe('(e) losses — the threshold decides whether, never the facts', () => {
   it('counts EVERY loss year and the true total (client-b: 3 of 4, not 1 of 4)', () => {
-    const c = comparison(Y, { profitBeforeTax: [16_000, -1_152, -34_836, -190] })
-    expect(rule(c, 'e')).toBe('The company made a loss in 3 of the 4 years compared (FY2024, FY2025 and FY2026), $36,178 in total.')
+    const c = comparison(Y, { profitBeforeTax: [16_000, -2_406, -21_871, -240] })
+    expect(rule(c, 'e')).toBe('The company made a loss in 3 of the 4 years compared (FY2024, FY2025 and FY2026), $24,517 in total.')
   })
 
   it('does not show small losses that add up to less than $10,000', () => {
-    expect(rule(comparison(Y, { profitBeforeTax: [16_000, -1_152, -4_000, 2_000] }), 'e')).toBeNull()
+    expect(rule(comparison(Y, { profitBeforeTax: [16_000, -2_406, -4_000, 2_000] }), 'e')).toBeNull()
   })
 
   it('shows a move from profit to a loss of $5,000 or more, with the full count', () => {
@@ -175,9 +175,9 @@ describe('(e) losses — the threshold decides whether, never the facts', () => 
 
 describe('(f) net assets', () => {
   it('says a deficit as one, including the current period', () => {
-    const c = comparison(Y, { netAssets: [-46_000, 0, 0, -82_000] }, { netAssets: -74_000 })
+    const c = comparison(Y, { netAssets: [-41_000, 0, 0, -88_000] }, { netAssets: -79_000 })
     expect(rule(c, 'f')).toBe(
-      'Liabilities exceeded assets by $82,000 in FY2026; in FY2023 liabilities exceeded assets by $46,000; at 30 Sept 2026 (current period), liabilities exceeded assets by $74,000.',
+      'Liabilities exceeded assets by $88,000 in FY2026; in FY2023 liabilities exceeded assets by $41,000; at 30 Sept 2026 (current period), liabilities exceeded assets by $79,000.',
     )
   })
 

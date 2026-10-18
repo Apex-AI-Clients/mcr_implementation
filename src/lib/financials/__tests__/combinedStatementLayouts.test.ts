@@ -5,8 +5,8 @@ import { correctFile, type FileColumn } from '../lineCorrections'
 import type { ExtractedBalanceSheet, ExtractedIncomeStatement, LineSection, StatementLine } from '../types'
 
 /**
- * PARKCON-style layouts. SYNTHETIC figures (round numbers, not the client's),
- * laid out the way that accountant's template prints them.
+ * Combined-statement layouts from one accountant's template. SYNTHETIC
+ * figures (invented, not a client's), laid out the way that template prints them.
  */
 
 const line = (
@@ -101,31 +101,31 @@ describe('"Total Income" printed twice (items 1 and 2)', () => {
 })
 
 describe('negative director loans under liabilities (item 3)', () => {
-  it('moves "Loan 2019 (7,325)" and "Loan 2020 (21,964)" to a POSITIVE director loan receivable, with notes', () => {
+  it('moves "Loan 2019 (6,810)" and "Loan 2020 (23,470)" to a POSITIVE director loan receivable, with notes', () => {
     const col = column(
       0,
       [
-        line('nonCurrentLiabilities', 'Loan - Hino Truck', 90_000, 'nonCurrentLiabilities.chattelMortgages'),
-        line('nonCurrentLiabilities', 'Loan 2019', -7_325, 'nonCurrentLiabilities.other'),
-        line('nonCurrentLiabilities', 'Loan 2020', -21_964, 'nonCurrentAssets.directorRelatedLoansReceivable'),
-        line('nonCurrentLiabilities', 'Total Non-Current Liabilities', 60_711, 'totals.totalNonCurrentLiabilities', true),
+        line('nonCurrentLiabilities', 'Loan - Tipper Truck', 90_000, 'nonCurrentLiabilities.chattelMortgages'),
+        line('nonCurrentLiabilities', 'Loan 2019', -6_810, 'nonCurrentLiabilities.other'),
+        line('nonCurrentLiabilities', 'Loan 2020', -23_470, 'nonCurrentAssets.directorRelatedLoansReceivable'),
+        line('nonCurrentLiabilities', 'Total Non-Current Liabilities', 59_720, 'totals.totalNonCurrentLiabilities', true),
       ],
       {},
       {
-        nonCurrentLiabilities: { chattelMortgages: 90_000, other: { 'Loan 2019': -7_325 } } as never,
-        nonCurrentAssets: { directorRelatedLoansReceivable: -21_964 },
+        nonCurrentLiabilities: { chattelMortgages: 90_000, other: { 'Loan 2019': -6_810 } } as never,
+        nonCurrentAssets: { directorRelatedLoansReceivable: -23_470 },
       },
     )
     const { columnNotes } = correctFile([col], { isTrust: false }, null)
-    expect(col.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable).toBe(29_289)
+    expect(col.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable).toBe(30_280)
     expect(col.balanceSheet.nonCurrentLiabilities).toEqual({ chattelMortgages: 90_000 })
     expect(columnNotes[0].filter((n) => n.group === 'negative_loan')).toHaveLength(2)
   })
 
   it('never leaves a director loan receivable negative', () => {
-    const col = column(0, [line('currentAssets', 'Cash at Bank', 1_000, 'currentAssets.bankAccounts')], {}, { nonCurrentAssets: { directorRelatedLoansReceivable: -21_964 } })
+    const col = column(0, [line('currentAssets', 'Cash at Bank', 1_000, 'currentAssets.bankAccounts')], {}, { nonCurrentAssets: { directorRelatedLoansReceivable: -23_470 } })
     correctFile([col], { isTrust: false }, null)
-    expect(col.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable).toBe(21_964)
+    expect(col.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable).toBe(23_470)
   })
 
   it('leaves a negative lender loan under liabilities alone', () => {
@@ -142,14 +142,14 @@ describe('overdrawn bank account (item 4)', () => {
       [
         line('currentAssets', 'Business Account', null, 'currentAssets.bankAccounts'),
         line('currentAssets', 'Trade Debtors', 20_000, 'currentAssets.accountsReceivable'),
-        line('currentLiabilities', 'Business Account', 4_268, 'currentAssets.bankAccounts'),
+        line('currentLiabilities', 'Business Account', 4_510, 'currentAssets.bankAccounts'),
         line('currentLiabilities', 'GST', 3_000, 'currentLiabilities.gstPayable'),
       ],
       {},
-      { currentAssets: { bankAccounts: 4_268, accountsReceivable: 20_000 }, currentLiabilities: { gstPayable: 3_000 } },
+      { currentAssets: { bankAccounts: 4_510, accountsReceivable: 20_000 }, currentLiabilities: { gstPayable: 3_000 } },
     )
     correctFile([col], { isTrust: false }, null)
-    expect(col.balanceSheet.currentLiabilities.bankOverdraft).toBe(4_268)
+    expect(col.balanceSheet.currentLiabilities.bankOverdraft).toBe(4_510)
     expect(col.balanceSheet.currentAssets.bankAccounts).toBe(0)
   })
 })
@@ -159,24 +159,24 @@ describe('current-period payables (item 5)', () => {
     const col = column(
       0,
       [
-        line('currentLiabilities', 'Wages Payable - Payroll', -1_388.48, 'currentLiabilities.taxation'),
+        line('currentLiabilities', 'Wages Payable - Payroll', -1_412.36, 'currentLiabilities.taxation'),
         line('currentLiabilities', 'Rounding', 0.02, 'currentLiabilities.taxation'),
         line('currentLiabilities', 'GST', 2_000, 'currentLiabilities.gstPayable'),
       ],
       {},
-      { currentLiabilities: { taxation: -1_388.46, gstPayable: 2_000 } },
+      { currentLiabilities: { taxation: -1_412.34, gstPayable: 2_000 } },
     )
     correctFile([col], { isTrust: false }, null)
     const cl = col.balanceSheet.currentLiabilities as Record<string, unknown>
     expect(cl.taxation).toBeUndefined()
-    expect(cl.other).toEqual({ 'Wages payable': -1_388.48, Rounding: 0.02 })
+    expect(cl.other).toEqual({ 'Wages payable': -1_412.36, Rounding: 0.02 })
   })
 })
 
 describe('changes shown in dollars when a value is negative (item 7)', () => {
   it.each([
-    [-20_000, -53_684, 'Loss', 'Loss up $33,684'],
-    [-53_684, -19_038, 'Loss', 'Loss down $34,646'],
+    [-20_000, -48_250, 'Loss', 'Loss up $28,250'],
+    [-48_250, -17_600, 'Loss', 'Loss down $30,650'],
     [12_000, -5_000, 'Loss', 'Into loss, down $17,000'],
     [-5_000, 9_000, 'Loss', 'Out of loss, up $14,000'],
     [-90_000, -20_000, 'Deficit', 'Deficit down $70,000'],
@@ -190,7 +190,7 @@ describe('changes shown in dollars when a value is negative (item 7)', () => {
   })
 
   it('marks a growing loss as worse and a shrinking one as better', () => {
-    expect(signedChange(-20_000, -53_684, { noun: 'Loss' })?.improved).toBe(false)
-    expect(signedChange(-53_684, -19_038, { noun: 'Loss' })?.improved).toBe(true)
+    expect(signedChange(-20_000, -48_250, { noun: 'Loss' })?.improved).toBe(false)
+    expect(signedChange(-48_250, -17_600, { noun: 'Loss' })?.improved).toBe(true)
   })
 })

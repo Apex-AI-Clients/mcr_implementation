@@ -77,7 +77,7 @@ describe('classifyLoan', () => {
   const DIRECTORS = ['Anh Bao Citizen']
 
   it.each([
-    // PARKCON-style vehicle and equipment finance.
+    // Vehicle and equipment finance, as one template prints it.
     ['Loan - VW', 'lender_asset'],
     ['Loan - Hino Truck', 'lender_asset'],
     ['Loan - Mini Excavator', 'lender_asset'],

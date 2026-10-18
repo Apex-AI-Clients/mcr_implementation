@@ -30,10 +30,11 @@ import type {
 /**
  * DPN (Director Penalty Notice) risk — pooled-credit netting methodology.
  *
- * Updated 19 May 2026 after MCR feedback (PARKCON reference dataset):
- *   gross late debt   = $9,408
- *   paid since lodged = $8,534  (sum of late credit-only ClientAmended rows)
- *   net at risk       = $874
+ * Updated 19 May 2026 after MCR feedback on a reference dataset. Worked
+ * example (the synthetic company fixture in __tests__):
+ *   gross late debt   = $7,250
+ *   paid since lodged = $6,510  (sum of late credit-only ClientAmended rows)
+ *   net at risk       = $740
  *
  * Rationale (per MCR): the ATO applies cash payments to the oldest outstanding
  * debt first, so a cash payment can be consumed by an older non-DPN debit

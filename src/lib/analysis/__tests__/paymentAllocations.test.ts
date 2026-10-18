@@ -69,23 +69,23 @@ describe('payments', () => {
 describe('refunds paid to the company', () => {
   it('adds a refund to the balance, counting a "Refund" total once, not its EFT rows', () => {
     const r = analyse(
-      row('09 Oct 2023', '14 Oct 2023', 'Refund', '$4,020.00', '', '$34,020.00 DR'),
-      row('09 Oct 2023', '14 Oct 2023', ' EFT refund for GST for the period from 01 Jul 23 to 30 Sep 23', '$268.00'),
-      row('09 Oct 2023', '14 Oct 2023', ' EFT refund for PAYG Withholding for the period from 01 Jul 23 to 30 Sep 23', '$3,752.00'),
+      row('09 Oct 2023', '14 Oct 2023', 'Refund', '$4,310.00', '', '$34,310.00 DR'),
+      row('09 Oct 2023', '14 Oct 2023', ' EFT refund for GST for the period from 01 Jul 23 to 30 Sep 23', '$445.00'),
+      row('09 Oct 2023', '14 Oct 2023', ' EFT refund for PAYG Withholding for the period from 01 Jul 23 to 30 Sep 23', '$3,865.00'),
       OPENING,
     )
-    expect(r.debtBreakdown.refundsPaid).toBe(4_020)
+    expect(r.debtBreakdown.refundsPaid).toBe(4_310)
     expect(r.rows.filter((x) => x.lodgementType === 'RefundDetail')).toHaveLength(2)
-    expect(r.debtBreakdown.currentBalance).toBe(34_020)
+    expect(r.debtBreakdown.currentBalance).toBe(34_310)
     expect(reconciliationGap(r.debtBreakdown)).toBeNull()
   })
 
   it('counts a standalone EFT refund (printed with its own balance)', () => {
     const r = analyse(
-      row('04 Oct 2023', '07 Oct 2023', ' EFT refund for PAYG Withholding for the period from 01 Jul 23 to 30 Sep 23', '$5,164.00', '', '$35,164.00 DR'),
+      row('04 Oct 2023', '07 Oct 2023', ' EFT refund for PAYG Withholding for the period from 01 Jul 23 to 30 Sep 23', '$5,270.00', '', '$35,270.00 DR'),
       OPENING,
     )
-    expect(r.debtBreakdown.refundsPaid).toBe(5_164)
+    expect(r.debtBreakdown.refundsPaid).toBe(5_270)
     expect(reconciliationGap(r.debtBreakdown)).toBeNull()
   })
 })

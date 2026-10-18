@@ -13,7 +13,7 @@ import type {
 
 /**
  * The cross-file consistency pass and the loan rules, on layouts like the
- * PARKCON statements. SYNTHETIC figures throughout.
+ * combined company statements. SYNTHETIC figures throughout.
  */
 
 const line = (section: LineSection, rawLabel: string, value: number | null, canonicalKey: string | null, isTotal = false): StatementLine => ({
