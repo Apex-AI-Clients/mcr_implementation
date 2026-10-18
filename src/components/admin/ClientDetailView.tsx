@@ -5,6 +5,8 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
+import { ReadinessChecklist } from '@/components/admin/ReadinessChecklist'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
@@ -71,6 +73,8 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
     supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
+  // What the prediction still needs. Archived files are read-only: no checklist.
+  const readiness = archived ? null : await loadReadiness(supabase, id)
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
@@ -192,8 +196,18 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
               <Pencil className="h-4 w-4" />
               Continue intake
             </Link>
-            <PredictOutcomeButton clientId={client.id} />
+            <PredictOutcomeButton
+              clientId={client.id}
+              canPredict={readiness?.canPredict ?? false}
+              waitingFor={readiness?.waitingFor ?? []}
+            />
           </div>
+        </div>
+      )}
+
+      {readiness && (
+        <div className="mb-6">
+          <ReadinessChecklist clientId={client.id} readiness={readiness} />
         </div>
       )}
 

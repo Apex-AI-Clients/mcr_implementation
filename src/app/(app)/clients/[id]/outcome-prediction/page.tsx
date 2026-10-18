@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
@@ -51,6 +52,10 @@ export default async function OutcomePredictionPage({ params }: Props) {
     supabase.from('sbr_case_imports').select('uploaded_at, undone_at, counts'),
   ])
   const changedAt = trainingDataChangedAt((imports.data ?? []) as ImportChange[])
+
+  // What the prediction is waiting for, and its DPN factor (readiness.ts).
+  const readiness = await loadReadiness(supabase, id)
+  const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
   const statement = latestBalanceSheet(slots)
   const balanceSheet = statement?.balanceSheet ?? null
@@ -108,6 +113,12 @@ export default async function OutcomePredictionPage({ params }: Props) {
       <OutcomePredictionClient
         clientId={id}
         clientName={client.name}
+        readiness={{
+          canPredict: readiness.canPredict,
+          waitingFor: readiness.waitingFor,
+          dpn: readiness.dpn,
+          dpnDetail: dpnItem?.detail ?? '',
+        }}
         initialAuto={initialAuto}
         initialPrediction={cached.data ? serialiseCachedPrediction(cached.data, changedAt) : null}
       />

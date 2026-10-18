@@ -20,6 +20,10 @@ vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
 vi.mock('@/components/admin/ComparisonJobStatus', () => ({ ComparisonJobStatus: () => null }))
 vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn(async () => null) }))
+vi.mock('@/components/admin/ReadinessChecklist', () => ({ ReadinessChecklist: () => null }))
+vi.mock('@/lib/sbr/loadReadiness', () => ({
+  loadReadiness: vi.fn(async () => ({ items: [], canPredict: false, waitingFor: [], dpn: null })),
+}))
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import ClientDetailPage from '../page'

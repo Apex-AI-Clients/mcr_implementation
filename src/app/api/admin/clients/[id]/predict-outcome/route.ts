@@ -29,6 +29,7 @@ import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/s
 import { predictSbrOutcome } from '@/lib/sbr/predictOutcome'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
 import { cachedLeaveOneOut } from '@/lib/sbr/accuracy'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { DEFAULT_PRACTITIONER_FEE_RATE, MAX_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import {
   TRAINING_COLUMNS,
@@ -70,7 +71,12 @@ async function requireAdmin() {
 const BodySchema = z.object({
   /** Staff's own figure for the creditor (ATO) debt, replacing the automatic one. */
   creditorAmount: z.number().nonnegative().nullable().optional(),
-  dpn: z.boolean(),
+  /**
+   * Ignored. The director penalty notice factor is set here, from what is on
+   * file (readiness.ts): Yes if any notice, No only if staff ticked "none
+   * issued". Accepted so an older page's request still parses.
+   */
+  dpn: z.boolean().optional(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
   // REMOVED in v2: the director-loan-sent-to-ATO flag
@@ -164,6 +170,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
     }
 
+    // Every readiness item Ready, or Needs review and reviewed — the same rule
+    // as the checklist and the button (readiness.ts).
+    const readiness = await loadReadiness(supabase, clientId)
+    if (!readiness.canPredict || readiness.dpn === null) {
+      return NextResponse.json({ error: 'NOT_READY', waitingFor: readiness.waitingFor }, { status: 422 })
+    }
+
     // Most recent lodgement analysis — gives us numLate, cumDays, and the
     // EnrichedRow list we need to derive daysSinceLastPayment.
     const { data: lodgement } = await supabase
@@ -243,7 +256,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(slots)
 
     const inputFeatures: SbrPredictionInput = {
-      dpn: body.dpn,
+      dpn: readiness.dpn,
       paymentPlanType: body.paymentPlanType,
       directorLoanAtAppointment: body.directorLoanAtAppointment,
       directorLoanReceivableAmount,

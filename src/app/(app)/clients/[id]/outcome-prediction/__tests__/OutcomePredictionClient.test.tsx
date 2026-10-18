@@ -24,6 +24,8 @@ const AUTO = {
   hasFinancials: true,
 }
 
+const READY = { canPredict: true, waitingFor: [], dpn: true, dpnDetail: '1 notice read (PAYG withholding).' }
+
 function saved(overrides: { stale?: boolean; practitionerFeeRate?: number } = {}) {
   return {
     inputFeatures: { dpn: false, paymentPlanType: 'plan', directorLoanAtAppointment: false },
@@ -62,6 +64,7 @@ describe('stale saved prediction', () => {
         clientName="Example Trading"
         initialAuto={AUTO}
         initialPrediction={saved({ stale: true, practitionerFeeRate: 0.1 })}
+        readiness={READY}
       />,
     )
     expect(screen.getByText('New historical data added — re-run')).toBeTruthy()
@@ -78,7 +81,7 @@ describe('stale saved prediction', () => {
   it('re-runs a saved prediction that is not stale on load, as before', async () => {
     const fetchMock = mockFetch()
     render(
-      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} />,
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={READY} />,
     )
     expect(screen.queryByText('New historical data added — re-run')).toBeNull()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
@@ -87,7 +90,7 @@ describe('stale saved prediction', () => {
 
 describe('practitioner fee selector', () => {
   const page = () =>
-    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} />)
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} />)
 
   it('defaults to 12.5% and sends the chosen fee', async () => {
     const fetchMock = mockFetch()
@@ -112,5 +115,36 @@ describe('practitioner fee selector', () => {
     await userEvent.click(generate)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(bodyOf(fetchMock).practitionerFeeRate).toBeCloseTo(0.08)
+  })
+})
+
+describe('readiness and the DPN factor', () => {
+  const NOT_READY = {
+    canPredict: false,
+    waitingFor: ['Director penalty notices: not uploaded'],
+    dpn: null,
+    dpnDetail: 'Upload the notices, or tick "No director penalty notice has been issued".',
+  }
+
+  it('shows what it is waiting for, keeps Generate disabled, and does not run a saved prediction', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={NOT_READY} />,
+    )
+    expect(screen.getByText('Not ready for a prediction yet')).toBeTruthy()
+    expect(screen.getByText('Director penalty notices: not uploaded')).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows the DPN factor read-only, with where it came from, and never sends it', async () => {
+    const fetchMock = mockFetch()
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} />)
+    expect(screen.queryByRole('checkbox', { name: /Director Penalty Notice issued/ })).toBeNull()
+    expect(screen.getByText('1 notice read (PAYG withholding).')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock)).not.toHaveProperty('dpn')
   })
 })

@@ -64,11 +64,22 @@ interface CachedSummary {
   stale: boolean
 }
 
+/** What the prediction is waiting for, and the DPN factor, from readiness.ts. */
+interface PredictionReadiness {
+  canPredict: boolean
+  waitingFor: string[]
+  /** Yes if any notice is on file; No only if staff ticked "none issued"; null until known. */
+  dpn: boolean | null
+  /** Where the DPN answer comes from, in a line. */
+  dpnDetail: string
+}
+
 interface Props {
   clientId: string
   clientName: string
   initialAuto: InitialAuto
   initialPrediction: CachedSummary | null
+  readiness: PredictionReadiness
 }
 
 interface FullPrediction extends SbrPrediction {
@@ -113,7 +124,6 @@ function roundToNearest(value: number, step: number): number {
 function extractCachedInput(
   cached: CachedSummary | null,
 ): {
-  dpn: boolean
   paymentPlanType: 'plan' | 'upfront'
   directorLoanAtAppointment: boolean
 } | null {
@@ -121,7 +131,6 @@ function extractCachedInput(
   const f = cached.inputFeatures
   const ppt = f.paymentPlanType
   return {
-    dpn: typeof f.dpn === 'boolean' ? f.dpn : false,
     paymentPlanType: ppt === 'plan' ? 'plan' : 'upfront',
     directorLoanAtAppointment:
       typeof f.directorLoanAtAppointment === 'boolean' ? f.directorLoanAtAppointment : false,
@@ -133,11 +142,14 @@ export function OutcomePredictionClient({
   clientName,
   initialAuto,
   initialPrediction,
+  readiness,
 }: Props) {
   const cachedInputs = extractCachedInput(initialPrediction)
 
   const [auto] = useState<InitialAuto>(initialAuto)
-  const [dpn, setDpn] = useState(cachedInputs?.dpn ?? false)
+  // Not a choice: set from what is on file (readiness.ts), never defaulted.
+  const dpn = readiness.dpn
+  const [notReady, setNotReady] = useState<string[]>(readiness.canPredict ? [] : readiness.waitingFor)
   const [paymentPlanType, setPaymentPlanType] = useState<'plan' | 'upfront'>(
     cachedInputs?.paymentPlanType ?? 'upfront',
   )
@@ -176,7 +188,7 @@ export function OutcomePredictionClient({
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
   const lodgementReady = auto.hasLodgement
-  const canRun = lodgementReady && feeRate !== null
+  const canRun = lodgementReady && feeRate !== null && readiness.canPredict && notReady.length === 0
 
   async function runPrediction() {
     setRunning(true)
@@ -187,7 +199,6 @@ export function OutcomePredictionClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dpn,
           paymentPlanType,
           directorLoanAtAppointment,
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
@@ -195,6 +206,10 @@ export function OutcomePredictionClient({
         }),
       })
       const data = await res.json()
+      if (res.status === 422 && data.error === 'NOT_READY') {
+        setNotReady(data.waitingFor ?? [])
+        return
+      }
       if (res.status === 422 && data.error === 'PREREQUISITES_MISSING') {
         setMissing(data.missing ?? [])
         return
@@ -220,7 +235,7 @@ export function OutcomePredictionClient({
   useEffect(() => {
     if (hydrated.current) return
     if (!initialPrediction || initialPrediction.stale) return
-    if (!lodgementReady) return
+    if (!lodgementReady || !readiness.canPredict) return
     hydrated.current = true
     runPrediction()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -307,6 +322,29 @@ export function OutcomePredictionClient({
 
       {missing.length > 0 && <PrereqMissingBlock clientId={clientId} missing={missing} />}
 
+      {notReady.length > 0 && (
+        <Card className="border-warning/30 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Not ready for a prediction yet</p>
+              <ul className="mt-1 list-disc pl-4 text-xs text-foreground/60">
+                {notReady.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <Link
+                href={`/clients/${clientId}`}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+              >
+                Open the readiness checklist
+                <ArrowLeft className="h-3 w-3 rotate-180" />
+              </Link>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {!lodgementReady && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex items-start gap-3">
@@ -335,7 +373,7 @@ export function OutcomePredictionClient({
         <InputPanel
           auto={auto}
           dpn={dpn}
-          setDpn={setDpn}
+          dpnDetail={readiness.dpnDetail}
           paymentPlanType={paymentPlanType}
           setPaymentPlanType={setPaymentPlanType}
           directorLoanAtAppointment={directorLoanAtAppointment}
@@ -450,8 +488,8 @@ function PrereqMissingBlock({
 
 interface InputPanelProps {
   auto: InitialAuto
-  dpn: boolean
-  setDpn: (v: boolean) => void
+  dpn: boolean | null
+  dpnDetail: string
   paymentPlanType: 'plan' | 'upfront'
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
@@ -474,7 +512,7 @@ function InputPanel(props: InputPanelProps) {
   const {
     auto,
     dpn,
-    setDpn,
+    dpnDetail,
     paymentPlanType,
     setPaymentPlanType,
     directorLoanAtAppointment,
@@ -500,7 +538,7 @@ function InputPanel(props: InputPanelProps) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-foreground/70">
             <span className="text-foreground/40">Inputs:</span>{' '}
-            DPN: <span className="text-foreground">{dpn ? 'Yes' : 'No'}</span>
+            DPN: <span className="text-foreground">{dpn === null ? 'Not known' : dpn ? 'Yes' : 'No'}</span>
             <span className="text-foreground/30"> · </span>
             <span className="text-foreground capitalize">{paymentPlanType}</span>
             <span className="text-foreground/30"> · </span>
@@ -607,11 +645,14 @@ function InputPanel(props: InputPanelProps) {
             Tick the items that apply to this client.
           </p>
           <div className="space-y-3">
-            <CheckboxField
-              label="Director Penalty Notice issued"
-              checked={dpn}
-              onChange={setDpn}
-            />
+            {/* Not a tick box: set from the client file, never defaulted. */}
+            <div className="rounded-lg border border-border bg-surface/30 px-3 py-2 text-xs text-foreground/80">
+              <p>
+                Director Penalty Notice issued:{' '}
+                <span className="font-medium text-foreground">{dpn === null ? 'Not known yet' : dpn ? 'Yes' : 'No'}</span>
+              </p>
+              <p className="mt-0.5 text-foreground/40">{dpnDetail}</p>
+            </div>
             <div>
               <CheckboxField
                 label="Director loan at appointment"
@@ -793,9 +834,10 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
             body={
               <>
                 <p>
-                  Tick when the ATO has formally issued a DPN (Director Penalty Notice)
-                  to the director(s) — typically for unreported SGC, PAYG withholding,
-                  or GST debts. The director will have a physical copy of the notice.
+                  Set from the client file, not ticked here: Yes when any director
+                  penalty notice is uploaded, No only when staff have ticked &ldquo;No
+                  director penalty notice has been issued&rdquo; on the client page. It
+                  is never assumed.
                 </p>
                 <p className="mt-1 text-foreground/55">
                   <span className="text-foreground/80">Why it matters:</span> a DPN
