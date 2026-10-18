@@ -70,7 +70,7 @@ describe('rows and total', () => {
     expect(rows[0].label).toHaveLength(CREDITOR_LABEL_MAX)
     expect(rows[0].amount).toBeNull()
     expect(rows[1]).toEqual({ label: 'Fuel card', amount: null })
-    expect(rows[5].label).toBe('Other')
+    expect(rows[5].label).toBe('Other creditor 2')
   })
 
   it('reads a saved value defensively', () => {
@@ -99,10 +99,29 @@ describe('balance-sheet hints', () => {
       slot(2025, 'primary', { lines, currentLiabilities: { bankOverdraft: 2_500 }, nonCurrentLiabilities: { chattelMortgages: 25_000 } }),
       slot(2024, 'primary', { lines: [line('currentLiabilities', 'Trade Creditors', 1)] }),
     ])
-    expect(hints.map((h) => h?.amount ?? null)).toEqual([4_200, 2_500, 60_000, 18_300, 25_000, null])
+    // Cash loans: the bank loan plus the chattel finance, with the caution.
+    expect(hints.map((h) => h?.amount ?? null)).toEqual([4_200, 85_000, 2_500, 18_300, null, null])
     expect(hints[0]?.source).toBe('FY2025 balance sheet')
-    expect(hints[4]?.caution).toMatch(/secured/)
+    expect(hints[1]?.caution).toBe(
+      'Includes $25,000 of chattel, hire-purchase, vehicle or equipment finance. Usually secured — check before including',
+    )
     expect(hints[0]?.caution).toBeNull()
+  })
+
+  it('has no default row for secured finance', () => {
+    expect(DEFAULT_CREDITOR_LABELS).toEqual(['Credit cards', 'Cash loans', 'Bank overdraft', 'Trade suppliers', 'Other creditor 1', 'Other creditor 2'])
+    expect(DEFAULT_CREDITOR_LABELS.some((l) => /finance|equipment|vehicle/i.test(l))).toBe(false)
+  })
+
+  it('cautions on Cash loans when the only loan is finance', () => {
+    const hints = creditorHints([slot(2025, 'primary', { lines: [line('nonCurrentLiabilities', 'Hire Purchase - Excavator', 40_000)] })])
+    expect(hints[1]?.amount).toBe(40_000)
+    expect(hints[1]?.caution).toMatch(/Usually secured — check before including$/)
+  })
+
+  it('has no caution on Cash loans without finance', () => {
+    const hints = creditorHints([slot(2025, 'primary', { lines: [line('currentLiabilities', 'Cash Loan - Lender', 9_000)] })])
+    expect(hints[1]).toEqual({ amount: 9_000, source: 'FY2025 balance sheet', caution: null })
   })
 
   it('prefers the current period, where a $0 overdraft means it was repaid', () => {
@@ -110,7 +129,7 @@ describe('balance-sheet hints', () => {
       slot(2026, 'primary', { lines, currentLiabilities: { bankOverdraft: 2_500 } }),
       slot(2027, 'current_period', { currentLiabilities: { bankOverdraft: 0 } }, '2026-09-30'),
     ])
-    expect(hints[1]).toEqual({ amount: 0, source: 'at 30 Sep 2026 (current period)', caution: null })
+    expect(hints[2]).toEqual({ amount: 0, source: 'at 30 Sep 2026 (current period)', caution: null })
     expect(hints[3]).toBeNull()
   })
 

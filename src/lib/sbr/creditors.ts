@@ -16,13 +16,18 @@ import { longDate } from './creditorDebt'
 export const CREDITOR_ROW_COUNT = 6
 export const CREDITOR_LABEL_MAX = 60
 
+/**
+ * Gabby's words. No default row for equipment or vehicle finance: secured
+ * finance normally sits outside an SBR, and a row of its own would invite
+ * including it. It shows only as a caution on the Cash loans hint.
+ */
 export const DEFAULT_CREDITOR_LABELS = [
   'Credit cards',
+  'Cash loans',
   'Bank overdraft',
-  'Bank loans',
-  'Trade creditors',
-  'Equipment / vehicle finance',
-  'Other',
+  'Trade suppliers',
+  'Other creditor 1',
+  'Other creditor 2',
 ] as const
 
 export interface CreditorRow {
@@ -96,13 +101,15 @@ export interface CreditorHint {
   caution: string | null
 }
 
-const SECURED = 'Usually secured — check before including'
+export const SECURED = 'Usually secured — check before including'
+
+const dollars = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`
 
 const LIABILITY_SECTIONS = new Set(['currentLiabilities', 'nonCurrentLiabilities'])
 const NOT_A_CREDITOR = /\b(ato|tax|taxation|gst|payg|super|superannuation|director|directors|shareholder|related|associate|beneficiar|unitholder)/i
 
 const CREDIT_CARD = /\b(credit cards?|amex|american express|visa|mastercard)\b/i
-const BANK_LOAN = /\b((bank|business|term) loans?|loans? (from|with|-|–)? ?(the )?(bank|nab|cba|commonwealth|westpac|anz))\b/i
+const CASH_LOAN = /\b((bank|business|term|cash|unsecured|short[- ]term) loans?|loans? (from|with|-|–)? ?(the )?(bank|nab|cba|commonwealth|westpac|anz))\b/i
 const TRADE_CREDITORS = /\b(trade creditors|accounts payable|trade payables|sundry creditors|creditors)\b/i
 const EQUIPMENT_FINANCE = /\b(chattel|hire purchase|equipment (loan|finance)|vehicle (loan|finance)|car loan|motor vehicle loan|lease liabilit)/i
 
@@ -119,10 +126,13 @@ function sumLines(lines: readonly StatementLine[], pattern: RegExp): number | nu
 }
 
 /**
- * A hint per default row (the row's position: credit cards, overdraft, bank
- * loans, trade creditors, equipment / vehicle finance, other), from the
+ * A hint per default row (the row's position: credit cards, cash loans,
+ * overdraft, trade suppliers; none for the two "other" rows), from the
  * current-period balance sheet when there is one, else the latest year's.
  * A $0 overdraft in the current period is shown: it was repaid.
+ *
+ * Chattel, hire-purchase, vehicle or equipment finance is added to the Cash
+ * loans hint with the caution that it is usually secured.
  */
 export function creditorHints(slots: StoredStatementSlot[]): (CreditorHint | null)[] {
   const hints: (CreditorHint | null)[] = Array.from({ length: CREDITOR_ROW_COUNT }, () => null)
@@ -140,10 +150,16 @@ export function creditorHints(slots: StoredStatementSlot[]): (CreditorHint | nul
   const overdraft = (balanceSheet.currentLiabilities as Record<string, unknown>)?.bankOverdraft
   const chattel = (balanceSheet.nonCurrentLiabilities as Record<string, unknown>)?.chattelMortgages
 
+  const loans = sumLines(lines, CASH_LOAN)
+  const finance = typeof chattel === 'number' ? Math.abs(chattel) : sumLines(lines, EQUIPMENT_FINANCE)
+  const withFinance = finance !== null && finance > 0
+
   hints[0] = hint(sumLines(lines, CREDIT_CARD))
-  hints[1] = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
-  hints[2] = hint(sumLines(lines, BANK_LOAN))
+  hints[1] = hint(
+    loans === null && !withFinance ? null : (loans ?? 0) + (withFinance ? finance : 0),
+    withFinance ? `Includes ${dollars(finance)} of chattel, hire-purchase, vehicle or equipment finance. ${SECURED}` : null,
+  )
+  hints[2] = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
   hints[3] = hint(sumLines(lines, TRADE_CREDITORS))
-  hints[4] = hint(typeof chattel === 'number' ? Math.abs(chattel) : sumLines(lines, EQUIPMENT_FINANCE), SECURED)
   return hints
 }

@@ -3,7 +3,7 @@
 -- Additive: code running before this migration keeps working after it.
 --
 -- The SBR offer is sized on the ATO debt PLUS the other creditors staff
--- enter (credit cards, overdraft, bank loans, trade creditors, finance, other),
+-- enter (credit cards, cash loans, overdraft, trade suppliers, other creditors),
 -- as instructed on the call of 14 Oct 2026. Both are saved with the client's
 -- prediction so the page shows what the offer was sized on:
 --

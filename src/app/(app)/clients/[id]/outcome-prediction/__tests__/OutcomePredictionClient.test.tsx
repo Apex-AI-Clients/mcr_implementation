@@ -176,10 +176,14 @@ describe('What the financial statements show', () => {
 describe('Creditors in the SBR', () => {
   const HINTS = [
     { amount: 4_200, source: 'FY2025 balance sheet', caution: null },
+    {
+      amount: 25_000,
+      source: 'FY2025 balance sheet',
+      caution: 'Includes $25,000 of chattel, hire-purchase, vehicle or equipment finance. Usually secured — check before including',
+    },
     { amount: 0, source: 'FY2025 balance sheet', caution: null },
     null,
     null,
-    { amount: 25_000, source: 'FY2025 balance sheet', caution: 'Usually secured — check before including' },
     null,
   ]
   const page = (auto: Record<string, unknown> = {}) =>
@@ -218,7 +222,7 @@ describe('Creditors in the SBR', () => {
     expect(body.creditors).toHaveLength(6)
     expect(body.creditors[0]).toEqual({ label: 'Credit cards', amount: 12_000 })
     expect(body.creditors[3]).toEqual({ label: 'Supplier account', amount: 38_000 })
-    expect(body.creditors[1]).toEqual({ label: 'Bank overdraft', amount: null })
+    expect(body.creditors[1]).toEqual({ label: 'Cash loans', amount: null })
     // The automatic ATO debt is not sent: the server works it out.
     expect(body).not.toHaveProperty('creditorAmount')
   })
@@ -237,11 +241,11 @@ describe('Creditors in the SBR', () => {
         atoDebtEdited: true,
         rows: [
           { label: 'Fuel card', amount: 3_000 },
+          { label: 'Cash loans', amount: null },
           { label: 'Bank overdraft', amount: null },
-          { label: 'Bank loans', amount: null },
-          { label: 'Trade creditors', amount: null },
-          { label: 'Equipment / vehicle finance', amount: null },
-          { label: 'Other', amount: null },
+          { label: 'Trade suppliers', amount: null },
+          { label: 'Other creditor 1', amount: null },
+          { label: 'Other creditor 2', amount: null },
         ],
       },
     })
