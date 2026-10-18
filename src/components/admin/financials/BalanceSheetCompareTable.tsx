@@ -11,6 +11,7 @@ import type {
 } from '@/lib/financials/types'
 import {
   formatCurrentPeriodHeaderDate,
+  formatCurrentPeriodHeaderName,
   formatCurrentPeriodTooltip,
 } from './currentPeriodLabels'
 
@@ -165,14 +166,14 @@ function TableHeader({
           >
             <div className="inline-flex flex-col items-end">
               <span className="inline-flex items-center gap-1">
-                Current YTD
+                {formatCurrentPeriodHeaderName(currentPeriod)}
                 <Info
                   className="h-3 w-3 text-foreground/40"
                   aria-label="Partial period — not directly comparable"
                 />
               </span>
               <span className="text-[10px] text-foreground/30">
-                to {formatCurrentPeriodHeaderDate(currentPeriod)}
+                {formatCurrentPeriodHeaderDate(currentPeriod)}
               </span>
             </div>
           </th>

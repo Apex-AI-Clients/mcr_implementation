@@ -75,16 +75,41 @@ describe('buildCoverage', () => {
   it('adds the current period as its own column', () => {
     const coverage = buildCoverage([
       slot(2025, 'primary', { is: 'a', bs: 'a' }),
-      slot(2026, 'current_period', { is: 'cp-pnl' }, { periodLabel: '1 July 2025 to 4 May 2026' }),
+      slot(2026, 'current_period', { is: 'cp-pnl' }, { periodLabel: '1 July 2025 to 4 May 2026', periodEndDate: '2026-05-04' }),
     ])
     const last = coverage.columns[coverage.columns.length - 1]
-    expect(last).toMatchObject({ kind: 'current_period', label: 'Current period', periodLabel: '1 July 2025 to 4 May 2026' })
+    expect(last).toMatchObject({ kind: 'current_period', label: 'FY2026 to date', periodLabel: '1 Jul 2025 – 4 May 2026' })
     expect(coverage.rows.income_statement.at(-1)?.status).toBe('own')
     expect(coverage.rows.balance_sheet.at(-1)?.status).toBe('missing')
   })
 
   it('is empty with nothing stored', () => {
-    expect(buildCoverage([])).toEqual({ columns: [], rows: { income_statement: [], balance_sheet: [] } })
+    expect(buildCoverage([])).toEqual({ columns: [], rows: { income_statement: [], balance_sheet: [] }, comparedYears: [] })
+  })
+
+  it('adds the full years between the newest annual statement and the current period as missing', () => {
+    // FY2022–FY2025 annual, then FY2027 to date: FY2026, the latest full year, was never uploaded.
+    const coverage = buildCoverage([
+      ...[2022, 2023, 2024, 2025].map((y) => slot(y, 'primary', { is: `d${y}`, bs: `d${y}` })),
+      slot(2027, 'current_period', { is: 'cp', bs: 'cp' }, { periodEndDate: '2026-10-15', periodStartDate: '2026-07-01' }),
+    ])
+    expect(statuses(coverage)).toEqual({
+      columns: ['FY2022', 'FY2023', 'FY2024', 'FY2025', 'FY2026', 'FY2027 to date'],
+      pnl: ['own', 'own', 'own', 'own', 'missing', 'own'],
+      bs: ['own', 'own', 'own', 'own', 'missing', 'own'],
+    })
+    expect(coverage.columns[4]).toMatchObject({ notUploaded: true, note: 'Year ended 30 June 2026 not uploaded' })
+    expect(coverage.columns[5].periodLabel).toBe('1 Jul – 15 Oct 2026')
+    // The comparison still uses the latest four annual years on file.
+    expect(coverage.comparedYears).toEqual([2022, 2023, 2024, 2025])
+  })
+
+  it('adds no missing year when the current period follows the newest annual year', () => {
+    const coverage = buildCoverage([
+      slot(2025, 'primary', { is: 'a', bs: 'a' }),
+      slot(2026, 'current_period', { is: 'cp', bs: 'cp' }, { periodEndDate: '2025-10-15' }),
+    ])
+    expect(coverage.columns.some((c) => c.notUploaded)).toBe(false)
   })
 })
 
@@ -116,7 +141,7 @@ describe('one upload area: years, the current period, and superseded files', () 
       ...[2022, 2023, 2024, 2025, 2026].map((y) => slot(y, 'primary', { is: `fy${y}`, bs: `fy${y}` })),
       slot(2027, 'current_period', { is: 'cp27', bs: 'cp27' }, { periodLabel: '1 July 2026 to 30 September 2026' }),
     ])
-    expect(statuses(coverage).columns).toEqual(['FY2022*', 'FY2023', 'FY2024', 'FY2025', 'FY2026', 'Current period'])
+    expect(statuses(coverage).columns).toEqual(['FY2022*', 'FY2023', 'FY2024', 'FY2025', 'FY2026', 'FY2027 to date'])
     expect(coverage.columns.at(-1)).toMatchObject({ financialYear: 2027, kind: 'current_period' })
   })
 

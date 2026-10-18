@@ -188,3 +188,56 @@ describe('ComparisonChecksPanel', () => {
     expect(container.textContent).toBe('')
   })
 })
+
+describe('missing latest year and the comparison window', () => {
+  const withGap: StatementCoverage = {
+    columns: [
+      { key: 'fy2024', label: 'FY2024', financialYear: 2024, kind: 'annual', extra: false },
+      { key: 'fy2025', label: 'FY2025', financialYear: 2025, kind: 'annual', extra: false },
+      {
+        key: 'fy2026',
+        label: 'FY2026',
+        financialYear: 2026,
+        kind: 'annual',
+        extra: false,
+        notUploaded: true,
+        note: 'Year ended 30 June 2026 not uploaded',
+      },
+      { key: 'current', label: 'FY2027 to date', financialYear: 2027, kind: 'current_period', extra: false, periodLabel: '1 Jul – 15 Oct 2026' },
+    ],
+    rows: {
+      income_statement: [
+        { status: 'own', filename: 'a.pdf', documentId: 'a' },
+        { status: 'own', filename: 'b.pdf', documentId: 'b' },
+        { status: 'missing', filename: null, documentId: null },
+        { status: 'own', filename: 'c.pdf', documentId: 'c' },
+      ],
+      balance_sheet: [
+        { status: 'own', filename: 'a.pdf', documentId: 'a' },
+        { status: 'own', filename: 'b.pdf', documentId: 'b' },
+        { status: 'missing', filename: null, documentId: null },
+        { status: 'own', filename: 'c.pdf', documentId: 'c' },
+      ],
+    },
+    comparedYears: [2024, 2025],
+  }
+
+  it('notes the year not uploaded under its heading, and names the current period', () => {
+    render(<StatementCoverageTable coverage={withGap} />)
+    expect(screen.getByText('Year ended 30 June 2026 not uploaded')).toBeTruthy()
+    expect(screen.getByText('FY2027 to date')).toBeTruthy()
+    expect(screen.getByText('1 Jul – 15 Oct 2026')).toBeTruthy()
+  })
+
+  it('says which years the comparison uses', () => {
+    render(<StatementCoverageTable coverage={withGap} />)
+    expect(screen.getByTestId('comparison-window').textContent).toBe(
+      'The comparison uses the latest 2 annual years on file: FY2024–FY2025.',
+    )
+  })
+
+  it('says nothing about the window when it is not known', () => {
+    render(<StatementCoverageTable coverage={{ ...withGap, comparedYears: undefined }} />)
+    expect(screen.queryByTestId('comparison-window')).toBeNull()
+  })
+})

@@ -1,4 +1,5 @@
 import type { DiffRow, FinancialsComparison } from '@/lib/financials/types'
+import { currentPeriodAt } from '@/lib/financials/periodLabels'
 
 /**
  * "What the financial statements show": plain-English points for staff to
@@ -65,8 +66,6 @@ function listYears(years: number[]): string {
   return labels.length <= 1 ? labels.join('') : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
 }
 
-const SHORT_DATE = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-
 interface Point {
   label: string
   value: number
@@ -110,7 +109,8 @@ function series(c: FinancialsComparison, rows: Map<string, DiffRow>, keys: strin
       if (v != null) sum = (sum ?? 0) + v
     }
     if (sum !== null) {
-      current = { label: `${SHORT_DATE.format(new Date(c.currentPeriod.periodEndDate))} (current period)`, value: sum }
+      // "15 Oct 2026 (FY2027 to date)", named as everywhere else (periodLabels.ts).
+      current = { label: currentPeriodAt(c.currentPeriod), value: sum }
     }
   }
   return { years, current }
@@ -119,7 +119,7 @@ function series(c: FinancialsComparison, rows: Map<string, DiffRow>, keys: strin
 const firstOf = (s: Series) => s.years[0] ?? null
 const lastOf = (s: Series) => s.years.at(-1) ?? null
 
-/** "was $X at 30 Sep 2026 (current period)", appended to a balance-sheet point. */
+/** "was $X at 15 Oct 2026 (FY2027 to date)", appended to a balance-sheet point. */
 function currentTail(s: Series, verb = 'was'): string {
   return s.current ? `, and ${verb} ${money(s.current.value)} at ${s.current.label}` : ''
 }
@@ -250,4 +250,5 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
 }
 
 /** Words a point must never use: no legal conclusions. */
-export const BANNED_WORDS = /\b(insolven\w*|solvent|fraud\w*|illegal\w*|breach\w*|phoenix\w*)\b/i
+// One list for every summary (ai/wording.ts): solvency and solvent included.
+export { BANNED_WORDS } from '@/lib/ai/wording'

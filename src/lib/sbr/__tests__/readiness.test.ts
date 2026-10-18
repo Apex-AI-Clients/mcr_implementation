@@ -153,6 +153,25 @@ describe('financial statements', () => {
     expect(withDeed.notes).toContain('deed.pdf: Reads as a trust deed.')
   })
 
+  it('needs review when the latest full year was never uploaded, with one note for it', () => {
+    const base = coverage()
+    const withGap: StatementCoverage = {
+      columns: [
+        ...base.columns.slice(0, 4),
+        { key: 'fy2027', label: 'FY2027', financialYear: 2027, kind: 'annual', extra: false, notUploaded: true, note: 'Year ended 30 June 2027 not uploaded' },
+        { key: 'current', label: 'FY2028 to date', financialYear: 2028, kind: 'current_period', extra: false },
+      ],
+      rows: {
+        income_statement: [own, own, own, own, missing, own],
+        balance_sheet: [own, own, own, own, missing, own],
+      },
+    }
+    const item = statusOf(computeReadiness(input({ financials: { coverage: withGap } })), 'financials')
+    expect(item.status).toBe('needs_review')
+    expect(item.notes).toContain('Latest full year (FY2027) missing: year ended 30 June 2027 not uploaded.')
+    expect(item.notes.some((n) => /FY2027 (Profit and Loss|Balance Sheet) is missing/.test(n))).toBe(false)
+  })
+
   it('needs review when there is no comparison', () => {
     const item = statusOf(computeReadiness(input({ financials: { comparison: null } })), 'financials')
     expect(item.status).toBe('needs_review')

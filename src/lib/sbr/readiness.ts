@@ -149,8 +149,17 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       ['income_statement', 'Profit and Loss'],
       ['balance_sheet', 'Balance Sheet'],
     ] as const
+    // A full year between the newest annual statement and the current period
+    // was never uploaded: one note for the year, not one per half.
+    const notUploaded = f.coverage.columns.filter((c) => c.notUploaded).map((c) => c.financialYear)
+    const latestMissing = notUploaded.length ? Math.max(...notUploaded) : null
+    for (const year of notUploaded) {
+      notes.push(
+        `${year === latestMissing ? `Latest full year (FY${year}) missing` : `FY${year} missing`}: year ended 30 June ${year} not uploaded.`,
+      )
+    }
     f.coverage.columns.forEach((column, i) => {
-      if (column.extra) return
+      if (column.extra || column.notUploaded) return
       for (const [half, name] of halves) {
         const status = f.coverage.rows[half][i]?.status
         const where = column.kind === 'current_period' ? 'current period' : column.label

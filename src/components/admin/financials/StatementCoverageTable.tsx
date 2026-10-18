@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, CornerDownLeft, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CoverageCell, StatementCoverage } from '@/lib/financials/coverage'
+import { yearSpan } from '@/lib/financials/periodLabels'
 import type { StatementHalfKey } from '@/lib/financials/types'
 
 /**
@@ -62,6 +63,11 @@ function CellContent({ cell }: { cell: CoverageCell }) {
   )
 }
 
+/** "The comparison uses the latest 4 annual years on file: FY2022–FY2025." */
+export function comparisonWindowNote(years: readonly number[]): string {
+  return `The comparison uses the latest ${years.length} annual year${years.length === 1 ? '' : 's'} on file: ${yearSpan(years)}.`
+}
+
 function hoverText(cell: CoverageCell): string | undefined {
   if (!cell.filename) return undefined
   return cell.status === 'comparative'
@@ -96,6 +102,7 @@ export function StatementCoverageTable({ coverage, className, selectableDocument
                   {column.periodLabel && (
                     <span className="block font-normal text-foreground/40"> {column.periodLabel}</span>
                   )}
+                  {column.note && <span className="block font-normal text-warning">{column.note}</span>}
                 </th>
               ))}
             </tr>
@@ -150,6 +157,11 @@ export function StatementCoverageTable({ coverage, className, selectableDocument
         extraction. Hover a cell for the file{onSelectFile ? '; click it to check or change its year and type' : ''}. Years
         marked older are kept but not compared.
       </p>
+      {coverage.comparedYears && coverage.comparedYears.length > 0 && (
+        <p className="text-[11px] text-foreground/70" data-testid="comparison-window">
+          {comparisonWindowNote(coverage.comparedYears)}
+        </p>
+      )}
     </div>
   )
 }

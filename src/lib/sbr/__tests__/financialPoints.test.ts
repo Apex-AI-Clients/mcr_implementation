@@ -74,7 +74,7 @@ describe('(a) ATO-related debt — always shown, super excluded', () => {
 
   it('adds the current period', () => {
     const c = comparison(Y, { atoLiability: [100_000, 0, 0, 150_000] }, { atoLiability: 186_000 })
-    expect(rule(c, 'a')).toMatch(/to \$150,000 \(FY2026\), and was \$186,000 at 30 Sept 2026 \(current period\)\.$/)
+    expect(rule(c, 'a')).toMatch(/to \$150,000 \(FY2026\), and was \$186,000 at 30 Sep 2026 \(FY2027 to date\)\.$/)
   })
 
   it('says "went" when the change is not material, and still gives the figures', () => {
@@ -135,7 +135,7 @@ describe('(c) and (d) related-party loans', () => {
   it('(c) loans owed to directors or related parties, with the current period', () => {
     const c = comparison(Y, { directorRelatedLoansPayable: [84_310, null, null, 702_655] }, { directorRelatedLoansPayable: 718_090 })
     expect(rule(c, 'c')).toBe(
-      'Loans owed to directors or related parties rose from $84,310 (FY2023) to $702,655 (FY2026), and were $718,090 at 30 Sept 2026 (current period).',
+      'Loans owed to directors or related parties rose from $84,310 (FY2023) to $702,655 (FY2026), and were $718,090 at 30 Sep 2026 (FY2027 to date).',
     )
   })
 
@@ -177,7 +177,7 @@ describe('(f) net assets', () => {
   it('says a deficit as one, including the current period', () => {
     const c = comparison(Y, { netAssets: [-41_000, 0, 0, -88_000] }, { netAssets: -79_000 })
     expect(rule(c, 'f')).toBe(
-      'Liabilities exceeded assets by $88,000 in FY2026; in FY2023 liabilities exceeded assets by $41,000; at 30 Sept 2026 (current period), liabilities exceeded assets by $79,000.',
+      'Liabilities exceeded assets by $88,000 in FY2026; in FY2023 liabilities exceeded assets by $41,000; at 30 Sep 2026 (FY2027 to date), liabilities exceeded assets by $79,000.',
     )
   })
 
