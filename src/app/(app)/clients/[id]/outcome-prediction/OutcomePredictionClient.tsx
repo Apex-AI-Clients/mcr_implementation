@@ -171,6 +171,15 @@ function formatNumber(value: number | null | undefined): string {
   return value.toLocaleString('en-AU')
 }
 
+/**
+ * A percentage as the fraction the offer was worked out with, to 6 places and
+ * no trailing zeros (42.4125% -> "0.424125"), so each calculation step
+ * reconciles with the next. The tiles show the % rounded to one place.
+ */
+export function exactFraction(percent: number): string {
+  return String(Number((percent / 100).toFixed(6)))
+}
+
 function roundToNearest(value: number, step: number): number {
   return Math.round(value / step) * step
 }
@@ -1688,7 +1697,7 @@ function CalculationsContent({
                 </div>
                 <div className="mt-2 border-t border-border/60 pt-2">
                   Creditor receipt ={' '}
-                  {(prediction.predictedOutcomePercent / 100).toFixed(3)} ×{' '}
+                  {exactFraction(prediction.predictedOutcomePercent)} ×{' '}
                   {formatAud(prediction.creditorAmount)} ={' '}
                   <span className="text-foreground">
                     {formatAud(
@@ -1738,7 +1747,7 @@ function CalculationsContent({
                       <span className="text-foreground">{aligned.targetPercent.toFixed(1)}%</span>
                     </div>
                     <div>
-                      Creditor receipt = {(aligned.targetPercent / 100).toFixed(3)} ×{' '}
+                      Creditor receipt = {exactFraction(aligned.targetPercent)} ×{' '}
                       {formatAud(prediction.creditorAmount)} ={' '}
                       <span className="text-foreground">
                         {formatAud((aligned.targetPercent / 100) * prediction.creditorAmount)}

@@ -79,3 +79,6 @@ graphify-out
 # Supabase CLI state for the linked project (project ref, pooler host, org).
 # Machine-local; never committed.
 supabase/.temp/
+
+# Real client files dropped in for checking. Never commit.
+/data/

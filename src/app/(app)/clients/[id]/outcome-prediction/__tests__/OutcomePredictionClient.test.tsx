@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CreditorsSummaryCard, FinancialPointsPanel, OutcomePredictionClient } from '../OutcomePredictionClient'
+import { CreditorsSummaryCard, FinancialPointsPanel, OutcomePredictionClient, exactFraction } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -328,5 +328,14 @@ describe('days since last payment', () => {
       />,
     )
     expect(screen.getByText('No payments found in the ATO account (1 Jul 2020 – 1 Oct 2026)')).toBeTruthy()
+  })
+})
+
+describe('calculation steps', () => {
+  it('shows the exact fraction the offer was worked out with, so the steps reconcile', () => {
+    // 42.4125% x $303,827.46 = $128,860.8; / 0.875 = $147,269.5
+    expect(exactFraction(42.4125)).toBe('0.424125')
+    expect(exactFraction(59.3)).toBe('0.593')
+    expect(exactFraction(40)).toBe('0.4')
   })
 })
