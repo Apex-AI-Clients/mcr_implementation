@@ -12,7 +12,7 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
   return {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
     debt_min: 150_000,
     debt_max: null,
@@ -57,7 +57,7 @@ describe('toLead', () => {
     expect(lead).toEqual({
       id: '11111111-1111-4111-8111-111111111111',
       name: 'Dean Whitlock',
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       phone: '0407552118',
       debtMin: 150_000,
       debtMax: null,

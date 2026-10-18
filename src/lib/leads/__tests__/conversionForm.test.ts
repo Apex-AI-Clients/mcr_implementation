@@ -15,7 +15,7 @@ function lead(overrides: Partial<Lead> = {}): Lead {
   return {
     id: 'ld_1',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
     debtMin: 150_000,
     debtMax: null,
@@ -87,7 +87,7 @@ describe('emptyConversionForm', () => {
   it('starts from what the lead already told us', () => {
     const form = emptyConversionForm(lead())
     expect(form.name).toBe('Dean Whitlock')
-    expect(form.email).toBe('dean@whitlockcivil.com.au')
+    expect(form.email).toBe('dean@whitlockcivil.example.com.au')
     expect(form.entityType).toBe('company')
   })
 
@@ -103,7 +103,7 @@ describe('emptyConversionForm', () => {
     // The person who enquired is the company's contact; both stay editable.
     const form = emptyConversionForm(lead())
     expect(form.phoneNumber).toBe('0407 552 118')
-    expect(form.emailAddress).toBe('dean@whitlockcivil.com.au')
+    expect(form.emailAddress).toBe('dean@whitlockcivil.example.com.au')
   })
 
   it('leaves the company phone and email blank when there is no lead', () => {
@@ -120,10 +120,10 @@ describe('emptyConversionForm', () => {
 describe('toCompanyDetails', () => {
   it('trims everything and lowercases the email', () => {
     const details = toCompanyDetails(
-      company({ companyName: '  Whitlock Civil  ', emailAddress: '  Accounts@Whitlock.com.au ' }),
+      company({ companyName: '  Whitlock Civil  ', emailAddress: '  Accounts@Whitlock.example.com.au ' }),
     )
     expect(details.companyName).toBe('Whitlock Civil')
-    expect(details.emailAddress).toBe('accounts@whitlock.com.au')
+    expect(details.emailAddress).toBe('accounts@whitlock.example.com.au')
   })
 
   it('carries the numbers through exactly as typed, spacing included', () => {

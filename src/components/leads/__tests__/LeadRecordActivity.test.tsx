@@ -23,7 +23,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
   return {
     id: 'ld_1',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
     debtMin: 150_000,
     debtMax: null,
@@ -158,8 +158,8 @@ describe('Lead record — key facts and contact', () => {
     renderRecord(makeLead({ preferredCallTime: 'After 6pm', message: 'Civil contracting.' }))
     const contact = screen.getByRole('region', { name: 'Contact' })
     expect(
-      within(contact).getByRole('link', { name: 'dean@whitlockcivil.com.au' }).getAttribute('href'),
-    ).toBe('mailto:dean@whitlockcivil.com.au')
+      within(contact).getByRole('link', { name: 'dean@whitlockcivil.example.com.au' }).getAttribute('href'),
+    ).toBe('mailto:dean@whitlockcivil.example.com.au')
     expect(within(contact).getByRole('link', { name: /0407/ }).getAttribute('href')).toBe(
       'tel:0407552118',
     )

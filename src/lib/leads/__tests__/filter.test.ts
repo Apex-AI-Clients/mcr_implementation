@@ -95,10 +95,10 @@ describe('hasActiveFilters', () => {
 describe('filterLeads', () => {
   const leads = [
     // a: closed low bracket, b: open-ended $150k+, c: no debt given, d: big closed bracket
-    makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', stage: 'lead', source: 'facebook', debtMin: 50_000, debtMax: 74_999, message: 'Behind on PAYG after losing a builder.', createdAt: at(2), lastActionAt: at(2) }),
-    makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', state: 'NSW', stage: 'prospect', source: 'website', debtMin: 150_000, debtMax: null, message: null, createdAt: at(10), lastActionAt: at(10) }),
-    makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', state: 'NSW', stage: 'lead', source: 'facebook', debtMin: null, debtMax: null, message: 'Saw your advertisement.', createdAt: at(40), lastActionAt: at(40) }),
-    makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', state: 'VIC', stage: 'non_proceeding', source: 'website', debtMin: 250_000, debtMax: 500_000, message: null, createdAt: at(75), lastActionAt: at(75) }),
+    makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.example.com.au', phone: '0402915338', state: 'VIC', stage: 'lead', source: 'facebook', debtMin: 50_000, debtMax: 74_999, message: 'Behind on PAYG after losing a builder.', createdAt: at(2), lastActionAt: at(2) }),
+    makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.example.com.au', phone: '0433217604', state: 'NSW', stage: 'prospect', source: 'website', debtMin: 150_000, debtMax: null, message: null, createdAt: at(10), lastActionAt: at(10) }),
+    makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.example.com.au', phone: '0421004772', state: 'NSW', stage: 'lead', source: 'facebook', debtMin: null, debtMax: null, message: 'Saw your advertisement.', createdAt: at(40), lastActionAt: at(40) }),
+    makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.example.com.au', phone: '0417645099', state: 'VIC', stage: 'non_proceeding', source: 'website', debtMin: 250_000, debtMax: 500_000, message: null, createdAt: at(75), lastActionAt: at(75) }),
   ]
 
   function ids(result: Lead[]): string[] {

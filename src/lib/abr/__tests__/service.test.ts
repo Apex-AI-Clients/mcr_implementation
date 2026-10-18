@@ -115,15 +115,15 @@ describe('searchAbrNames', () => {
 describe('fetchAbnDetails', () => {
   it('parses a successful response', async () => {
     stubFetch(async () => new Response(fixture('abn_details_company')))
-    const { details, cached } = await fetchAbnDetails('53004085616', 'test-guid')
+    const { details, cached } = await fetchAbnDetails('86136533741', 'test-guid')
     expect(details?.entityTypeCode).toBe('PRV')
     expect(cached).toBe(false)
   })
 
   it('serves a repeat lookup from cache without going out again', async () => {
     const mock = stubFetch(async () => new Response(fixture('abn_details_company')))
-    await fetchAbnDetails('53004085616', 'test-guid')
-    const second = await fetchAbnDetails('53004085616', 'test-guid')
+    await fetchAbnDetails('86136533741', 'test-guid')
+    const second = await fetchAbnDetails('86136533741', 'test-guid')
 
     expect(second.cached).toBe(true)
     expect(mock).toHaveBeenCalledTimes(1)
@@ -132,8 +132,8 @@ describe('fetchAbnDetails', () => {
   it('expires a cached entry once it is old enough', async () => {
     const mock = stubFetch(async () => new Response(fixture('abn_details_company')))
     const now = Date.now()
-    await fetchAbnDetails('53004085616', 'test-guid', now)
-    await fetchAbnDetails('53004085616', 'test-guid', now + 25 * 60 * 60 * 1_000)
+    await fetchAbnDetails('86136533741', 'test-guid', now)
+    await fetchAbnDetails('86136533741', 'test-guid', now + 25 * 60 * 60 * 1_000)
 
     expect(mock).toHaveBeenCalledTimes(2)
   })
@@ -142,10 +142,10 @@ describe('fetchAbnDetails', () => {
     const mock = stubFetch(async () => {
       throw timeoutError()
     })
-    await expect(fetchAbnDetails('53004085616', 'test-guid')).rejects.toBeInstanceOf(
+    await expect(fetchAbnDetails('86136533741', 'test-guid')).rejects.toBeInstanceOf(
       AbrTimeoutError,
     )
-    await expect(fetchAbnDetails('53004085616', 'test-guid')).rejects.toBeInstanceOf(
+    await expect(fetchAbnDetails('86136533741', 'test-guid')).rejects.toBeInstanceOf(
       AbrTimeoutError,
     )
     expect(mock).toHaveBeenCalledTimes(2)
@@ -164,23 +164,23 @@ describe('fetchAcnsForAbns', () => {
   }
 
   it('maps each ABN to its ACN, and a trust to none', async () => {
-    stubDetails({ '53004085616': 'abn_details_company', '82653091178': 'abn_details_trust' })
-    expect(await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')).toEqual({
-      '53004085616': '004085616',
-      '82653091178': '',
+    stubDetails({ '86136533741': 'abn_details_company', '51824753556': 'abn_details_trust' })
+    expect(await fetchAcnsForAbns(['86136533741', '51824753556'], 'test-guid')).toEqual({
+      '86136533741': '136533741',
+      '51824753556': '',
     })
   })
 
   it('looks each ABN up once, however often it appears in the results', async () => {
-    const mock = stubDetails({ '53004085616': 'abn_details_company' })
-    await fetchAcnsForAbns(['53004085616', '53004085616', '53004085616'], 'test-guid')
+    const mock = stubDetails({ '86136533741': 'abn_details_company' })
+    await fetchAcnsForAbns(['86136533741', '86136533741', '86136533741'], 'test-guid')
     expect(mock).toHaveBeenCalledTimes(1)
   })
 
   it('leaves out an ABN whose lookup failed, and keeps the rest', async () => {
-    stubDetails({ '53004085616': 'abn_details_company', '82653091178': timeoutError() })
-    expect(await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')).toEqual({
-      '53004085616': '004085616',
+    stubDetails({ '86136533741': 'abn_details_company', '51824753556': timeoutError() })
+    expect(await fetchAcnsForAbns(['86136533741', '51824753556'], 'test-guid')).toEqual({
+      '86136533741': '136533741',
     })
   })
 
@@ -204,7 +204,7 @@ describe('fetchAcnsForAbns', () => {
     async () => {
       stubFetch((input) => {
         const abn = new URL(String(input)).searchParams.get('abn')
-        if (abn === '53004085616') return Promise.resolve(new Response(fixture('abn_details_company')))
+        if (abn === '86136533741') return Promise.resolve(new Response(fixture('abn_details_company')))
         // Never answers; only the timeout signal ends it.
         return new Promise((_, reject) => {
           const signal = (vi.mocked(fetch).mock.lastCall?.[1] as RequestInit | undefined)?.signal
@@ -213,10 +213,10 @@ describe('fetchAcnsForAbns', () => {
       })
 
       const started = Date.now()
-      const acns = await fetchAcnsForAbns(['53004085616', '82653091178'], 'test-guid')
+      const acns = await fetchAcnsForAbns(['86136533741', '51824753556'], 'test-guid')
       const took = Date.now() - started
 
-      expect(acns).toEqual({ '53004085616': '004085616' })
+      expect(acns).toEqual({ '86136533741': '136533741' })
       // The 3s ACN cap, not the 10s a pick is allowed.
       expect(took).toBeGreaterThanOrEqual(2_900)
       expect(took).toBeLessThan(5_000)
@@ -225,9 +225,9 @@ describe('fetchAcnsForAbns', () => {
   )
 
   it('warms the cache the following pick reads from', async () => {
-    const mock = stubDetails({ '53004085616': 'abn_details_company' })
-    await fetchAcnsForAbns(['53004085616'], 'test-guid')
-    const pick = await fetchAbnDetails('53004085616', 'test-guid')
+    const mock = stubDetails({ '86136533741': 'abn_details_company' })
+    await fetchAcnsForAbns(['86136533741'], 'test-guid')
+    const pick = await fetchAbnDetails('86136533741', 'test-guid')
     expect(pick.cached).toBe(true)
     expect(mock).toHaveBeenCalledTimes(1)
   })

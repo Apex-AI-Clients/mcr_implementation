@@ -417,7 +417,7 @@ describe('phone', () => {
 })
 
 describe('isValidEmail', () => {
-  it.each(['a@b.co', 'marcus.oyelaran@brightpath.com.au', 'x+tag@example.org'])(
+  it.each(['a@b.co', 'marcus.oyelaran@brightpath.example.com.au', 'x+tag@example.org'])(
     'accepts %s',
     (input) => {
       expect(isValidEmail(input)).toBe(true)

@@ -71,12 +71,12 @@ function makeLead(overrides: Partial<Lead>): Lead {
   }
 }
 
-const MARCUS = makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au' })
-const PRIYA = makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au' })
+const MARCUS = makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.example.com.au' })
+const PRIYA = makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.example.com.au' })
 const CONVERTED = makeLead({
   id: 'c',
   name: 'Sasha Lorenz',
-  email: 'sasha@autoworks.com.au',
+  email: 'sasha@autoworks.example.com.au',
   stage: 'client',
   convertedClientId: '11111111-1111-4111-8111-111111111111',
 })

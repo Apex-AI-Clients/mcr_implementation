@@ -20,7 +20,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
   return {
     id: 'ld_1',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
     debtMin: 150_000,
     debtMax: null,

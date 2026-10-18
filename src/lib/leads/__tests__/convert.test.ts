@@ -6,7 +6,7 @@ import type { Lead } from '@/types/leads'
 const LEAD: Lead = {
   id: 'ld_1',
   name: 'Dean Whitlock',
-  email: 'dean@whitlockcivil.com.au',
+  email: 'dean@whitlockcivil.example.com.au',
   phone: '0407552118',
   debtMin: 100_000,
   debtMax: 124_999,
@@ -80,7 +80,7 @@ describe('createClientFromLead', () => {
     // somebody was just made to type is the state this flow rules out.
     expect(JSON.parse(init.body as string)).toEqual({
       name: 'Dean Whitlock',
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       // The lead's own number, carried over, in its grouped display form.
       phone: '0407 552 118',
       companyDetails: {
@@ -93,7 +93,7 @@ describe('createClientFromLead', () => {
         trustAbnNumber: '',
         // The lead's own phone and email, carried over as the company's.
         phoneNumber: '0407 552 118',
-        emailAddress: 'dean@whitlockcivil.com.au',
+        emailAddress: 'dean@whitlockcivil.example.com.au',
         // Nothing typed and no extract uploaded: blank, with no source to claim.
         registeredOfficeAddress: '',
         principalPlaceOfBusiness: '',

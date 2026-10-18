@@ -25,7 +25,7 @@ afterEach(() => {
 const LEAD: Lead = {
   id: 'ld_1',
   name: 'Dean Whitlock',
-  email: 'dean@whitlockcivil.com.au',
+  email: 'dean@whitlockcivil.example.com.au',
   phone: '0407552118',
   debtMin: 100_000,
   debtMax: 124_999,
@@ -158,7 +158,7 @@ describe('ConvertToClientDialog', () => {
     ).toBeTruthy()
     // Name and email come across from the lead already filled in.
     expect((within(dialog).getByLabelText('Email') as HTMLInputElement).value).toBe(
-      'dean@whitlockcivil.com.au',
+      'dean@whitlockcivil.example.com.au',
     )
     expect(within(dialog).getByRole('button', { name: 'Convert' })).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeTruthy()
@@ -173,11 +173,11 @@ describe('ConvertToClientDialog', () => {
     const phone = within(dialog).getByLabelText('Company phone (optional)') as HTMLInputElement
     const email = within(dialog).getByLabelText('Company email (optional)') as HTMLInputElement
     expect(phone.value).toBe('0407 552 118')
-    expect(email.value).toBe('dean@whitlockcivil.com.au')
+    expect(email.value).toBe('dean@whitlockcivil.example.com.au')
 
     await user.clear(email)
-    await user.type(email, 'accounts@whitlockcivil.com.au')
-    expect(email.value).toBe('accounts@whitlockcivil.com.au')
+    await user.type(email, 'accounts@whitlockcivil.example.com.au')
+    expect(email.value).toBe('accounts@whitlockcivil.example.com.au')
   })
 
   it('does not touch the API until Convert is pressed', async () => {
@@ -204,7 +204,7 @@ describe('ConvertToClientDialog', () => {
     const [, init] = calls().find(([url]) => url === '/api/admin/clients')!
     const sent = JSON.parse(init.body as string)
     expect(sent.name).toBe('Dean Whitlock')
-    expect(sent.email).toBe('dean@whitlockcivil.com.au')
+    expect(sent.email).toBe('dean@whitlockcivil.example.com.au')
     expect(sent.companyDetails).toMatchObject({ companyName: '', acnNumber: '', abnNumber: '' })
     expect(within(dialog).queryByText('Enter the company name.')).toBeNull()
   })
@@ -243,7 +243,7 @@ describe('ConvertToClientDialog', () => {
     const [, init] = calls().find(([url]) => url === '/api/admin/clients')!
     const sent = JSON.parse(init.body as string)
     expect(sent.name).toBe('Dean Whitlock')
-    expect(sent.email).toBe('dean@whitlockcivil.com.au')
+    expect(sent.email).toBe('dean@whitlockcivil.example.com.au')
   })
 
   it('offers Company and Trust, and shows the Trust section for both — optional for a company', async () => {

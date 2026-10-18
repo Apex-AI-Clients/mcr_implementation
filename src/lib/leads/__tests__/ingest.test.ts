@@ -40,7 +40,7 @@ describe('mapLead — website form', () => {
     expect(result.lead).toEqual({
       name: 'Dean Whitlock',
       // Lowercased so the Stage 5 "known email" lookup and the Stage 4 index agree.
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       phone: '0407552118',
       debtMin: 100_000,
       debtMax: 124_999,
@@ -558,7 +558,7 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
 
     expect(result.lead).toEqual({
       name: 'Marissa Thorne',
-      email: 'marissa@thornefitout.com.au',
+      email: 'marissa@thornefitout.example.com.au',
       phone: '0412887340',
       debtMin: 100_000,
       debtMax: 250_000,
@@ -808,7 +808,7 @@ describe('mapLead — MCR26_MAIN delivering option keys', () => {
 
     expect(result.lead).toEqual({
       name: 'Priya Raghavan',
-      email: 'priya@raghavanjoinery.com.au',
+      email: 'priya@raghavanjoinery.example.com.au',
       phone: '0402119873',
       debtMin: 100_000,
       debtMax: 250_000,
@@ -1075,7 +1075,7 @@ describe('mapLead — the ATO Debt Aus-update-new Facebook form', () => {
 
     expect(result.lead).toEqual({
       name: 'Declan Voss',
-      email: 'declan@vossearthworks.com.au',
+      email: 'declan@vossearthworks.example.com.au',
       phone: '0423556108',
       debtMin: 100_000,
       debtMax: 250_000,

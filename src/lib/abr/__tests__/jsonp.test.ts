@@ -27,7 +27,7 @@ describe('unwrapJsonp', () => {
 
   it('unwraps a real AbnDetails body', () => {
     const payload = asRecord(unwrapJsonp(fixture('abn_details_company')))
-    expect(payload.Abn).toBe('53004085616')
+    expect(payload.Abn).toBe('86136533741')
     expect(payload.EntityTypeCode).toBe('PRV')
   })
 

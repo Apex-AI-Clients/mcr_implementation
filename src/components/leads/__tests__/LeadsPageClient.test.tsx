@@ -82,10 +82,10 @@ function makeLead(overrides: Partial<Lead>): Lead {
 }
 
 const LEADS: Lead[] = [
-  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2) }),
-  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', stage: 'prospect', source: 'website', createdAt: daysAgo(9) }),
-  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', createdAt: daysAgo(50) }),
-  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80) }),
+  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.example.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2) }),
+  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.example.com.au', phone: '0433217604', stage: 'prospect', source: 'website', createdAt: daysAgo(9) }),
+  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.example.com.au', phone: '0421004772', createdAt: daysAgo(50) }),
+  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.example.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80) }),
 ]
 
 interface RenderOptions {
@@ -381,7 +381,7 @@ describe('LeadsPageClient', () => {
     const dialog = await screen.findByRole('dialog')
 
     await user.type(within(dialog).getByLabelText('Name'), 'Dean Whitlock')
-    await user.type(within(dialog).getByLabelText('Email'), 'dean@whitlockcivil.com.au')
+    await user.type(within(dialog).getByLabelText('Email'), 'dean@whitlockcivil.example.com.au')
     await user.type(within(dialog).getByLabelText('Phone'), '0407 552 118')
     // "$150k – $250k" is index 7 in DEBT_PRESETS.
     await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
