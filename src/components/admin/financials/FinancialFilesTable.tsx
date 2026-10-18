@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import type { FileUsage, FinancialFileRow } from '@/lib/financials/financialFiles'
 import type { PeriodKind } from '@/lib/financials/periodOverride'
 
@@ -118,18 +118,34 @@ export function FinancialFilesTable({ clientId, files, yearOptions, onReread, ru
   )
 }
 
-function OverrideForm({
+/**
+ * What a file was read as, in a few words: "FY2026 annual" or "FY2026 current
+ * period". The file's own year (not a prior-year column it also prints).
+ */
+export function periodSummary(file: FinancialFileRow): string | null {
+  const annual = file.annualYears.at(-1)
+  if (annual !== undefined) return `FY${annual} annual`
+  if (file.currentPeriodYear !== null) return `FY${file.currentPeriodYear} current period`
+  const comparative = file.comparativeYears.at(-1)
+  return comparative !== undefined ? `FY${comparative} prior-year column only` : null
+}
+
+/** Year and type set by hand, or cleared back to the headings; then the file is read again. */
+export function OverrideForm({
   clientId,
   file,
   yearOptions,
   running,
   onDone,
+  align = 'end',
 }: {
   clientId: string
   file: FinancialFileRow
   yearOptions: number[]
   running: boolean
   onDone: (changed: boolean) => void
+  /** Right-aligned in the files table; left-aligned in the coverage table's panel. */
+  align?: 'start' | 'end'
 }) {
   const router = useRouter()
   const startKind: PeriodKind = file.override?.kind ?? (file.currentPeriodYear !== null && file.annualYears.length === 0 ? 'current_period' : 'annual')
@@ -163,7 +179,7 @@ function OverrideForm({
   }
 
   return (
-    <div className="ml-auto flex max-w-[300px] flex-col items-end gap-1.5 text-left">
+    <div className={cn('flex max-w-[300px] flex-col gap-1.5 text-left', align === 'end' ? 'ml-auto items-end' : 'items-start')}>
       <div className="flex gap-1.5">
         <Select
           aria-label={`Type for ${file.filename}`}

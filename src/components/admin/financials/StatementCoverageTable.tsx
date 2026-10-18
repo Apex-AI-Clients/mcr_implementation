@@ -10,12 +10,18 @@ import type { StatementHalfKey } from '@/lib/financials/types'
  * or missing — the filename is on hover.
  *
  * Presentational only (no hooks), so the client page renders it on the
- * server and the comparison page inside its client component.
+ * server and the comparison page inside its client component. There, a cell
+ * that names a file is a button (onSelectFile): it opens that file's year
+ * and type below the table.
  */
 
 interface Props {
   coverage: StatementCoverage
   className?: string
+  /** Cells whose file is in this set become buttons that select it. */
+  selectableDocumentIds?: ReadonlySet<string>
+  selectedDocumentId?: string | null
+  onSelectFile?: (documentId: string) => void
 }
 
 const ROWS: Array<{ half: StatementHalfKey; label: string }> = [
@@ -63,7 +69,7 @@ function hoverText(cell: CoverageCell): string | undefined {
     : cell.filename
 }
 
-export function StatementCoverageTable({ coverage, className }: Props) {
+export function StatementCoverageTable({ coverage, className, selectableDocumentIds, selectedDocumentId, onSelectFile }: Props) {
   if (coverage.columns.length === 0) return null
 
   return (
@@ -109,8 +115,25 @@ export function StatementCoverageTable({ coverage, className }: Props) {
                       className={cn('px-3 py-2 whitespace-nowrap', column.extra && 'opacity-60')}
                       title={hover}
                     >
-                      <CellContent cell={cell} />
-                      {hover && <span className="sr-only">: {hover}</span>}
+                      {onSelectFile && cell.documentId && selectableDocumentIds?.has(cell.documentId) ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectFile(cell.documentId as string)}
+                          aria-pressed={selectedDocumentId === cell.documentId}
+                          className={cn(
+                            '-mx-1.5 -my-1 rounded px-1.5 py-1 text-left hover:bg-surface/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                            selectedDocumentId === cell.documentId && 'bg-surface/60 ring-1 ring-accent/40',
+                          )}
+                        >
+                          <CellContent cell={cell} />
+                          {hover && <span className="sr-only">: {hover}</span>}
+                        </button>
+                      ) : (
+                        <>
+                          <CellContent cell={cell} />
+                          {hover && <span className="sr-only">: {hover}</span>}
+                        </>
+                      )}
                     </td>
                   )
                 })}
@@ -124,7 +147,8 @@ export function StatementCoverageTable({ coverage, className }: Props) {
         <span className="text-accent">Comparative</span> — read from the prior-year column of the next
         year&apos;s statements. <span className="text-destructive">Missing</span> — no file supplies it.{' '}
         <span className="text-warning">Extraction failed</span> — a file prints it but it could not be read; re-run the
-        extraction. Hover a cell for the file. Years marked older are kept but not compared.
+        extraction. Hover a cell for the file{onSelectFile ? '; click it to check or change its year and type' : ''}. Years
+        marked older are kept but not compared.
       </p>
     </div>
   )

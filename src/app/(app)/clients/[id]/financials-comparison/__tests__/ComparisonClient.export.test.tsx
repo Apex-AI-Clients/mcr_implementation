@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { computeFinancialsComparison } from '@/lib/financials/computeComparison'
 import type { StatementCoverage } from '@/lib/financials/coverage'
@@ -60,12 +60,26 @@ const comparison: FinancialsComparison = {
 }
 
 const missing = { status: 'missing' as const, filename: null, documentId: null }
+const own = { status: 'own' as const, filename: 'SYNTH_statements_2025.pdf', documentId: 'd1' }
 const coverage: StatementCoverage = {
   columns: [{ key: 'fy2025', label: 'FY2025', financialYear: 2025, kind: 'annual', extra: false }],
-  rows: { income_statement: [missing], balance_sheet: [missing] },
+  rows: { income_statement: [own], balance_sheet: [missing] },
 }
 
-function renderPage({ showDiagnostics = true, withCoverage = false } = {}) {
+const fileRow = {
+  documentId: 'd1',
+  filename: 'SYNTH_statements_2025.pdf',
+  annualYears: [2025],
+  comparativeYears: [],
+  currentPeriodYear: null,
+  currentPeriodLabel: null,
+  usage: 'used' as const,
+  note: 'Annual, compared for FY2025.',
+  override: null,
+  overridePending: false,
+}
+
+function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = false } = {}) {
   return render(
     <ComparisonClient
       clientId="client-1"
@@ -76,7 +90,7 @@ function renderPage({ showDiagnostics = true, withCoverage = false } = {}) {
       initialExtraction={{ extractedCount: 2, documentCount: 2, hasUnextracted: false }}
       initialJobId={null}
       coverage={withCoverage ? coverage : { columns: [], rows: { income_statement: [], balance_sheet: [] } }}
-      files={[]}
+      files={withFiles ? [fileRow] : []}
       overrideYears={[2027, 2026, 2025]}
       initialStaleSince={null}
       showDiagnostics={showDiagnostics}
@@ -116,12 +130,40 @@ describe('diagnostics (SHOW_FINANCIALS_DIAGNOSTICS)', () => {
     expect(screen.getByRole('checkbox', { name: 'Include checks in PDF' })).toBeTruthy()
   })
 
-  it('hides them in production (flag off)', () => {
-    renderPage({ showDiagnostics: false, withCoverage: true })
-    expect(screen.queryByText('Statements on file')).toBeNull()
+  it('hides them in production (flag off), keeping the coverage table', () => {
+    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
+    // The coverage table, where a file's year and type are changed, shows everywhere.
+    expect(screen.getByText('Statements on file')).toBeTruthy()
+    // The per-file list does not.
+    expect(screen.queryByRole('columnheader', { name: 'Read as' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Statement checks/ })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Include checks in PDF' })).toBeNull()
     // The comparison itself is still there.
     expect(screen.getByText('Income Statement')).toBeTruthy()
+  })
+})
+
+describe('year and type from the coverage table', () => {
+  it('opens a file from its cell, changes it, and reads that file again', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/period')
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : new Response(JSON.stringify({ jobId: 'job-1' }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
+
+    await user.click(screen.getByRole('button', { name: /SYNTH_statements_2025\.pdf/ }))
+    expect(screen.getByText('Detected: FY2025 annual')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Change' }))
+    await user.selectOptions(screen.getByLabelText('Financial year for SYNTH_statements_2025.pdf'), '2026')
+    await user.click(screen.getByRole('button', { name: 'Save and read again' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/financials-comparison/start'))).toBe(true))
+    const period = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/period'))!
+    expect(String(period[0])).toBe('/api/admin/clients/client-1/financial-statements/d1/period')
+    const start = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/financials-comparison/start'))! as unknown as [string, RequestInit]
+    expect(JSON.parse(start[1].body as string)).toEqual({ mode: 'full', documentIds: ['d1'] })
   })
 })

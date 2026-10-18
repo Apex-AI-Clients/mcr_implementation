@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StatementCoverageTable } from '../StatementCoverageTable'
@@ -60,6 +60,32 @@ describe('StatementCoverageTable', () => {
     // "(older)" — present in the markup — does not show up here.
     expect(screen.getByRole('columnheader', { name: /FY2021\s*\(older\)/ })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: /Current period.*4 May 2026/ })).toBeTruthy()
+  })
+
+  it('leaves cells as plain text without a file handler', () => {
+    render(<StatementCoverageTable coverage={coverage} />)
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('makes each cell that names a known file a button that selects it', async () => {
+    const user = userEvent.setup()
+    const onSelectFile = vi.fn()
+    render(
+      <StatementCoverageTable
+        coverage={coverage}
+        selectableDocumentIds={new Set(['d1', 'd2'])}
+        selectedDocumentId="d2"
+        onSelectFile={onSelectFile}
+      />,
+    )
+    // d1 appears twice (comparative P&L, own balance sheet); d0 and d3 are not known files.
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(3)
+    const own = screen.getByRole('button', { name: /2024-2025_PROFIT_AND_LOSS\.pdf/ })
+    expect(own.getAttribute('aria-pressed')).toBe('true')
+    await user.click(screen.getAllByRole('button', { name: /combined-2025\.pdf/ })[0])
+    expect(onSelectFile).toHaveBeenCalledWith('d1')
+    expect(screen.getByText(/click it to check or change its year and type/)).toBeTruthy()
   })
 
   it('renders nothing with no statements', () => {

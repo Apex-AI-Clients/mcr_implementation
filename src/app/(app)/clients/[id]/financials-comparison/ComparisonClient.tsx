@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -26,6 +26,7 @@ import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonC
 import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
 import { FinancialFilesTable } from '@/components/admin/financials/FinancialFilesTable'
+import { FilePeriodPanel } from '@/components/admin/financials/FilePeriodPanel'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -52,8 +53,9 @@ interface Props {
   /** Set when a financials document was deleted after the comparison was built. */
   initialStaleSince: string | null
   /**
-   * Show "Statements on file" and the statement checks. Development and test
-   * deployments only (SHOW_FINANCIALS_DIAGNOSTICS); hidden in production.
+   * Show the per-file list under "Statements on file" and the statement
+   * checks. Development and test deployments only (SHOW_FINANCIALS_DIAGNOSTICS);
+   * hidden in production. The coverage table itself always shows.
    */
   showDiagnostics: boolean
 }
@@ -110,6 +112,11 @@ export function ComparisonClient({
   const [includeChecks, setIncludeChecks] = useState(false)
 
   const [phase, setPhase] = useState<JobPhase>(initialJobId ? 'processing' : 'idle')
+
+  // The file picked in the "Statements on file" table.
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+  const selectableDocumentIds = useMemo(() => new Set(files.map((f) => f.documentId)), [files])
+  const selectedFile = files.find((f) => f.documentId === selectedFileId) ?? null
 
   // Track the active poll loop so we can cancel it on unmount / new job.
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -423,21 +430,39 @@ export function ComparisonClient({
         </div>
       )}
 
-      {/* Which statement each year has, and what each file was read as.
-          Built fresh from storage on every load. Diagnostics only (hidden in
-          production): what staff need from it reaches them through the
-          readiness checklist on the client page. */}
-      {showDiagnostics && (coverage.columns.length > 0 || files.length > 0) && (
-        <div className="space-y-3">
+      {/* Which statement each year has. Built fresh from storage on every
+          load. Clicking a file shows the year and type it was read as, and
+          lets staff correct them (the file is then read again). The per-file
+          list and the checks are diagnostics only (hidden in production). */}
+      {(coverage.columns.length > 0 || (showDiagnostics && files.length > 0)) && (
+        <div className="no-print space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
-          <StatementCoverageTable coverage={coverage} />
-          <FinancialFilesTable
-            clientId={clientId}
-            files={files}
-            yearOptions={overrideYears}
-            running={running}
-            onReread={(documentIds) => void startJob('full', documentIds)}
+          <StatementCoverageTable
+            coverage={coverage}
+            selectableDocumentIds={selectableDocumentIds}
+            selectedDocumentId={selectedFile?.documentId ?? null}
+            onSelectFile={(documentId) => setSelectedFileId((current) => (current === documentId ? null : documentId))}
           />
+          {selectedFile && (
+            <FilePeriodPanel
+              key={selectedFile.documentId}
+              clientId={clientId}
+              file={selectedFile}
+              yearOptions={overrideYears}
+              running={running}
+              onReread={(documentIds) => void startJob('full', documentIds)}
+              onClose={() => setSelectedFileId(null)}
+            />
+          )}
+          {showDiagnostics && (
+            <FinancialFilesTable
+              clientId={clientId}
+              files={files}
+              yearOptions={overrideYears}
+              running={running}
+              onReread={(documentIds) => void startJob('full', documentIds)}
+            />
+          )}
         </div>
       )}
 
