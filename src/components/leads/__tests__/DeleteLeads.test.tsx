@@ -133,7 +133,7 @@ describe('deleting from the list', () => {
 
     const dialog = await screen.findByRole('dialog')
     // The email shares its span with a separator, so match loosely.
-    expect(within(dialog).getByText(/marcus@brightpath\.com\.au/)).toBeTruthy()
+    expect(within(dialog).getByText(/marcus@brightpath\.example\.com\.au/)).toBeTruthy()
     // Opening the dialog must not have deleted anything yet.
     expect(deleteLeads).not.toHaveBeenCalled()
   })
