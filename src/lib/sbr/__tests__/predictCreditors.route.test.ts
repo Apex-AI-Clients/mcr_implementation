@@ -127,3 +127,21 @@ describe('POST predict-outcome — creditors in the SBR', () => {
     expect((await PREDICT(post({ ...BASE, creditors: [{ label: 'x', amount: -1 }] }), PARAMS)).status).toBe(400)
   })
 })
+
+describe('POST predict-outcome — the DPN factor', () => {
+  const dpnSent = () => (vi.mocked(predictSbrOutcome).mock.calls.at(-1)![0] as { dpn: boolean }).dpn
+
+  it("uses staff's answer when nothing is on file, and No when they gave none", async () => {
+    vi.mocked(loadReadiness).mockResolvedValue({ items: [], canPredict: true, waitingFor: [], dpn: null } as never)
+    expect((await PREDICT(post({ ...BASE, dpn: true }), PARAMS)).status).toBe(200)
+    expect(dpnSent()).toBe(true)
+    await PREDICT(post(BASE), PARAMS)
+    expect(dpnSent()).toBe(false)
+  })
+
+  it('ignores the answer when the file settles it', async () => {
+    vi.mocked(loadReadiness).mockResolvedValue({ items: [], canPredict: true, waitingFor: [], dpn: true } as never)
+    await PREDICT(post({ ...BASE, dpn: false }), PARAMS)
+    expect(dpnSent()).toBe(true)
+  })
+})

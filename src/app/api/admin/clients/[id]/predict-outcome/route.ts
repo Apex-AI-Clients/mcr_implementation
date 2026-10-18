@@ -96,9 +96,9 @@ const BodySchema = z.object({
     .max(MAX_CREDITOR_ROWS)
     .optional(),
   /**
-   * Ignored. The director penalty notice factor is set here, from what is on
-   * file (readiness.ts): Yes if any notice, No only if staff ticked "none
-   * issued". Accepted so an older page's request still parses.
+   * Staff's answer to "Director Penalty Notice issued?", used ONLY when
+   * nothing is on file (readiness.dpn is null): notices uploaded mean Yes,
+   * the "none issued" tick means No, whatever this says. Missing means No.
    */
   dpn: z.boolean().optional(),
   paymentPlanType: z.enum(['plan', 'upfront']),
@@ -202,7 +202,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Every readiness item Ready, or Needs review and reviewed — the same rule
     // as the checklist and the button (readiness.ts).
     const readiness = await loadReadiness(supabase, clientId)
-    if (!readiness.canPredict || readiness.dpn === null) {
+    if (!readiness.canPredict) {
       return NextResponse.json({ error: 'NOT_READY', waitingFor: readiness.waitingFor }, { status: 422 })
     }
 
@@ -293,7 +293,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(slots)
 
     const inputFeatures: SbrPredictionInput = {
-      dpn: readiness.dpn,
+      dpn: readiness.dpn ?? body.dpn ?? false,
       paymentPlanType: body.paymentPlanType,
       directorLoanAtAppointment: body.directorLoanAtAppointment,
       directorLoanReceivableAmount,

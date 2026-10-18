@@ -125,9 +125,9 @@ describe('practitioner fee selector', () => {
 describe('readiness and the DPN factor', () => {
   const NOT_READY = {
     canPredict: false,
-    waitingFor: ['Director penalty notices: not uploaded'],
-    dpn: null,
-    dpnDetail: 'Upload the notices, or tick "No director penalty notice has been issued".',
+    waitingFor: ['Financial statements: processing'],
+    dpn: true,
+    dpnDetail: '1 notice read (PAYG withholding).',
   }
 
   it('shows what it is waiting for, keeps Generate disabled, and does not run a saved prediction', async () => {
@@ -136,7 +136,7 @@ describe('readiness and the DPN factor', () => {
       <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={NOT_READY} financialPoints={NO_POINTS} />,
     )
     expect(screen.getByText('Not ready for a prediction yet')).toBeTruthy()
-    expect(screen.getByText('Director penalty notices: not uploaded')).toBeTruthy()
+    expect(screen.getByText('Financial statements: processing')).toBeTruthy()
     expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
     await new Promise((r) => setTimeout(r, 20))
     expect(fetchMock).not.toHaveBeenCalled()
@@ -337,5 +337,48 @@ describe('calculation steps', () => {
     expect(exactFraction(42.4125)).toBe('0.424125')
     expect(exactFraction(59.3)).toBe('0.593')
     expect(exactFraction(40)).toBe('0.4')
+  })
+})
+
+describe('director penalty notice not on file', () => {
+  const NOTHING_ON_FILE = { canPredict: true, waitingFor: [], dpn: null, dpnDetail: '' }
+
+  it('lets staff tick it, and sends their answer', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={AUTO}
+        initialPrediction={null}
+        readiness={NOTHING_ON_FILE}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    const box = screen.getByRole('checkbox', { name: 'Director Penalty Notice issued' }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    const button = screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    await userEvent.click(box)
+    await userEvent.click(button)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).dpn).toBe(true)
+  })
+
+  it('sends No when left unticked', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={AUTO}
+        initialPrediction={null}
+        readiness={NOTHING_ON_FILE}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).dpn).toBe(false)
   })
 })

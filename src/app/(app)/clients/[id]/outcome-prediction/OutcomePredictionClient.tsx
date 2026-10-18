@@ -211,8 +211,12 @@ export function OutcomePredictionClient({
   const cachedInputs = extractCachedInput(initialPrediction)
 
   const [auto] = useState<InitialAuto>(initialAuto)
-  // Not a choice: set from what is on file (readiness.ts), never defaulted.
-  const dpn = readiness.dpn
+  // Set from what is on file (readiness.ts) when anything is: notices mean
+  // Yes, the "none issued" tick means No. With neither, staff tick it here
+  // (unticked = No), kept from the last prediction.
+  const dpnFromFile = readiness.dpn !== null
+  const [dpnManual, setDpnManual] = useState<boolean>(initialPrediction?.inputFeatures.dpn === true)
+  const dpn = readiness.dpn ?? dpnManual
   const [notReady, setNotReady] = useState<string[]>(readiness.canPredict ? [] : readiness.waitingFor)
   const [paymentPlanType, setPaymentPlanType] = useState<'plan' | 'upfront'>(
     cachedInputs?.paymentPlanType ?? 'upfront',
@@ -283,6 +287,8 @@ export function OutcomePredictionClient({
           directorLoanAtAppointment,
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
+          // Only when nothing is on file; the server ignores it otherwise.
+          ...(dpnFromFile ? {} : { dpn: dpnManual }),
           creditors: creditorRows.map((r) => ({
             label: r.label.trim().slice(0, CREDITOR_LABEL_MAX),
             amount: parseAmount(r.amountText),
@@ -459,6 +465,8 @@ export function OutcomePredictionClient({
           auto={auto}
           dpn={dpn}
           dpnDetail={readiness.dpnDetail}
+          dpnFromFile={dpnFromFile}
+          setDpnManual={setDpnManual}
           paymentPlanType={paymentPlanType}
           setPaymentPlanType={setPaymentPlanType}
           directorLoanAtAppointment={directorLoanAtAppointment}
@@ -570,8 +578,11 @@ function PrereqMissingBlock({
 
 interface InputPanelProps {
   auto: InitialAuto
-  dpn: boolean | null
+  dpn: boolean
   dpnDetail: string
+  /** True when notices or the "none issued" tick set the answer; false: staff tick it here. */
+  dpnFromFile: boolean
+  setDpnManual: (v: boolean) => void
   paymentPlanType: 'plan' | 'upfront'
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
@@ -597,6 +608,8 @@ function InputPanel(props: InputPanelProps) {
     auto,
     dpn,
     dpnDetail,
+    dpnFromFile,
+    setDpnManual,
     paymentPlanType,
     setPaymentPlanType,
     directorLoanAtAppointment,
@@ -624,7 +637,7 @@ function InputPanel(props: InputPanelProps) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-foreground/70">
             <span className="text-foreground/40">Inputs:</span>{' '}
-            DPN: <span className="text-foreground">{dpn === null ? 'Not known' : dpn ? 'Yes' : 'No'}</span>
+            DPN: <span className="text-foreground">{dpn ? 'Yes' : 'No'}</span>
             <span className="text-foreground/30"> · </span>
             <span className="text-foreground capitalize">{paymentPlanType}</span>
             <span className="text-foreground/30"> · </span>
@@ -716,14 +729,24 @@ function InputPanel(props: InputPanelProps) {
             Tick the items that apply to this client.
           </p>
           <div className="space-y-3">
-            {/* Not a tick box: set from the client file, never defaulted. */}
-            <div className="rounded-lg border border-border bg-surface/30 px-3 py-2 text-xs text-foreground/80">
-              <p>
-                Director Penalty Notice issued:{' '}
-                <span className="font-medium text-foreground">{dpn === null ? 'Not known yet' : dpn ? 'Yes' : 'No'}</span>
-              </p>
-              <p className="mt-0.5 text-foreground/40">{dpnDetail}</p>
-            </div>
+            {dpnFromFile ? (
+              // Set from the client file: notices uploaded, or "none issued" ticked.
+              <div className="rounded-lg border border-border bg-surface/30 px-3 py-2 text-xs text-foreground/80">
+                <p>
+                  Director Penalty Notice issued:{' '}
+                  <span className="font-medium text-foreground">{dpn ? 'Yes' : 'No'}</span>
+                </p>
+                <p className="mt-0.5 text-foreground/40">{dpnDetail}</p>
+              </div>
+            ) : (
+              <div>
+                <CheckboxField label="Director Penalty Notice issued" checked={dpn} onChange={setDpnManual} />
+                <p className="mt-1 text-xs text-foreground/40">
+                  No notice uploaded and &ldquo;none issued&rdquo; not ticked on the client page: tick this if a
+                  notice was issued. Unticked counts as No.
+                </p>
+              </div>
+            )}
             <div>
               <CheckboxField
                 label="Director loan at appointment"
@@ -1101,10 +1124,10 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
             body={
               <>
                 <p>
-                  Set from the client file, not ticked here: Yes when any director
-                  penalty notice is uploaded, No only when staff have ticked &ldquo;No
-                  director penalty notice has been issued&rdquo; on the client page. It
-                  is never assumed.
+                  Yes when any director penalty notice is uploaded, No when staff have
+                  ticked &ldquo;No director penalty notice has been issued&rdquo; on the
+                  client page. With neither, tick it here if a notice was issued;
+                  unticked counts as No. Uploading the notices is optional.
                 </p>
                 <p className="mt-1 text-foreground/55">
                   <span className="text-foreground/80">Why it matters:</span> a DPN

@@ -226,7 +226,7 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
       ? item(input, 'dpn', 'ready', `No director penalty notice has been issued (ticked by ${d.noneIssued.by}, ${shortDate(d.noneIssued.at)}).`, {
           href: `/clients/${input.clientId}`,
         })
-      : item(input, 'dpn', 'not_uploaded', 'Upload the notices, or tick "No director penalty notice has been issued".', {
+      : item(input, 'dpn', 'not_uploaded', 'Optional. Upload the notices, or tick "No director penalty notice has been issued"; otherwise answer Yes or No on the prediction page.', {
           href: `/clients/${input.clientId}`,
         })
   }
@@ -264,15 +264,25 @@ function satisfied(i: ReadinessItem): boolean {
   return i.status === 'ready' || (i.status === 'needs_review' && i.review !== null)
 }
 
+/**
+ * Director penalty notices are optional: with none uploaded and "none
+ * issued" not ticked, Predict still runs and staff answer the DPN question on
+ * the prediction page. Notices that ARE uploaded must be read first.
+ */
+function optional(i: ReadinessItem): boolean {
+  return i.key === 'dpn' && i.status === 'not_uploaded'
+}
+
 export function computeReadiness(input: ReadinessInput): Readiness {
   const items = [financialsItem(input), lodgementItem(input), dpnItem(input)]
   return {
     items,
-    canPredict: items.every(satisfied),
+    canPredict: items.every((i) => satisfied(i) || optional(i)),
     waitingFor: items
-      .filter((i) => !satisfied(i))
+      .filter((i) => !satisfied(i) && !optional(i))
       .map((i) => `${i.label}: ${i.status === 'needs_review' ? 'needs review' : STATUS_LABEL[i.status].toLowerCase()}`),
-    // Yes if any notice is on file; No only if staff ticked "none issued".
+    // Yes if any notice is on file; No if staff ticked "none issued"; null
+    // otherwise, and staff answer on the prediction page.
     dpn: input.dpn.notices.length > 0 ? true : input.dpn.noneIssued ? false : null,
   }
 }

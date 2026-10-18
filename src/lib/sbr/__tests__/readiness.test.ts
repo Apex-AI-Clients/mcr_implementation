@@ -231,10 +231,18 @@ describe('director penalty notices and the DPN factor', () => {
     expect(r.dpn).toBe(false)
   })
 
-  it('is not uploaded, and the factor unknown, with neither notices nor the tick — never a default No', () => {
+  it('is optional: with neither notices nor the tick, Predict still runs and staff answer on the prediction page', () => {
     const r = computeReadiness(input({ dpn: { notices: [], noneIssued: null } }))
     expect(statusOf(r, 'dpn').status).toBe('not_uploaded')
+    expect(statusOf(r, 'dpn').detail).toMatch(/^Optional\./)
     expect(r.dpn).toBeNull()
+    expect(r.canPredict).toBe(true)
+    expect(r.waitingFor.some((w) => w.startsWith('Director penalty notices'))).toBe(false)
+  })
+
+  it('still waits for notices that are uploaded but not read yet', () => {
+    const r = computeReadiness(input({ dpn: { notices: [view(null)] } }))
+    expect(statusOf(r, 'dpn').status).toBe('not_started')
     expect(r.canPredict).toBe(false)
   })
 
