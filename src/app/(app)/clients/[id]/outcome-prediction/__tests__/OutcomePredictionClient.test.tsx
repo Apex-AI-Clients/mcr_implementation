@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FinancialPointsPanel, OutcomePredictionClient } from '../OutcomePredictionClient'
+import { CreditorsSummaryCard, FinancialPointsPanel, OutcomePredictionClient } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -22,6 +22,8 @@ const AUTO = {
   latestFinancialYear: 2025,
   hasLodgement: true,
   hasFinancials: true,
+  creditorHints: [null, null, null, null, null, null],
+  savedCreditors: null,
 }
 
 const NO_POINTS = { available: false, points: [] }
@@ -157,16 +159,116 @@ describe('What the financial statements show', () => {
       <FinancialPointsPanel
         data={{
           available: true,
-          points: [{ rule: 'b', text: 'Property, plant & equipment rose from $138,683 (FY2023) to $269,741 (FY2026).' }],
+          points: [{ rule: 'b', text: 'Property, plant & equipment rose from $126,450 (FY2023) to $251,920 (FY2026).' }],
         }}
       />,
     )
     expect(screen.getByText(/explain the situation but don't change the %/)).toBeTruthy()
-    expect(screen.getByText('Property, plant & equipment rose from $138,683 (FY2023) to $269,741 (FY2026).')).toBeTruthy()
+    expect(screen.getByText('Property, plant & equipment rose from $126,450 (FY2023) to $251,920 (FY2026).')).toBeTruthy()
   })
 
   it('waits for a verified comparison', () => {
     render(<FinancialPointsPanel data={{ available: false, points: [] }} />)
     expect(screen.getByText('Financial points will appear once the financial comparison is verified.')).toBeTruthy()
+  })
+})
+
+describe('Creditors in the SBR', () => {
+  const HINTS = [
+    { amount: 4_200, source: 'FY2025 balance sheet', caution: null },
+    { amount: 0, source: 'FY2025 balance sheet', caution: null },
+    null,
+    null,
+    { amount: 25_000, source: 'FY2025 balance sheet', caution: 'Usually secured — check before including' },
+    null,
+  ]
+  const page = (auto: Record<string, unknown> = {}) =>
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...AUTO, creditorHints: HINTS, ...auto }}
+        initialPrediction={null}
+        readiness={READY}
+        financialPoints={NO_POINTS}
+      />,
+    )
+
+  it('shows balance-sheet hints beside the rows without filling them in', () => {
+    page()
+    expect(screen.getByText(/Balance sheet shows \$4,200 \(FY2025 balance sheet\)/)).toBeTruthy()
+    expect(screen.getByText(/Usually secured/)).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 amount' }) as HTMLInputElement).value).toBe('')
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$250,000')
+  })
+
+  it('adds the rows to the total and sends them with their labels', async () => {
+    const fetchMock = mockFetch()
+    page()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 1 amount' }), '12000')
+    const label = screen.getByRole('textbox', { name: 'Creditor 4 name' })
+    await userEvent.clear(label)
+    await userEvent.type(label, 'Supplier account')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 4 amount' }), '38,000')
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$300,000')
+
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = bodyOf(fetchMock)
+    expect(body.creditors).toHaveLength(6)
+    expect(body.creditors[0]).toEqual({ label: 'Credit cards', amount: 12_000 })
+    expect(body.creditors[3]).toEqual({ label: 'Supplier account', amount: 38_000 })
+    expect(body.creditors[1]).toEqual({ label: 'Bank overdraft', amount: null })
+    // The automatic ATO debt is not sent: the server works it out.
+    expect(body).not.toHaveProperty('creditorAmount')
+  })
+
+  it('will not run with an amount that is not a number', async () => {
+    page()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 2 amount' }), 'abc')
+    expect(screen.getByText(/Enter an amount of \$0 or more/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('starts from the rows saved with the last prediction', () => {
+    page({
+      savedCreditors: {
+        atoDebt: 90_000,
+        atoDebtEdited: true,
+        rows: [
+          { label: 'Fuel card', amount: 3_000 },
+          { label: 'Bank overdraft', amount: null },
+          { label: 'Bank loans', amount: null },
+          { label: 'Trade creditors', amount: null },
+          { label: 'Equipment / vehicle finance', amount: null },
+          { label: 'Other', amount: null },
+        ],
+      },
+    })
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Fuel card')
+    expect(screen.getByText('Source: entered by staff')).toBeTruthy()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$93,000')
+  })
+})
+
+describe('Creditors in the SBR — in the PDF', () => {
+  it('lists the ATO debt, each row with an amount, and the total', () => {
+    const prediction = {
+      creditorAmount: 150_000,
+      atoDebt: 100_000,
+      creditorDebt: { description: 'ATO account statement, 30 Sep 2026', missing: null, source: 'ica' },
+      creditors: [
+        { label: 'Credit cards', amount: 12_000 },
+        { label: 'Bank overdraft', amount: null },
+        { label: 'Supplier account', amount: 38_000 },
+      ],
+      practitionerFeeRate: 0.125,
+    }
+    render(<CreditorsSummaryCard prediction={prediction as never} />)
+    expect(screen.getByText('Credit cards')).toBeTruthy()
+    expect(screen.getByText('Supplier account')).toBeTruthy()
+    expect(screen.queryByText('Bank overdraft')).toBeNull()
+    expect(screen.getByText('$150,000')).toBeTruthy()
+    expect(screen.getByText(/ATO account statement, 30 Sep 2026/)).toBeTruthy()
   })
 })

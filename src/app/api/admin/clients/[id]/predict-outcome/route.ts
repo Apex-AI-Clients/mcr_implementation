@@ -15,7 +15,11 @@
  * setup page (run lodgement analysis, run financials extraction).
  *
  * Cached predictions live in sbr_outcome_predictions (UNIQUE on client_id);
- * re-running overwrites the row, with the practitioner fee staff chose.
+ * re-running overwrites the row, with the practitioner fee staff chose and
+ * the creditors in the SBR (creditors.ts, migration 0032).
+ *
+ * The offer is sized on the creditor TOTAL: the ATO debt (creditorDebt.ts)
+ * plus the other creditor rows staff entered.
  *
  * The training set is the shared one (historicalCases.ts): excluded cases are
  * never used, and a client is never matched with its own past record — a case
@@ -49,6 +53,14 @@ import {
   type IcaRow,
 } from '@/lib/sbr/creditorDebt'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import {
+  CREDITOR_LABEL_MAX,
+  CREDITOR_ROW_COUNT,
+  creditorTotal,
+  normaliseCreditorRows,
+  type CreditorRow,
+  type SavedCreditors,
+} from '@/lib/sbr/creditors'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 
@@ -69,8 +81,18 @@ async function requireAdmin() {
 }
 
 const BodySchema = z.object({
-  /** Staff's own figure for the creditor (ATO) debt, replacing the automatic one. */
+  /** Staff's own figure for the ATO debt, replacing the automatic one. */
   creditorAmount: z.number().nonnegative().nullable().optional(),
+  /** The other creditors in the SBR (creditors.ts): up to 6 rows, label and amount. */
+  creditors: z
+    .array(
+      z.object({
+        label: z.string().max(CREDITOR_LABEL_MAX * 2),
+        amount: z.number().nonnegative().finite().nullable(),
+      }),
+    )
+    .max(CREDITOR_ROW_COUNT)
+    .optional(),
   /**
    * Ignored. The director penalty notice factor is set here, from what is on
    * file (readiness.ts): Yes if any notice, No only if staff ticked "none
@@ -132,9 +154,14 @@ interface MissingPrerequisite {
 
 interface PredictResponse extends SbrPrediction {
   inputFeatures: SbrPredictionInput
+  /** The creditor total the offer is sized on: ATO debt + other creditor rows. */
   creditorAmount: number | null
-  /** Where the creditor amount came from, and as at when. */
+  /** The ATO debt in that total. */
+  atoDebt: number | null
+  /** Where the ATO debt came from, and as at when. */
   creditorDebt: CreditorDebt
+  /** The other creditor rows, as saved. */
+  creditors: CreditorRow[]
   computedAt: string
   cached: false
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
@@ -246,7 +273,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
       staffAmount: body.creditorAmount ?? null,
     })
-    const creditorAmount = debt.amount
+    const atoDebt = debt.amount
+    const creditorRows = normaliseCreditorRows(body.creditors)
+    const creditorAmount = creditorTotal(atoDebt, creditorRows)
+    const savedCreditors: SavedCreditors = {
+      atoDebt,
+      atoDebtEdited: debt.source === 'staff',
+      rows: creditorRows,
+    }
     // The decision, every time: source, amount, date, and why the ATO account was not used.
     console.log(`[creditor-debt] predict client=${clientId} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
@@ -304,6 +338,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           comparable_case_ids: prediction.comparableCases.map((c) => c.id),
           training_set_size: prediction.trainingSetSize,
           practitioner_fee_rate: practitionerFeeRate,
+          creditors: savedCreditors as unknown as Record<string, unknown>,
+          total_creditor_amount: creditorAmount,
           computed_at: now,
         },
         { onConflict: 'client_id' },
@@ -318,7 +354,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...prediction,
       inputFeatures,
       creditorAmount,
+      atoDebt,
       creditorDebt: debt,
+      creditors: creditorRows,
       computedAt: now,
       cached: false,
       autoDetectedDirectorLoan,

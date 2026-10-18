@@ -9,6 +9,7 @@ import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
+import { creditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
@@ -125,6 +126,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
     latestFinancialYear: statement?.slot.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
     hasFinancials: slots.length > 0,
+    // Creditors in the SBR: balance-sheet hints (current period first), and the rows saved last time.
+    creditorHints: creditorHints(slots),
+    savedCreditors: readSavedCreditors((cached.data as { creditors?: unknown } | null)?.creditors ?? null),
   }
 
   return (

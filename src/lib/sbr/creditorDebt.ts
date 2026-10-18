@@ -6,10 +6,15 @@ import type { ExtractedBalanceSheet } from '@/lib/financials/types'
  * prediction measures from. Pure. Shared by the predict-outcome route and the
  * outcome-prediction page, so the two can never disagree.
  *
- * DEFINITION PENDING (Gabby to confirm): the historical cases record a
- * "creditor debt". Whether that means ALL unsecured creditors or the ATO only
- * is not settled. Until it is, creditor debt = the ATO debt, worked out here
- * and nowhere else — change this one function when the answer comes.
+ * This is the ATO DEBT. The offer is sized on the ATO debt PLUS the other
+ * creditors staff enter (creditors.ts): offer = recommended % × (ATO debt +
+ * other creditor rows) ÷ (1 − practitioner fee), as Gabby instructed on the
+ * call of 14 Oct 2026.
+ *
+ * STILL OPEN (Gabby to confirm): the historical cases record a "creditor
+ * debt", and the recommended % comes from them. Whether their figure was ALL
+ * unsecured creditors or the ATO only is not settled. If it was the ATO only,
+ * a % learnt on ATO debt is now applied to a larger total.
  */
 
 /** One row of an analysed ATO integrated client account (stored in lodgement_analyses.rows). */
@@ -134,7 +139,7 @@ export function balanceSheetAtoTotal(bs: ExtractedBalanceSheet | null | undefine
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "26 Sep 2026" — fixed three-letter months (the en-AU locale gives "Sept", "June"). */
-const longDate = (iso: string) => {
+export const longDate = (iso: string) => {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`)
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }

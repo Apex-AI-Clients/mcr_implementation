@@ -37,6 +37,15 @@ import {
   FINANCIAL_POINTS_NOT_READY,
   type FinancialPoint,
 } from '@/lib/sbr/financialPoints'
+import {
+  CREDITOR_LABEL_MAX,
+  creditorTotal,
+  defaultCreditorRows,
+  includedCreditorRows,
+  type CreditorHint,
+  type CreditorRow,
+  type SavedCreditors,
+} from '@/lib/sbr/creditors'
 
 interface InitialAuto {
   cumulativeDaysLate: number | null
@@ -53,6 +62,10 @@ interface InitialAuto {
   latestFinancialYear: number | null
   hasLodgement: boolean
   hasFinancials: boolean
+  /** A balance-sheet figure per creditor row, by position; shown, never filled in. */
+  creditorHints: (CreditorHint | null)[]
+  /** The creditors saved with the last prediction, if any (migration 0032). */
+  savedCreditors: SavedCreditors | null
 }
 
 interface CachedSummary {
@@ -97,7 +110,12 @@ interface Props {
 
 interface FullPrediction extends SbrPrediction {
   inputFeatures: SbrPredictionInput
+  /** The creditor total the offer is sized on: ATO debt + other creditors. */
   creditorAmount: number | null
+  /** The ATO debt in that total. */
+  atoDebt?: number | null
+  /** The other creditor rows, as saved. */
+  creditors?: CreditorRow[]
   creditorDebt?: { description: string; missing: string | null; source: string | null }
   computedAt: string
   autoDetectedDirectorLoan?: {
@@ -119,6 +137,18 @@ const AUD = new Intl.NumberFormat('en-AU', {
   currency: 'AUD',
   maximumFractionDigits: 0,
 })
+
+/** One creditor row as staff type it. */
+interface CreditorRowInput {
+  label: string
+  amountText: string
+}
+
+function parseAmount(text: string): number | null {
+  if (text.trim() === '') return null
+  const n = Number(text.replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
 
 function formatAud(value: number | null | undefined): string {
   if (value == null) return '—'
@@ -172,13 +202,26 @@ export function OutcomePredictionClient({
     cachedInputs?.directorLoanAtAppointment ?? initialAuto.directorLoanDetected === true,
   )
 
-  // The creditor (ATO) debt: prefilled from the automatic figure, editable by
-  // staff. Only an amount staff changed is sent; otherwise the server works
-  // it out afresh.
+  // The ATO debt: prefilled from the automatic figure, editable by staff
+  // (kept from the last prediction when staff typed it). Only an amount staff
+  // changed is sent; otherwise the server works it out afresh.
+  const savedAto = initialAuto.savedCreditors?.atoDebtEdited ? initialAuto.savedCreditors.atoDebt : null
   const [creditorText, setCreditorText] = useState(
-    initialAuto.creditorAmount != null ? String(Math.round(initialAuto.creditorAmount)) : '',
+    savedAto != null
+      ? String(Math.round(savedAto))
+      : initialAuto.creditorAmount != null
+        ? String(Math.round(initialAuto.creditorAmount))
+        : '',
   )
-  const [creditorEdited, setCreditorEdited] = useState(false)
+  const [creditorEdited, setCreditorEdited] = useState(savedAto != null)
+  // The other creditors in the SBR (creditors.ts), from the last prediction or the defaults.
+  const [creditorRows, setCreditorRows] = useState<CreditorRowInput[]>(() =>
+    (initialAuto.savedCreditors?.rows ?? defaultCreditorRows()).map((r) => ({
+      label: r.label,
+      amountText: r.amount != null ? String(r.amount) : '',
+    })),
+  )
+  const creditorRowsValid = creditorRows.every((r) => r.amountText.trim() === '' || parseAmount(r.amountText) !== null)
   const creditorOverride = (() => {
     if (!creditorEdited) return undefined
     const n = Number(creditorText.replace(/[$,\s]/g, ''))
@@ -202,7 +245,8 @@ export function OutcomePredictionClient({
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
   const lodgementReady = auto.hasLodgement
-  const canRun = lodgementReady && feeRate !== null && readiness.canPredict && notReady.length === 0
+  const canRun =
+    lodgementReady && feeRate !== null && creditorRowsValid && readiness.canPredict && notReady.length === 0
 
   async function runPrediction() {
     setRunning(true)
@@ -217,6 +261,10 @@ export function OutcomePredictionClient({
           directorLoanAtAppointment,
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
+          creditors: creditorRows.map((r) => ({
+            label: r.label.trim().slice(0, CREDITOR_LABEL_MAX),
+            amount: parseAmount(r.amountText),
+          })),
         }),
       })
       const data = await res.json()
@@ -402,6 +450,8 @@ export function OutcomePredictionClient({
           setCreditorText={setCreditorText}
           creditorEdited={creditorEdited}
           setCreditorEdited={setCreditorEdited}
+          creditorRows={creditorRows}
+          setCreditorRows={setCreditorRows}
           feeRate={feeRate}
           setFeeRate={setFeeRate}
         />
@@ -411,14 +461,7 @@ export function OutcomePredictionClient({
         <>
           <HeadlineTiles prediction={prediction} />
           {/* On screen and in the PDF: what the offer is sized against, and from where. */}
-          {prediction.creditorAmount != null && (
-            <p className="-mt-2 text-xs text-foreground/60">
-              ATO debt <span className="font-medium text-foreground">{formatAud(prediction.creditorAmount)}</span>
-              {prediction.creditorDebt ? ` — ${prediction.creditorDebt.description}` : ''}
-              {' · '}practitioner fee{' '}
-              <span className="font-medium text-foreground">{formatFeeRate(prediction.practitionerFeeRate)}</span>
-            </p>
-          )}
+          <CreditorsSummaryCard prediction={prediction} />
           {(prediction.selfMatchExcluded ?? 0) > 0 && (
             <p className="-mt-2 text-xs text-foreground/50">
               {prediction.selfMatchExcluded === 1
@@ -520,6 +563,8 @@ interface InputPanelProps {
   setCreditorText: (v: string) => void
   creditorEdited: boolean
   setCreditorEdited: (v: boolean) => void
+  creditorRows: CreditorRowInput[]
+  setCreditorRows: (rows: CreditorRowInput[]) => void
   feeRate: number | null
   setFeeRate: (v: number | null) => void
 }
@@ -543,6 +588,8 @@ function InputPanel(props: InputPanelProps) {
     setCreditorText,
     creditorEdited,
     setCreditorEdited,
+    creditorRows,
+    setCreditorRows,
     feeRate,
     setFeeRate,
   } = props
@@ -563,6 +610,16 @@ function InputPanel(props: InputPanelProps) {
             <span className="text-foreground/30"> · </span>
             Practitioner fee:{' '}
             <span className="text-foreground">{feeRate !== null ? formatFeeRate(feeRate) : '—'}</span>
+            <span className="text-foreground/30"> · </span>
+            Creditors in the SBR:{' '}
+            <span className="text-foreground">
+              {formatAud(
+                creditorTotal(
+                  parseAmount(creditorText),
+                  creditorRows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
+                ),
+              )}
+            </span>
           </div>
           <button
             type="button"
@@ -616,31 +673,6 @@ function InputPanel(props: InputPanelProps) {
               }
               softMissing={!auto.hasFinancials}
             />
-            <div>
-              <dt className="text-foreground/40">
-                <label htmlFor="creditor-amount">ATO debt (creditor amount)</label>
-              </dt>
-              <dd className="mt-0.5">
-                <input
-                  id="creditor-amount"
-                  inputMode="decimal"
-                  value={creditorText}
-                  placeholder="Enter amount"
-                  onChange={(event) => {
-                    setCreditorText(event.target.value)
-                    setCreditorEdited(true)
-                  }}
-                  className="h-7 w-36 rounded-md border border-border bg-input-bg px-2 text-sm font-medium tabular-nums text-foreground focus:border-accent focus:outline-none"
-                />
-              </dd>
-              <p className="mt-0.5 text-foreground/30">
-                {creditorEdited
-                  ? 'Source: entered by staff'
-                  : auto.creditorAmount != null
-                    ? `Source: ${auto.creditorSource}`
-                    : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
-              </p>
-            </div>
           </dl>
         </div>
 
@@ -712,6 +744,16 @@ function InputPanel(props: InputPanelProps) {
         </div>
       </div>
 
+      <CreditorsEditor
+        auto={auto}
+        creditorText={creditorText}
+        setCreditorText={setCreditorText}
+        creditorEdited={creditorEdited}
+        setCreditorEdited={setCreditorEdited}
+        rows={creditorRows}
+        setRows={setCreditorRows}
+      />
+
       <div className="no-print mt-5 flex justify-end gap-2">
         {hasPrediction && (
           <Button variant="ghost" size="md" onClick={onToggleCollapsed}>
@@ -731,6 +773,157 @@ function InputPanel(props: InputPanelProps) {
       </div>
 
       {helpOpen && <ManualInputsHelpModal onClose={() => setHelpOpen(false)} />}
+    </Card>
+  )
+}
+
+/**
+ * "Creditors in the SBR": the ATO debt and six rows staff can relabel and
+ * fill in. The offer is sized on their total (creditors.ts). A balance-sheet
+ * figure is shown beside a row when there is one; it is never filled in.
+ */
+function CreditorsEditor({
+  auto,
+  creditorText,
+  setCreditorText,
+  creditorEdited,
+  setCreditorEdited,
+  rows,
+  setRows,
+}: {
+  auto: InitialAuto
+  creditorText: string
+  setCreditorText: (v: string) => void
+  creditorEdited: boolean
+  setCreditorEdited: (v: boolean) => void
+  rows: CreditorRowInput[]
+  setRows: (rows: CreditorRowInput[]) => void
+}) {
+  const total = creditorTotal(
+    parseAmount(creditorText),
+    rows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
+  )
+  const update = (i: number, change: Partial<CreditorRowInput>) =>
+    setRows(rows.map((r, j) => (j === i ? { ...r, ...change } : r)))
+  const inputClass =
+    'h-7 rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none'
+  const grid = 'grid gap-2 sm:grid-cols-[minmax(0,14rem)_9rem_minmax(0,1fr)] sm:items-center'
+
+  return (
+    <section className="mt-6 border-t border-border pt-5" aria-labelledby="creditors-heading">
+      <h3 id="creditors-heading" className="text-sm font-semibold text-foreground">
+        Creditors in the SBR
+      </h3>
+      <p className="mt-1 mb-3 text-xs text-foreground/40">
+        The offer is the recommended % of the total below, grossed up for the practitioner fee. Rename or
+        clear any row; leave an amount blank to leave that creditor out.
+      </p>
+      <div className="space-y-2 text-xs">
+        <div className={grid}>
+          <label htmlFor="creditor-amount" className="font-medium text-foreground">
+            ATO debt
+          </label>
+          <input
+            id="creditor-amount"
+            inputMode="decimal"
+            value={creditorText}
+            placeholder="Enter amount"
+            onChange={(event) => {
+              setCreditorText(event.target.value)
+              setCreditorEdited(true)
+            }}
+            className={cn(inputClass, 'w-36 font-medium tabular-nums')}
+          />
+          <p className="text-foreground/40">
+            {creditorEdited
+              ? 'Source: entered by staff'
+              : auto.creditorAmount != null
+                ? `Source: ${auto.creditorSource}`
+                : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
+          </p>
+        </div>
+        {rows.map((row, i) => {
+          const hint = auto.creditorHints[i] ?? null
+          const invalid = row.amountText.trim() !== '' && parseAmount(row.amountText) === null
+          return (
+            <div key={i} className={grid}>
+              <input
+                aria-label={`Creditor ${i + 1} name`}
+                value={row.label}
+                maxLength={CREDITOR_LABEL_MAX}
+                placeholder="Creditor"
+                onChange={(event) => update(i, { label: event.target.value })}
+                className={cn(inputClass, 'w-full')}
+              />
+              <input
+                aria-label={`Creditor ${i + 1} amount`}
+                aria-invalid={invalid || undefined}
+                inputMode="decimal"
+                value={row.amountText}
+                placeholder="—"
+                onChange={(event) => update(i, { amountText: event.target.value })}
+                className={cn(inputClass, 'w-36 tabular-nums', invalid && 'border-destructive')}
+              />
+              <p className="text-foreground/40">
+                {invalid ? (
+                  <span className="text-destructive">Enter an amount of $0 or more, or leave it blank.</span>
+                ) : hint ? (
+                  <>
+                    Balance sheet shows {formatAud(hint.amount)} ({hint.source})
+                    {hint.caution && <span className="text-warning"> · {hint.caution}</span>}
+                  </>
+                ) : null}
+              </p>
+            </div>
+          )
+        })}
+        <div className={cn(grid, 'border-t border-border pt-2')}>
+          <span className="font-medium text-foreground">Total creditors</span>
+          <span className="font-semibold tabular-nums text-foreground" data-testid="creditor-total">
+            {formatAud(total)}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** On screen and in the PDF: the creditors the offer was sized on. */
+export function CreditorsSummaryCard({ prediction }: { prediction: FullPrediction }) {
+  if (prediction.creditorAmount == null) return null
+  const others = includedCreditorRows(prediction.creditors ?? [])
+  const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-foreground">Creditors in the SBR</h3>
+      <table className="mt-2 w-full max-w-lg text-xs">
+        <tbody>
+          <tr className="border-b border-border">
+            <td className="py-1 pr-3 text-foreground/70">
+              ATO debt
+              {prediction.creditorDebt ? (
+                <span className="text-foreground/40"> — {prediction.creditorDebt.description}</span>
+              ) : null}
+            </td>
+            <td className="py-1 text-right tabular-nums text-foreground">{formatAud(atoDebt)}</td>
+          </tr>
+          {others.map((row, i) => (
+            <tr key={i} className="border-b border-border">
+              <td className="py-1 pr-3 text-foreground/70">{row.label || 'Creditor'}</td>
+              <td className="py-1 text-right tabular-nums text-foreground">{formatAud(row.amount)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td className="py-1 pr-3 font-medium text-foreground">Total</td>
+            <td className="py-1 text-right font-semibold tabular-nums text-foreground">
+              {formatAud(prediction.creditorAmount)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-foreground/50">
+        Practitioner fee {formatFeeRate(prediction.practitionerFeeRate)}.
+      </p>
     </Card>
   )
 }
@@ -1292,6 +1485,32 @@ function CalculationsModal({
   )
 }
 
+/** Each creditor in the SBR, step by step, adding up to the total the offer is sized on. */
+function CreditorTotalSteps({ prediction }: { prediction: FullPrediction }) {
+  const others = includedCreditorRows(prediction.creditors ?? [])
+  const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
+  return (
+    <div className="mb-2 border-b border-border/60 pb-2">
+      <div>
+        ATO debt = <span className="text-foreground">{formatAud(atoDebt)}</span>
+        {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
+      </div>
+      {others.map((row, i) => (
+        <div key={i}>
+          + {row.label || 'Creditor'} = <span className="text-foreground">{formatAud(row.amount)}</span>
+        </div>
+      ))}
+      <div className="mt-1">
+        Total creditors ={' '}
+        {others.length > 0
+          ? `${[atoDebt, ...others.map((r) => r.amount)].map((v) => formatAud(v)).join(' + ')} = `
+          : ''}
+        <span className="font-semibold text-foreground">{formatAud(prediction.creditorAmount)}</span>
+      </div>
+    </div>
+  )
+}
+
 function CalculationsContent({
   prediction,
   suggestedRounded,
@@ -1333,7 +1552,7 @@ function CalculationsContent({
             1. Recommended offer ({prediction.predictedOutcomePercent.toFixed(1)}%)
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the cents-in-the-dollar settlement to put forward, as a % of the ATO debt.
+            What it is: the cents-in-the-dollar settlement to put forward, as a % of the creditors in the SBR.
           </p>
           <p className="mb-2 text-xs text-foreground/65">
             Formula: <code className="text-foreground/90">average of the 8 nearest cases&apos; outcomes</code>
@@ -1387,9 +1606,9 @@ function CalculationsContent({
             {suggestedRounded != null ? `(current ${formatAud(suggestedRounded)})` : '(not available)'}
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the current dollar offer (the recommended % on this client&apos;s ATO debt,
-            grossed up for the SBR practitioner fee) — and the amount needed to match similar deals
-            that were accepted.
+            What it is: the current dollar offer (the recommended % of this client&apos;s creditors in
+            the SBR, grossed up for the SBR practitioner fee) — and the amount needed to match similar
+            deals that were accepted.
           </p>
           <p className="mb-2 text-xs font-medium text-foreground/80">2a. Current SBR amount</p>
           {prediction.creditorAmount != null && prediction.suggestedOfferAmount != null ? (
@@ -1397,15 +1616,11 @@ function CalculationsContent({
               <p className="mb-2 text-xs text-foreground/65">
                 Formula:{' '}
                 <code className="text-foreground/90">
-                  (predicted_outcome% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
+                  (predicted_outcome% × total_creditors) ÷ (1 − SBR_practitioner_fee)
                 </code>
               </p>
               <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
-                <div>
-                  ATO debt (creditor amount) ={' '}
-                  <span className="text-foreground">{formatAud(prediction.creditorAmount)}</span>
-                  {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
-                </div>
+                <CreditorTotalSteps prediction={prediction} />
                 <div>
                   Predicted outcome ={' '}
                   <span className="text-foreground">
@@ -1465,7 +1680,7 @@ function CalculationsContent({
                   <p className="mb-2 text-xs text-foreground/65">
                     Formula:{' '}
                     <code className="text-foreground/90">
-                      (highest_accepted_offer% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
+                      (highest_accepted_offer% × total_creditors) ÷ (1 − SBR_practitioner_fee)
                     </code>
                   </p>
                   <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
@@ -2165,14 +2380,22 @@ function ExportButton({
         ? roundToNearest(prediction.suggestedOfferAmount, 500)
         : '',
     )
-    push('ATO debt (creditor amount)', prediction.creditorAmount ?? '')
+    push('ATO debt', prediction.atoDebt === undefined ? (prediction.creditorAmount ?? '') : (prediction.atoDebt ?? ''))
     push('ATO debt source', prediction.creditorDebt?.description ?? '')
+    push('Total creditors in the SBR', prediction.creditorAmount ?? '')
     push('Risk Band', riskBandExportLabel(prediction.riskBand))
     push('Risk Band Reasoning', prediction.riskBandReasoning)
     push(
       'Payment Structure Recommendation',
       `${paymentStructureLabel(prediction.paymentStructureRecommendation.recommended)} — ${prediction.paymentStructureRecommendation.reasoning}`,
     )
+    push('')
+
+    push('CREDITORS IN THE SBR')
+    push('Creditor', 'Amount')
+    push('ATO debt', prediction.atoDebt === undefined ? (prediction.creditorAmount ?? '') : (prediction.atoDebt ?? ''))
+    for (const row of includedCreditorRows(prediction.creditors ?? [])) push(row.label || 'Creditor', row.amount)
+    push('Total', prediction.creditorAmount ?? '')
     push('')
 
     // Temporarily hidden (client request): "What the rejections tell us" and
