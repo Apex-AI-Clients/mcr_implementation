@@ -79,7 +79,19 @@ const fileRow = {
   overridePending: false,
 }
 
-function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = false } = {}) {
+// A current period whose year now has its annual statement: in no cell of the table.
+const supersededRow = {
+  ...fileRow,
+  documentId: 'd2',
+  filename: 'SYNTH_current_period_2025.pdf',
+  annualYears: [],
+  currentPeriodYear: 2025,
+  currentPeriodLabel: '1 July 2024 to 31 March 2025',
+  usage: 'superseded' as const,
+  note: "Current period within FY2025, but FY2025 already has its annual statement, so this file isn't used.",
+}
+
+function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = false, extraFiles = [] as (typeof fileRow | typeof supersededRow)[] } = {}) {
   return render(
     <ComparisonClient
       clientId="client-1"
@@ -90,7 +102,7 @@ function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = 
       initialExtraction={{ extractedCount: 2, documentCount: 2, hasUnextracted: false }}
       initialJobId={null}
       coverage={withCoverage ? coverage : { columns: [], rows: { income_statement: [], balance_sheet: [] } }}
-      files={withFiles ? [fileRow] : []}
+      files={[...(withFiles ? [fileRow] : []), ...extraFiles]}
       overrideYears={[2027, 2026, 2025]}
       initialStaleSince={null}
       showDiagnostics={showDiagnostics}
@@ -165,5 +177,41 @@ describe('year and type from the coverage table', () => {
     expect(String(period[0])).toBe('/api/admin/clients/client-1/financial-statements/d1/period')
     const start = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/financials-comparison/start'))! as unknown as [string, RequestInit]
     expect(JSON.parse(start[1].body as string)).toEqual({ mode: 'full', documentIds: ['d1'] })
+  })
+})
+
+describe('files not used in the comparison', () => {
+  it('lists a file no cell names, with its reason, and changes it the same way', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/period')
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : new Response(JSON.stringify({ jobId: 'job-1' }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true, extraFiles: [supersededRow] })
+
+    expect(screen.getByText('Files not used in the comparison')).toBeTruthy()
+    expect(screen.getByText('Superseded')).toBeTruthy()
+    expect(screen.getByText(/FY2025 already has its annual statement/)).toBeTruthy()
+    // The file in the table is not listed.
+    expect(screen.queryByRole('button', { name: 'Change the year and type of SYNTH_statements_2025.pdf' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Change the year and type of SYNTH_current_period_2025.pdf' }))
+    expect(screen.getByText('Detected: FY2025 current period')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Change' }))
+    await user.selectOptions(screen.getByLabelText('Financial year for SYNTH_current_period_2025.pdf'), '2026')
+    await user.click(screen.getByRole('button', { name: 'Save and read again' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/financials-comparison/start'))).toBe(true))
+    const period = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/period'))!
+    expect(String(period[0])).toBe('/api/admin/clients/client-1/financial-statements/d2/period')
+    const start = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/financials-comparison/start'))! as unknown as [string, RequestInit]
+    expect(JSON.parse(start[1].body as string)).toEqual({ mode: 'full', documentIds: ['d2'] })
+  })
+
+  it('shows nothing when every file is in the table', () => {
+    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
+    expect(screen.queryByText('Files not used in the comparison')).toBeNull()
   })
 })

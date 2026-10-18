@@ -27,6 +27,7 @@ import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
 import { FinancialFilesTable } from '@/components/admin/financials/FinancialFilesTable'
 import { FilePeriodPanel } from '@/components/admin/financials/FilePeriodPanel'
+import { UnusedFilesList, filesNotInCoverage } from '@/components/admin/financials/UnusedFilesList'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -117,6 +118,10 @@ export function ComparisonClient({
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
   const selectableDocumentIds = useMemo(() => new Set(files.map((f) => f.documentId)), [files])
   const selectedFile = files.find((f) => f.documentId === selectedFileId) ?? null
+  // Files no table cell names (superseded, read as nothing, not a statement): listed under it.
+  const unusedFiles = useMemo(() => filesNotInCoverage(files, coverage), [files, coverage])
+  const selectedIsUnused = selectedFile !== null && unusedFiles.some((f) => f.documentId === selectedFile.documentId)
+  const toggleFile = (documentId: string) => setSelectedFileId((current) => (current === documentId ? null : documentId))
 
   // Track the active poll loop so we can cancel it on unmount / new job.
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -293,6 +298,20 @@ export function ComparisonClient({
     ? `${formatIso(comparison.periodRange.start)} to ${formatIso(comparison.periodRange.end)}`
     : null
 
+  function filePanel(file: FinancialFileRow) {
+    return (
+      <FilePeriodPanel
+        key={file.documentId}
+        clientId={clientId}
+        file={file}
+        yearOptions={overrideYears}
+        running={running}
+        onReread={(documentIds) => void startJob('full', documentIds)}
+        onClose={() => setSelectedFileId(null)}
+      />
+    )
+  }
+
   return (
     <div id="financials-export-root" className="space-y-6">
       {/* Page header */}
@@ -434,26 +453,22 @@ export function ComparisonClient({
           load. Clicking a file shows the year and type it was read as, and
           lets staff correct them (the file is then read again). The per-file
           list and the checks are diagnostics only (hidden in production). */}
-      {(coverage.columns.length > 0 || (showDiagnostics && files.length > 0)) && (
+      {(coverage.columns.length > 0 || unusedFiles.length > 0 || (showDiagnostics && files.length > 0)) && (
         <div className="no-print space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
           <StatementCoverageTable
             coverage={coverage}
             selectableDocumentIds={selectableDocumentIds}
             selectedDocumentId={selectedFile?.documentId ?? null}
-            onSelectFile={(documentId) => setSelectedFileId((current) => (current === documentId ? null : documentId))}
+            onSelectFile={toggleFile}
           />
-          {selectedFile && (
-            <FilePeriodPanel
-              key={selectedFile.documentId}
-              clientId={clientId}
-              file={selectedFile}
-              yearOptions={overrideYears}
-              running={running}
-              onReread={(documentIds) => void startJob('full', documentIds)}
-              onClose={() => setSelectedFileId(null)}
-            />
-          )}
+          {selectedFile && !selectedIsUnused && filePanel(selectedFile)}
+          <UnusedFilesList
+            files={unusedFiles}
+            selectedDocumentId={selectedIsUnused ? selectedFile.documentId : null}
+            onSelect={toggleFile}
+            panel={selectedIsUnused ? filePanel(selectedFile) : null}
+          />
           {showDiagnostics && (
             <FinancialFilesTable
               clientId={clientId}
