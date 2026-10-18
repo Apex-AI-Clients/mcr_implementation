@@ -28,53 +28,39 @@ import type {
  */
 
 /**
- * DPN (Director Penalty Notice) risk — pooled-credit netting methodology.
+ * DPN (Director Penalty Notice) estimate — SAME-PERIOD netting.
  *
- * Updated 19 May 2026 after MCR feedback on a reference dataset. Worked
- * example (the synthetic company fixture in __tests__):
- *   gross late debt   = $7,250
- *   paid since lodged = $6,510  (sum of late credit-only ClientAmended rows)
- *   net at risk       = $740
- *
- * Rationale (per MCR): the ATO applies cash payments to the oldest outstanding
- * debt first, so a cash payment can be consumed by an older non-DPN debit
- * (GIC, prior on-time lodgement, etc.) without de-risking the DPN-qualifying
- * late lodgement at all. We can't know for any given payment what it actually
- * paid down. The conservative position is therefore to NOT credit any cash
- * payments toward DPN relief.
- *
- * Late credit-only ClientAmended rows ARE counted as relief, because an
- * amendment that reduces a prior-period liability is directly tied to that
- * period's lodgement debt and is a real reversal of personal liability — even
- * though it was filed late.
+ * Only an estimate, for a client with no director penalty notice on file:
+ * when notices are uploaded, their own figures are shown instead
+ * (src/lib/dpn/summary.ts). Rewritten 18 Oct 2026: the earlier method pooled
+ * the credits of every late lodgement and applied them oldest-debit-first
+ * across ALL periods, and called the result "paid since lodged". On a real
+ * account with no payments at all it showed the whole late debt as "paid".
  *
  * METHOD:
- *   1. Identify all Original/ClientAmended rows filed >90 days late.
- *   2. Split into debit rows (debit > 0) and credit rows (credit > 0).
- *      Total Gross Late   = sum of debits.
- *      Total Credit Pool  = sum of credits.
- *   3. Apply the credit pool oldest-debit-first to allocate per-row
- *      paymentsSinceLodged and netAtRisk for display. Total paid = min(pool,
- *      gross); total net = max(0, gross - pool).
+ *   1. Late debits: Original/ClientAmended rows, as the late-lodgement
+ *      setting counts them (config.ts), filed more than 90 days late, with a
+ *      debit. Gross = their sum.
+ *   2. Per period (matched on period ending), the relief is the period's NET
+ *      downward amendment: the credits of its Original/ClientAmended rows,
+ *      less the debits of its lodgement rows that are not counted as late
+ *      debits (an amendment that went up and then back down nets to nothing).
+ *      Never below $0.
+ *   3. That relief reduces only that period's late debits, in date order.
+ *      A credit never reduces another period's debit. A row with no period
+ *      ending gets no relief.
  *
- * EXCLUSIONS:
- *   - Cash Payment rows: ignored.
- *   - Government stimulus (Cash Flow Boost, JobKeeper), credit transfers,
- *     GIC remissions, ATO-initiated amendments: ignored.
- *   - Credit-only late amendments themselves are NOT contributing debits
- *     (debit = 0), but their credit amount IS added to the credit pool.
+ * EXCLUSIONS: payments (we can't know which debt the ATO applied them to),
+ * GIC, penalties, government credits, transfers, ATO audit amendments.
+ *
+ * Nothing here is a payment: the reduction is "reduced by later amendments".
  */
 export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
-  const lateOriginalAmend = rows.filter(
-    (r) =>
-      (r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended') &&
-      r.lateLodgementDays > 90,
-  )
+  const lodgements = rows.filter((r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended')
+  const periodOf = (r: EnrichedRow) => (r.periodEnding ? calendarDay(r.periodEnding) : null)
 
-  // Debits follow the late-lodgement scope (config.ts); the credit pool below
-  // does not: an amendment that reduces a liability is relief either way.
-  const lateDebitRows = lateOriginalAmend
-    .filter((r) => (r.debit ?? 0) > 0 && isCountedLodgement(r, scope))
+  const lateDebitRows = lodgements
+    .filter((r) => r.lateLodgementDays > 90 && (r.debit ?? 0) > 0 && isCountedLodgement(r, scope))
     .slice()
     .sort((a, b) => {
       const ta = a.processedDate ? (a.processedDate as Date).getTime() : 0
@@ -82,16 +68,26 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
       if (ta !== tb) return ta - tb
       return a.rowIndex - b.rowIndex
     })
+  const late = new Set(lateDebitRows)
 
-  const totalGrossLate = lateDebitRows.reduce((s, r) => s + (r.debit ?? 0), 0)
-  const totalCreditPool = lateOriginalAmend.reduce((s, r) => s + (r.credit ?? 0), 0)
+  // Each period's net downward amendment.
+  const relief = new Map<string, number>()
+  const credits = new Map<string, number>()
+  const otherDebits = new Map<string, number>()
+  for (const r of lodgements) {
+    const period = periodOf(r)
+    if (!period) continue
+    credits.set(period, (credits.get(period) ?? 0) + (r.credit ?? 0))
+    if (!late.has(r)) otherDebits.set(period, (otherDebits.get(period) ?? 0) + (r.debit ?? 0))
+  }
+  for (const [period, credit] of credits) relief.set(period, Math.max(0, credit - (otherDebits.get(period) ?? 0)))
 
-  // Allocate the pooled credit oldest-debit-first for per-row display values.
-  let creditRemaining = totalCreditPool
   const contributingDebits: DpnContributingDebit[] = lateDebitRows.map((row) => {
     const debit = row.debit ?? 0
-    const applied = Math.min(creditRemaining, debit)
-    creditRemaining -= applied
+    const period = periodOf(row)
+    const available = period ? (relief.get(period) ?? 0) : 0
+    const applied = Math.min(available, debit)
+    if (period) relief.set(period, available - applied)
     return {
       rowIndex: row.rowIndex,
       processedDate: row.processedDate?.toISOString() ?? '',
@@ -100,13 +96,14 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
       description: row.description,
       daysLate: row.lateLodgementDays,
       debit,
-      paymentsSinceLodged: applied,
-      netAtRisk: Math.max(debit - applied, 0),
+      reducedByAmendments: round2(applied),
+      netAtRisk: round2(Math.max(debit - applied, 0)),
     }
   })
 
-  const totalPaidSince = Math.min(totalCreditPool, totalGrossLate)
-  const totalNetAtRisk = Math.max(0, totalGrossLate - totalCreditPool)
+  const totalGrossLate = round2(contributingDebits.reduce((s, r) => s + r.debit, 0))
+  const totalReducedByAmendments = round2(contributingDebits.reduce((s, r) => s + r.reducedByAmendments, 0))
+  const totalNetAtRisk = round2(contributingDebits.reduce((s, r) => s + r.netAtRisk, 0))
 
   // periodStart/periodEnd reflect the full range of all processedDates in the CSV
   const allProcessedTimes = rows
@@ -125,7 +122,7 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
     thresholdDays: 90,
     contributingDebits,
     totalGrossLate,
-    totalPaidSince,
+    totalReducedByAmendments,
     totalNetAtRisk,
     periodStart,
     periodEnd,
@@ -140,6 +137,8 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
  * Principal: Original + ClientAmended debits/credits
  * Interest:  GIC debits/credits (includes remissions as credits)
  * Penalties: FTLPenalty + GeneralPenalty debits/credits
+ * Audit:     ATOAudit debits/credits ("Tax Office audit amended…": debt the
+ *            ATO raised on audit)
  * Payments:  Payment credits only — allocation rows (PaymentAllocation) are
  *            not payments and are skipped (paymentAllocations.ts)
  * Other:     CreditTransfer + Other credits only
@@ -157,6 +156,8 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
   let interestCredits = 0
   let penaltyDebits = 0
   let penaltyCredits = 0
+  let auditDebits = 0
+  let auditCredits = 0
   let paymentsReceived = 0
   let paymentsCount = 0
   let firstPayment: Date | null = null
@@ -181,6 +182,10 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
         penaltyDebits += row.debit ?? 0
         penaltyCredits += row.credit ?? 0
         break
+      case 'ATOAudit':
+        auditDebits += row.debit ?? 0
+        auditCredits += row.credit ?? 0
+        break
       case 'Payment':
         if ((row.credit ?? 0) > 0) {
           paymentsReceived += row.credit ?? 0
@@ -203,14 +208,24 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
         otherCredits += row.credit ?? 0
         break
       // SubLine, ATOAmended and the breakdown rows (PaymentAllocation,
-      // RefundDetail, GICDetail) intentionally excluded
+      // RefundDetail, GICDetail, GICSummary) intentionally excluded
     }
   }
 
-  const principalNet = principalDebits - principalCredits
-  const interestNet = interestDebits - interestCredits
-  const penaltyNet = penaltyDebits - penaltyCredits
-  const totalAtoDebt = principalNet + interestNet + penaltyNet
+  // To the cent: hundreds of interest rows otherwise leave floating-point noise.
+  principalDebits = round2(principalDebits)
+  principalCredits = round2(principalCredits)
+  interestDebits = round2(interestDebits)
+  interestCredits = round2(interestCredits)
+  penaltyDebits = round2(penaltyDebits)
+  penaltyCredits = round2(penaltyCredits)
+  auditDebits = round2(auditDebits)
+  auditCredits = round2(auditCredits)
+  const principalNet = round2(principalDebits - principalCredits)
+  const interestNet = round2(interestDebits - interestCredits)
+  const penaltyNet = round2(penaltyDebits - penaltyCredits)
+  const auditNet = round2(auditDebits - auditCredits)
+  const totalAtoDebt = round2(principalNet + interestNet + penaltyNet + auditNet)
   const openingBalance = openingBalanceOf(rows)
   const composedBalance = round2(openingBalance + totalAtoDebt + refundsPaid - paymentsReceived - otherCredits - governmentCredits)
   const ato = icaPosition(rows as unknown as IcaRow[])
@@ -228,12 +243,15 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
     penaltyDebits,
     penaltyCredits,
     penaltyNet,
+    auditDebits,
+    auditCredits,
+    auditNet,
     paymentsReceived: round2(paymentsReceived),
     paymentsCount,
     firstPaymentDate: firstPayment ? calendarDay(firstPayment) : null,
     lastPaymentDate: lastPayment ? calendarDay(lastPayment) : null,
-    governmentCredits,
-    otherCredits,
+    governmentCredits: round2(governmentCredits),
+    otherCredits: round2(otherCredits),
     refundsPaid: round2(refundsPaid),
     openingBalance,
     totalAtoDebt,
@@ -255,6 +273,7 @@ function compositionEffect(row: EnrichedRow): number {
     case 'GIC':
     case 'FTLPenalty':
     case 'GeneralPenalty':
+    case 'ATOAudit':
     case 'Refund':
       return (row.debit ?? 0) - (row.credit ?? 0)
     case 'Payment':

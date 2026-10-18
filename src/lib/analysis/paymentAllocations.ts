@@ -31,6 +31,21 @@ import type { EnrichedRow, LodgementType } from './types'
  * cent), those rows are its breakdown. If it passes the total, or a row breaks
  * the run, nothing is re-typed. So two genuine transactions on the same day
  * are never merged unless one is exactly the breakdown of the other.
+ *
+ * GIC SUMMARY ROWS. Some exports print a plain "General interest charge" row
+ * WITH a balance above interest rows that mix debits and credits ("Amended
+ * general interest charge…", "Remission of general interest charge"):
+ *
+ *   General interest charge                     $129.24   $29,382.33 DR  ← summary
+ *   Amended general interest charge calculated…   $222.53                 ← counted
+ *   Remission of general interest charge                    $93.29        ← counted
+ *
+ * When the no-balance GIC rows directly below it, on the same processed and
+ * effective dates, net (debits less credits) to exactly the summary row's net
+ * (to the cent, $0 included), the summary row is re-typed GICSummary and the
+ * rows under it are counted. Checked on four real accounts: every such row
+ * matched, and counting both was the whole of each account's unexplained
+ * difference.
  */
 
 interface Pattern {
@@ -90,6 +105,21 @@ export function markBreakdownRows(rows: EnrichedRow[]): EnrichedRow[] {
         if (sum > target) break
       }
     }
+  })
+
+  // GIC summary rows, over what is left (a total already broken down above stays).
+  rows.forEach((total, i) => {
+    if (total.lodgementType !== 'GIC' || detail.has(i) || total.balance === null) return
+    if (label(total.description) !== 'general interest charge') return
+    let net = 0
+    let parts = 0
+    for (let j = i + 1; j < rows.length; j++) {
+      const row = rows[j]
+      if (row.lodgementType !== 'GIC' || row.balance !== null || detail.has(j) || !sameDates(row, total)) break
+      net += cents(row.debit ?? 0) - cents(row.credit ?? 0)
+      parts++
+    }
+    if (parts > 0 && net === cents(total.debit ?? 0) - cents(total.credit ?? 0)) detail.set(i, 'GICSummary')
   })
 
   if (detail.size === 0) return rows

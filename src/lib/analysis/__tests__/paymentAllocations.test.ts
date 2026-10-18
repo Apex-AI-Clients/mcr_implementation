@@ -117,3 +117,69 @@ describe('opening balance', () => {
     expect(analyse(OPENING).debtBreakdown.openingBalance).toBe(0)
   })
 })
+
+describe('interest summary rows', () => {
+  it('counts the interest rows under a "General interest charge" summary, not the summary as well', () => {
+    // The summary ($200 net debit) sums the rows under it: $250 charged, $50 remitted.
+    const r = analyse(
+      row('31 Oct 2023', '30 Sep 2023', 'General interest charge', '$200.00', '', '$30,200.00 DR'),
+      row('31 Oct 2023', '30 Sep 2023', 'Amended general interest charge calculated from 01 Sep 23 to 30 Sep 23', '$250.00'),
+      row('31 Oct 2023', '30 Sep 2023', 'Remission of general interest charge', '', '$50.00'),
+      OPENING,
+    )
+    expect(r.rows.filter((x) => x.lodgementType === 'GICSummary')).toHaveLength(1)
+    expect(r.debtBreakdown.interestDebits).toBe(250)
+    expect(r.debtBreakdown.interestCredits).toBe(50)
+    expect(r.debtBreakdown.interestNet).toBe(200)
+    expect(r.debtBreakdown.unexplainedDifference).toBe(0)
+  })
+
+  it('treats a $0 summary over rows that cancel out the same way', () => {
+    const r = analyse(
+      row('31 Oct 2023', '30 Sep 2023', 'General interest charge', '', '$0.00', '$30,000.00 DR'),
+      row('31 Oct 2023', '30 Sep 2023', 'Amended general interest charge calculated from 01 Sep 23 to 30 Sep 23', '$35.02'),
+      row('31 Oct 2023', '30 Sep 2023', 'Remission of general interest charge', '', '$35.02'),
+      OPENING,
+    )
+    expect(r.rows.filter((x) => x.lodgementType === 'GICSummary')).toHaveLength(1)
+    expect(r.debtBreakdown.interestNet).toBe(0)
+    expect(r.debtBreakdown.unexplainedDifference).toBe(0)
+  })
+
+  it('keeps a summary whose rows do not add up to it, or that has none under it', () => {
+    const mismatched = analyse(
+      row('31 Oct 2023', '30 Sep 2023', 'General interest charge', '$200.00', '', '$30,350.00 DR'),
+      row('31 Oct 2023', '30 Sep 2023', 'Amended general interest charge calculated from 01 Sep 23 to 30 Sep 23', '$200.00'),
+      row('31 Oct 2023', '30 Sep 2023', 'Remission of general interest charge', '', '$50.00'),
+      OPENING,
+    )
+    expect(mismatched.rows.some((x) => x.lodgementType === 'GICSummary')).toBe(false)
+    const alone = analyse(row('31 Oct 2023', '30 Sep 2023', 'General interest charge', '$200.00', '', '$30,200.00 DR'), OPENING)
+    expect(alone.rows.some((x) => x.lodgementType === 'GICSummary')).toBe(false)
+    expect(alone.debtBreakdown.interestNet).toBe(200)
+  })
+
+  it('never takes rows from another effective date', () => {
+    const r = analyse(
+      row('31 Oct 2023', '30 Sep 2023', 'General interest charge', '', '$0.00', '$30,400.00 DR'),
+      row('31 Oct 2023', '31 Aug 2023', 'General interest charge calculated from 01 Aug 23 to 31 Aug 23', '$400.00'),
+      OPENING,
+    )
+    expect(r.rows.some((x) => x.lodgementType === 'GICSummary')).toBe(false)
+  })
+})
+
+describe('ATO audit amendments', () => {
+  it('counts "Tax Office audit amended" debits as their own composition line, not as late lodgements', () => {
+    const r = analyse(
+      row('27 May 2026', '25 May 2022', 'Tax Office audit amended Activity Statement for the period ending 31 Mar 22', '$1,800.00', '', '$31,800.00 DR'),
+      OPENING,
+    )
+    expect(r.rows[0].lodgementType).toBe('ATOAudit')
+    expect(r.debtBreakdown.auditNet).toBe(1800)
+    expect(r.debtBreakdown.totalAtoDebt).toBe(31_800)
+    expect(r.debtBreakdown.unexplainedDifference).toBe(0)
+    expect(r.summary.numberOfLateLodgements).toBe(0)
+    expect(r.dpnRisk.totalGrossLate).toBe(0)
+  })
+})

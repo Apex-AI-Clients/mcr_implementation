@@ -1,7 +1,8 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES } from '@/lib/constants'
 import { isActivityStatementCsv, parseActivityStatementCsv } from './parseActivityStatement'
-import { computeLateLodgement } from './computeLateLodgement'
+import { computeLateLodgement, reanalyseStoredRows } from './computeLateLodgement'
+import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 import { generateLodgementAiSummary } from '@/lib/ai/lodgementSummary'
 import type { Database } from '@/types/database'
 
@@ -94,6 +95,8 @@ export async function analyseAndStoreLodgement(
         dpnRisk: result.dpnRisk,
         debtBreakdown: result.debtBreakdown,
         summary: result.summary,
+        // The ATO's own notices, when on file, instead of the estimate.
+        notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
       })
       aiText = ai.text
       aiModel = ai.model
@@ -150,7 +153,7 @@ export type SummaryOutcome =
 export async function ensureLodgementSummary(supabase: ServerClient, clientId: string): Promise<SummaryOutcome> {
   const { data: row } = await supabase
     .from('lodgement_analyses')
-    .select('id, ai_summary, ai_summary_generated_at, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late')
+    .select('id, ai_summary, ai_summary_generated_at, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late')
     .eq('client_id', clientId)
     .order('analysed_at', { ascending: false })
     .limit(1)
@@ -160,17 +163,23 @@ export async function ensureLodgementSummary(supabase: ServerClient, clientId: s
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }
   }
 
-  const dpnRisk = row.dpn_risk as unknown as ReturnType<typeof computeLateLodgement>['dpnRisk']
-  if (!(dpnRisk?.totalGrossLate > 0) && !(row.number_of_late_lodgements > 0)) return { kind: 'not_needed' }
+  // The stored totals are whatever the code computed on the day: the current
+  // code runs over the stored rows instead (the report does the same).
+  const fresh = reanalyseStoredRows(row.rows)
+  const dpnRisk = fresh?.dpnRisk ?? (row.dpn_risk as unknown as ReturnType<typeof computeLateLodgement>['dpnRisk'])
+  const summary = fresh?.summary ?? {
+    numberOfLateLodgements: row.number_of_late_lodgements,
+    cumulativeDaysLate: row.cumulative_days_late,
+  }
+  if (!(dpnRisk?.totalGrossLate > 0) && !(summary.numberOfLateLodgements > 0)) return { kind: 'not_needed' }
 
   try {
     const ai = await generateLodgementAiSummary({
       dpnRisk,
-      debtBreakdown: row.debt_breakdown as unknown as ReturnType<typeof computeLateLodgement>['debtBreakdown'],
-      summary: {
-        numberOfLateLodgements: row.number_of_late_lodgements,
-        cumulativeDaysLate: row.cumulative_days_late,
-      },
+      debtBreakdown:
+        fresh?.debtBreakdown ?? (row.debt_breakdown as unknown as ReturnType<typeof computeLateLodgement>['debtBreakdown']),
+      summary,
+      notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
     })
     const now = new Date().toISOString()
     await supabase

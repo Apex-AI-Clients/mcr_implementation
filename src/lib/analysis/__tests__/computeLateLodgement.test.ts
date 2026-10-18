@@ -236,16 +236,16 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     expect(result.summary.numberOfLateLodgements).toBe(4)
     expect(result.summary.cumulativeDaysLate).toBe(465 + 77 + 17 + 462)
 
-    // DPN: pooled-credit netting (19 May 2026 methodology).
-    //   gross = sum of debits among late Original/ClientAmended rows
-    //   paid  = sum of credits among the same rows (cash Payments are NOT counted)
-    //   net   = max(0, gross - paid)
+    // DPN estimate: same-period netting (18 Oct 2026).
+    //   gross   = sum of debits among late Original/ClientAmended rows
+    //   reduced = each period's net downward amendments, that period only
+    //   net     = gross - reduced (cash Payments are NOT counted)
     // Late debits: ClientAmended 30 Jun 23 ($2000) + ClientAmended 30 Sep 18 ($1100) = $3100
     // Late credits in fixture: none (no credit-only ClientAmended >90 days)
     // The 10 Jun 2023 $3500 is a Payment row → ignored.
     expect(result.dpnRisk.contributingDebits).toHaveLength(2)
     expect(result.dpnRisk.totalGrossLate).toBe(3100)
-    expect(result.dpnRisk.totalPaidSince).toBe(0)
+    expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
     expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
 
     // Debt breakdown (new field names)
@@ -290,24 +290,25 @@ describe('computeLateLodgement — integration with the company fixture CSV', ()
     expect(result.summary.numberOfLateLodgements).toBe(6)
     expect(result.summary.cumulativeDaysLate).toBe(1275)
 
-    // DPN methodology (19 May 2026): pooled-credit netting.
-    //   Late debits:  Row 0 Original 171d $7,250 → only contributing debit
-    //   Late credits: Row 3 ClientAmended 462d credit $3,615
-    //                 Row 10 ClientAmended 465d credit $2,895
-    //                 Pool total = $6,510
+    // DPN estimate (18 Oct 2026): same-period netting.
+    //   Late debit:   Row 0 Original 171d $7,250 → the only contributing debit
+    //   Late credits: Row 3 ClientAmended 462d credit $3,615 and
+    //                 Row 10 ClientAmended 465d credit $2,895 are for OTHER
+    //                 periods, so they reduce nothing here. (The old pooled
+    //                 method took $6,510 off this debit.)
     //   Cash payments $150,000 + $121,550 are ignored — the ATO applies
     //   payments to the oldest debt first and we can't prove they hit the
     //   DPN-qualifying row, so the conservative position is not to credit them.
     expect(result.dpnRisk.contributingDebits).toHaveLength(1)
     expect(result.dpnRisk.totalGrossLate).toBe(7250)
-    expect(result.dpnRisk.totalPaidSince).toBe(6510)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(740)
+    expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(7250)
 
     const debit = result.dpnRisk.contributingDebits[0]
     expect(debit.debit).toBe(7250)
     expect(debit.daysLate).toBe(171)
-    expect(debit.paymentsSinceLodged).toBe(6510)
-    expect(debit.netAtRisk).toBe(740)
+    expect(debit.reducedByAmendments).toBe(0)
+    expect(debit.netAtRisk).toBe(7250)
 
     // Period spans full CSV range
     expect(result.dpnRisk.periodStart).not.toBeNull()

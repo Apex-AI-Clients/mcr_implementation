@@ -20,6 +20,7 @@ export function classifyLodgement(description: string): LodgementType {
   if (s.startsWith('original activity statement')) return 'Original'
   if (s.startsWith('client initiated amended activity statement')) return 'ClientAmended'
   if (s.startsWith('ato initiated amended activity statement')) return 'ATOAmended'
+  if (s.startsWith('tax office audit amended activity statement')) return 'ATOAudit'
   if (s.startsWith('- ')) return 'SubLine'
   if (s.includes('general interest charge')) return 'GIC'
   // "EFT refund for GST for the period…", "Refund": money paid out to the company.
