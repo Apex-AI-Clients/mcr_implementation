@@ -32,6 +32,11 @@ import {
   isValidFeeRate,
 } from '@/lib/sbr/fees'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
+import {
+  FINANCIAL_POINTS_INTRO,
+  FINANCIAL_POINTS_NOT_READY,
+  type FinancialPoint,
+} from '@/lib/sbr/financialPoints'
 
 interface InitialAuto {
   cumulativeDaysLate: number | null
@@ -74,12 +79,20 @@ interface PredictionReadiness {
   dpnDetail: string
 }
 
+/** "What the financial statements show" (financialPoints.ts), worked out on the server. */
+interface FinancialPointsData {
+  /** False until the comparison is verified, or reviewed (readiness.ts). */
+  available: boolean
+  points: FinancialPoint[]
+}
+
 interface Props {
   clientId: string
   clientName: string
   initialAuto: InitialAuto
   initialPrediction: CachedSummary | null
   readiness: PredictionReadiness
+  financialPoints: FinancialPointsData
 }
 
 interface FullPrediction extends SbrPrediction {
@@ -143,6 +156,7 @@ export function OutcomePredictionClient({
   initialAuto,
   initialPrediction,
   readiness,
+  financialPoints,
 }: Props) {
   const cachedInputs = extractCachedInput(initialPrediction)
 
@@ -417,6 +431,8 @@ export function OutcomePredictionClient({
               and "How to strengthen this profile". Re-enable by uncommenting. */}
           {/* <RejectionLearningPanel prediction={prediction} /> */}
           {/* <ProfileStrengtheningPanel prediction={prediction} /> */}
+          {/* Below the result, in the PDF too. */}
+          <FinancialPointsPanel data={financialPoints} />
           <FeatureBreakdownPanel prediction={prediction} />
           {/* Print-only: the calculations breakdown that lives behind the
               "Show calculations" modal on screen, rendered inline for the PDF
@@ -1845,6 +1861,34 @@ function ProfileStrengtheningPanel({ prediction }: { prediction: FullPrediction 
             )
           })}
         </ol>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Points to discuss with the client, from the financial statements: facts by
+ * rule (financialPoints.ts), never AI text, and never a change to the %.
+ */
+export function FinancialPointsPanel({ data }: { data: FinancialPointsData }) {
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-foreground">What the financial statements show</h3>
+      {data.available ? (
+        <>
+          <p className="mt-1 text-xs leading-relaxed text-foreground/55">{FINANCIAL_POINTS_INTRO}</p>
+          {data.points.length > 0 ? (
+            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/85">
+              {data.points.map((point) => (
+                <li key={point.rule}>{point.text}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-foreground/60">Nothing stands out in the financial statements.</p>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-foreground/60">{FINANCIAL_POINTS_NOT_READY}</p>
       )}
     </Card>
   )

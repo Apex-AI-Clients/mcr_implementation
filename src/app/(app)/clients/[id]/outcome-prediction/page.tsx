@@ -3,6 +3,8 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { financialPoints } from '@/lib/sbr/financialPoints'
+import type { FinancialsComparison } from '@/lib/financials/types'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
@@ -56,6 +58,23 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // What the prediction is waiting for, and its DPN factor (readiness.ts).
   const readiness = await loadReadiness(supabase, id)
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
+
+  // "What the financial statements show": only from a comparison that is
+  // verified, or reviewed by staff — the readiness checklist's safety net.
+  const financialsItem = readiness.items.find((i) => i.key === 'financials')
+  const financialsVerified =
+    financialsItem?.status === 'ready' || (financialsItem?.status === 'needs_review' && financialsItem.review !== null)
+  const [{ data: comparisonRow }, { data: companyRow }] = await Promise.all([
+    supabase.from('financial_comparisons').select('computed, stale_since').eq('client_id', id).maybeSingle(),
+    supabase.from('company_details').select('entity_type').eq('client_id', id).maybeSingle(),
+  ])
+  const pointsAvailable = financialsVerified && comparisonRow !== null && !comparisonRow.stale_since
+  const points = pointsAvailable
+    ? financialPoints({
+        comparison: comparisonRow.computed as unknown as FinancialsComparison,
+        entityType: companyRow?.entity_type ?? null,
+      })
+    : []
 
   const statement = latestBalanceSheet(slots)
   const balanceSheet = statement?.balanceSheet ?? null
@@ -119,6 +138,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
           dpn: readiness.dpn,
           dpnDetail: dpnItem?.detail ?? '',
         }}
+        financialPoints={{ available: pointsAvailable, points }}
         initialAuto={initialAuto}
         initialPrediction={cached.data ? serialiseCachedPrediction(cached.data, changedAt) : null}
       />

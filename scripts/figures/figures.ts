@@ -6,6 +6,7 @@ import type { CompanyDetailsForCheck, DocumentRecordForCheck } from '@/lib/finan
 import { correctFile, type FileColumn } from '@/lib/financials/lineCorrections'
 import type { FinancialsComparison, StatementLine, StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { ATO_EXCLUDING_SUPER_KEYS } from '@/lib/sbr/financialPoints'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { computeLateLodgement, reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import type { LateLodgementScope } from '@/lib/analysis/config'
@@ -152,6 +153,11 @@ export function flatten(c: FinancialsComparison): Figures {
     const equity = c.equityByYear?.[year]
     if (equity) put(`FY${year}`, 'Appropriations.distributions', equity.distributions)
   }
+  // ATO-related debt as the prediction's points state it: super left out.
+  for (const period of Object.keys(out)) {
+    const parts = ATO_EXCLUDING_SUPER_KEYS.flatMap((k) => [out[period][`Current Liabilities.${k}`], out[period][`Non-Current Liabilities.${k}`]])
+    if (parts.some((v) => typeof v === 'number')) put(period, 'ATO-related.excludingSuper', parts.reduce<number>((n, v) => n + (v ?? 0), 0))
+  }
   return out
 }
 
@@ -162,13 +168,18 @@ export interface Difference {
   actual: number | null | undefined
 }
 
+/** Line sums and printed totals can differ by a rounding dollar. */
+export const TOLERANCE_DOLLARS = 1
+
 export function compare(expected: Figures, actual: Figures): Difference[] {
   const out: Difference[] = []
   for (const period of Object.keys(expected).sort()) {
+    // A year outside the comparison's window is reported, not counted as a difference.
+    if (!(period in actual)) continue
     for (const key of Object.keys(expected[period]).sort()) {
       const want = expected[period][key]
       const got = actual[period]?.[key]
-      const same = want === null ? got === null || got === undefined : typeof got === 'number' && Math.abs(got - want) < 0.5
+      const same = want === null ? got === null || got === undefined : typeof got === 'number' && Math.abs(got - want) <= TOLERANCE_DOLLARS + 0.005
       if (!same) out.push({ period, key, expected: want, actual: got })
     }
   }

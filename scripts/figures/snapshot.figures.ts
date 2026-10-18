@@ -11,6 +11,9 @@ import { out, readClients, writeJson, type Snapshot } from './figures'
  * verified-figures/<alias>.snapshot.json (gitignored). Run it after
  * re-extracting a test client. SELECTs only; nothing is written to the
  * database. Prints aliases and counts, never names or figures.
+ *
+ * FIGURES_ALIAS=client-c snapshots only that client, leaving the others'
+ * snapshots (the baseline for figures:check) as they are.
  */
 it('snapshots the stored statements of the test clients', async () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -18,7 +21,10 @@ it('snapshots the stored statements of the test clients', async () => {
   if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env')
   const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
-  for (const { alias, clientId } of readClients()) {
+  const only = process.env.FIGURES_ALIAS?.trim()
+  const clients = readClients().filter((c) => !only || c.alias === only)
+  if (only && clients.length === 0) throw new Error(`No client "${only}" in verified-figures/clients.json`)
+  for (const { alias, clientId } of clients) {
     const [slots, records, company, lodgement] = await Promise.all([
       loadStoredSlots(supabase as never, clientId),
       loadDocumentRecords(supabase as never, clientId),

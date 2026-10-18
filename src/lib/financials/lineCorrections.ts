@@ -840,12 +840,51 @@ function fixTotalIncome(target: Statements, lines: StatementLine[], firstPrinted
   ]
 }
 
+/** Every income figure read, the uncategorised ones included. */
+function incomeSum(income: Record<string, unknown>): number {
+  let sum = 0
+  for (const value of Object.values(income)) {
+    if (typeof value === 'number') sum += value
+    else if (value && typeof value === 'object') sum += incomeSum(value as Record<string, unknown>)
+  }
+  return sum
+}
+
+/**
+ * Some templates print "Total Income" AFTER cost of sales: sales and interest,
+ * less cost of sales. That printed figure is already net of cost of sales, so
+ * total income becomes the income lines' sum, and gross profit the trading
+ * income (interest and other revenue left out) less cost of sales.
+ */
+function fixNetTotalIncome(target: Statements): ExtractionWarning[] {
+  const totals = target.incomeStatement.totals as Record<string, number | null | undefined>
+  const income = target.incomeStatement.income as Record<string, unknown>
+  const cogs = totals.totalCogs
+  if (typeof totals.totalIncome !== 'number' || typeof cogs !== 'number' || cogs <= 0) return []
+  const gross = incomeSum(income)
+  if (Math.abs(totals.totalIncome - (gross - cogs)) > 1) return []
+  const other = (k: string) => (typeof income[k] === 'number' ? (income[k] as number) : 0)
+  const printed = totals.totalIncome
+  totals.totalIncome = gross
+  totals.grossProfit = gross - other('interestIncome') - other('otherRevenue') - cogs
+  return [
+    {
+      kind: 'mapping_corrected',
+      section: 'incomeStatement',
+      group: 'gross_profit',
+      message: `"Total Income" (${money(printed)}) is printed after cost of sales, so it is already net of it. Total income is the income lines' sum, ${money(gross)}, and gross profit is trading income less cost of sales, ${money(totals.grossProfit)}.`,
+    },
+  ]
+}
+
 /**
  * Gross profit with no "Gross Profit" line printed: total income less cost of
  * sales — never a later "Total Income" subtotal.
  */
 function fixGrossProfit(target: Statements, lines: StatementLine[]): ExtractionWarning[] {
   if (lines.length === 0 || lines.some((l) => /^gross (profit|margin)\b/.test(normaliseLabel(l.rawLabel)))) return []
+  const net = fixNetTotalIncome(target)
+  if (net.length > 0) return net
   const totals = target.incomeStatement.totals as Record<string, number | null | undefined>
   if (typeof totals.totalIncome !== 'number') return []
   const computed = totals.totalIncome - (typeof totals.totalCogs === 'number' ? totals.totalCogs : 0)

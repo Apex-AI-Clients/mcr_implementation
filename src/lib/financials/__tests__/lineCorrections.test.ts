@@ -223,3 +223,41 @@ describe('swapped total columns', () => {
     expect(fixSwappedTotals(a, b)).toBe(false)
   })
 })
+
+describe('"Total Income" printed after cost of sales', () => {
+  // SYNTHETIC: sales and interest, less cost of sales, then "Total Income" — no "Gross Profit" line.
+  const lines = () => [
+    line('income', 'Sales', 900_000, 'income.sales'),
+    line('income', 'Interest Income', 20, 'income.interestIncome'),
+    line('cogs', 'Cost of Goods Sold', 300_000, 'cogs.directCosts'),
+    line('cogs', 'Total Cost of Sales', 300_000, 'totals.totalCogs', true),
+    line('incomeTotals', 'Total Income', 600_020, 'totals.totalIncome', true),
+    line('incomeTotals', 'Total Expenses', 650_000, 'totals.totalExpenses', true),
+    line('incomeTotals', 'Profit / (Loss) Before Distribution', -49_980, 'totals.profitBeforeTax', true),
+  ]
+  const statements = () => ({
+    incomeStatement: {
+      ...blankIs(),
+      income: { sales: 900_000, interestIncome: 20 },
+      cogs: { directCosts: 300_000 },
+      totals: { totalIncome: 600_020, totalCogs: 300_000, grossProfit: 300_020, totalExpenses: 650_000, profitBeforeTax: -49_980 },
+    },
+    balanceSheet: blankBs(),
+  })
+
+  it('takes total income as the income lines and gross profit as sales less cost of sales', () => {
+    const s = statements()
+    const notes = correctColumn(s, lines(), { isTrust: true })
+    expect(s.incomeStatement.totals.totalIncome).toBe(900_020)
+    expect(s.incomeStatement.totals.grossProfit).toBe(600_000)
+    expect(notes.some((n) => n.group === 'gross_profit')).toBe(true)
+  })
+
+  it('leaves a "Total Income" printed before cost of sales alone', () => {
+    const s = statements()
+    s.incomeStatement.totals.totalIncome = 900_020
+    correctColumn(s, lines().map((l) => (l.rawLabel === 'Total Income' ? { ...l, value: 900_020 } : l)), { isTrust: true })
+    expect(s.incomeStatement.totals.totalIncome).toBe(900_020)
+    expect(s.incomeStatement.totals.grossProfit).toBe(600_020)
+  })
+})

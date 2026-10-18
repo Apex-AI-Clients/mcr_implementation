@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { OutcomePredictionClient } from '../OutcomePredictionClient'
+import { FinancialPointsPanel, OutcomePredictionClient } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -23,6 +23,8 @@ const AUTO = {
   hasLodgement: true,
   hasFinancials: true,
 }
+
+const NO_POINTS = { available: false, points: [] }
 
 const READY = { canPredict: true, waitingFor: [], dpn: true, dpnDetail: '1 notice read (PAYG withholding).' }
 
@@ -64,7 +66,7 @@ describe('stale saved prediction', () => {
         clientName="Example Trading"
         initialAuto={AUTO}
         initialPrediction={saved({ stale: true, practitionerFeeRate: 0.1 })}
-        readiness={READY}
+        readiness={READY} financialPoints={NO_POINTS}
       />,
     )
     expect(screen.getByText('New historical data added — re-run')).toBeTruthy()
@@ -81,7 +83,7 @@ describe('stale saved prediction', () => {
   it('re-runs a saved prediction that is not stale on load, as before', async () => {
     const fetchMock = mockFetch()
     render(
-      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={READY} />,
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={READY} financialPoints={NO_POINTS} />,
     )
     expect(screen.queryByText('New historical data added — re-run')).toBeNull()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
@@ -90,7 +92,7 @@ describe('stale saved prediction', () => {
 
 describe('practitioner fee selector', () => {
   const page = () =>
-    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} />)
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} financialPoints={NO_POINTS} />)
 
   it('defaults to 12.5% and sends the chosen fee', async () => {
     const fetchMock = mockFetch()
@@ -129,7 +131,7 @@ describe('readiness and the DPN factor', () => {
   it('shows what it is waiting for, keeps Generate disabled, and does not run a saved prediction', async () => {
     const fetchMock = mockFetch()
     render(
-      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={NOT_READY} />,
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={NOT_READY} financialPoints={NO_POINTS} />,
     )
     expect(screen.getByText('Not ready for a prediction yet')).toBeTruthy()
     expect(screen.getByText('Director penalty notices: not uploaded')).toBeTruthy()
@@ -140,11 +142,31 @@ describe('readiness and the DPN factor', () => {
 
   it('shows the DPN factor read-only, with where it came from, and never sends it', async () => {
     const fetchMock = mockFetch()
-    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} />)
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} financialPoints={NO_POINTS} />)
     expect(screen.queryByRole('checkbox', { name: /Director Penalty Notice issued/ })).toBeNull()
     expect(screen.getByText('1 notice read (PAYG withholding).')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(bodyOf(fetchMock)).not.toHaveProperty('dpn')
+  })
+})
+
+describe('What the financial statements show', () => {
+  it('gives the framing, then each point', () => {
+    render(
+      <FinancialPointsPanel
+        data={{
+          available: true,
+          points: [{ rule: 'b', text: 'Property, plant & equipment rose from $138,683 (FY2023) to $269,741 (FY2026).' }],
+        }}
+      />,
+    )
+    expect(screen.getByText(/explain the situation but don't change the %/)).toBeTruthy()
+    expect(screen.getByText('Property, plant & equipment rose from $138,683 (FY2023) to $269,741 (FY2026).')).toBeTruthy()
+  })
+
+  it('waits for a verified comparison', () => {
+    render(<FinancialPointsPanel data={{ available: false, points: [] }} />)
+    expect(screen.getByText('Financial points will appear once the financial comparison is verified.')).toBeTruthy()
   })
 })
