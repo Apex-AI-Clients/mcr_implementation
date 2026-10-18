@@ -294,8 +294,6 @@ function SummaryPanel({
   analysis: LodgementAnalysisPayload
   onClose?: () => void
 }) {
-  const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
-
   return (
     <div className="p-5 space-y-3">
       <h4 className="text-sm font-semibold text-foreground pr-8">How the numbers are calculated</h4>

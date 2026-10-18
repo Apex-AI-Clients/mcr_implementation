@@ -20,6 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Regenerating database types
+
+After a migration, regenerate `src/types/database.ts` and commit it with the
+migration. The file must be UTF-8: on Windows PowerShell, a plain `>` redirect
+writes UTF-16, which ESLint reads as binary. Use:
+
+```powershell
+npx supabase gen types typescript --linked | Out-File -Encoding utf8 src/types/database.ts
+```
+
+(On macOS/Linux, `npx supabase gen types typescript --linked > src/types/database.ts` is fine.)
+
 ## Dependencies to watch by hand
 
 - **SheetJS (`xlsx`)** reads uploaded Excel files on the Prediction Data page
