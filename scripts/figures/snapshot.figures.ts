@@ -25,7 +25,7 @@ it('snapshots the stored statements of the test clients', async () => {
   const clients = readClients().filter((c) => !only || c.alias === only)
   if (only && clients.length === 0) throw new Error(`No client "${only}" in verified-figures/clients.json`)
   for (const { alias, clientId } of clients) {
-    const [slots, records, company, lodgement] = await Promise.all([
+    const [slots, records, company, lodgement, dpnDocuments, dpnNotices] = await Promise.all([
       loadStoredSlots(supabase as never, clientId),
       loadDocumentRecords(supabase as never, clientId),
       loadCompanyDetails(supabase as never, clientId),
@@ -36,10 +36,23 @@ it('snapshots the stored statements of the test clients', async () => {
         .order('analysed_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      // Director penalty notices as stored (never an address: none is stored).
+      supabase.from('documents').select('id, original_filename').eq('client_id', clientId).eq('doc_category', 'director_penalty_notices'),
+      supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
     ])
     // The same rows the prediction reads (icaRows.ts): a download, never a write.
     const ica = await loadIcaRows(supabase as never, (lodgement.data as never) ?? null)
-    const snapshot: Snapshot = { takenAt: new Date().toISOString(), slots, records, company, icaRows: ica.rows }
+    const snapshot: Snapshot = {
+      takenAt: new Date().toISOString(),
+      slots,
+      records,
+      company,
+      icaRows: ica.rows,
+      dpn: {
+        documents: (dpnDocuments.data ?? []).map((d) => ({ id: d.id, originalFilename: d.original_filename })),
+        noticeRows: (dpnNotices.data ?? []) as never,
+      },
+    }
     writeJson(`${alias}.snapshot.json`, snapshot)
     out(`${alias}: ${slots.length} statement slots, ${records.length} documents, ATO account rows from ${ica.from} — snapshot written`)
   }

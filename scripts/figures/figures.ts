@@ -13,6 +13,9 @@ import type { LateLodgementScope } from '@/lib/analysis/config'
 import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
 import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
 import type { LodgementAnalysisResult } from '@/lib/analysis/types'
+import type { NoticeRow } from '@/lib/dpn/stored'
+import { buildDpnPanel } from '@/lib/dpn/view'
+import { summariseNotices } from '@/lib/dpn/summary'
 
 /**
  * Shared by the snapshot and check scripts. Nothing here prints a client's
@@ -35,6 +38,8 @@ export interface Snapshot {
   company: CompanyDetailsForCheck | null
   /** The ATO account rows the prediction reads (re-read from the CSV when the stored analysis has no balance). */
   icaRows?: IcaRow[] | null
+  /** Director penalty notices: the documents and the stored notices. */
+  dpn?: { documents: { id: string; originalFilename: string }[]; noticeRows: NoticeRow[] }
 }
 
 /** What the prediction page would use as the ATO debt, from the snapshot. */
@@ -251,6 +256,26 @@ export function compareLodgement(expected: LodgementFigures, actual: LodgementFi
     const got = actual[key]
     const same = typeof want === 'number' ? typeof got === 'number' && Math.abs(got - want) < 0.005 : got === want
     if (!same) out.push(`lodgement  ${key}: verified ${want}, now ${got ?? 'missing'}`)
+  }
+  return out
+}
+
+// ── Director penalty notices ─────────────────────────────────────────────────
+
+/** The stored notices' company totals by type, columns 2–5 in dollars (current notices, each period once). */
+export function noticeTotals(snapshot: Snapshot): Record<string, [number, number, number, number]> {
+  if (!snapshot.dpn) return {}
+  const today = snapshot.takenAt.slice(0, 10)
+  const panel = buildDpnPanel({
+    documents: snapshot.dpn.documents,
+    noticeRows: snapshot.dpn.noticeRows,
+    client: { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
+    file: { acn: null, directors: [] },
+    todayIso: today,
+  })
+  const out: Record<string, [number, number, number, number]> = {}
+  for (const t of summariseNotices(panel.notices, today).companyByType) {
+    out[t.type] = [t.totals.column2, t.totals.column3, t.totals.column4, t.totals.column5].map((c) => c / 100) as [number, number, number, number]
   }
   return out
 }
