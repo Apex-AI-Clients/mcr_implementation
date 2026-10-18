@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Clock, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
@@ -16,6 +16,7 @@ interface ReadinessChecklistProps {
 
 const BADGE: Record<ReadinessStatus, 'muted' | 'accent' | 'success' | 'warning'> = {
   not_uploaded: 'muted',
+  not_started: 'muted',
   processing: 'accent',
   ready: 'success',
   needs_review: 'warning',
@@ -24,15 +25,16 @@ const BADGE: Record<ReadinessStatus, 'muted' | 'accent' | 'success' | 'warning'>
 function StatusIcon({ item }: { item: ReadinessItem }) {
   if (item.status === 'ready' || item.review) return <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
   if (item.status === 'processing') return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden="true" />
+  if (item.status === 'not_started') return <Clock className="h-4 w-4 shrink-0 text-foreground/40" aria-hidden="true" />
   if (item.status === 'needs_review') return <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
   return <Circle className="h-4 w-4 shrink-0 text-foreground/25" aria-hidden="true" />
 }
 
 /**
- * What the SBR outcome prediction needs, item by item: Not uploaded,
- * Processing, Ready or Needs review. A Needs review item is cleared by
- * marking it reviewed; anything out of date with nothing running can be run
- * now.
+ * What the SBR outcome prediction needs, item by item: Not uploaded, Not run
+ * yet, Processing, Ready or Needs review. A Needs review item is cleared by
+ * marking it reviewed; Not run yet offers Run now. Processing means a run is
+ * actually going, so it offers nothing.
  */
 export function ReadinessChecklist({ clientId, readiness }: ReadinessChecklistProps) {
   return (

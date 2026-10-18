@@ -87,9 +87,6 @@ export function DocumentStatusGrid({
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
             )}
 
-            {category === 'director_penalty_notices' && clientId && dpn && (
-              <DpnPanel clientId={clientId} data={dpn} readOnly={readOnly} />
-            )}
 
             {clientId && !readOnly && (
               <CategoryUploader
@@ -103,6 +100,12 @@ export function DocumentStatusGrid({
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
             {category === 'financial_statements' && clientId && !readOnly && (
               <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
+            )}
+
+            {/* Below the upload area, as Compare Financials: the "none issued"
+                tick, or the way to the DPN summary. */}
+            {category === 'director_penalty_notices' && clientId && dpn && (
+              <DpnPanel clientId={clientId} data={dpn} readOnly={readOnly} />
             )}
 
             {category === 'integrated_client_account' && clientId && !readOnly && (

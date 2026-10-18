@@ -3,6 +3,7 @@ import { render, screen, within, cleanup } from '@testing-library/react'
 
 vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
   notFound: () => {
     throw new Error('notFound')
   },
@@ -113,15 +114,18 @@ describe('Director penalty notices page', () => {
     expect(within(rows[1]).getByText('Entered manually')).toBeTruthy()
   })
 
-  it('lists files not in the totals, and says where the figures come from', async () => {
+  it('lists every notice on file with its actions, and says where the figures come from', async () => {
     await renderPage([noticeRow({})], [
       { id: 'd1', original_filename: 'notice.pdf' },
       { id: 'd9', original_filename: 'unread.pdf' },
     ])
-    expect(within(screen.getByRole('region', { name: 'Not in the totals' })).getByText('unread.pdf')).toBeTruthy()
+    const files = screen.getByRole('region', { name: 'Notices on file' })
+    expect(within(files).getByText(/1 is not in the totals yet/)).toBeTruthy()
+    expect(within(files).getByRole('button', { name: 'Read notice' })).toBeTruthy()
+    expect(within(files).getByRole('button', { name: 'Correct by hand' })).toBeTruthy()
     expect(screen.getByText(/Figures come from ATO director penalty notices supplied by the client/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /CSV/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /PDF/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeTruthy()
   })
 
   it('says so when there are none, or none were issued', async () => {

@@ -116,10 +116,9 @@ describe('diagnostics (SHOW_FINANCIALS_DIAGNOSTICS)', () => {
     expect(screen.getByRole('checkbox', { name: 'Include checks in PDF' })).toBeTruthy()
   })
 
-  it('hides the statement checks in production (flag off), but not "Statements on file"', () => {
-    // Staff set a misread file's year and type there, so it shows for everyone.
+  it('hides them in production (flag off)', () => {
     renderPage({ showDiagnostics: false, withCoverage: true })
-    expect(screen.getByText('Statements on file')).toBeTruthy()
+    expect(screen.queryByText('Statements on file')).toBeNull()
     expect(screen.queryByRole('button', { name: /Statement checks/ })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Include checks in PDF' })).toBeNull()
     // The comparison itself is still there.

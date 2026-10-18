@@ -2,10 +2,15 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, within, cleanup, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DpnPanel } from '../DpnPanel'
+import { DpnNoticeList } from '../DpnNoticeList'
 import type { DpnPanelData, DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
 
-/** The client page's DPN card and the manual-entry form. Synthetic data only. */
+/**
+ * The client page's DPN card (the tick, or the way to the summary), the
+ * notice cards on the summary page, and the manual-entry form. Synthetic data
+ * only.
+ */
 
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh, push: vi.fn() }) }))
@@ -48,9 +53,9 @@ function data(overrides: Partial<DpnPanelData> = {}): DpnPanelData {
   return { notices: [view()], noneIssued: null, clearedNote: null, todayIso: '2026-10-17', ...overrides }
 }
 
-describe('DpnPanel', () => {
+describe('DpnNoticeList (summary page)', () => {
   it('summarises a read notice, with days left in red inside a week', () => {
-    render(<DpnPanel clientId="client-1" data={data()} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view()]} todayIso="2026-10-17" />)
     expect(screen.getByText('Read automatically')).toBeTruthy()
     expect(screen.getByText(/PAYG withholding/)).toBeTruthy()
     const daysLeft = screen.getByText('(4 days left)')
@@ -60,7 +65,7 @@ describe('DpnPanel', () => {
 
   it('marks a manual entry as entered manually, by whom', () => {
     const notice = { ...NOTICE, source: 'manual' as const, enteredBy: 'Sam', enteredAt: '2026-10-16T00:00:00Z' }
-    render(<DpnPanel clientId="client-1" data={data({ notices: [view({ notice })] })} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view({ notice })]} todayIso="2026-10-17" />)
     expect(screen.getByText('Entered manually')).toBeTruthy()
     expect(screen.getByText(/Entered manually by Sam/)).toBeTruthy()
     // A manual entry is never re-read.
@@ -69,26 +74,37 @@ describe('DpnPanel', () => {
 
   it('shows each warning on the notice', () => {
     const issues = ['This notice is for ACN 000 000 019, but the client file has ACN 123 456 780.']
-    render(<DpnPanel clientId="client-1" data={data({ notices: [view({ issues })] })} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view({ issues })]} todayIso="2026-10-17" />)
     expect(screen.getByText(issues[0])).toBeTruthy()
   })
 
   it('offers manual entry for a notice that could not be read', () => {
     const notice = { ...NOTICE, status: 'needs_manual' as const, manualReason: 'table_unreadable' as const }
-    render(<DpnPanel clientId="client-1" data={data({ notices: [view({ notice })] })} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view({ notice })]} todayIso="2026-10-17" />)
     expect(screen.getByText(/table could not be read/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Enter manually' })).toBeTruthy()
   })
 
   it('reads a file that has not been read yet', async () => {
     const user = userEvent.setup()
-    render(<DpnPanel clientId="client-1" data={data({ notices: [view({ notice: null, deadline: null })] })} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view({ notice: null, deadline: null })]} todayIso="2026-10-17" />)
     await user.click(screen.getByRole('button', { name: 'Read notice' }))
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/admin/clients/client-1/director-penalty-notices/doc-1/read',
       { method: 'POST' },
     )
     await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+})
+
+describe('DpnPanel (client page card)', () => {
+  it('shows only the way to the DPN summary when there are notices, not their details', () => {
+    render(<DpnPanel clientId="client-1" data={data()} />)
+    const link = screen.getByRole('link', { name: /DPN Summary/ })
+    expect(link.getAttribute('href')).toBe('/clients/client-1/director-penalty-notices')
+    expect(screen.queryByText(/PAYG withholding/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Enter manually|Read again|Correct by hand/ })).toBeNull()
   })
 
   it('offers the "none issued" tick only when there are no notices', async () => {
@@ -114,7 +130,7 @@ const SLOW = { timeout: 60_000 }
 describe('DpnManualForm', () => {
   it('opens prefilled with what was read, and saves cents as entered manually', SLOW, async () => {
     const user = userEvent.setup()
-    render(<DpnPanel clientId="client-1" data={data()} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view()]} todayIso="2026-10-17" />)
     await user.click(screen.getByRole('button', { name: 'Correct by hand' }))
     const dialog = await screen.findByRole('dialog')
 
@@ -136,7 +152,7 @@ describe('DpnManualForm', () => {
 
   it('says which row is missing an amount', SLOW, async () => {
     const user = userEvent.setup()
-    render(<DpnPanel clientId="client-1" data={data()} />)
+    render(<DpnNoticeList clientId="client-1" notices={[view()]} todayIso="2026-10-17" />)
     await user.click(screen.getByRole('button', { name: 'Correct by hand' }))
     const dialog = await screen.findByRole('dialog')
     await user.clear(within(dialog).getByLabelText(/Row 1 Col 2/))

@@ -2,9 +2,10 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { buildCoverage } from '@/lib/financials/coverage'
-import { describeFinancialFiles } from '@/lib/financials/financialFiles'
+import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { periodOverrideOf } from '@/lib/financials/periodOverride'
+import { lastReadAt } from '@/lib/financials/readState'
 import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { FinancialDocumentKind, StoredStatementSlot } from '@/lib/financials/types'
 import { decideWork } from '@/lib/analysis/autoRun'
@@ -48,7 +49,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .order('uploaded_at', { ascending: false }),
     loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
     loadColumnFailures(supabase, clientId),
-    supabase.from('financial_document_extractions').select('document_id, kind, extracted_at').eq('client_id', clientId),
+    supabase.from('financial_document_extractions').select('document_id, kind, extracted_at, warnings').eq('client_id', clientId),
     supabase.from('financial_comparisons').select('generated_at, stale_since').eq('client_id', clientId).maybeSingle(),
     supabase
       .from('lodgement_analyses')
@@ -66,7 +67,10 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
 
   // ── Financial statements ────────────────────────────────────────────────
   const financialDocs = all.filter((d) => isFinancial(d.doc_category)).reverse()
-  const extractedAt = new Map((extractions ?? []).map((e) => [e.document_id, e.extracted_at]))
+  // A file read before migration 0026 has no extraction record but supplies
+  // statements: that counts as read (readState.ts).
+  const extractedAt = lastReadAt(extractions ?? [], slots)
+
   const work = decideWork({
     dpnDocumentIds: [],
     readNoticeDocumentIds: new Set(),
@@ -89,6 +93,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       documentId: e.document_id,
       kind: e.kind as FinancialDocumentKind,
       extractedAt: e.extracted_at,
+      failure: failureOf(e.warnings),
     })),
   })
 
@@ -131,7 +136,11 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       files,
       coverage: buildCoverage(slots, failures),
       comparison: comparison ? { generatedAt: comparison.generated_at, staleSince: comparison.stale_since } : null,
-      outOfDate: work.extract.length > 0 || work.compare,
+      // Files never read, or a comparison made stale by a change. A file
+      // whose read failed is recorded as read-and-failed (Needs review, with
+      // why), and a comparison that could not be built at all is Needs review
+      // too: neither is waiting work.
+      outOfDate: work.extract.length > 0 || comparison?.stale_since != null,
     },
     lodgement: {
       csvCount: csvs.length,

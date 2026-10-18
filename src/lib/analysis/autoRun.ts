@@ -9,6 +9,9 @@ import {
   type ExtractError,
 } from '@/lib/financials/comparisonJob'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
+import { lastReadAt } from '@/lib/financials/readState'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
+import type { StoredStatementSlot } from '@/lib/financials/types'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
@@ -105,7 +108,7 @@ async function loadSnapshot(
   supabase: ServerClient,
   clientId: string,
 ): Promise<{ snapshot: AnalysisSnapshot; activityStatement: ActivityStatementFile | null }> {
-  const [{ data: docs }, { data: notices }, { data: analyses }, { data: extractions }, { data: comparison }] =
+  const [{ data: docs }, { data: notices }, { data: analyses }, { data: extractions }, { data: comparison }, slots] =
     await Promise.all([
       supabase
         .from('documents')
@@ -115,6 +118,7 @@ async function loadSnapshot(
       supabase.from('lodgement_analyses').select('document_id').eq('client_id', clientId),
       supabase.from('financial_document_extractions').select('document_id, extracted_at').eq('client_id', clientId),
       supabase.from('financial_comparisons').select('stale_since').eq('client_id', clientId).maybeSingle(),
+      loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
     ])
 
   const all = docs ?? []
@@ -131,7 +135,9 @@ async function loadSnapshot(
       financialDocuments: all
         .filter((d) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(d.doc_category))
         .map((d) => ({ id: d.id, overrideAt: d.fs_override_at })),
-      extractedAt: new Map((extractions ?? []).map((e) => [e.document_id, e.extracted_at])),
+      // Files read before migration 0026 have no extraction record but supply
+      // statements: read, not to be sent to the model again (readState.ts).
+      extractedAt: lastReadAt(extractions ?? [], slots),
       comparison: { exists: comparison !== null, staleSince: comparison?.stale_since ?? null },
     },
   }

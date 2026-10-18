@@ -7,6 +7,8 @@ import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
 import { ReadinessChecklist } from '@/components/admin/ReadinessChecklist'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
+import { after } from 'next/server'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
@@ -74,7 +76,20 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
   // What the prediction still needs. Archived files are read-only: no checklist.
-  const readiness = archived ? null : await loadReadiness(supabase, id)
+  let readiness = archived ? null : await loadReadiness(supabase, id)
+  // Work waiting with nothing running (a file a run had no time left for, or
+  // one uploaded before runs were automatic): start it now, in the background,
+  // rather than leave it for someone to press Run now. Files already read are
+  // never sent again (readState.ts), and a file whose read failed is not
+  // retried here. Read again so the checklist shows it running.
+  if (readiness?.items.some((item) => item.status === 'not_started')) {
+    try {
+      const { started } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
+      if (started) readiness = await loadReadiness(supabase, id)
+    } catch (err) {
+      console.error('[client page] starting the waiting analysis failed', err instanceof Error ? err.name : 'unknown')
+    }
+  }
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,

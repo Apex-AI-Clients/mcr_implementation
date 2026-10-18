@@ -5,6 +5,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { Badge } from '@/components/ui/Badge'
 import { DpnExportButtons } from '@/components/admin/dpn/DpnExportButtons'
+import { DpnNoticeList } from '@/components/admin/dpn/DpnNoticeList'
 import { buildDpnPanel, formatCents, sydneyToday } from '@/lib/dpn/view'
 import {
   DPN_EXPORT_SOURCE_NOTE,
@@ -89,28 +90,22 @@ export default async function DirectorPenaltyNoticesPage({ params }: Props) {
         </div>
       ) : (
         <div className="space-y-8">
-          <CompanyTotals summary={summary} />
-          <NoticesTable notices={summary.notices} />
-          <DirectorTotals summary={summary} />
-          {summary.waiting.length > 0 && (
-            <section aria-labelledby="dpn-waiting-heading" className="rounded-xl border border-warning/30 bg-warning/5 p-4">
-              <h2 id="dpn-waiting-heading" className="text-sm font-semibold text-foreground">
-                Not in the totals
-              </h2>
-              <p className="mt-1 text-xs text-foreground/60">
-                Waiting to be read or entered manually on the{' '}
-                <Link href={`/clients/${id}`} className="text-accent hover:underline">
-                  client page
-                </Link>
-                :
-              </p>
-              <ul className="mt-2 list-disc pl-5 text-sm text-foreground/80">
-                {summary.waiting.map((w) => (
-                  <li key={w.documentId}>{w.filename}</li>
-                ))}
-              </ul>
-            </section>
+          {summary.notices.length > 0 && (
+            <>
+              <CompanyTotals summary={summary} />
+              <NoticesTable notices={summary.notices} />
+              <DirectorTotals summary={summary} />
+            </>
           )}
+          <section aria-labelledby="dpn-files-heading">
+            <SectionTitle id="dpn-files-heading">Notices on file</SectionTitle>
+            <p className="-mt-2 mb-3 text-xs text-foreground/50">
+              Each uploaded notice: how it was read, anything to check, and reading it again or entering it by hand.
+              {summary.waiting.length > 0 &&
+                ` ${summary.waiting.length} ${summary.waiting.length === 1 ? 'is' : 'are'} not in the totals yet.`}
+            </p>
+            <DpnNoticeList clientId={id} notices={panel.notices} todayIso={todayIso} />
+          </section>
           <p className="text-xs text-foreground/40">{DPN_EXPORT_SOURCE_NOTE}</p>
         </div>
       )}

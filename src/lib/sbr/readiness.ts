@@ -14,7 +14,12 @@ import { noticeTypeLabel } from '@/lib/dpn/stored'
  */
 
 export type ReadinessKey = 'financials' | 'lodgement' | 'dpn'
-export type ReadinessStatus = 'not_uploaded' | 'processing' | 'ready' | 'needs_review'
+/**
+ * 'processing' only while a run is actually going. 'not_started': there is
+ * work to do (files never read, a comparison out of date) and nothing is
+ * running — offered as "Run now".
+ */
+export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'needs_review'
 
 export const READINESS_LABEL: Record<ReadinessKey, string> = {
   financials: 'Financial statements',
@@ -24,6 +29,7 @@ export const READINESS_LABEL: Record<ReadinessKey, string> = {
 
 export const STATUS_LABEL: Record<ReadinessStatus, string> = {
   not_uploaded: 'Not uploaded',
+  not_started: 'Not run yet',
   processing: 'Processing',
   ready: 'Ready',
   needs_review: 'Needs review',
@@ -47,7 +53,7 @@ export interface ReadinessItem {
   fingerprint: string | null
   /** The review of exactly what is there now, if any. */
   review: Review | null
-  /** Out of date with nothing running: offer to start the run. */
+  /** Not run yet ('not_started'): offer to start the run. Never while one is going. */
   canRunNow: boolean
   /** Where to look. */
   href: string
@@ -61,7 +67,7 @@ export interface ReadinessInput {
     files: FinancialFileRow[]
     coverage: StatementCoverage
     comparison: { generatedAt: string; staleSince: string | null } | null
-    /** Files to extract or a comparison to rebuild. */
+    /** Files never read (or overridden since), or a comparison out of date. */
     outOfDate: boolean
   }
   lodgement: {
@@ -100,10 +106,12 @@ function item(
   key: ReadinessKey,
   status: ReadinessStatus,
   detail: string,
-  extra: { notes?: string[]; fingerprint?: string | null; canRunNow?: boolean; href: string },
+  extra: { notes?: string[]; fingerprint?: string | null; href: string },
 ): ReadinessItem {
   const fingerprint = extra.fingerprint ?? null
   const stored = input.reviews[key]
+  // Run now belongs to work that is waiting, never to work under way.
+  const canRunNow = status === 'not_started' && !input.jobRunning
   return {
     key,
     label: READINESS_LABEL[key],
@@ -112,7 +120,7 @@ function item(
     notes: extra.notes ?? [],
     fingerprint,
     review: stored && fingerprint !== null && stored.fingerprint === fingerprint ? stored : null,
-    canRunNow: extra.canRunNow ?? false,
+    canRunNow,
     href: extra.href,
   }
 }
@@ -123,14 +131,11 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   if (f.files.length === 0) {
     return item(input, 'financials', 'not_uploaded', 'Upload the Profit and Loss and Balance Sheet for the last 4 years and the current period.', { href: `/clients/${input.clientId}` })
   }
-  if (f.outOfDate || input.jobRunning) {
-    return item(
-      input,
-      'financials',
-      'processing',
-      input.jobRunning ? 'Being read and compared now.' : 'Waiting to be read and compared.',
-      { canRunNow: !input.jobRunning, href },
-    )
+  if (input.jobRunning) {
+    return item(input, 'financials', 'processing', 'Being read and compared now.', { href })
+  }
+  if (f.outOfDate) {
+    return item(input, 'financials', 'not_started', 'New or changed files have not been read and compared yet.', { href })
   }
 
   const notes: string[] = []
@@ -175,11 +180,11 @@ function lodgementItem(input: ReadinessInput): ReadinessItem {
   if (l.csvCount === 0) {
     return item(input, 'lodgement', 'not_uploaded', 'Upload the ATO activity statement account CSV.', { href: `/clients/${input.clientId}` })
   }
-  if (l.outOfDate || (input.jobRunning && !l.analysis)) {
-    return item(input, 'lodgement', 'processing', input.jobRunning ? 'Being analysed now.' : 'Waiting to be analysed.', {
-      canRunNow: !input.jobRunning,
-      href,
-    })
+  if (input.jobRunning && (l.outOfDate || !l.analysis)) {
+    return item(input, 'lodgement', 'processing', 'Being analysed now.', { href })
+  }
+  if (l.outOfDate) {
+    return item(input, 'lodgement', 'not_started', 'The export has not been analysed yet.', { href })
   }
   if (!l.analysis) {
     return item(
@@ -239,11 +244,9 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
     })
   }
   if (unread.length > 0) {
-    return item(input, 'dpn', 'processing', input.jobRunning ? 'Being read now.' : 'Waiting to be read.', {
-      notes,
-      canRunNow: !input.jobRunning,
-      href,
-    })
+    return input.jobRunning
+      ? item(input, 'dpn', 'processing', 'Being read now.', { notes, href })
+      : item(input, 'dpn', 'not_started', 'Not read yet.', { notes, href })
   }
   return item(input, 'dpn', 'needs_review', 'No notice has been read cleanly yet.', { notes, fingerprint, href })
 }

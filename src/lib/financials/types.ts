@@ -107,6 +107,9 @@ export interface ExtractionWarning {
     | 'column_not_extracted'
     // Staff set this file's year, or annual vs current period (migration 0031).
     | 'period_override'
+    // The read itself failed (download, the model, a timeout). Recorded so the
+    // file is not mistaken for one never read, and not retried automatically.
+    | 'extraction_failed'
   message: string
   rawLabel?: string
   rawValue?: string

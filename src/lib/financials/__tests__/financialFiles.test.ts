@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { applyPeriodOverride, periodOverrideOf } from '../periodOverride'
-import { describeFinancialFiles, overrideYearOptions, type FinancialFileInput } from '../financialFiles'
+import { describeFinancialFiles, failureOf, overrideYearOptions, type FinancialFileInput } from '../financialFiles'
 import type { FinancialsPrepass } from '../prepass'
 import type {
   ExtractedBalanceSheet,
@@ -184,5 +184,23 @@ describe('overrideYearOptions', () => {
     expect(years[0]).toBe(2028)
     expect(years[1]).toBe(2027)
     expect(years.at(-1)).toBe(2017)
+  })
+})
+
+describe('a file whose read failed', () => {
+  it('says why, instead of looking never read', () => {
+    const [row] = describeFinancialFiles({
+      documents: [doc('scan')],
+      slots: [],
+      extractions: [{ documentId: 'scan', kind: 'unknown', extractedAt: '2026-10-18T00:00:00Z', failure: 'extraction timed out after 200s' }],
+    })
+    expect(row.usage).toBe('nothing_read')
+    expect(row.note).toBe('Could not be read: extraction timed out after 200s Re-extract from the comparison page to try again.')
+  })
+
+  it('finds the failure among the record warnings', () => {
+    expect(failureOf([{ kind: 'page_selection', message: 'x' }, { kind: 'extraction_failed', message: 'timed out' }])).toBe('timed out')
+    expect(failureOf([{ kind: 'page_selection', message: 'x' }])).toBeNull()
+    expect(failureOf(null)).toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FileDown, FileText } from 'lucide-react'
+import { Download, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { downloadBlob, downloadCsv } from '@/lib/csv'
 import { buildDpnCsv, type DpnExportMeta } from '@/lib/dpn/exportCsv'
@@ -44,21 +44,28 @@ export function DpnExportButtons({ summary, meta }: DpnExportButtonsProps) {
     }
   }
 
+  // The same buttons, words and order as the comparison and prediction pages.
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={exportPdf} disabled={building}>
+          {building ? (
+            'Exporting…'
+          ) : (
+            <>
+              <FileDown className="h-3.5 w-3.5" />
+              Export PDF
+            </>
+          )}
+        </Button>
         <Button
           type="button"
           variant="ghost"
           size="sm"
           onClick={() => downloadCsv(buildDpnCsv(summary, meta), `${baseName(meta)}.csv`)}
         >
-          <FileDown className="h-4 w-4" />
-          CSV
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={exportPdf} loading={building}>
-          <FileText className="h-4 w-4" />
-          PDF
+          <Download className="h-3.5 w-3.5" />
+          Export CSV
         </Button>
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}

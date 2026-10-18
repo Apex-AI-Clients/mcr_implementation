@@ -24,8 +24,17 @@ vi.mock('@/components/admin/ReadinessChecklist', () => ({ ReadinessChecklist: ()
 vi.mock('@/lib/sbr/loadReadiness', () => ({
   loadReadiness: vi.fn(async () => ({ items: [], canPredict: false, waitingFor: [], dpn: null })),
 }))
+vi.mock('@/lib/analysis/autoRun', () => ({
+  scheduleClientAnalysis: vi.fn(async () => ({ jobId: 'job-1', started: true })),
+}))
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: vi.fn(),
+}))
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
 import ClientDetailPage from '../page'
 import ArchivedClientPage from '@/app/(app)/sbr/archive/[id]/page'
 
@@ -219,5 +228,30 @@ describe('Client page and Archive page', () => {
     expect(screen.getByRole('link', { name: /Archive/ }).getAttribute('href')).toBe('/sbr/archive')
     // No editing from the Archive.
     expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
+  })
+})
+
+describe('Client detail page — waiting analysis', () => {
+  const waiting = { items: [{ status: 'not_started' }], canPredict: false, waitingFor: [], dpn: null }
+  const quiet = { items: [{ status: 'ready' }], canPredict: true, waitingFor: [], dpn: true }
+
+  it('starts work that is waiting, so nobody has to press Run now', async () => {
+    vi.mocked(scheduleClientAnalysis).mockClear()
+    vi.mocked(loadReadiness).mockClear()
+    mockDb(CLIENT, COMPANY)
+    vi.mocked(loadReadiness).mockResolvedValueOnce(waiting as never).mockResolvedValueOnce(quiet as never)
+    await renderPage()
+    expect(scheduleClientAnalysis).toHaveBeenCalledWith(expect.anything(), 'cl_1', expect.any(Function))
+    // Read again, so the checklist shows the run.
+    expect(loadReadiness).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts nothing when nothing is waiting', async () => {
+    vi.mocked(scheduleClientAnalysis).mockClear()
+    vi.mocked(loadReadiness).mockClear()
+    mockDb(CLIENT, COMPANY)
+    vi.mocked(loadReadiness).mockResolvedValueOnce(quiet as never)
+    await renderPage()
+    expect(scheduleClientAnalysis).not.toHaveBeenCalled()
   })
 })

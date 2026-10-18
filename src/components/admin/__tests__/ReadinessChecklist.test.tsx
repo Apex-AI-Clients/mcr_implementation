@@ -94,10 +94,14 @@ describe('ReadinessChecklist', () => {
 })
 
 describe('PredictOutcomeButton', () => {
-  it('is disabled and says what it is waiting for', () => {
+  it('is disabled, and says what it is waiting for only in the info tooltip', async () => {
+    const user = userEvent.setup()
     render(<PredictOutcomeButton clientId="c1" canPredict={false} waitingFor={['Director penalty notices: not uploaded']} />)
     expect((screen.getByRole('button', { name: /Predict SBR Outcome/ }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText('Waiting for Director penalty notices: not uploaded.')).toBeTruthy()
+    // No visible text under the button; the tooltip opens on hover or focus.
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    await user.hover(screen.getByText(/Why is Predict SBR Outcome not available/).parentElement!)
+    expect(screen.getByRole('tooltip').textContent).toBe('Waiting for:\n• Director penalty notices: not uploaded')
   })
 
   it('links to the prediction once ready', () => {

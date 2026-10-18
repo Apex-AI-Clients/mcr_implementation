@@ -1,33 +1,39 @@
 'use client'
 
 import Link from 'next/link'
-import { TrendingUp } from 'lucide-react'
+import { Info, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Tooltip } from '@/components/ui/Tooltip'
 
 interface Props {
   clientId: string
   /** Every readiness item Ready, or Needs review and reviewed (readiness.ts). */
   canPredict: boolean
-  /** What it is waiting for, one per item, shown when it cannot open yet. */
+  /** What it is waiting for, one per item, shown on the info icon when it cannot open yet. */
   waitingFor: string[]
 }
 
 /**
  * Opens the SBR outcome prediction once everything it needs is in. Until
- * then it is disabled and says what it is waiting for: everything is worked
- * out before staff get there, so the prediction itself is instant.
+ * then it is disabled, with an info icon beside it whose tooltip says what it
+ * is waiting for.
  */
 export function PredictOutcomeButton({ clientId, canPredict, waitingFor }: Props) {
   if (!canPredict) {
+    const reason = ['Waiting for:', ...waitingFor.map((line) => `• ${line}`)].join('\n')
     return (
-      <div className="flex flex-col items-end gap-1">
-        <Button variant="accent" size="sm" disabled aria-describedby="predict-waiting">
+      <div className="inline-flex items-center gap-1.5">
+        <Button variant="accent" size="sm" disabled>
           <TrendingUp className="h-3.5 w-3.5" />
           Predict SBR Outcome
         </Button>
-        <p id="predict-waiting" className="max-w-[320px] text-right text-xs text-foreground/50">
-          Waiting for {waitingFor.join('; ')}.
-        </p>
+        <Tooltip
+          content={reason}
+          className="inline-flex cursor-help rounded-full p-1 text-foreground/40 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Info className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Why is Predict SBR Outcome not available? {waitingFor.join('; ')}.</span>
+        </Tooltip>
       </div>
     )
   }

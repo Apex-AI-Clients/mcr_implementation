@@ -424,9 +424,10 @@ export function ComparisonClient({
       )}
 
       {/* Which statement each year has, and what each file was read as.
-          Built fresh from storage on every load. Shown to everyone: the year
-          and type of a file whose headings mislead are set here. */}
-      {(coverage.columns.length > 0 || files.length > 0) && (
+          Built fresh from storage on every load. Diagnostics only (hidden in
+          production): what staff need from it reaches them through the
+          readiness checklist on the client page. */}
+      {showDiagnostics && (coverage.columns.length > 0 || files.length > 0) && (
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
           <StatementCoverageTable coverage={coverage} />

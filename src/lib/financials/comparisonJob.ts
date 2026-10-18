@@ -357,8 +357,34 @@ async function processDocument(
     const totalElapsed = ((Date.now() - start) / 1000).toFixed(1)
     const message = err instanceof Error ? err.message : String(err)
     console.error(`${tag} FAILED after ${totalElapsed}s: ${message}`)
+    await recordFailedExtraction(supabase, { clientId, documentId: doc.id, message })
     return { wrote: 0, skipped: 0, error: message }
   }
+}
+
+/**
+ * A read that failed, recorded on the file, so it reads as "could not be
+ * read" (with why) rather than "never read" — which would have the automatic
+ * run try it again on every trigger. Only for a file with no record yet: an
+ * earlier good read keeps its record, and its statements stay where they are.
+ * Re-extracting from the comparison page tries it again.
+ */
+async function recordFailedExtraction(
+  supabase: SupabaseClient,
+  input: { clientId: string; documentId: string; message: string },
+): Promise<void> {
+  const failure: ExtractionWarning = { kind: 'extraction_failed', message: input.message }
+  const { error } = await supabase.from('financial_document_extractions').upsert(
+    {
+      document_id: input.documentId,
+      client_id: input.clientId,
+      kind: 'unknown',
+      warnings: [failure] as unknown as Json,
+      extracted_at: new Date().toISOString(),
+    },
+    { onConflict: 'document_id', ignoreDuplicates: true },
+  )
+  if (error) console.error(`[extract-financials] failed to record the failed read for ${input.documentId}: ${error.message}`)
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

@@ -40,6 +40,8 @@ export interface FileExtractionInput {
   documentId: string
   kind: FinancialDocumentKind
   extractedAt: string
+  /** Why the read failed, when it did ('extraction_failed'). */
+  failure?: string | null
 }
 
 export interface FinancialFileRow {
@@ -125,7 +127,9 @@ export function describeFinancialFiles(input: {
       note = `Supplies ${join(comparativeYears)} from its prior-year column.`
     } else if (extraction) {
       usage = 'nothing_read'
-      note = 'Nothing could be read from it. Set its year and type below, or check the file.'
+      note = extraction.failure
+        ? `Could not be read: ${extraction.failure} Re-extract from the comparison page to try again.`
+        : 'Nothing could be read from it. Check the file.'
     } else {
       usage = 'not_read'
       note = 'Not read yet. Run the comparison to read it.'
@@ -157,4 +161,14 @@ export function describeFinancialFiles(input: {
 export function overrideYearOptions(today: Date = new Date()): number[] {
   const fy = today.getMonth() >= 6 ? today.getFullYear() + 1 : today.getFullYear()
   return Array.from({ length: 12 }, (_, i) => fy + 1 - i)
+}
+
+/** Why a file's read failed, from its extraction record's warnings, or null. */
+export function failureOf(warnings: unknown): string | null {
+  if (!Array.isArray(warnings)) return null
+  const failed = warnings.find(
+    (w): w is { kind: string; message: string } =>
+      typeof w === 'object' && w !== null && (w as { kind?: unknown }).kind === 'extraction_failed',
+  )
+  return failed ? String(failed.message) : null
 }

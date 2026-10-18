@@ -113,15 +113,31 @@ describe('financial statements', () => {
     expect(r.waitingFor).toEqual(['Financial statements: not uploaded'])
   })
 
-  it('is processing while out of date, offering to run when nothing is running', () => {
+  it('is "not run yet", with Run now, when there is work and nothing running', () => {
     expect(statusOf(computeReadiness(input({ financials: { outOfDate: true } })), 'financials')).toMatchObject({
-      status: 'processing',
+      status: 'not_started',
       canRunNow: true,
     })
-    expect(statusOf(computeReadiness(input({ jobRunning: true })), 'financials')).toMatchObject({
-      status: 'processing',
-      canRunNow: false,
+  })
+
+  it('is processing only while a run is going, and never offers Run now then', () => {
+    const r = computeReadiness(input({ jobRunning: true, financials: { outOfDate: true } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'processing', canRunNow: false })
+    expect(r.items.every((i) => !i.canRunNow)).toBe(true)
+  })
+
+  it('lists a file whose read failed, with why, rather than waiting on it for ever', () => {
+    const failed = file({
+      documentId: 'scan',
+      filename: 'scan.pdf',
+      annualYears: [],
+      comparativeYears: [],
+      usage: 'nothing_read',
+      note: 'Could not be read: extraction timed out after 200s Re-extract from the comparison page to try again.',
     })
+    const item = statusOf(computeReadiness(input({ financials: { files: [file(), failed] } })), 'financials')
+    expect(item.status).toBe('needs_review')
+    expect(item.notes[0]).toMatch(/^scan\.pdf: Could not be read: extraction timed out/)
   })
 
   it('needs review for a gap, a missing current period, or a file that gave nothing', () => {
@@ -170,10 +186,14 @@ describe('ATO activity statement', () => {
     expect(none).toMatchObject({ status: 'not_uploaded', detail: 'None of the uploaded CSVs is an activity statement account export.' })
   })
 
-  it('is processing while a new export waits to be analysed', () => {
+  it('is "not run yet" while a new export waits, and processing while it is analysed', () => {
     expect(statusOf(computeReadiness(input({ lodgement: { outOfDate: true } })), 'lodgement')).toMatchObject({
-      status: 'processing',
+      status: 'not_started',
       canRunNow: true,
+    })
+    expect(statusOf(computeReadiness(input({ jobRunning: true, lodgement: { outOfDate: true } })), 'lodgement')).toMatchObject({
+      status: 'processing',
+      canRunNow: false,
     })
   })
 
@@ -214,10 +234,11 @@ describe('director penalty notices and the DPN factor', () => {
     expect(r.dpn).toBe(true)
   })
 
-  it('is processing while a notice waits to be read', () => {
+  it('is "not run yet" while a notice waits to be read, and processing while it is read', () => {
     expect(statusOf(computeReadiness(input({ dpn: { notices: [view(null)] } })), 'dpn')).toMatchObject({
-      status: 'processing',
+      status: 'not_started',
       canRunNow: true,
     })
+    expect(statusOf(computeReadiness(input({ jobRunning: true, dpn: { notices: [view(null)] } })), 'dpn').status).toBe('processing')
   })
 })
