@@ -1,8 +1,8 @@
 /**
  * Server-only. Whether the comparison page shows its diagnostics — the
- * per-file list under "Statements on file" and the statement checks
- * (warnings and notes). The coverage table, where a file's year and type
- * are checked and changed, shows everywhere.
+ * whole "Statements on file" section (coverage table, per-file year
+ * override, files not used, per-file list) and the statement checks
+ * (warnings and notes). Hidden in production at the client's request.
  *
  * On only when SHOW_FINANCIALS_DIAGNOSTICS is exactly "true" (development and
  * test deployments). Unset, or anything else, is production: hidden.

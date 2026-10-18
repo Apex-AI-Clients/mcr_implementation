@@ -54,9 +54,9 @@ interface Props {
   /** Set when a financials document was deleted after the comparison was built. */
   initialStaleSince: string | null
   /**
-   * Show the per-file list under "Statements on file" and the statement
-   * checks. Development and test deployments only (SHOW_FINANCIALS_DIAGNOSTICS);
-   * hidden in production. The coverage table itself always shows.
+   * Show "Statements on file" (coverage table, year override, files not
+   * used, per-file list) and the statement checks. Development and test
+   * deployments only (SHOW_FINANCIALS_DIAGNOSTICS); hidden in production.
    */
   showDiagnostics: boolean
 }
@@ -451,9 +451,9 @@ export function ComparisonClient({
 
       {/* Which statement each year has. Built fresh from storage on every
           load. Clicking a file shows the year and type it was read as, and
-          lets staff correct them (the file is then read again). The per-file
-          list and the checks are diagnostics only (hidden in production). */}
-      {(coverage.columns.length > 0 || unusedFiles.length > 0 || (showDiagnostics && files.length > 0)) && (
+          lets staff correct them (the file is then read again). Diagnostics
+          only: hidden in production (client request, 19 Oct 2026). */}
+      {showDiagnostics && (coverage.columns.length > 0 || unusedFiles.length > 0 || files.length > 0) && (
         <div className="no-print space-y-3">
           <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
           <StatementCoverageTable

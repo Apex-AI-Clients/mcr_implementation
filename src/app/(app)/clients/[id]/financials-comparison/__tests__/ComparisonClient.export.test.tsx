@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { computeFinancialsComparison } from '@/lib/financials/computeComparison'
 import type { StatementCoverage } from '@/lib/financials/coverage'
@@ -142,11 +142,10 @@ describe('diagnostics (SHOW_FINANCIALS_DIAGNOSTICS)', () => {
     expect(screen.getByRole('checkbox', { name: 'Include checks in PDF' })).toBeTruthy()
   })
 
-  it('hides them in production (flag off), keeping the coverage table', () => {
-    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
-    // The coverage table, where a file's year and type are changed, shows everywhere.
-    expect(screen.getByText('Statements on file')).toBeTruthy()
-    // The per-file list does not.
+  it('hides them in production (flag off), "Statements on file" included', () => {
+    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true, extraFiles: [supersededRow] })
+    expect(screen.queryByText('Statements on file')).toBeNull()
+    expect(screen.queryByText('Files not used in the comparison')).toBeNull()
     expect(screen.queryByRole('columnheader', { name: 'Read as' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Statement checks/ })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: 'Include checks in PDF' })).toBeNull()
@@ -164,11 +163,11 @@ describe('year and type from the coverage table', () => {
         : new Response(JSON.stringify({ jobId: 'job-1' }), { status: 200 }),
     )
     vi.stubGlobal('fetch', fetchMock)
-    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
+    renderPage({ showDiagnostics: true, withCoverage: true, withFiles: true })
 
     await user.click(screen.getByRole('button', { name: /SYNTH_statements_2025\.pdf/ }))
     expect(screen.getByText('Detected: FY2025 annual')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Change' }))
+    await user.click(within(screen.getByRole('region', { name: /^Year and type for/ })).getByRole('button', { name: 'Change' }))
     await user.selectOptions(screen.getByLabelText('Financial year for SYNTH_statements_2025.pdf'), '2026')
     await user.click(screen.getByRole('button', { name: 'Save and read again' }))
 
@@ -189,17 +188,17 @@ describe('files not used in the comparison', () => {
         : new Response(JSON.stringify({ jobId: 'job-1' }), { status: 200 }),
     )
     vi.stubGlobal('fetch', fetchMock)
-    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true, extraFiles: [supersededRow] })
+    renderPage({ showDiagnostics: true, withCoverage: true, withFiles: true, extraFiles: [supersededRow] })
 
-    expect(screen.getByText('Files not used in the comparison')).toBeTruthy()
-    expect(screen.getByText('Superseded')).toBeTruthy()
-    expect(screen.getByText(/FY2025 already has its annual statement/)).toBeTruthy()
+    const unusedList = screen.getByText('Files not used in the comparison').parentElement!
+    expect(within(unusedList).getByText('Superseded')).toBeTruthy()
+    expect(within(unusedList).getByText(/FY2025 already has its annual statement/)).toBeTruthy()
     // The file in the table is not listed.
     expect(screen.queryByRole('button', { name: 'Change the year and type of SYNTH_statements_2025.pdf' })).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Change the year and type of SYNTH_current_period_2025.pdf' }))
     expect(screen.getByText('Detected: FY2025 current period')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Change' }))
+    await user.click(within(screen.getByRole('region', { name: /^Year and type for/ })).getByRole('button', { name: 'Change' }))
     await user.selectOptions(screen.getByLabelText('Financial year for SYNTH_current_period_2025.pdf'), '2026')
     await user.click(screen.getByRole('button', { name: 'Save and read again' }))
 
@@ -211,7 +210,7 @@ describe('files not used in the comparison', () => {
   })
 
   it('shows nothing when every file is in the table', () => {
-    renderPage({ showDiagnostics: false, withCoverage: true, withFiles: true })
+    renderPage({ showDiagnostics: true, withCoverage: true, withFiles: true })
     expect(screen.queryByText('Files not used in the comparison')).toBeNull()
   })
 })
