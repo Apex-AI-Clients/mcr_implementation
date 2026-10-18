@@ -55,6 +55,8 @@ interface InitialAuto {
   cumulativeDaysLate: number | null
   numberOfLateLodgements: number | null
   daysSinceLastPayment: number | null
+  /** The ATO account's first and last dates, e.g. "1 Jul 2020 – 1 Oct 2026"; null without rows. */
+  icaHistory?: string | null
   directorLoanReceivableAmount: number
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
@@ -668,7 +670,7 @@ function InputPanel(props: InputPanelProps) {
               label="Days since last payment"
               value={
                 auto.daysSinceLastPayment === 9999
-                  ? 'No payments on record'
+                  ? `No payments found in the ATO account${auto.icaHistory ? ` (${auto.icaHistory})` : ''}`
                   : formatNumber(auto.daysSinceLastPayment)
               }
               missing={auto.daysSinceLastPayment == null}

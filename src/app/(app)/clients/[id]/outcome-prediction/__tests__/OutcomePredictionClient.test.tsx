@@ -314,3 +314,19 @@ describe('Creditors in the SBR — in the PDF', () => {
     expect(screen.getByText(/ATO account statement, 30 Sep 2026/)).toBeTruthy()
   })
 })
+
+describe('days since last payment', () => {
+  it('says the whole ATO account was searched when there are no payments', () => {
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...AUTO, daysSinceLastPayment: 9999, icaHistory: '1 Jul 2020 – 1 Oct 2026' }}
+        initialPrediction={null}
+        readiness={READY}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    expect(screen.getByText('No payments found in the ATO account (1 Jul 2020 – 1 Oct 2026)')).toBeTruthy()
+  })
+})

@@ -1,6 +1,6 @@
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import type { StatementLine, StoredStatementSlot } from '@/lib/financials/types'
-import { longDate } from './creditorDebt'
+import { currentPeriodAt } from '@/lib/financials/periodLabels'
 
 /**
  * "Creditors in the SBR": the ATO debt (creditorDebt.ts) plus the other
@@ -163,7 +163,7 @@ export function creditorHints(slots: StoredStatementSlot[]): CreditorHints {
   const { slot, balanceSheet } = statement
   const source =
     slot.sourceColumn === 'current_period'
-      ? `at ${longDate(slot.periodEndDate)} (current period)`
+      ? `at ${currentPeriodAt({ financialYear: slot.financialYear, periodStartDate: slot.periodStartDate, periodEndDate: slot.periodEndDate })}`
       : `FY${slot.financialYear} balance sheet`
   const lines = (balanceSheet as { lines?: StatementLine[] }).lines ?? []
   const hint = (amount: number | null, caution: string | null = null): CreditorHint | null =>

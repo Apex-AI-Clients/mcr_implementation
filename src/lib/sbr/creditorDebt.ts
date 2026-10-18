@@ -72,6 +72,19 @@ export function icaPosition(rows: readonly IcaRow[] | null | undefined): {
   }
 }
 
+/** The first and last processed dates in the account (ISO), or nulls: the history searched. */
+export function icaDateRange(rows: readonly IcaRow[] | null | undefined): { first: string | null; last: string | null } {
+  let first: Date | null = null
+  let last: Date | null = null
+  for (const row of rows ?? []) {
+    const d = dateOf(row.processedDate)
+    if (!d) continue
+    if (!first || d < first) first = d
+    if (!last || d > last) last = d
+  }
+  return { first: first ? isoDate(first) : null, last: last ? isoDate(last) : null }
+}
+
 /**
  * Days from the last payment to the account's statement date — not to today,
  * so the figure does not change from one day to the next while the statement

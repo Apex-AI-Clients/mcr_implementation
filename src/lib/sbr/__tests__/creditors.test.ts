@@ -149,7 +149,7 @@ describe('balance-sheet hints', () => {
       slot(2026, 'primary', { lines, currentLiabilities: { bankOverdraft: 2_500 } }),
       slot(2027, 'current_period', { currentLiabilities: { bankOverdraft: 0 } }, '2026-09-30'),
     ])
-    expect(hints.bankOverdraft).toEqual({ amount: 0, source: 'at 30 Sep 2026 (current period)', caution: null })
+    expect(hints.bankOverdraft).toEqual({ amount: 0, source: 'at 30 Sep 2026 (FY2027 to date)', caution: null })
     expect(hints.tradeSuppliers).toBeNull()
   })
 

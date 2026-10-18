@@ -7,7 +7,7 @@ import { financialPoints } from '@/lib/sbr/financialPoints'
 import type { FinancialsComparison } from '@/lib/financials/types'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
-import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { creditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements } from '@/lib/analysis/config'
@@ -117,6 +117,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
     daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
+    // The account's whole history, so "no payments" shows what was searched.
+    icaHistory: (() => {
+      const { first, last } = icaDateRange(icaRows)
+      return first && last ? `${longDate(first)} – ${longDate(last)}` : null
+    })(),
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
