@@ -22,7 +22,7 @@ const AUTO = {
   latestFinancialYear: 2025,
   hasLodgement: true,
   hasFinancials: true,
-  creditorHints: [null, null, null, null, null, null],
+  creditorHints: { creditCards: null, cashLoans: null, bankOverdraft: null, tradeSuppliers: null },
   savedCreditors: null,
 }
 
@@ -174,18 +174,16 @@ describe('What the financial statements show', () => {
 })
 
 describe('Creditors in the SBR', () => {
-  const HINTS = [
-    { amount: 4_200, source: 'FY2025 balance sheet', caution: null },
-    {
+  const HINTS = {
+    creditCards: { amount: 4_200, source: 'FY2025 balance sheet', caution: null },
+    cashLoans: {
       amount: 25_000,
       source: 'FY2025 balance sheet',
       caution: 'Includes $25,000 of chattel, hire-purchase, vehicle or equipment finance. Usually secured — check before including',
     },
-    { amount: 0, source: 'FY2025 balance sheet', caution: null },
-    null,
-    null,
-    null,
-  ]
+    bankOverdraft: { amount: 0, source: 'FY2025 balance sheet', caution: null },
+    tradeSuppliers: null,
+  }
   const page = (auto: Record<string, unknown> = {}) =>
     render(
       <OutcomePredictionClient
@@ -219,10 +217,11 @@ describe('Creditors in the SBR', () => {
     await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     const body = bodyOf(fetchMock)
-    expect(body.creditors).toHaveLength(6)
-    expect(body.creditors[0]).toEqual({ label: 'Credit cards', amount: 12_000 })
-    expect(body.creditors[3]).toEqual({ label: 'Supplier account', amount: 38_000 })
-    expect(body.creditors[1]).toEqual({ label: 'Cash loans', amount: null })
+    expect(body.creditors).toHaveLength(4)
+    expect(body.creditors[0]).toEqual({ label: 'Credit cards', amount: 12_000, kind: 'creditCards' })
+    // Renamed, the row keeps its kind (and its hint).
+    expect(body.creditors[3]).toEqual({ label: 'Supplier account', amount: 38_000, kind: 'tradeSuppliers' })
+    expect(body.creditors[1]).toEqual({ label: 'Cash loans', amount: null, kind: 'cashLoans' })
     // The automatic ATO debt is not sent: the server works it out.
     expect(body).not.toHaveProperty('creditorAmount')
   })
@@ -241,17 +240,56 @@ describe('Creditors in the SBR', () => {
         atoDebtEdited: true,
         rows: [
           { label: 'Fuel card', amount: 3_000 },
-          { label: 'Cash loans', amount: null },
-          { label: 'Bank overdraft', amount: null },
-          { label: 'Trade suppliers', amount: null },
-          { label: 'Other creditor 1', amount: null },
-          { label: 'Other creditor 2', amount: null },
+          { label: 'Bank overdraft', amount: null, kind: 'bankOverdraft' },
         ],
       },
     })
     expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Fuel card')
     expect(screen.getByText('Source: entered by staff')).toBeTruthy()
     expect(screen.getByTestId('creditor-total').textContent).toBe('$93,000')
+    // Two rows saved, two rows shown.
+    expect(screen.queryByRole('textbox', { name: 'Creditor 3 name' })).toBeNull()
+  })
+
+  it('adds a row to name and fill in, and removes rows', async () => {
+    const fetchMock = mockFetch()
+    page()
+    await userEvent.click(screen.getByRole('button', { name: /Add creditor/ }))
+    const name = screen.getByRole('textbox', { name: 'Creditor 5 name' })
+    expect(document.activeElement).toBe(name)
+    await userEvent.type(name, 'Landlord – unpaid rent')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 5 amount' }), '9500')
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Credit cards' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Bank overdraft' }))
+    expect(screen.queryByRole('textbox', { name: 'Creditor 4 name' })).toBeNull()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$259,500')
+
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).creditors).toEqual([
+      { label: 'Cash loans', amount: null, kind: 'cashLoans' },
+      { label: 'Trade suppliers', amount: null, kind: 'tradeSuppliers' },
+      { label: 'Landlord – unpaid rent', amount: 9_500 },
+    ])
+  })
+
+  it('keeps each hint with its row when rows above it are removed', async () => {
+    page()
+    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Credit cards' }))
+    expect(screen.queryByText(/Balance sheet shows \$4,200/)).toBeNull()
+    // Cash loans is now the first row, still with its own hint.
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Cash loans')
+    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+  })
+
+  it('can remove every row', async () => {
+    page()
+    for (const label of ['Credit cards', 'Cash loans', 'Bank overdraft', 'Trade suppliers']) {
+      await userEvent.click(screen.getByRole('button', { name: `Remove ${label}` }))
+    }
+    expect(screen.queryByRole('textbox', { name: 'Creditor 1 name' })).toBeNull()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$250,000')
   })
 })
 

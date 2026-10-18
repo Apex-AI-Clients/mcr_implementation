@@ -3,8 +3,9 @@ import type { StatementLine, StoredStatementSlot } from '@/lib/financials/types'
 import { longDate } from './creditorDebt'
 
 /**
- * "Creditors in the SBR": the ATO debt (creditorDebt.ts) plus up to six
- * other creditors staff enter, each with its own label and amount. The offer
+ * "Creditors in the SBR": the ATO debt (creditorDebt.ts) plus the other
+ * creditors staff list, each with its own label and amount: rows are added
+ * and removed freely (up to MAX_CREDITOR_ROWS). The offer
  * is sized on their total (Gabby, 14 Oct: the ATO debt alone leaves out
  * credit cards, bank debt and trade creditors). Pure; shared by the page,
  * the predict-outcome route and the exports.
@@ -13,27 +14,32 @@ import { longDate } from './creditorDebt'
  * decide which creditors are in the SBR.
  */
 
-export const CREDITOR_ROW_COUNT = 6
+export const MAX_CREDITOR_ROWS = 20
 export const CREDITOR_LABEL_MAX = 60
 
+/** The creditors a balance-sheet hint can be shown for. */
+export const CREDITOR_KINDS = ['creditCards', 'cashLoans', 'bankOverdraft', 'tradeSuppliers'] as const
+export type CreditorKind = (typeof CREDITOR_KINDS)[number]
+
 /**
- * Gabby's words. No default row for equipment or vehicle finance: secured
- * finance normally sits outside an SBR, and a row of its own would invite
- * including it. It shows only as a caution on the Cash loans hint.
+ * The rows a new prediction starts with, in Gabby's words. Staff rename,
+ * remove or add rows as they like. No row for equipment or vehicle finance:
+ * secured finance normally sits outside an SBR, and a row of its own would
+ * invite including it. It shows only as a caution on the Cash loans hint.
  */
-export const DEFAULT_CREDITOR_LABELS = [
-  'Credit cards',
-  'Cash loans',
-  'Bank overdraft',
-  'Trade suppliers',
-  'Other creditor 1',
-  'Other creditor 2',
-] as const
+export const DEFAULT_CREDITORS: readonly { kind: CreditorKind; label: string }[] = [
+  { kind: 'creditCards', label: 'Credit cards' },
+  { kind: 'cashLoans', label: 'Cash loans' },
+  { kind: 'bankOverdraft', label: 'Bank overdraft' },
+  { kind: 'tradeSuppliers', label: 'Trade suppliers' },
+]
 
 export interface CreditorRow {
   label: string
   /** Null when the row is left blank. */
   amount: number | null
+  /** Which balance-sheet hint the row shows, if any; kept when the row is renamed. */
+  kind?: CreditorKind
 }
 
 /** What is saved with the prediction (sbr_outcome_predictions.creditors). */
@@ -46,21 +52,22 @@ export interface SavedCreditors {
 }
 
 export function defaultCreditorRows(): CreditorRow[] {
-  return DEFAULT_CREDITOR_LABELS.map((label) => ({ label, amount: null }))
+  return DEFAULT_CREDITORS.map(({ kind, label }) => ({ label, amount: null, kind }))
 }
 
+const isKind = (v: unknown): v is CreditorKind => (CREDITOR_KINDS as readonly unknown[]).includes(v)
+
 /**
- * Six rows, labels trimmed and capped, amounts finite and not negative.
- * Anything else becomes a blank amount; missing rows take the default labels.
+ * The rows as given (none means none; null means the defaults), at most
+ * MAX_CREDITOR_ROWS: labels trimmed and capped, amounts finite and not
+ * negative (anything else becomes blank), unknown kinds dropped.
  */
 export function normaliseCreditorRows(rows: readonly Partial<CreditorRow>[] | null | undefined): CreditorRow[] {
-  const defaults = defaultCreditorRows()
-  return defaults.map((fallback, i) => {
-    const row = rows?.[i]
-    if (!row) return fallback
-    const label = typeof row.label === 'string' ? row.label.trim().slice(0, CREDITOR_LABEL_MAX) : fallback.label
-    const amount = typeof row.amount === 'number' && Number.isFinite(row.amount) && row.amount >= 0 ? row.amount : null
-    return { label, amount }
+  if (!rows) return defaultCreditorRows()
+  return rows.slice(0, MAX_CREDITOR_ROWS).map((row) => {
+    const label = typeof row?.label === 'string' ? row.label.trim().slice(0, CREDITOR_LABEL_MAX) : ''
+    const amount = typeof row?.amount === 'number' && Number.isFinite(row.amount) && row.amount >= 0 ? row.amount : null
+    return isKind(row?.kind) ? { label, amount, kind: row.kind } : { label, amount }
   })
 }
 
@@ -87,8 +94,21 @@ export function readSavedCreditors(value: unknown): SavedCreditors | null {
   return {
     atoDebt,
     atoDebtEdited: v.atoDebtEdited === true,
-    rows: normaliseCreditorRows(Array.isArray(v.rows) ? (v.rows as Partial<CreditorRow>[]) : null),
+    rows: fromFixedRows(normaliseCreditorRows(Array.isArray(v.rows) ? (v.rows as Partial<CreditorRow>[]) : null)),
   }
+}
+
+const KIND_OF_LABEL = new Map(DEFAULT_CREDITORS.map(({ kind, label }) => [label, kind]))
+const OLD_OTHER_ROW = /^Other creditor [12]$/
+
+/**
+ * Rows saved by the fixed six-row version (no kinds): a default label gets
+ * its kind back, and an empty "Other creditor 1/2" row is dropped.
+ */
+function fromFixedRows(rows: CreditorRow[]): CreditorRow[] {
+  return rows
+    .filter((r) => !(r.amount === null && !r.kind && OLD_OTHER_ROW.test(r.label)))
+    .map((r) => (r.kind || !KIND_OF_LABEL.has(r.label) ? r : { ...r, kind: KIND_OF_LABEL.get(r.label) }))
 }
 
 // ─── Balance-sheet hints ──────────────────────────────────────────────────────
@@ -125,17 +145,19 @@ function sumLines(lines: readonly StatementLine[], pattern: RegExp): number | nu
   return matched.length ? matched.reduce((sum, l) => sum + Math.abs(l.value as number), 0) : null
 }
 
+export type CreditorHints = Record<CreditorKind, CreditorHint | null>
+
 /**
- * A hint per default row (the row's position: credit cards, cash loans,
- * overdraft, trade suppliers; none for the two "other" rows), from the
- * current-period balance sheet when there is one, else the latest year's.
+ * A hint per kind of creditor (credit cards, cash loans, overdraft, trade
+ * suppliers), from the current-period balance sheet when there is one, else
+ * the latest year's.
  * A $0 overdraft in the current period is shown: it was repaid.
  *
  * Chattel, hire-purchase, vehicle or equipment finance is added to the Cash
  * loans hint with the caution that it is usually secured.
  */
-export function creditorHints(slots: StoredStatementSlot[]): (CreditorHint | null)[] {
-  const hints: (CreditorHint | null)[] = Array.from({ length: CREDITOR_ROW_COUNT }, () => null)
+export function creditorHints(slots: StoredStatementSlot[]): CreditorHints {
+  const hints: CreditorHints = { creditCards: null, cashLoans: null, bankOverdraft: null, tradeSuppliers: null }
   const statement = latestBalanceSheet(slots, { preferCurrentPeriod: true })
   if (!statement) return hints
   const { slot, balanceSheet } = statement
@@ -154,12 +176,12 @@ export function creditorHints(slots: StoredStatementSlot[]): (CreditorHint | nul
   const finance = typeof chattel === 'number' ? Math.abs(chattel) : sumLines(lines, EQUIPMENT_FINANCE)
   const withFinance = finance !== null && finance > 0
 
-  hints[0] = hint(sumLines(lines, CREDIT_CARD))
-  hints[1] = hint(
+  hints.creditCards = hint(sumLines(lines, CREDIT_CARD))
+  hints.cashLoans = hint(
     loans === null && !withFinance ? null : (loans ?? 0) + (withFinance ? finance : 0),
     withFinance ? `Includes ${dollars(finance)} of chattel, hire-purchase, vehicle or equipment finance. ${SECURED}` : null,
   )
-  hints[2] = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
-  hints[3] = hint(sumLines(lines, TRADE_CREDITORS))
+  hints.bankOverdraft = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
+  hints.tradeSuppliers = hint(sumLines(lines, TRADE_CREDITORS))
   return hints
 }

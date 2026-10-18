@@ -13,6 +13,8 @@ import {
   HelpCircle,
   Info,
   Landmark,
+  Minus,
+  Plus,
   RefreshCw,
   Target,
   TrendingUp,
@@ -39,10 +41,12 @@ import {
 } from '@/lib/sbr/financialPoints'
 import {
   CREDITOR_LABEL_MAX,
+  MAX_CREDITOR_ROWS,
   creditorTotal,
   defaultCreditorRows,
   includedCreditorRows,
-  type CreditorHint,
+  type CreditorHints,
+  type CreditorKind,
   type CreditorRow,
   type SavedCreditors,
 } from '@/lib/sbr/creditors'
@@ -62,8 +66,8 @@ interface InitialAuto {
   latestFinancialYear: number | null
   hasLodgement: boolean
   hasFinancials: boolean
-  /** A balance-sheet figure per creditor row, by position; shown, never filled in. */
-  creditorHints: (CreditorHint | null)[]
+  /** A balance-sheet figure per kind of creditor; shown beside its row, never filled in. */
+  creditorHints: CreditorHints
   /** The creditors saved with the last prediction, if any (migration 0032). */
   savedCreditors: SavedCreditors | null
 }
@@ -138,11 +142,16 @@ const AUD = new Intl.NumberFormat('en-AU', {
   maximumFractionDigits: 0,
 })
 
-/** One creditor row as staff type it. */
+/** One creditor row as staff type it. `id` keeps React's rows apart as they are added and removed. */
 interface CreditorRowInput {
+  id: string
   label: string
   amountText: string
+  kind?: CreditorKind
 }
+
+let nextCreditorRowId = 0
+const newCreditorRowId = () => `creditor-${++nextCreditorRowId}`
 
 function parseAmount(text: string): number | null {
   if (text.trim() === '') return null
@@ -217,8 +226,10 @@ export function OutcomePredictionClient({
   // The other creditors in the SBR (creditors.ts), from the last prediction or the defaults.
   const [creditorRows, setCreditorRows] = useState<CreditorRowInput[]>(() =>
     (initialAuto.savedCreditors?.rows ?? defaultCreditorRows()).map((r) => ({
+      id: newCreditorRowId(),
       label: r.label,
       amountText: r.amount != null ? String(r.amount) : '',
+      kind: r.kind,
     })),
   )
   const creditorRowsValid = creditorRows.every((r) => r.amountText.trim() === '' || parseAmount(r.amountText) !== null)
@@ -264,6 +275,7 @@ export function OutcomePredictionClient({
           creditors: creditorRows.map((r) => ({
             label: r.label.trim().slice(0, CREDITOR_LABEL_MAX),
             amount: parseAmount(r.amountText),
+            ...(r.kind ? { kind: r.kind } : {}),
           })),
         }),
       })
@@ -803,11 +815,21 @@ function CreditorsEditor({
     parseAmount(creditorText),
     rows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
   )
-  const update = (i: number, change: Partial<CreditorRowInput>) =>
-    setRows(rows.map((r, j) => (j === i ? { ...r, ...change } : r)))
+  const update = (id: string, change: Partial<CreditorRowInput>) =>
+    setRows(rows.map((r) => (r.id === id ? { ...r, ...change } : r)))
+  // The row just added gets the focus, ready to be named.
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const addRow = () => {
+    const id = newCreditorRowId()
+    setRows([...rows, { id, label: '', amountText: '' }])
+    setFocusId(id)
+  }
+  const removeRow = (id: string) => setRows(rows.filter((r) => r.id !== id))
   const inputClass =
     'h-7 rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none'
-  const grid = 'grid gap-2 sm:grid-cols-[minmax(0,14rem)_9rem_minmax(0,1fr)] sm:items-center'
+  const grid = 'grid gap-2 sm:grid-cols-[minmax(0,14rem)_9rem_1.75rem_minmax(0,1fr)] sm:items-center'
+  const iconButton =
+    'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-foreground/60 transition-colors hover:bg-surface/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40'
 
   return (
     <section className="mt-6 border-t border-border pt-5" aria-labelledby="creditors-heading">
@@ -815,8 +837,8 @@ function CreditorsEditor({
         Creditors in the SBR
       </h3>
       <p className="mt-1 mb-3 text-xs text-foreground/40">
-        The offer is the recommended % of the total below, grossed up for the practitioner fee. Rename or
-        clear any row; leave an amount blank to leave that creditor out.
+        The offer is the recommended % of the total below, grossed up for the practitioner fee. Name each
+        creditor as you like, add or remove rows, and leave an amount blank to leave that creditor out.
       </p>
       <div className="space-y-2 text-xs">
         <div className={grid}>
@@ -834,6 +856,7 @@ function CreditorsEditor({
             }}
             className={cn(inputClass, 'w-36 font-medium tabular-nums')}
           />
+          <span aria-hidden />
           <p className="text-foreground/40">
             {creditorEdited
               ? 'Source: entered by staff'
@@ -843,16 +866,17 @@ function CreditorsEditor({
           </p>
         </div>
         {rows.map((row, i) => {
-          const hint = auto.creditorHints[i] ?? null
+          const hint = row.kind ? auto.creditorHints[row.kind] : null
           const invalid = row.amountText.trim() !== '' && parseAmount(row.amountText) === null
           return (
-            <div key={i} className={grid}>
+            <div key={row.id} className={grid}>
               <input
                 aria-label={`Creditor ${i + 1} name`}
                 value={row.label}
                 maxLength={CREDITOR_LABEL_MAX}
-                placeholder="Creditor"
-                onChange={(event) => update(i, { label: event.target.value })}
+                placeholder="Creditor name"
+                autoFocus={row.id === focusId}
+                onChange={(event) => update(row.id, { label: event.target.value })}
                 className={cn(inputClass, 'w-full')}
               />
               <input
@@ -861,9 +885,18 @@ function CreditorsEditor({
                 inputMode="decimal"
                 value={row.amountText}
                 placeholder="—"
-                onChange={(event) => update(i, { amountText: event.target.value })}
+                onChange={(event) => update(row.id, { amountText: event.target.value })}
                 className={cn(inputClass, 'w-36 tabular-nums', invalid && 'border-destructive')}
               />
+              <button
+                type="button"
+                onClick={() => removeRow(row.id)}
+                aria-label={`Remove ${row.label.trim() || `creditor ${i + 1}`}`}
+                title="Remove this creditor"
+                className={iconButton}
+              >
+                <Minus className="h-3.5 w-3.5" aria-hidden />
+              </button>
               <p className="text-foreground/40">
                 {invalid ? (
                   <span className="text-destructive">Enter an amount of $0 or more, or leave it blank.</span>
@@ -877,6 +910,20 @@ function CreditorsEditor({
             </div>
           )
         })}
+        <div>
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={rows.length >= MAX_CREDITOR_ROWS}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-surface/60 hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Add creditor
+          </button>
+          {rows.length >= MAX_CREDITOR_ROWS && (
+            <span className="ml-2 text-foreground/40">Up to {MAX_CREDITOR_ROWS} creditors.</span>
+          )}
+        </div>
         <div className={cn(grid, 'border-t border-border pt-2')}>
           <span className="font-medium text-foreground">Total creditors</span>
           <span className="font-semibold tabular-nums text-foreground" data-testid="creditor-total">

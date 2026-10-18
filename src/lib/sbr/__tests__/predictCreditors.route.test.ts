@@ -92,7 +92,7 @@ describe('POST predict-outcome — creditors in the SBR', () => {
     expect(vi.mocked(predictSbrOutcome).mock.calls[0][2]).toMatchObject({ creditorAmount: 150_000 })
     expect(body.creditorAmount).toBe(150_000)
     expect(body.atoDebt).toBe(100_000)
-    expect(body.creditors).toHaveLength(6)
+    expect(body.creditors).toHaveLength(3)
     expect(body.creditors[2]).toEqual({ label: 'Supplier – steel', amount: 38_000 })
     // 20% × 150,000 ÷ 0.875
     expect(body.suggestedOfferAmount).toBeCloseTo(34_285.71, 1)
@@ -100,7 +100,7 @@ describe('POST predict-outcome — creditors in the SBR', () => {
     const saved = upsert.mock.calls[0][0] as Record<string, unknown>
     expect(saved.total_creditor_amount).toBe(150_000)
     expect(saved.creditors).toMatchObject({ atoDebt: 100_000, atoDebtEdited: false })
-    expect((saved.creditors as { rows: unknown[] }).rows).toHaveLength(6)
+    expect((saved.creditors as { rows: unknown[] }).rows).toHaveLength(3)
   })
 
   it("uses staff's ATO debt in the total when they typed one", async () => {
@@ -115,9 +115,15 @@ describe('POST predict-outcome — creditors in the SBR', () => {
     expect(body.creditorAmount).toBe(100_000)
   })
 
-  it('refuses more than six rows, or a negative amount', async () => {
-    const seven = Array.from({ length: 7 }, () => ({ label: 'x', amount: 1 }))
-    expect((await PREDICT(post({ ...BASE, creditors: seven }), PARAMS)).status).toBe(400)
+  it('keeps the kind of a renamed row', async () => {
+    const body = await (await PREDICT(post({ ...BASE, creditors: [{ label: 'Visa card', amount: 2_000, kind: 'creditCards' }] }), PARAMS)).json()
+    expect(body.creditors).toEqual([{ label: 'Visa card', amount: 2_000, kind: 'creditCards' }])
+  })
+
+  it('refuses more than 20 rows, an unknown kind, or a negative amount', async () => {
+    const many = Array.from({ length: 21 }, () => ({ label: 'x', amount: 1 }))
+    expect((await PREDICT(post({ ...BASE, creditors: many }), PARAMS)).status).toBe(400)
+    expect((await PREDICT(post({ ...BASE, creditors: [{ label: 'x', amount: 1, kind: 'equipmentFinance' }] }), PARAMS)).status).toBe(400)
     expect((await PREDICT(post({ ...BASE, creditors: [{ label: 'x', amount: -1 }] }), PARAMS)).status).toBe(400)
   })
 })

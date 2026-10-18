@@ -54,8 +54,9 @@ import {
 } from '@/lib/sbr/creditorDebt'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import {
+  CREDITOR_KINDS,
   CREDITOR_LABEL_MAX,
-  CREDITOR_ROW_COUNT,
+  MAX_CREDITOR_ROWS,
   creditorTotal,
   normaliseCreditorRows,
   type CreditorRow,
@@ -83,15 +84,16 @@ async function requireAdmin() {
 const BodySchema = z.object({
   /** Staff's own figure for the ATO debt, replacing the automatic one. */
   creditorAmount: z.number().nonnegative().nullable().optional(),
-  /** The other creditors in the SBR (creditors.ts): up to 6 rows, label and amount. */
+  /** The other creditors in the SBR (creditors.ts): rows staff added, label and amount. */
   creditors: z
     .array(
       z.object({
         label: z.string().max(CREDITOR_LABEL_MAX * 2),
         amount: z.number().nonnegative().finite().nullable(),
+        kind: z.enum(CREDITOR_KINDS).optional(),
       }),
     )
-    .max(CREDITOR_ROW_COUNT)
+    .max(MAX_CREDITOR_ROWS)
     .optional(),
   /**
    * Ignored. The director penalty notice factor is set here, from what is on
@@ -274,7 +276,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       staffAmount: body.creditorAmount ?? null,
     })
     const atoDebt = debt.amount
-    const creditorRows = normaliseCreditorRows(body.creditors)
+    // No rows sent (an older page): none, rather than the defaults.
+    const creditorRows = normaliseCreditorRows(body.creditors ?? [])
     const creditorAmount = creditorTotal(atoDebt, creditorRows)
     const savedCreditors: SavedCreditors = {
       atoDebt,
