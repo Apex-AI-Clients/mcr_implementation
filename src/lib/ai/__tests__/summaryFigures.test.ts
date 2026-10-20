@@ -44,9 +44,9 @@ const comparison = {
   balanceSheetDiffs: [],
   cumulativeProfitBeforeTax: 156_200,
   equityByYear: {
-    2023: { retainedEarnings: -116_215, distributions: null, dividends: null },
-    2024: { retainedEarnings: -4_682, distributions: null, dividends: null },
-    2025: { retainedEarnings: 0, distributions: 16_996, dividends: null },
+    2023: { retainedEarnings: -108_437, distributions: null, dividends: null },
+    2024: { retainedEarnings: -5_317, distributions: null, dividends: null },
+    2025: { retainedEarnings: 0, distributions: 15_284, dividends: null },
   },
 } as unknown as FinancialsComparison
 
@@ -54,8 +54,8 @@ beforeEach(() => mockCreate.mockReset())
 
 describe('statedFigures', () => {
   it('reads plain, abbreviated and negative figures', () => {
-    expect(statedFigures('over $156,000, a loss of -$4,682, $1.2 million and $52k').map((f) => f.value)).toEqual([
-      156_000, 4_682, 1_200_000, 52_000,
+    expect(statedFigures('over $156,000, a loss of -$5,317, $1.2 million and $52k').map((f) => f.value)).toEqual([
+      156_000, 5_317, 1_200_000, 52_000,
     ])
   })
 })
@@ -63,7 +63,7 @@ describe('statedFigures', () => {
 describe('unsupportedFigures', () => {
   it('accepts input figures, differences of two, and rounding', () => {
     const text =
-      'Revenue grew from $800,000 to $900,000, up $100,000. Retained earnings moved from -$116,215 to $0 after a $16,996 distribution. Net profit was about $56k.'
+      'Revenue grew from $800,000 to $900,000, up $100,000. Retained earnings moved from -$108,437 to $0 after a $15,284 distribution. Net profit was about $56k.'
     expect(unsupportedFigures(text, comparison)).toEqual([])
   })
 
@@ -80,8 +80,8 @@ describe('generateFinancialsComparisonSummary', () => {
     mockCreate.mockResolvedValueOnce(reply('A summary.'))
     await generateFinancialsComparisonSummary({ comparison })
     const prompt = mockCreate.mock.calls[0][0].messages[0].content as string
-    expect(prompt).toContain('Retained earnings at year end $-116,215')
-    expect(prompt).toContain('distributions paid $16,996')
+    expect(prompt).toContain('Retained earnings at year end $-108,437')
+    expect(prompt).toContain('distributions paid $15,284')
     expect(prompt).toMatch(/NEVER describe a sum of profits as retained earnings/)
     // The sum of the years' profits is not given at all.
     expect(prompt).not.toContain('156,200')

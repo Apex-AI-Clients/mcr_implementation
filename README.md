@@ -20,6 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Regenerating database types
+
+After a migration, regenerate `src/types/database.ts` and commit it with the
+migration. The file must be UTF-8: on Windows PowerShell, a plain `>` redirect
+writes UTF-16, which ESLint reads as binary. Use:
+
+```powershell
+npx supabase gen types typescript --linked | Out-File -Encoding utf8 src/types/database.ts
+```
+
+(On macOS/Linux, `npx supabase gen types typescript --linked > src/types/database.ts` is fine.)
+
 ## Dependencies to watch by hand
 
 - **SheetJS (`xlsx`)** reads uploaded Excel files on the Prediction Data page
@@ -32,6 +44,22 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
   release every few months, and after any SheetJS security advisory. To
   upgrade: `npm install --save-exact https://cdn.sheetjs.com/xlsx-<version>/xlsx-<version>.tgz`,
   then `npm run test -- src/lib/sbr/import`.
+
+## Open reminder: OpenRouter and ATO data
+
+**Unconfirmed (17 Oct 2026):** whether OpenRouter, or the model provider behind
+it, retains or trains on what we send has not yet been confirmed with the
+company's AI team for ATO data. Until it is, keep what goes to it to a minimum:
+
+- The AI summaries (lodgement analysis, financials comparison) are generated
+  only when staff open those pages, never in an automatic run.
+- Director penalty notices are never sent to any AI model. They are read with
+  deterministic text parsing (`src/lib/dpn/`), in memory, on our own server.
+- The financial statement extraction still sends statement PDFs to OpenRouter,
+  as before.
+
+Remove this section once the AI team has confirmed the terms, and record what
+they confirmed.
 
 ## Learn More
 

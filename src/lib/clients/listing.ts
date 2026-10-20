@@ -1,5 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { CHECKLIST_ORDER } from '@/lib/constants'
+import { CHECKLIST_ORDER, displayCategory, type DocCategory } from '@/lib/constants'
 import type { ClientSummary } from '@/types/app'
 
 /**
@@ -74,7 +74,7 @@ export async function getClientListPage(options: {
       docMap.set(doc.client_id, { categories: new Set(), lastActivity: null })
     }
     const entry = docMap.get(doc.client_id)!
-    if (doc.status !== 'rejected') entry.categories.add(doc.doc_category)
+    if (doc.status !== 'rejected') entry.categories.add(displayCategory(doc.doc_category as DocCategory))
     if (!entry.lastActivity || doc.uploaded_at > entry.lastActivity) {
       entry.lastActivity = doc.uploaded_at
     }

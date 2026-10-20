@@ -32,7 +32,7 @@ function form(overrides: Partial<ConversionForm> = {}): ConversionForm {
   return {
     ...emptyConversionForm(null),
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     ...overrides,
   }
 }
@@ -54,8 +54,8 @@ describe('prefillFromAbr — company', () => {
     // No screen in this app formats either number; they are rendered exactly as
     // stored. Filling them in the register's own shape keeps lookup-filled
     // records identical to hand-typed ones.
-    expect(patch.abnNumber).toBe('53004085616')
-    expect(patch.acnNumber).toBe('004085616')
+    expect(patch.abnNumber).toBe('86136533741')
+    expect(patch.acnNumber).toBe('136533741')
   })
 
   it('sets the entity type from the code', () => {
@@ -105,7 +105,7 @@ describe('prefillFromAbr — trust', () => {
     })
     // The pick cleared the searched company box; put the trustee back.
     expect(filledIn.companyName).toBe('')
-    expect(filledIn.trustAbnNumber).toBe('82653091178')
+    expect(filledIn.trustAbnNumber).toBe('51824753556')
     expect(filledIn.abnNumber).toBe('')
     expect(
       checkIdentity({ ...filledIn, companyName: 'Smith Holdings Pty Ltd' }),
@@ -119,7 +119,7 @@ describe('prefillFromAbr — cancelled ABN', () => {
     const patch = prefillFromAbr(source)
     expect(source.abnStatus).toBe('Cancelled')
     expect(patch.companyName).toBe('Whitlock Civil Contracting Pty Ltd')
-    expect(patch.abnNumber).toBe('30604882439')
+    expect(patch.abnNumber).toBe('17090574431')
     expect(checkIdentity(picked(patch))).toEqual({})
   })
 })
@@ -127,7 +127,7 @@ describe('prefillFromAbr — cancelled ABN', () => {
 describe('resolveEntityType', () => {
   function entity(overrides: Partial<AbrEntityDetails>): AbrEntityDetails {
     return {
-      abn: '53004085616',
+      abn: '86136533741',
       abnStatus: 'Active',
       status: 'active',
       abnStatusEffectiveFrom: '',

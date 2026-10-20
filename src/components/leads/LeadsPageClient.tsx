@@ -180,7 +180,7 @@ export function LeadsPageClient({
           <input
             type="search"
             aria-label="Search leads"
-            placeholder="Search name, email or phone"
+            placeholder="Search name, email, phone or debt"
             value={term}
             onChange={(event) => setTerm(event.target.value)}
             className="h-9 w-full rounded-lg border border-border bg-input-bg pl-9 pr-3 text-sm text-foreground transition-colors placeholder:text-muted focus:border-accent focus:outline-none"

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { OutcomePredictionClient } from '../OutcomePredictionClient'
+import { CreditorsSummaryCard, FinancialPointsPanel, OutcomePredictionClient, exactFraction } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -22,7 +22,13 @@ const AUTO = {
   latestFinancialYear: 2025,
   hasLodgement: true,
   hasFinancials: true,
+  creditorHints: { creditCards: null, cashLoans: null, bankOverdraft: null, tradeSuppliers: null },
+  savedCreditors: null,
 }
+
+const NO_POINTS = { available: false, points: [] }
+
+const READY = { canPredict: true, waitingFor: [], dpn: true, dpnDetail: '1 notice read (PAYG withholding).' }
 
 function saved(overrides: { stale?: boolean; practitionerFeeRate?: number } = {}) {
   return {
@@ -62,6 +68,7 @@ describe('stale saved prediction', () => {
         clientName="Example Trading"
         initialAuto={AUTO}
         initialPrediction={saved({ stale: true, practitionerFeeRate: 0.1 })}
+        readiness={READY} financialPoints={NO_POINTS}
       />,
     )
     expect(screen.getByText('New historical data added — re-run')).toBeTruthy()
@@ -78,7 +85,7 @@ describe('stale saved prediction', () => {
   it('re-runs a saved prediction that is not stale on load, as before', async () => {
     const fetchMock = mockFetch()
     render(
-      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} />,
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={READY} financialPoints={NO_POINTS} />,
     )
     expect(screen.queryByText('New historical data added — re-run')).toBeNull()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
@@ -87,7 +94,7 @@ describe('stale saved prediction', () => {
 
 describe('practitioner fee selector', () => {
   const page = () =>
-    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} />)
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} financialPoints={NO_POINTS} />)
 
   it('defaults to 12.5% and sends the chosen fee', async () => {
     const fetchMock = mockFetch()
@@ -112,5 +119,266 @@ describe('practitioner fee selector', () => {
     await userEvent.click(generate)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(bodyOf(fetchMock).practitionerFeeRate).toBeCloseTo(0.08)
+  })
+})
+
+describe('readiness and the DPN factor', () => {
+  const NOT_READY = {
+    canPredict: false,
+    waitingFor: ['Financial statements: processing'],
+    dpn: true,
+    dpnDetail: '1 notice read (PAYG withholding).',
+  }
+
+  it('shows what it is waiting for, keeps Generate disabled, and does not run a saved prediction', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={saved()} readiness={NOT_READY} financialPoints={NO_POINTS} />,
+    )
+    expect(screen.getByText('Not ready for a prediction yet')).toBeTruthy()
+    expect(screen.getByText('Financial statements: processing')).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows the DPN factor read-only, with where it came from, and never sends it', async () => {
+    const fetchMock = mockFetch()
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={AUTO} initialPrediction={null} readiness={READY} financialPoints={NO_POINTS} />)
+    expect(screen.queryByRole('checkbox', { name: /Director Penalty Notice issued/ })).toBeNull()
+    expect(screen.getByText('1 notice read (PAYG withholding).')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock)).not.toHaveProperty('dpn')
+  })
+})
+
+describe('What the financial statements show', () => {
+  it('gives the framing, then each point', () => {
+    render(
+      <FinancialPointsPanel
+        data={{
+          available: true,
+          points: [{ rule: 'b', text: 'Property, plant & equipment rose from $126,450 (FY2023) to $251,920 (FY2026).' }],
+        }}
+      />,
+    )
+    expect(screen.getByText(/explain the situation but don't change the %/)).toBeTruthy()
+    expect(screen.getByText('Property, plant & equipment rose from $126,450 (FY2023) to $251,920 (FY2026).')).toBeTruthy()
+  })
+
+  it('waits for a verified comparison', () => {
+    render(<FinancialPointsPanel data={{ available: false, points: [] }} />)
+    expect(screen.getByText('Financial points will appear once the financial comparison is verified.')).toBeTruthy()
+  })
+})
+
+describe('Creditors in the SBR', () => {
+  const HINTS = {
+    creditCards: { amount: 4_200, source: 'FY2025 balance sheet', caution: null },
+    cashLoans: {
+      amount: 25_000,
+      source: 'FY2025 balance sheet',
+      caution: 'Includes $25,000 of chattel, hire-purchase, vehicle or equipment finance. Usually secured — check before including',
+    },
+    bankOverdraft: { amount: 0, source: 'FY2025 balance sheet', caution: null },
+    tradeSuppliers: null,
+  }
+  const page = (auto: Record<string, unknown> = {}) =>
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...AUTO, creditorHints: HINTS, ...auto }}
+        initialPrediction={null}
+        readiness={READY}
+        financialPoints={NO_POINTS}
+      />,
+    )
+
+  it('shows balance-sheet hints beside the rows without filling them in', () => {
+    page()
+    expect(screen.getByText(/Balance sheet shows \$4,200 \(FY2025 balance sheet\)/)).toBeTruthy()
+    expect(screen.getByText(/Usually secured/)).toBeTruthy()
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 amount' }) as HTMLInputElement).value).toBe('')
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$250,000')
+  })
+
+  it('adds the rows to the total and sends them with their labels', async () => {
+    const fetchMock = mockFetch()
+    page()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 1 amount' }), '12000')
+    const label = screen.getByRole('textbox', { name: 'Creditor 4 name' })
+    await userEvent.clear(label)
+    await userEvent.type(label, 'Supplier account')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 4 amount' }), '38,000')
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$300,000')
+
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const body = bodyOf(fetchMock)
+    expect(body.creditors).toHaveLength(4)
+    expect(body.creditors[0]).toEqual({ label: 'Credit cards', amount: 12_000, kind: 'creditCards' })
+    // Renamed, the row keeps its kind (and its hint).
+    expect(body.creditors[3]).toEqual({ label: 'Supplier account', amount: 38_000, kind: 'tradeSuppliers' })
+    expect(body.creditors[1]).toEqual({ label: 'Cash loans', amount: null, kind: 'cashLoans' })
+    // The automatic ATO debt is not sent: the server works it out.
+    expect(body).not.toHaveProperty('creditorAmount')
+  })
+
+  it('will not run with an amount that is not a number', async () => {
+    page()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 2 amount' }), 'abc')
+    expect(screen.getByText(/Enter an amount of \$0 or more/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('starts from the rows saved with the last prediction', () => {
+    page({
+      savedCreditors: {
+        atoDebt: 90_000,
+        atoDebtEdited: true,
+        rows: [
+          { label: 'Fuel card', amount: 3_000 },
+          { label: 'Bank overdraft', amount: null, kind: 'bankOverdraft' },
+        ],
+      },
+    })
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Fuel card')
+    expect(screen.getByText('Source: entered by staff')).toBeTruthy()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$93,000')
+    // Two rows saved, two rows shown.
+    expect(screen.queryByRole('textbox', { name: 'Creditor 3 name' })).toBeNull()
+  })
+
+  it('adds a row to name and fill in, and removes rows', async () => {
+    const fetchMock = mockFetch()
+    page()
+    await userEvent.click(screen.getByRole('button', { name: /Add creditor/ }))
+    const name = screen.getByRole('textbox', { name: 'Creditor 5 name' })
+    expect(document.activeElement).toBe(name)
+    await userEvent.type(name, 'Landlord – unpaid rent')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Creditor 5 amount' }), '9500')
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Credit cards' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Bank overdraft' }))
+    expect(screen.queryByRole('textbox', { name: 'Creditor 4 name' })).toBeNull()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$259,500')
+
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).creditors).toEqual([
+      { label: 'Cash loans', amount: null, kind: 'cashLoans' },
+      { label: 'Trade suppliers', amount: null, kind: 'tradeSuppliers' },
+      { label: 'Landlord – unpaid rent', amount: 9_500 },
+    ])
+  })
+
+  it('keeps each hint with its row when rows above it are removed', async () => {
+    page()
+    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Credit cards' }))
+    expect(screen.queryByText(/Balance sheet shows \$4,200/)).toBeNull()
+    // Cash loans is now the first row, still with its own hint.
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Cash loans')
+    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+  })
+
+  it('can remove every row', async () => {
+    page()
+    for (const label of ['Credit cards', 'Cash loans', 'Bank overdraft', 'Trade suppliers']) {
+      await userEvent.click(screen.getByRole('button', { name: `Remove ${label}` }))
+    }
+    expect(screen.queryByRole('textbox', { name: 'Creditor 1 name' })).toBeNull()
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$250,000')
+  })
+})
+
+describe('Creditors in the SBR — in the PDF', () => {
+  it('lists the ATO debt, each row with an amount, and the total', () => {
+    const prediction = {
+      creditorAmount: 150_000,
+      atoDebt: 100_000,
+      creditorDebt: { description: 'ATO account statement, 30 Sep 2026', missing: null, source: 'ica' },
+      creditors: [
+        { label: 'Credit cards', amount: 12_000 },
+        { label: 'Bank overdraft', amount: null },
+        { label: 'Supplier account', amount: 38_000 },
+      ],
+      practitionerFeeRate: 0.125,
+    }
+    render(<CreditorsSummaryCard prediction={prediction as never} />)
+    expect(screen.getByText('Credit cards')).toBeTruthy()
+    expect(screen.getByText('Supplier account')).toBeTruthy()
+    expect(screen.queryByText('Bank overdraft')).toBeNull()
+    expect(screen.getByText('$150,000')).toBeTruthy()
+    expect(screen.getByText(/ATO account statement, 30 Sep 2026/)).toBeTruthy()
+  })
+})
+
+describe('days since last payment', () => {
+  it('says the whole ATO account was searched when there are no payments', () => {
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...AUTO, daysSinceLastPayment: 9999, icaHistory: '1 Jul 2020 – 1 Oct 2026' }}
+        initialPrediction={null}
+        readiness={READY}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    expect(screen.getByText('No payments found in the ATO account (1 Jul 2020 – 1 Oct 2026)')).toBeTruthy()
+  })
+})
+
+describe('calculation steps', () => {
+  it('shows the exact fraction the offer was worked out with, so the steps reconcile', () => {
+    // 42.4125% x $303,827.46 = $128,860.8; / 0.875 = $147,269.5
+    expect(exactFraction(42.4125)).toBe('0.424125')
+    expect(exactFraction(59.3)).toBe('0.593')
+    expect(exactFraction(40)).toBe('0.4')
+  })
+})
+
+describe('director penalty notice not on file', () => {
+  const NOTHING_ON_FILE = { canPredict: true, waitingFor: [], dpn: null, dpnDetail: '' }
+
+  it('lets staff tick it, and sends their answer', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={AUTO}
+        initialPrediction={null}
+        readiness={NOTHING_ON_FILE}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    const box = screen.getByRole('checkbox', { name: 'Director Penalty Notice issued' }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    const button = screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    await userEvent.click(box)
+    await userEvent.click(button)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).dpn).toBe(true)
+  })
+
+  it('sends No when left unticked', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={AUTO}
+        initialPrediction={null}
+        readiness={NOTHING_ON_FILE}
+        financialPoints={NO_POINTS}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).dpn).toBe(false)
   })
 })

@@ -11,6 +11,7 @@ import type {
 } from '@/lib/financials/types'
 import {
   formatCurrentPeriodHeaderDate,
+  formatCurrentPeriodHeaderName,
   formatCurrentPeriodTooltip,
 } from './currentPeriodLabels'
 
@@ -97,6 +98,12 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
           subtitle="Sum of ATO Liability, GST, Superannuation Payable, and PAYG Withholding Payable. The strongest indicator of accumulated tax debt."
         >
           <SingleRowTable row={atoDiffRow} years={years} currentPeriod={cp} />
+          {/* The prediction's points and the SBR creditor figure leave super
+              out (it is owed to super funds), so the two can differ. */}
+          <p className="mt-2 text-xs text-foreground/50">
+            This total includes super payable. The SBR prediction&apos;s ATO-related debt leaves super out, as it is owed
+            to super funds, not the ATO.
+          </p>
         </HighlightBlock>
       )}
 
@@ -159,14 +166,14 @@ function TableHeader({
           >
             <div className="inline-flex flex-col items-end">
               <span className="inline-flex items-center gap-1">
-                Current YTD
+                {formatCurrentPeriodHeaderName(currentPeriod)}
                 <Info
                   className="h-3 w-3 text-foreground/40"
                   aria-label="Partial period — not directly comparable"
                 />
               </span>
               <span className="text-[10px] text-foreground/30">
-                to {formatCurrentPeriodHeaderDate(currentPeriod)}
+                {formatCurrentPeriodHeaderDate(currentPeriod)}
               </span>
             </div>
           </th>

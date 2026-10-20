@@ -2,11 +2,15 @@
 // Import from here everywhere. Never use ad-hoc strings.
 
 // ============================================================
-// Document Categories (6 categories)
+// Document Categories
 // ============================================================
 
 export const DOCUMENT_CATEGORIES = {
+  /** The one upload area for every financial statement (migration 0031). */
+  FINANCIAL_STATEMENTS: 'financial_statements',
+  /** Older: kept for files uploaded before 0031. New uploads use FINANCIAL_STATEMENTS. */
   CURRENT_FINANCIALS: 'current_financials',
+  /** Older: kept for files uploaded before 0031. New uploads use FINANCIAL_STATEMENTS. */
   HISTORICAL_FINANCIALS: 'historical_financials',
   INTEGRATED_CLIENT_ACCOUNT: 'integrated_client_account',
   DIRECTOR_PENALTY_NOTICES: 'director_penalty_notices',
@@ -15,6 +19,27 @@ export const DOCUMENT_CATEGORIES = {
 } as const
 
 export type DocCategory = (typeof DOCUMENT_CATEGORIES)[keyof typeof DOCUMENT_CATEGORIES]
+
+/**
+ * Every category that holds financial statements: the single upload area,
+ * and the two older ones files uploaded before migration 0031 still carry.
+ * The statement headings, not the category, decide each file's year and
+ * whether it is annual or a current period.
+ */
+export const FINANCIAL_STATEMENT_CATEGORIES: readonly DocCategory[] = [
+  DOCUMENT_CATEGORIES.FINANCIAL_STATEMENTS,
+  DOCUMENT_CATEGORIES.HISTORICAL_FINANCIALS,
+  DOCUMENT_CATEGORIES.CURRENT_FINANCIALS,
+]
+
+export function isFinancialStatementCategory(category: string): boolean {
+  return (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(category)
+}
+
+/** The checklist card a document shows under: older financials categories under the one area. */
+export function displayCategory(category: DocCategory): DocCategory {
+  return isFinancialStatementCategory(category) ? DOCUMENT_CATEGORIES.FINANCIAL_STATEMENTS : category
+}
 
 // MIME type constants
 const MIME_PDF = 'application/pdf'
@@ -62,6 +87,15 @@ export interface CategoryMeta {
 }
 
 export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
+  financial_statements: {
+    label: 'Financial Statements (Profit and Loss & Balance Sheet)',
+    description:
+      "The Company's Profit and Loss and Balance Sheet for the last 4 financial years (accountant prepared), and for the current period to date (draft is acceptable). Upload them all here, as combined PDFs or the two statements as separate PDFs. Each file is sorted by the dates in its headings.",
+    acceptedFormats: [MIME_PDF],
+    formatLabel: 'PDF only',
+    isOptional: false,
+    multipleFiles: true,
+  },
   current_financials: {
     label: 'Current Period Profit and Loss & Balance Sheet',
     description:
@@ -119,18 +153,17 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
 
 // Display order for checklist
 export const CHECKLIST_ORDER: DocCategory[] = [
-  DOCUMENT_CATEGORIES.CURRENT_FINANCIALS,
-  DOCUMENT_CATEGORIES.HISTORICAL_FINANCIALS,
+  DOCUMENT_CATEGORIES.FINANCIAL_STATEMENTS,
   DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT,
   DOCUMENT_CATEGORIES.DIRECTOR_PENALTY_NOTICES,
   DOCUMENT_CATEGORIES.TRUST_DEED,
   DOCUMENT_CATEGORIES.COMPANY_LICENCES,
 ]
 
-// Categories that MUST have files for "complete" status
+// Categories that MUST have files for "complete" status. A file in either
+// older financials category counts for FINANCIAL_STATEMENTS (displayCategory).
 export const REQUIRED_CATEGORIES: DocCategory[] = [
-  DOCUMENT_CATEGORIES.CURRENT_FINANCIALS,
-  DOCUMENT_CATEGORIES.HISTORICAL_FINANCIALS,
+  DOCUMENT_CATEGORIES.FINANCIAL_STATEMENTS,
   DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT,
 ]
 

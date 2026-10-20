@@ -10,12 +10,14 @@
  *
  * Must only be imported from API routes.
  */
+import { BANNED_WORDS_INSTRUCTION, bannedWordsIn, withoutBannedSentences } from './wording'
 import {
   OPENROUTER_NARRATIVE_MODEL,
   FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE,
 } from './prompts'
 import { getOpenRouterClient } from './openrouterClient'
 import { summaryWithoutFigures, unsupportedFigures } from './summaryFigures'
+import { currentPeriodLabel, currentPeriodName, shortDate } from '@/lib/financials/periodLabels'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 function formatNum(value: number | null | undefined): string {
@@ -39,7 +41,10 @@ function buildCurrentPeriodPromptSection(comparison: FinancialsComparison): stri
   const netProfit = comparison.headlines.netProfit.currentPeriodValue ?? null
   const directorLoans = comparison.headlines.directorLoansReceivable.currentPeriodValue ?? null
 
-  return `\n\nA current partial period (${cp.periodLabel}) is also available for this client.\nCurrent period figures:\n - Revenue YTD: $${formatNum(revenue)}\n - Net profit YTD: $${formatNum(netProfit)}\n - ATO debt at period end: $${formatNum(cp.atoLiabilityTotal)}\n - Director loans receivable at period end: $${formatNum(directorLoans)}\n\nIf material, mention briefly how the current period is tracking vs FY${comparison.years[comparison.years.length - 1] ?? ''} — but flag explicitly that this is a partial period not a full year. Do NOT include current-period figures in your year-over-year growth statements. Keep the rest of your narrative focused on the four-year annual trajectory.`
+  // Named as everywhere else (periodLabels.ts): "FY2027 to date (1 Jul – 15 Oct 2026)".
+  const label = currentPeriodLabel(cp)
+  const at = shortDate(cp.periodEndDate)
+  return `\n\nA current partial period, ${label}, is also available for this client. Call it "${label}" if you mention it.\nFigures for ${currentPeriodName(cp)}:\n - Revenue: $${formatNum(revenue)}\n - Net profit: $${formatNum(netProfit)}\n - ATO debt at ${at}: $${formatNum(cp.atoLiabilityTotal)}\n - Director loans receivable at ${at}: $${formatNum(directorLoans)}\n\nIf material, mention briefly how the current period is tracking vs FY${comparison.years[comparison.years.length - 1] ?? ''} — but flag explicitly that this is a partial period not a full year. Do NOT include current-period figures in your year-over-year growth statements. Keep the rest of your narrative focused on the four-year annual trajectory.`
 }
 
 function buildYearByYearTable(comparison: FinancialsComparison): string {
@@ -90,6 +95,7 @@ export async function generateFinancialsComparisonSummary(input: {
 
   const prompt =
     FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE
+      .replaceAll('{bannedWordsInstruction}', BANNED_WORDS_INSTRUCTION)
       .replaceAll('{yearByYearTable}', buildYearByYearTable(comparison))
       .replaceAll(
         '{atoDebtPctRevenueLatest}',
@@ -128,12 +134,19 @@ export async function generateFinancialsComparisonSummary(input: {
 
   const first = await ask(prompt)
   const stray = unsupportedFigures(first.text, comparison)
-  if (stray.length === 0) return first
+  const banned = bannedWordsIn(first.text)
+  if (stray.length === 0 && banned.length === 0) return first
 
-  const second = await ask(
-    `${prompt}\n\nYour previous summary stated ${stray.join(', ')}, which ${stray.length === 1 ? 'is' : 'are'} not in the figures above or the difference between two of them. Write it again using only those figures.`,
-  )
-  if (unsupportedFigures(second.text, comparison).length === 0) return second
-
-  return { text: summaryWithoutFigures(comparison), model: `${second.model} (figures withheld)` }
+  const problems = [
+    stray.length
+      ? `stated ${stray.join(', ')}, which ${stray.length === 1 ? 'is' : 'are'} not in the figures above or the difference between two of them`
+      : null,
+    banned.length ? `used ${banned.map((w) => `"${w}"`).join(', ')}, which you must never use` : null,
+  ].filter(Boolean)
+  const second = await ask(`${prompt}\n\nYour previous summary ${problems.join(', and ')}. Write it again using only those figures.`)
+  if (unsupportedFigures(second.text, comparison).length > 0) {
+    return { text: summaryWithoutFigures(comparison), model: `${second.model} (figures withheld)` }
+  }
+  // Still a banned word: those sentences are taken out.
+  return bannedWordsIn(second.text).length === 0 ? second : { ...second, text: withoutBannedSentences(second.text) }
 }

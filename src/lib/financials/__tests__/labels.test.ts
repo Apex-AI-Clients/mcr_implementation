@@ -77,7 +77,7 @@ describe('classifyLoan', () => {
   const DIRECTORS = ['Anh Bao Citizen']
 
   it.each([
-    // PARKCON-style vehicle and equipment finance.
+    // Vehicle and equipment finance, as one template prints it.
     ['Loan - VW', 'lender_asset'],
     ['Loan - Hino Truck', 'lender_asset'],
     ['Loan - Mini Excavator', 'lender_asset'],
@@ -130,5 +130,31 @@ describe('label tests', () => {
     expect(isPriorYearLossLabel('Less Prior Year Loss')).toBe(true)
     expect(isPriorYearLossLabel('Profit after prior year losses')).toBe(true)
     expect(isPriorYearLossLabel('Net Profit')).toBe(false)
+  })
+})
+
+describe('related-party loans and property, plant & equipment (client-c shapes, synthetic labels)', () => {
+  it.each([
+    'Loan - Associates',
+    'Loan Associate',
+    'Related Party Loan',
+    'Loans from related parties',
+    'Loan - Beneficiary',
+    'Unitholder Loans',
+  ])('treats "%s" as owed to a director or related party', (label) => {
+    expect(classifyLoan(label)).toBe('director')
+  })
+
+  it('still treats a lender as a lender, and an unnamed loan as unconfirmed', () => {
+    expect(classifyLoan('Loan - Westpac')).toBe('lender')
+    expect(classifyLoan('Loan - Smith')).toBe('unconfirmed')
+  })
+
+  it.each([
+    'Property, Plant and Equipment',
+    'Less Accumulated Depreciation On Property, Plant and Equipment',
+    'Less accumulated depreciation of plant and equipment',
+  ])('maps "%s" to property, plant & equipment', (label) => {
+    expect(dictionaryKey(label, 'nonCurrentAssets')).toBe('nonCurrentAssets.propertyPlantEquipment')
   })
 })

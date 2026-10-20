@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildCoverage } from '../coverage'
+import { latestBalanceSheet, mergeCurrentPeriod, supersededCurrentPeriodYears } from '../statementSelection'
 import type {
   ExtractedBalanceSheet,
   ExtractedIncomeStatement,
@@ -74,16 +75,41 @@ describe('buildCoverage', () => {
   it('adds the current period as its own column', () => {
     const coverage = buildCoverage([
       slot(2025, 'primary', { is: 'a', bs: 'a' }),
-      slot(2026, 'current_period', { is: 'cp-pnl' }, { periodLabel: '1 July 2025 to 4 May 2026' }),
+      slot(2026, 'current_period', { is: 'cp-pnl' }, { periodLabel: '1 July 2025 to 4 May 2026', periodEndDate: '2026-05-04' }),
     ])
     const last = coverage.columns[coverage.columns.length - 1]
-    expect(last).toMatchObject({ kind: 'current_period', label: 'Current period', periodLabel: '1 July 2025 to 4 May 2026' })
+    expect(last).toMatchObject({ kind: 'current_period', label: 'FY2026 to date', periodLabel: '1 Jul 2025 – 4 May 2026' })
     expect(coverage.rows.income_statement.at(-1)?.status).toBe('own')
     expect(coverage.rows.balance_sheet.at(-1)?.status).toBe('missing')
   })
 
   it('is empty with nothing stored', () => {
-    expect(buildCoverage([])).toEqual({ columns: [], rows: { income_statement: [], balance_sheet: [] } })
+    expect(buildCoverage([])).toEqual({ columns: [], rows: { income_statement: [], balance_sheet: [] }, comparedYears: [] })
+  })
+
+  it('adds the full years between the newest annual statement and the current period as missing', () => {
+    // FY2022–FY2025 annual, then FY2027 to date: FY2026, the latest full year, was never uploaded.
+    const coverage = buildCoverage([
+      ...[2022, 2023, 2024, 2025].map((y) => slot(y, 'primary', { is: `d${y}`, bs: `d${y}` })),
+      slot(2027, 'current_period', { is: 'cp', bs: 'cp' }, { periodEndDate: '2026-10-15', periodStartDate: '2026-07-01' }),
+    ])
+    expect(statuses(coverage)).toEqual({
+      columns: ['FY2022', 'FY2023', 'FY2024', 'FY2025', 'FY2026', 'FY2027 to date'],
+      pnl: ['own', 'own', 'own', 'own', 'missing', 'own'],
+      bs: ['own', 'own', 'own', 'own', 'missing', 'own'],
+    })
+    expect(coverage.columns[4]).toMatchObject({ notUploaded: true, note: 'Year ended 30 June 2026 not uploaded' })
+    expect(coverage.columns[5].periodLabel).toBe('1 Jul – 15 Oct 2026')
+    // The comparison still uses the latest four annual years on file.
+    expect(coverage.comparedYears).toEqual([2022, 2023, 2024, 2025])
+  })
+
+  it('adds no missing year when the current period follows the newest annual year', () => {
+    const coverage = buildCoverage([
+      slot(2025, 'primary', { is: 'a', bs: 'a' }),
+      slot(2026, 'current_period', { is: 'cp', bs: 'cp' }, { periodEndDate: '2025-10-15' }),
+    ])
+    expect(coverage.columns.some((c) => c.notUploaded)).toBe(false)
   })
 })
 
@@ -106,5 +132,44 @@ describe('failed extraction', () => {
     const last = coverage.columns.length - 1
     expect(coverage.rows.balance_sheet[last].status).toBe('own')
     expect(coverage.rows.balance_sheet[0].status).toBe('missing')
+  })
+})
+
+describe('one upload area: years, the current period, and superseded files', () => {
+  it("sorts Gabby's example: FY2023–FY2026 compared, FY2022 older, FY2027 to date current", () => {
+    const coverage = buildCoverage([
+      ...[2022, 2023, 2024, 2025, 2026].map((y) => slot(y, 'primary', { is: `fy${y}`, bs: `fy${y}` })),
+      slot(2027, 'current_period', { is: 'cp27', bs: 'cp27' }, { periodLabel: '1 July 2026 to 30 September 2026' }),
+    ])
+    expect(statuses(coverage).columns).toEqual(['FY2022*', 'FY2023', 'FY2024', 'FY2025', 'FY2026', 'FY2027 to date'])
+    expect(coverage.columns.at(-1)).toMatchObject({ financialYear: 2027, kind: 'current_period' })
+  })
+
+  it('does not use a current period for a year that already has its annual statement', () => {
+    const coverage = buildCoverage([
+      slot(2026, 'primary', { is: 'fy26', bs: 'fy26' }),
+      slot(2026, 'current_period', { is: 'cp26', bs: 'cp26' }),
+    ])
+    expect(coverage.columns.map((c) => c.kind)).not.toContain('current_period')
+    expect(supersededCurrentPeriodYears([slot(2026, 'primary', { is: 'a' }), slot(2026, 'current_period', { is: 'b' })])).toEqual(
+      new Set([2026]),
+    )
+  })
+
+  it('falls back to an earlier current period only if that one is not superseded too', () => {
+    const current = mergeCurrentPeriod([
+      slot(2026, 'primary', { is: 'fy26', bs: 'fy26' }),
+      slot(2026, 'current_period', { is: 'cp26' }),
+      slot(2027, 'current_period', { is: 'cp27' }),
+    ])
+    expect(current?.statement.financialYear).toBe(2027)
+  })
+
+  it('never takes the latest balance sheet from a superseded current period', () => {
+    const slots = [
+      slot(2025, 'primary', { bs: 'fy25' }),
+      slot(2025, 'current_period', { bs: 'cp25' }),
+    ]
+    expect(latestBalanceSheet(slots, { preferCurrentPeriod: true })?.slot.sourceColumn).toBe('primary')
   })
 })

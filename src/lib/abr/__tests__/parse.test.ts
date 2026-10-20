@@ -19,7 +19,7 @@ describe('parseMatchingNames', () => {
     const { matches } = parseMatchingNames(fixture('matching_names_multi'))
     expect(matches).toHaveLength(4)
     expect(matches[0]).toEqual({
-      abn: '53004085616',
+      abn: '86136533741',
       entityName: 'WHITLOCK CIVIL PTY LTD',
       abnStatus: '0000000001',
       status: 'active',
@@ -50,7 +50,7 @@ describe('parseMatchingNames', () => {
     // A genuinely obscure company whose best match only scores 80 still gets
     // its neighbours — the cut is relative, never a fixed floor.
     const body =
-      'callback({"Message":"","Names":[{"Abn":"53004085616","Name":"A","Score":80},' +
+      'callback({"Message":"","Names":[{"Abn":"86136533741","Name":"A","Score":80},' +
       '{"Abn":"29127500033","Name":"B","Score":74}]})'
     expect(parseMatchingNames(body).matches).toHaveLength(2)
   })
@@ -64,7 +64,7 @@ describe('parseMatchingNames', () => {
     // Staff need to see it in the list — that is the whole point of showing
     // status on the row.
     const { matches } = parseMatchingNames(fixture('matching_names_multi'))
-    const cancelled = matches.find((m) => m.abn === '30604882439')
+    const cancelled = matches.find((m) => m.abn === '17090574431')
     expect(cancelled?.status).toBe('cancelled')
   })
 
@@ -95,7 +95,7 @@ describe('parseMatchingNames', () => {
   })
 
   it('skips rows carrying neither an ABN nor a name', () => {
-    const body = 'callback({"Message":"","Names":[{"Score":10},{"Abn":"53004085616","Name":"X"}]})'
+    const body = 'callback({"Message":"","Names":[{"Score":10},{"Abn":"86136533741","Name":"X"}]})'
     expect(parseMatchingNames(body).matches).toHaveLength(1)
   })
 
@@ -108,11 +108,11 @@ describe('parseAbnDetails', () => {
   it('reads an active company', () => {
     const details = parseAbnDetails(fixture('abn_details_company'))
     expect(details).toEqual({
-      abn: '53004085616',
+      abn: '86136533741',
       abnStatus: 'Active',
       status: 'active',
       abnStatusEffectiveFrom: '1999-11-01',
-      acn: '004085616',
+      acn: '136533741',
       entityName: 'WHITLOCK  CIVIL PTY LTD',
       entityTypeCode: 'PRV',
       entityTypeName: 'Australian Private Company',
@@ -139,10 +139,10 @@ describe('parseAbnDetails', () => {
   })
 
   it('strips whatever spacing the register puts in its own numbers', () => {
-    const body = 'callback({"Abn":"53 004 085 616","Acn":"004 085 616"})'
+    const body = 'callback({"Abn":"86 136 533 741","Acn":"136 533 741"})'
     const details = parseAbnDetails(body)
-    expect(details?.abn).toBe('53004085616')
-    expect(details?.acn).toBe('004085616')
+    expect(details?.abn).toBe('86136533741')
+    expect(details?.acn).toBe('136533741')
   })
 
   it('throws on a body that is not JSON at all', () => {

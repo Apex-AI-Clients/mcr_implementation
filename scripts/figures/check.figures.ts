@@ -14,6 +14,8 @@ import {
   readJson,
   snapshotAliases,
   writeJson,
+  noticeTotals,
+  TOLERANCE_DOLLARS,
   type Figures,
   type LodgementFigures,
   type Snapshot,
@@ -39,7 +41,15 @@ import {
  * filename or a free-text label.
  */
 
-type Expected = Figures & { prediction?: { atoDebt?: number; asOf?: string }; lodgement?: LodgementFigures }
+/** A notice type's company totals, columns 2–5 in dollars (dpn/summary.ts, current notices, de-duplicated). */
+type NoticeColumns = [number, number, number, number]
+
+type Expected = Figures & {
+  notes?: string[]
+  prediction?: { atoDebt?: number; asOf?: string }
+  lodgement?: LodgementFigures
+  dpnNotices?: Partial<Record<'paygw' | 'gst' | 'sgc', NoticeColumns>>
+}
 
 const OTHER_SCOPE: LateLodgementScope = LATE_LODGEMENT_SCOPE === 'originals_only' ? 'originals_and_amendments' : 'originals_only'
 
@@ -54,7 +64,9 @@ it('compares a fresh comparison with the verified figures', () => {
   for (const alias of aliases) {
     const snapshot = readJson<Snapshot>(`${alias}.snapshot.json`)
     const expectedFile = readJson<Expected>(`${alias}.expected.json`)
-    const { prediction, lodgement: expectedLodgement, ...expected } = expectedFile ?? {}
+    const { prediction, lodgement: expectedLodgement, dpnNotices: expectedNotices, ...rest } = expectedFile ?? {}
+    // Free-text notes about the figures are for the reader, not compared.
+    const expected = Object.fromEntries(Object.entries(rest).filter(([k]) => k !== 'notes')) as Figures
     const differences: string[] = []
     out('')
     out(`── ${alias} (${snapshot ? `snapshot ${snapshot.takenAt.slice(0, 10)}` : 'ATO account CSV only'}) ──`)
@@ -92,7 +104,10 @@ it('compares a fresh comparison with the verified figures', () => {
         continue
       }
       for (const d of compare(expected as Figures, actual)) differences.push(describeDifference(d))
-      out(`  financials: ${Object.values(expected as Figures).reduce((n, p) => n + Object.keys(p).length, 0)} verified figures checked`)
+      const compared = Object.entries(expected as Figures).filter(([period]) => period in actual)
+      const outside = Object.keys(expected).filter((period) => !(period in actual))
+      out(`  financials: ${compared.reduce((n, [, p]) => n + Object.keys(p).length, 0)} verified figures checked (±$${TOLERANCE_DOLLARS})`)
+      if (outside.length) out(`  not compared (outside the comparison's years): ${outside.sort().join(', ')}`)
 
       const debt = predictionDebt(snapshot)
       if (prediction) {
@@ -120,6 +135,19 @@ it('compares a fresh comparison with the verified figures', () => {
       else out('  lodgement: not verified yet (add a "lodgement" key to the expected file)')
     } else if (expectedLodgement) {
       differences.push('lodgement  no ATO account rows for this client')
+    }
+
+    // Director penalty notices: the stored notices' company totals by type.
+    if (snapshot?.dpn && snapshot.dpn.noticeRows.length > 0) {
+      const totals = noticeTotals(snapshot)
+      out(`  dpn notices: ${Object.entries(totals).map(([type, cols]) => `${type} ${cols.join(' / ')}`).join(' | ') || 'none with figures'}`)
+      for (const [type, want] of Object.entries(expectedNotices ?? {})) {
+        const got = totals[type]
+        const same = got && want.every((v, i) => Math.abs(v - got[i]) < 0.005)
+        if (!same) differences.push(`dpn notices  ${type}: verified ${want.join(' / ')}, now ${got ? got.join(' / ') : 'missing'}`)
+      }
+    } else if (expectedNotices) {
+      differences.push('dpn notices  none in the snapshot (re-run figures:snapshot)')
     }
 
     if (differences.length === 0) {

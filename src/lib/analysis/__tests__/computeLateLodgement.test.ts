@@ -42,85 +42,85 @@ function cleaned(lateLodgementDays: number): number {
   return Math.max(lateLodgementDays, 0)
 }
 
-describe('computeLateLodgement — sign convention sanity checks (PARKCON dataset values)', () => {
+describe('computeLateLodgement — sign convention sanity checks (synthetic dataset values)', () => {
   it('early lodgement returns negative days', () => {
     expect(
       lateDays(
-        '2026-02-26',
+        '2026-02-24',
         '2026-03-03',
         'Original Activity Statement for the period ending 31 Dec 25',
       ),
-    ).toBe(-5)
+    ).toBe(-7)
   })
 
   it('early lodgement returns negative days (2)', () => {
     expect(
       lateDays(
-        '2025-08-21',
+        '2025-08-19',
         '2025-08-25',
         'Original Activity Statement for the period ending 30 Jun 25',
       ),
-    ).toBe(-4)
+    ).toBe(-6)
   })
 
   it('late ClientAmended returns positive days', () => {
     expect(
       lateDays(
-        '2024-12-11',
+        '2024-12-02',
         '2023-08-25',
         'Client initiated amended Activity Statement for the period ending 30 Jun 23',
       ),
-    ).toBe(474)
+    ).toBe(465)
   })
 
   it('late ClientAmended returns positive days (2)', () => {
     expect(
       lateDays(
-        '2022-11-17',
+        '2022-11-10',
         '2022-08-25',
         'Client initiated amended Activity Statement for the period ending 30 Jun 22',
       ),
-    ).toBe(84)
+    ).toBe(77)
   })
 
   it('late Original returns positive days', () => {
     expect(
       lateDays(
-        '2021-03-26',
+        '2021-03-19',
         '2021-03-02',
         'Original Activity Statement for the period ending 31 Dec 20',
       ),
-    ).toBe(24)
+    ).toBe(17)
   })
 
   it('late ClientAmended spanning multiple years returns positive days', () => {
     expect(
       lateDays(
-        '2020-03-11',
+        '2020-03-02',
         '2018-11-26',
         'Client initiated amended Activity Statement for the period ending 30 Sep 18',
       ),
-    ).toBe(471)
+    ).toBe(462)
   })
 })
 
 describe('computeLateLodgement — sub-lines and non-lodgement types always return zero', () => {
   it('- GST returns 0', () => {
-    expect(lateDays('2024-12-11', '2023-08-25', '- GST')).toBe(0)
+    expect(lateDays('2024-12-02', '2023-08-25', '- GST')).toBe(0)
   })
 
   it('- PAYG Withholding returns 0', () => {
-    expect(lateDays('2024-12-11', '2023-08-25', '- PAYG Withholding')).toBe(0)
+    expect(lateDays('2024-12-02', '2023-08-25', '- PAYG Withholding')).toBe(0)
   })
 
   it('Payment received returns 0', () => {
-    expect(lateDays('2024-12-11', '2023-08-25', 'Payment received')).toBe(0)
+    expect(lateDays('2024-12-02', '2023-08-25', 'Payment received')).toBe(0)
   })
 
   it('General interest charge returns 0', () => {
     expect(
       lateDays(
-        '2024-12-11',
+        '2024-12-02',
         '2023-08-25',
         'General interest charge calculated from 01 Aug 25 to 31 Aug 25',
       ),
@@ -130,7 +130,7 @@ describe('computeLateLodgement — sub-lines and non-lodgement types always retu
   it('ATOAmended returns 0', () => {
     expect(
       lateDays(
-        '2024-12-11',
+        '2024-12-02',
         '2023-08-25',
         'ATO initiated amended Activity Statement for the period ending 30 Jun 24',
       ),
@@ -141,19 +141,19 @@ describe('computeLateLodgement — sub-lines and non-lodgement types always retu
 describe('computeLateLodgement — cleaned = max(value, 0)', () => {
   it('cleans negative to 0', () => expect(cleaned(-14)).toBe(0))
   it('leaves 0 as 0', () => expect(cleaned(0)).toBe(0))
-  it('leaves positive as-is', () => expect(cleaned(474)).toBe(474))
+  it('leaves positive as-is', () => expect(cleaned(465)).toBe(465))
 
   it('lateLodgeDaysCleaned is zero for early lodgement', () => {
     const result = computeLateLodgement(
       makeCsv([
         makeRow(
-          '2026-02-26',
+          '2026-02-24',
           '2026-03-03',
           'Original Activity Statement for the period ending 31 Dec 25',
         ),
       ]),
     )
-    expect(result.rows[0].lateLodgementDays).toBe(-5)
+    expect(result.rows[0].lateLodgementDays).toBe(-7)
     expect(result.rows[0].lateLodgeDaysCleaned).toBe(0)
   })
 })
@@ -174,7 +174,7 @@ describe('computeLateLodgement — defensive: missing date', () => {
   it('adds warning and returns 0 when effectiveDate is null on a lodgement row', () => {
     const result = computeLateLodgement(
       makeCsv([
-        makeRow('2024-12-11', null, 'Client initiated amended Activity Statement for the period ending 30 Jun 23'),
+        makeRow('2024-12-02', null, 'Client initiated amended Activity Statement for the period ending 30 Jun 23'),
       ]),
     )
     expect(result.warnings).toHaveLength(1)
@@ -194,26 +194,26 @@ describe('computeLateLodgement — summary statistics', () => {
   it('counts only rows with lateLodgeDaysCleaned > 0', () => {
     const result = computeLateLodgement(
       makeCsv([
-        makeRow('2024-12-11', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
-        makeRow('2026-02-26', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
-        makeRow('2021-03-26', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
+        makeRow('2024-12-02', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
+        makeRow('2026-02-24', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
+        makeRow('2021-03-19', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
       ]),
       'originals_and_amendments',
     )
     expect(result.summary.numberOfLateLodgements).toBe(2)
-    expect(result.summary.cumulativeDaysLate).toBe(474 + 24)
+    expect(result.summary.cumulativeDaysLate).toBe(465 + 17)
   })
 
   it('counts original statements only under the default setting (amendments are corrections)', () => {
     const result = computeLateLodgement(
       makeCsv([
-        makeRow('2024-12-11', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
-        makeRow('2026-02-26', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
-        makeRow('2021-03-26', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
+        makeRow('2024-12-02', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
+        makeRow('2026-02-24', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
+        makeRow('2021-03-19', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
       ]),
     )
     expect(result.summary.numberOfLateLodgements).toBe(1)
-    expect(result.summary.cumulativeDaysLate).toBe(24)
+    expect(result.summary.cumulativeDaysLate).toBe(17)
   })
 })
 
@@ -225,27 +225,27 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     )
     const parsed = parseActivityStatementCsv(csvText)
     const result = computeLateLodgement(parsed, 'originals_and_amendments')
-    // Under the default (originals only), just the original: 1 lodgement, 24 days.
-    expect(computeLateLodgement(parsed).summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 24 })
+    // Under the default (originals only), just the original: 1 lodgement, 17 days.
+    expect(computeLateLodgement(parsed).summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 17 })
 
     // 4 lodgement rows are late in the sample fixture when amendments count:
-    // ClientAmended 30 Jun 23: 474 days
-    // ClientAmended 30 Jun 22: 84 days
-    // Original 31 Dec 20: 24 days
-    // ClientAmended 30 Sep 18: 471 days
+    // ClientAmended 30 Jun 23: 465 days
+    // ClientAmended 30 Jun 22: 77 days
+    // Original 31 Dec 20: 17 days
+    // ClientAmended 30 Sep 18: 462 days
     expect(result.summary.numberOfLateLodgements).toBe(4)
-    expect(result.summary.cumulativeDaysLate).toBe(474 + 84 + 24 + 471)
+    expect(result.summary.cumulativeDaysLate).toBe(465 + 77 + 17 + 462)
 
-    // DPN: pooled-credit netting (19 May 2026 methodology).
-    //   gross = sum of debits among late Original/ClientAmended rows
-    //   paid  = sum of credits among the same rows (cash Payments are NOT counted)
-    //   net   = max(0, gross - paid)
+    // DPN estimate: same-period netting (18 Oct 2026).
+    //   gross   = sum of debits among late Original/ClientAmended rows
+    //   reduced = each period's net downward amendments, that period only
+    //   net     = gross - reduced (cash Payments are NOT counted)
     // Late debits: ClientAmended 30 Jun 23 ($2000) + ClientAmended 30 Sep 18 ($1100) = $3100
     // Late credits in fixture: none (no credit-only ClientAmended >90 days)
     // The 10 Jun 2023 $3500 is a Payment row → ignored.
     expect(result.dpnRisk.contributingDebits).toHaveLength(2)
     expect(result.dpnRisk.totalGrossLate).toBe(3100)
-    expect(result.dpnRisk.totalPaidSince).toBe(0)
+    expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
     expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
 
     // Debt breakdown (new field names)
@@ -265,15 +265,15 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     // …but the balance owing is the ATO's own printed balance on the newest row.
     expect(result.debtBreakdown.currentBalance).toBe(1234.56)
     expect(result.debtBreakdown.atoBalance).toBe(1234.56)
-    expect(result.debtBreakdown.atoBalanceDate).toBe('2026-02-26')
+    expect(result.debtBreakdown.atoBalanceDate).toBe('2026-02-24')
     expect(result.debtBreakdown.unexplainedDifference).toBeCloseTo(1234.56 - (6571.56 + 45 - 3500), 1)
   })
 })
 
-describe('computeLateLodgement — integration with PARKCON fixture CSV', () => {
-  it('produces the exact PARKCON reference figures', () => {
+describe('computeLateLodgement — integration with the company fixture CSV', () => {
+  it('produces the exact reference figures for the synthetic company account', () => {
     const csvText = readFileSync(
-      join(__dirname, 'fixtures', 'parkcon_activity_statement.csv'),
+      join(__dirname, 'fixtures', 'sample_company_activity_statement.csv'),
       'utf-8',
     )
     const parsed = parseActivityStatementCsv(csvText)
@@ -281,34 +281,34 @@ describe('computeLateLodgement — integration with PARKCON fixture CSV', () => 
     const result = computeLateLodgement(parsed, 'originals_and_amendments')
 
     // Under the default (originals only): this fixture's three late originals
-    // (178 + 24 + 89 days). The fixture is a cut-down file; the full statement
-    // is checked by `npm run figures:check` (client-b).
+    // (171 + 17 + 83 days).
     const originalsOnly = computeLateLodgement(parsed)
-    expect(originalsOnly.summary).toEqual({ numberOfLateLodgements: 3, cumulativeDaysLate: 178 + 24 + 89 })
-    expect(originalsOnly.dpnRisk.totalGrossLate).toBe(9408)
+    expect(originalsOnly.summary).toEqual({ numberOfLateLodgements: 3, cumulativeDaysLate: 171 + 17 + 83 })
+    expect(originalsOnly.dpnRisk.totalGrossLate).toBe(7250)
 
-    // 6 late lodgements when amendments count: 178 + 471 + 24 + 84 + 89 + 474 = 1320 days
+    // 6 late lodgements when amendments count: 171 + 462 + 17 + 77 + 83 + 465 = 1275 days
     expect(result.summary.numberOfLateLodgements).toBe(6)
-    expect(result.summary.cumulativeDaysLate).toBe(1320)
+    expect(result.summary.cumulativeDaysLate).toBe(1275)
 
-    // DPN methodology (19 May 2026): pooled-credit netting.
-    //   Late debits:  Row 0 Original 178d $9,408 → only contributing debit
-    //   Late credits: Row 3 ClientAmended 471d credit $4,144
-    //                 Row 10 ClientAmended 474d credit $4,390
-    //                 Pool total = $8,534
-    //   Cash payments $200,000 + $162,335 are ignored — the ATO applies
+    // DPN estimate (18 Oct 2026): same-period netting.
+    //   Late debit:   Row 0 Original 171d $7,250 → the only contributing debit
+    //   Late credits: Row 3 ClientAmended 462d credit $3,615 and
+    //                 Row 10 ClientAmended 465d credit $2,895 are for OTHER
+    //                 periods, so they reduce nothing here. (The old pooled
+    //                 method took $6,510 off this debit.)
+    //   Cash payments $150,000 + $121,550 are ignored — the ATO applies
     //   payments to the oldest debt first and we can't prove they hit the
     //   DPN-qualifying row, so the conservative position is not to credit them.
     expect(result.dpnRisk.contributingDebits).toHaveLength(1)
-    expect(result.dpnRisk.totalGrossLate).toBe(9408)
-    expect(result.dpnRisk.totalPaidSince).toBe(8534)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(874)
+    expect(result.dpnRisk.totalGrossLate).toBe(7250)
+    expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(7250)
 
     const debit = result.dpnRisk.contributingDebits[0]
-    expect(debit.debit).toBe(9408)
-    expect(debit.daysLate).toBe(178)
-    expect(debit.paymentsSinceLodged).toBe(8534)
-    expect(debit.netAtRisk).toBe(874)
+    expect(debit.debit).toBe(7250)
+    expect(debit.daysLate).toBe(171)
+    expect(debit.reducedByAmendments).toBe(0)
+    expect(debit.netAtRisk).toBe(7250)
 
     // Period spans full CSV range
     expect(result.dpnRisk.periodStart).not.toBeNull()
@@ -317,23 +317,25 @@ describe('computeLateLodgement — integration with PARKCON fixture CSV', () => 
     expect(new Date(result.dpnRisk.periodEnd!).getFullYear()).toBe(2026)
 
     // Debt breakdown
-    // principalDebits: $9408 + $200000 + $184412 + $7500 + $6200 + $8900 = $416,420
-    // principalCredits: $15862 + $4144 + $4390 = $24,396
-    // interestDebits: $30000 + $37494 = $67,494
-    // interestCredits: $3047 (remission)
-    // paymentsReceived: $200000 + $162335 = $362,335
-    // otherCredits: $32999 (credit transfer)
-    expect(result.debtBreakdown.principalDebits).toBe(416420)
-    expect(result.debtBreakdown.principalCredits).toBe(24396)
-    expect(result.debtBreakdown.principalNet).toBe(392024)
-    expect(result.debtBreakdown.interestDebits).toBe(67494)
-    expect(result.debtBreakdown.interestCredits).toBe(3047)
-    expect(result.debtBreakdown.interestNet).toBe(64447)
-    expect(result.debtBreakdown.paymentsReceived).toBe(362335)
+    // principalDebits: $7250 + $152300 + $141760 + $6840 + $5330 + $7610 = $321,090
+    // principalCredits: $12480 + $3615 + $2895 = $18,990
+    // interestDebits: $24180 + $29860 = $54,040
+    // interestCredits: $2415 (remission)
+    // paymentsReceived: $150000 + $121550 = $271,550
+    // otherCredits: $26740 (credit transfer)
+    expect(result.debtBreakdown.principalDebits).toBe(321090)
+    expect(result.debtBreakdown.principalCredits).toBe(18990)
+    expect(result.debtBreakdown.principalNet).toBe(302100)
+    expect(result.debtBreakdown.interestDebits).toBe(54040)
+    expect(result.debtBreakdown.interestCredits).toBe(2415)
+    expect(result.debtBreakdown.interestNet).toBe(51625)
+    expect(result.debtBreakdown.paymentsReceived).toBe(271550)
     expect(result.debtBreakdown.governmentCredits).toBe(0)
-    expect(result.debtBreakdown.otherCredits).toBe(32999)
-    expect(result.debtBreakdown.totalAtoDebt).toBe(392024 + 64447)
-    expect(result.debtBreakdown.currentBalance).toBe(392024 + 64447 - 362335 - 32999)
+    expect(result.debtBreakdown.otherCredits).toBe(26740)
+    expect(result.debtBreakdown.totalAtoDebt).toBe(302100 + 51625)
+    expect(result.debtBreakdown.currentBalance).toBe(302100 + 51625 - 271550 - 26740)
+    // The printed running balance on the newest row agrees.
+    expect(result.debtBreakdown.currentBalance).toBe(55435)
   })
 })
 

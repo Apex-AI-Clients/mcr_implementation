@@ -35,6 +35,7 @@ const LEAD = {
   stage: 'prospect',
   source: 'facebook',
   sourceLabel: null,
+  entityTypeLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-09-01T00:00:00.000Z',

@@ -2,10 +2,14 @@ import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { financialPoints } from '@/lib/sbr/financialPoints'
+import type { FinancialsComparison } from '@/lib/financials/types'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
-import { creditorDebt, daysSinceLastPayment, describeDecision, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
+import { creditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
@@ -52,6 +56,27 @@ export default async function OutcomePredictionPage({ params }: Props) {
   ])
   const changedAt = trainingDataChangedAt((imports.data ?? []) as ImportChange[])
 
+  // What the prediction is waiting for, and its DPN factor (readiness.ts).
+  const readiness = await loadReadiness(supabase, id)
+  const dpnItem = readiness.items.find((i) => i.key === 'dpn')
+
+  // "What the financial statements show": only from a comparison that is
+  // verified, or reviewed by staff — the readiness checklist's safety net.
+  const financialsItem = readiness.items.find((i) => i.key === 'financials')
+  const financialsVerified =
+    financialsItem?.status === 'ready' || (financialsItem?.status === 'needs_review' && financialsItem.review !== null)
+  const [{ data: comparisonRow }, { data: companyRow }] = await Promise.all([
+    supabase.from('financial_comparisons').select('computed, stale_since').eq('client_id', id).maybeSingle(),
+    supabase.from('company_details').select('entity_type').eq('client_id', id).maybeSingle(),
+  ])
+  const pointsAvailable = financialsVerified && comparisonRow !== null && !comparisonRow.stale_since
+  const points = pointsAvailable
+    ? financialPoints({
+        comparison: comparisonRow.computed as unknown as FinancialsComparison,
+        entityType: companyRow?.entity_type ?? null,
+      })
+    : []
+
   const statement = latestBalanceSheet(slots)
   const balanceSheet = statement?.balanceSheet ?? null
 
@@ -92,6 +117,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
     daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
+    // The account's whole history, so "no payments" shows what was searched.
+    icaHistory: (() => {
+      const { first, last } = icaDateRange(icaRows)
+      return first && last ? `${longDate(first)} – ${longDate(last)}` : null
+    })(),
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
@@ -101,6 +131,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
     latestFinancialYear: statement?.slot.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
     hasFinancials: slots.length > 0,
+    // Creditors in the SBR: balance-sheet hints (current period first), and the rows saved last time.
+    creditorHints: creditorHints(slots),
+    savedCreditors: readSavedCreditors((cached.data as { creditors?: unknown } | null)?.creditors ?? null),
   }
 
   return (
@@ -108,6 +141,13 @@ export default async function OutcomePredictionPage({ params }: Props) {
       <OutcomePredictionClient
         clientId={id}
         clientName={client.name}
+        readiness={{
+          canPredict: readiness.canPredict,
+          waitingFor: readiness.waitingFor,
+          dpn: readiness.dpn,
+          dpnDetail: dpnItem?.detail ?? '',
+        }}
+        financialPoints={{ available: pointsAvailable, points }}
         initialAuto={initialAuto}
         initialPrediction={cached.data ? serialiseCachedPrediction(cached.data, changedAt) : null}
       />

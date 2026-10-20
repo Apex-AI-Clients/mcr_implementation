@@ -20,6 +20,8 @@
  *
  * Nothing in this module does auth — callers are responsible for that.
  */
+import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
+import { applyPeriodOverride, periodOverrideOf } from '@/lib/financials/periodOverride'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
@@ -100,6 +102,8 @@ interface DocumentRow {
   original_filename: string
   doc_category: string
   uploaded_at: string | null
+  fs_override_kind: string | null
+  fs_override_fy: number | null
 }
 
 interface ExtractOptions {
@@ -125,9 +129,9 @@ export async function extractAllFinancials(
 
   let docsQuery = supabase
     .from('documents')
-    .select('id, file_path, original_filename, doc_category, uploaded_at')
+    .select('id, file_path, original_filename, doc_category, uploaded_at, fs_override_kind, fs_override_fy')
     .eq('client_id', clientId)
-    .in('doc_category', ['historical_financials', 'current_financials'])
+    .in('doc_category', FINANCIAL_STATEMENT_CATEGORIES)
     .order('uploaded_at', { ascending: true })
 
   if (Array.isArray(options.documentIds) && options.documentIds.length > 0) {
@@ -246,9 +250,13 @@ async function processDocument(
     const pdfBytes = new Uint8Array(arrayBuffer)
     const sizeMb = (pdfBytes.length / (1024 * 1024)).toFixed(2)
 
-    // Our own read of the text layer first: what the file is, and where.
-    const prepass = await runFinancialsPrepass(pdfBytes)
+    // Our own read of the text layer first: what the file is, and where. A
+    // year or role staff set for this file replaces what its headings say.
+    const override = applyPeriodOverride(await runFinancialsPrepass(pdfBytes), periodOverrideOf(doc))
+    const prepass = override.prepass
     const plan = planDocument(prepass)
+    // A file that is not extracted (a trust deed, a bare tax return) ignores it.
+    if (override.warning && plan.extract) plan.warnings.push(override.warning)
     console.log(
       `${tag} downloaded ${sizeMb}MB; pre-pass kind=${prepass.classification.kind} failure=${prepass.failure ?? 'none'} encrypted=${prepass.encrypted}`,
     )
@@ -349,8 +357,34 @@ async function processDocument(
     const totalElapsed = ((Date.now() - start) / 1000).toFixed(1)
     const message = err instanceof Error ? err.message : String(err)
     console.error(`${tag} FAILED after ${totalElapsed}s: ${message}`)
+    await recordFailedExtraction(supabase, { clientId, documentId: doc.id, message })
     return { wrote: 0, skipped: 0, error: message }
   }
+}
+
+/**
+ * A read that failed, recorded on the file, so it reads as "could not be
+ * read" (with why) rather than "never read" — which would have the automatic
+ * run try it again on every trigger. Only for a file with no record yet: an
+ * earlier good read keeps its record, and its statements stay where they are.
+ * Re-extracting from the comparison page tries it again.
+ */
+async function recordFailedExtraction(
+  supabase: SupabaseClient,
+  input: { clientId: string; documentId: string; message: string },
+): Promise<void> {
+  const failure: ExtractionWarning = { kind: 'extraction_failed', message: input.message }
+  const { error } = await supabase.from('financial_document_extractions').upsert(
+    {
+      document_id: input.documentId,
+      client_id: input.clientId,
+      kind: 'unknown',
+      warnings: [failure] as unknown as Json,
+      extracted_at: new Date().toISOString(),
+    },
+    { onConflict: 'document_id', ignoreDuplicates: true },
+  )
+  if (error) console.error(`[extract-financials] failed to record the failed read for ${input.documentId}: ${error.message}`)
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -500,6 +534,12 @@ async function recordDocumentExtraction(
 export async function buildAndPersistComparison(
   clientId: string,
   supabase: SupabaseClient,
+  /**
+   * false for automatic runs (on upload or delete): the figures only, and the
+   * old summary cleared because it described the comparison before. Staff get
+   * the summary when they open the page (ensureComparisonSummary).
+   */
+  options: { aiSummary: boolean } = { aiSummary: true },
 ): Promise<BuildComparisonResult> {
   let slots: StoredStatementSlot[]
   try {
@@ -533,12 +573,14 @@ export async function buildAndPersistComparison(
   // AI summary — best-effort; a failure here must not fail the job.
   let aiText: string | null = null
   let aiModel: string | null = null
-  try {
-    const summary = await generateFinancialsComparisonSummary({ comparison })
-    aiText = summary.text
-    aiModel = summary.model
-  } catch (err) {
-    console.error('[financials-comparison] AI summary failed', err)
+  if (options.aiSummary) {
+    try {
+      const summary = await generateFinancialsComparisonSummary({ comparison })
+      aiText = summary.text
+      aiModel = summary.model
+    } catch (err) {
+      console.error('[financials-comparison] AI summary failed', err)
+    }
   }
 
   const now = new Date().toISOString()
@@ -640,8 +682,10 @@ export async function runComparisonJob(params: {
   clientId: string
   mode: 'full' | 'compare'
   supabase: SupabaseClient
+  /** Full mode only: extract just these files (one whose year was overridden), then compare. */
+  documentIds?: string[]
 }): Promise<void> {
-  const { jobId, clientId, mode, supabase } = params
+  const { jobId, clientId, mode, supabase, documentIds } = params
   // The function's clock starts with the request; extraction must leave room
   // for the comparison and summary after it.
   const jobStart = Date.now()
@@ -674,6 +718,7 @@ export async function runComparisonJob(params: {
       // Keep pacing light in the background so most of the duration budget goes
       // to extraction rather than idle waiting.
       const ext = await extractAllFinancials(clientId, supabase, {
+        documentIds,
         interDocumentDelayMs: 2_000,
         deadline: jobStart + EXTRACTION_PHASE_BUDGET_MS,
       })

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.lodgement_analyses (
   document_id uuid NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
   source_filename text NOT NULL,
   statement_label text,           -- e.g. "Activity statement 002"
-  company_name_in_csv text,       -- e.g. "PARKCON PTY LTD"
+  company_name_in_csv text,       -- e.g. "EXAMPLE PTY LTD"
   row_count int NOT NULL,
   number_of_late_lodgements int NOT NULL,
   cumulative_days_late int NOT NULL,

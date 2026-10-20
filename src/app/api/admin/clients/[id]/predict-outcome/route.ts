@@ -15,7 +15,11 @@
  * setup page (run lodgement analysis, run financials extraction).
  *
  * Cached predictions live in sbr_outcome_predictions (UNIQUE on client_id);
- * re-running overwrites the row, with the practitioner fee staff chose.
+ * re-running overwrites the row, with the practitioner fee staff chose and
+ * the creditors in the SBR (creditors.ts, migration 0032).
+ *
+ * The offer is sized on the creditor TOTAL: the ATO debt (creditorDebt.ts)
+ * plus the other creditor rows staff entered.
  *
  * The training set is the shared one (historicalCases.ts): excluded cases are
  * never used, and a client is never matched with its own past record — a case
@@ -28,7 +32,8 @@ import { z } from 'zod'
 import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/server'
 import { predictSbrOutcome } from '@/lib/sbr/predictOutcome'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
-import { leaveOneOut } from '@/lib/sbr/accuracy'
+import { cachedLeaveOneOut } from '@/lib/sbr/accuracy'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { DEFAULT_PRACTITIONER_FEE_RATE, MAX_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import {
   TRAINING_COLUMNS,
@@ -48,6 +53,15 @@ import {
   type IcaRow,
 } from '@/lib/sbr/creditorDebt'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import {
+  CREDITOR_KINDS,
+  CREDITOR_LABEL_MAX,
+  MAX_CREDITOR_ROWS,
+  creditorTotal,
+  normaliseCreditorRows,
+  type CreditorRow,
+  type SavedCreditors,
+} from '@/lib/sbr/creditors'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { StoredStatementSlot } from '@/lib/financials/types'
 
@@ -68,9 +82,25 @@ async function requireAdmin() {
 }
 
 const BodySchema = z.object({
-  /** Staff's own figure for the creditor (ATO) debt, replacing the automatic one. */
+  /** Staff's own figure for the ATO debt, replacing the automatic one. */
   creditorAmount: z.number().nonnegative().nullable().optional(),
-  dpn: z.boolean(),
+  /** The other creditors in the SBR (creditors.ts): rows staff added, label and amount. */
+  creditors: z
+    .array(
+      z.object({
+        label: z.string().max(CREDITOR_LABEL_MAX * 2),
+        amount: z.number().nonnegative().finite().nullable(),
+        kind: z.enum(CREDITOR_KINDS).optional(),
+      }),
+    )
+    .max(MAX_CREDITOR_ROWS)
+    .optional(),
+  /**
+   * Staff's answer to "Director Penalty Notice issued?", used ONLY when
+   * nothing is on file (readiness.dpn is null): notices uploaded mean Yes,
+   * the "none issued" tick means No, whatever this says. Missing means No.
+   */
+  dpn: z.boolean().optional(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
   // REMOVED in v2: the director-loan-sent-to-ATO flag
@@ -126,9 +156,14 @@ interface MissingPrerequisite {
 
 interface PredictResponse extends SbrPrediction {
   inputFeatures: SbrPredictionInput
+  /** The creditor total the offer is sized on: ATO debt + other creditor rows. */
   creditorAmount: number | null
-  /** Where the creditor amount came from, and as at when. */
+  /** The ATO debt in that total. */
+  atoDebt: number | null
+  /** Where the ATO debt came from, and as at when. */
   creditorDebt: CreditorDebt
+  /** The other creditor rows, as saved. */
+  creditors: CreditorRow[]
   computedAt: string
   cached: false
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
@@ -162,6 +197,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       .maybeSingle()
     if (!client) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
+    }
+
+    // Every readiness item Ready, or Needs review and reviewed — the same rule
+    // as the checklist and the button (readiness.ts).
+    const readiness = await loadReadiness(supabase, clientId)
+    if (!readiness.canPredict) {
+      return NextResponse.json({ error: 'NOT_READY', waitingFor: readiness.waitingFor }, { status: 422 })
     }
 
     // Most recent lodgement analysis — gives us numLate, cumDays, and the
@@ -233,7 +275,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
       staffAmount: body.creditorAmount ?? null,
     })
-    const creditorAmount = debt.amount
+    const atoDebt = debt.amount
+    // No rows sent (an older page): none, rather than the defaults.
+    const creditorRows = normaliseCreditorRows(body.creditors ?? [])
+    const creditorAmount = creditorTotal(atoDebt, creditorRows)
+    const savedCreditors: SavedCreditors = {
+      atoDebt,
+      atoDebtEdited: debt.source === 'staff',
+      rows: creditorRows,
+    }
     // The decision, every time: source, amount, date, and why the ATO account was not used.
     console.log(`[creditor-debt] predict client=${clientId} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
@@ -243,7 +293,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(slots)
 
     const inputFeatures: SbrPredictionInput = {
-      dpn: body.dpn,
+      dpn: readiness.dpn ?? body.dpn ?? false,
       paymentPlanType: body.paymentPlanType,
       directorLoanAtAppointment: body.directorLoanAtAppointment,
       directorLoanReceivableAmount,
@@ -274,7 +324,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const prediction = predictSbrOutcome(inputFeatures, trainingSet, {
       creditorAmount: creditorAmount ?? undefined,
       sbrPractitionerFeeRate: practitionerFeeRate,
-      accuracy: leaveOneOut(inUse),
+      accuracy: cachedLeaveOneOut(inUse),
     })
 
     const now = new Date().toISOString()
@@ -291,6 +341,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           comparable_case_ids: prediction.comparableCases.map((c) => c.id),
           training_set_size: prediction.trainingSetSize,
           practitioner_fee_rate: practitionerFeeRate,
+          creditors: savedCreditors as unknown as Record<string, unknown>,
+          total_creditor_amount: creditorAmount,
           computed_at: now,
         },
         { onConflict: 'client_id' },
@@ -305,7 +357,9 @@ export async function POST(req: NextRequest, { params }: Params) {
       ...prediction,
       inputFeatures,
       creditorAmount,
+      atoDebt,
       creditorDebt: debt,
+      creditors: creditorRows,
       computedAt: now,
       cached: false,
       autoDetectedDirectorLoan,

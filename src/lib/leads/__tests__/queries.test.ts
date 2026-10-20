@@ -72,6 +72,21 @@ describe('withFilters — state', () => {
   })
 })
 
+describe('withFilters — search', () => {
+  it('adds the debt conditions when the term is an amount, read before escaping', () => {
+    const [call] = callsFor({ search: '$120,000' })
+    expect(call[0]).toBe('or')
+    expect(call[1]).toContain(
+      'and(debt_min.lte.120000,or(debt_max.gte.120000,debt_max.is.null)),and(debt_min.is.null,debt_max.gte.120000)',
+    )
+  })
+
+  it('leaves debt out of a search that is not an amount', () => {
+    const [call] = callsFor({ search: '0402 915' })
+    expect(call[1]).not.toContain('debt_')
+  })
+})
+
 describe('withFilters and withSort — latest enquiry', () => {
   it('filters the date range on the latest enquiry, not the date added', () => {
     const calls = callsFor({ dateRange: '30' })
@@ -170,7 +185,7 @@ describe('getConvertedClientDetails', () => {
   const CLIENT = {
     id: 'cl_1',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
   }
 
@@ -181,12 +196,12 @@ describe('getConvertedClientDetails', () => {
         data: {
           entity_type: 'trust',
           company_name: 'Whitlock Civil Pty Ltd',
-          acn_number: '004085616',
-          abn_number: '53004085616',
+          acn_number: '136533741',
+          abn_number: '86136533741',
           trust_name: 'Whitlock Family Trust',
           trust_abn_number: '51824753556',
           phone_number: '0745359847',
-          email_address: 'accounts@whitlockcivil.com.au',
+          email_address: 'accounts@whitlockcivil.example.com.au',
           registered_office_address: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
           principal_place_of_business: 'Level 2, 20 Example Street, Sampleton NSW 2000',
           directors: [
@@ -203,17 +218,17 @@ describe('getConvertedClientDetails', () => {
     expect(await getConvertedClientDetails('cl_1')).toEqual({
       id: 'cl_1',
       name: 'Dean Whitlock',
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       phone: '0407552118',
       // The company's ABN and the trust's, read from their own columns.
       entityType: 'trust',
       companyName: 'Whitlock Civil Pty Ltd',
-      acnNumber: '004085616',
-      abnNumber: '53004085616',
+      acnNumber: '136533741',
+      abnNumber: '86136533741',
       trustName: 'Whitlock Family Trust',
       trustAbnNumber: '51824753556',
       companyPhone: '0745359847',
-      companyEmail: 'accounts@whitlockcivil.com.au',
+      companyEmail: 'accounts@whitlockcivil.example.com.au',
       registeredOfficeAddress: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
       principalPlaceOfBusiness: 'Level 2, 20 Example Street, Sampleton NSW 2000',
       directors: [

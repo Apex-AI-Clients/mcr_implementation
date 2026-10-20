@@ -1,5 +1,6 @@
 'use client'
 
+import { currentPeriodLabel, yearSpan } from '@/lib/financials/periodLabels'
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
@@ -39,13 +40,13 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
   const lines: string[] = []
   const years = comparison.years
   const cp = comparison.currentPeriod ?? null
-  const ytdHeader = cp ? `Current YTD (to ${cp.periodEndDate})` : null
+  const ytdHeader = cp ? currentPeriodLabel(cp) : null
 
   lines.push(csvRow('Financial Statements Comparison', clientName))
   lines.push(csvRow('Generated', new Date().toISOString()))
   lines.push(csvRow('Period', `${comparison.periodRange.start} to ${comparison.periodRange.end}`))
   if (cp) {
-    lines.push(csvRow('Current period', cp.periodLabel))
+    lines.push(csvRow('Current period', currentPeriodLabel(cp)))
   }
   lines.push('')
 
@@ -136,7 +137,7 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
   lines.push(csvRow(...totalCells))
   lines.push('')
 
-  // Ratios — leave the Current YTD column blank (ratios are full-year only).
+  // Ratios — leave the current-period column blank (ratios are full-year only).
   lines.push(csvRow('KEY RATIOS'))
   const ratioHeader: string[] = ['Ratio', ...years.map((y) => `FY${y}`)]
   if (ytdHeader) ratioHeader.push(ytdHeader)
@@ -168,7 +169,7 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
   if (ytdHeader) {
     lines.push(
       csvRow(
-        'Note: Ratios are calculated on a full-year basis from the 4 annual financial statements only. Current YTD figures are shown for raw line items only.',
+        `Note: Ratios are calculated on a full-year basis from the annual financial statements only. ${ytdHeader} figures are shown for raw line items only.`,
       ),
     )
   }
@@ -178,13 +179,13 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
   lines.push(csvRow('METHODOLOGY'))
   lines.push(
     csvRow(
-      'Severities, sparklines and year-over-year ratios are computed exclusively from the 4 annual financial statements. The current-period (Current YTD) column is shown alongside for trend awareness only.',
+      `Severities, sparklines and year-over-year ratios are computed exclusively from the annual financial statements (${yearSpan(years)}).${ytdHeader ? ` The ${ytdHeader} column is shown alongside for trend awareness only.` : ''}`,
     ),
   )
   if (cp) {
     lines.push(
       csvRow(
-        `Current YTD column shows partial-period figures from the client's accounting software (${cp.periodLabel}). Year-over-year comparisons exclude this column because it represents a partial period only.`,
+        `The ${ytdHeader} column shows partial-period figures from the client's accounting software. Year-over-year comparisons exclude this column because it represents a partial period only.`,
       ),
     )
   }

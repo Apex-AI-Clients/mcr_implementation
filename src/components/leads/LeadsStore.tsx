@@ -13,7 +13,6 @@ import { needsFollowUp } from '@/lib/leads/followUp'
 import { CONVERSION_ACTIVITY_BODY, STAGE_META } from '@/lib/leads/constants'
 import { stateColumns } from '@/lib/leads/format'
 import { useToast } from '@/components/ui/Toast'
-import { DuplicateLeadError } from '@/lib/leads/persistence'
 
 /**
  * CRM store.
@@ -44,7 +43,14 @@ import { DuplicateLeadError } from '@/lib/leads/persistence'
  * alone while a stage change (which carries one) resets it.
  */
 export interface LeadsPersistence {
-  createLead?: (input: { lead: Lead; activity: LeadActivity | null }) => Promise<void>
+  /**
+   * Resolves with the lead the details were saved on. `merged` means the email
+   * already had a lead: it took the new details and `leadId` is that lead.
+   */
+  createLead?: (input: {
+    lead: Lead
+    activity: LeadActivity | null
+  }) => Promise<{ leadId: string; merged: boolean } | void>
   /** A data correction — deliberately carries no activity. */
   updateLead?: (input: { leadId: string; patch: Partial<Lead> }) => Promise<void>
   logActivity?: (input: { activity: LeadActivity }) => Promise<void>
@@ -392,6 +398,7 @@ export function LeadsStoreProvider({
         // Always manual here — this one didn't come from a campaign.
         source: 'manual',
         sourceLabel: null,
+        entityTypeLabel: null,
         company: null,
         nextStep: null,
         stageSince: at,
@@ -435,21 +442,25 @@ export function LeadsStoreProvider({
       if (!write) options?.onSaved?.()
       // then(saved, failed) rather than then().catch(): a throw inside onSaved
       // must not be mistaken for a failed save and take the lead back out.
-      void write?.then(() => options?.onSaved?.(), (err: unknown) => {
-        dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
-        // One lead per email. Offer the lead that already exists instead of
-        // merging into it: staff typing someone in is not an enquiry.
-        if (err instanceof DuplicateLeadError) {
-          toast(
-            `${lead.email} already has a lead.`,
-            err.leadId
-              ? { tone: 'error', href: `/leads/${err.leadId}`, linkLabel: 'Open existing lead' }
-              : { tone: 'error' },
-          )
-          return
-        }
-        toast(`${lead.name} could not be saved. Please add them again.`, { tone: 'error' })
-      })
+      void write?.then(
+        (result) => {
+          // The email already had a lead. It now carries these details and the
+          // earlier ones are in its Lead history, so the optimistic row (a
+          // second lead for the same person) comes back out.
+          if (result?.merged) {
+            dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
+            toast(`${lead.email} already had a lead. It now shows these details.`, {
+              href: `/leads/${result.leadId}`,
+              linkLabel: 'Open lead',
+            })
+          }
+          options?.onSaved?.()
+        },
+        () => {
+          dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
+          toast(`${lead.name} could not be saved. Please add them again.`, { tone: 'error' })
+        },
+      )
 
       return lead
     },

@@ -12,7 +12,7 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
   return {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Dean Whitlock',
-    email: 'dean@whitlockcivil.com.au',
+    email: 'dean@whitlockcivil.example.com.au',
     phone: '0407552118',
     debt_min: 150_000,
     debt_max: null,
@@ -23,6 +23,7 @@ function row(overrides: Partial<LeadRow> = {}): LeadRow {
     stage: 'prospect',
     source: 'website',
     source_label: null,
+    entity_type_label: null,
     company: 'Whitlock Civil',
     next_step: 'Book director meeting',
     stage_since: '2026-08-20T00:00:00.000Z',
@@ -56,7 +57,7 @@ describe('toLead', () => {
     expect(lead).toEqual({
       id: '11111111-1111-4111-8111-111111111111',
       name: 'Dean Whitlock',
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       phone: '0407552118',
       debtMin: 150_000,
       debtMax: null,
@@ -67,6 +68,7 @@ describe('toLead', () => {
       stage: 'prospect',
       source: 'website',
       sourceLabel: null,
+      entityTypeLabel: null,
       company: 'Whitlock Civil',
       nextStep: 'Book director meeting',
       stageSince: '2026-08-20T00:00:00.000Z',

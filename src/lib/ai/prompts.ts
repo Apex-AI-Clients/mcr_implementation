@@ -16,13 +16,14 @@ WRITING RULES:
 - Factual only. Do not invent figures or extrapolate beyond what the data shows.
 - Every dollar figure you write must be one of the figures below, or the difference between two of them. Do not add figures together.
 - Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
+- {bannedWordsInstruction}
 
 WHAT TO COVER (use natural prose, not headers):
 1. Revenue trajectory — direction and magnitude over the period.
 2. Profitability — number of profitable years vs loss years, and the retained earnings position using ONLY the "Retained earnings" figures given per year (and any distributions paid). NEVER add profits across years, and NEVER describe a sum of profits as retained earnings.
 3. ATO debt trajectory — particularly whether it is growing FASTER than revenue (a critical SBR-suitability indicator). State the YoY trajectory explicitly.
 4. Director / related-party loans receivable — note any material build-up, since this is the single strongest negative signal for ATO assessment.
-5. Net asset position and what it implies for solvency.
+5. Net asset position: state the figures only, with no conclusion about the business.
 
 If the latest ATO debt is more than 20% of latest revenue, flag this explicitly. If director loans receivable exceed 10% of total assets in the latest year, flag this explicitly.
 
@@ -255,22 +256,21 @@ You are summarising an Australian ATO lodgement compliance analysis for a Small 
 WRITING RULES:
 - 3 to 5 sentences. Hard maximum: 90 words total.
 - Use plain English. No jargon. No bullet points. No markdown.
-- Cover three things in order: (1) compliance overview — how many BAS lodgements were late and over what period, (2) DPN risk — the gross late debt, what was reversed, and the net at risk, (3) debt composition — the principal, interest, and penalty breakdown.
-- If totalNetAtRisk is below $1,000, note that the DPN exposure appears to have been largely offset by reversals.
-- If totalNetAtRisk is above $10,000, state it directly as a personal liability exposure for the director.
+- Cover three things in order: (1) compliance overview — how many BAS lodgements were late and over what period, (2) director penalty notices — use the DPN figures exactly as given below, and say where they come from, (3) debt composition — the principal, interest, penalty and ATO audit breakdown, and payments.
+- Never call anything a payment unless it is in "Payments received". Amendments that reduce a debt are reductions, not payments.
 - Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
+- {bannedWordsInstruction}
 
 FIGURES TO SUMMARISE:
 - Statement period: {periodStart} to {periodEnd}
 - Total BAS lodgements filed late: {numberOfLateLodgements}
 - Cumulative days late across all lodgements: {cumulativeDaysLate}
-- Gross debt from lodgements filed >90 days late: \${totalGrossLate}
-- Amount reversed by credits on those same late rows: \${totalReversed}
-- Net DPN exposure remaining: \${totalNetAtRisk}
+{dpnSection}
 - Principal debt (net of amendments): \${principalNet}
 - Interest / GIC (net of remissions): \${interestNet}
 - Penalties (net): \${penaltyNet}
-- Total payments received: \${paymentsReceived}
+- ATO audit amendments (raised by the ATO): \${auditNet}
+- Payments received: {paymentsReceived}
 
 Respond with the summary text only. No preamble, no headers, no quotes.
 `.trim()

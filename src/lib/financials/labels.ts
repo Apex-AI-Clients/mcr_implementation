@@ -80,7 +80,9 @@ const FINANCE_CHARGES = /\b(unexpired|interest|charges)\b/
  *
  *   director      the label names a director on file (every token of a
  *                 one-word name, or two or more of a longer name, in any
- *                 order), or says "director" / "shareholder" outright
+ *                 order), or says outright that it is owed to a director,
+ *                 shareholder, associate, related party, beneficiary or
+ *                 unitholder ("Loan - Associates")
  *   lender_asset  vehicle or equipment finance: an asset word or a make
  *                 ("Loan - VW", "Loan - Hino Truck", "Loan - Audi")
  *   lender        a finance business ("Business Loan - Ondesk", "Loan - Westpac")
@@ -104,7 +106,7 @@ export function classifyLoan(rawLabel: string, directors: readonly string[] = []
     const shared = name.filter((t) => tokens.includes(t)).length
     if (name.length === 1 ? shared === 1 : shared >= 2) return 'director'
   }
-  if (/\b(director|directors|shareholder|shareholders)\b/.test(label)) return 'director'
+  if (/\b(directors?|shareholders?|associates?|related part(y|ies)|beneficiar(y|ies)|unitholders?)\b/.test(label)) return 'director'
   if (ASSET_WORDS.test(label) || VEHICLE_BRANDS.test(label) || VAN_VEHICLE.test(label)) return 'lender_asset'
   if (LENDER_MARKERS.test(label)) return 'lender'
   return 'unconfirmed'
@@ -179,7 +181,7 @@ const DICTIONARY: DictionaryEntry[] = [
 
   // Fittings and equipment.
   {
-    pattern: /^(less accumulated depreciation )?(shop fittings?|fixtures and fittings|furniture and fittings|furniture fixtures and fittings|plant and equipment|office equipment|office furniture and equipment|motor vehicles?|computer equipment|leasehold improvements)( at cost| at written down value| wdv| net)?$/,
+    pattern: /^(less accumulated depreciation (on |of )?)?(shop fittings?|fixtures and fittings|furniture and fittings|furniture fixtures and fittings|property plant and equipment|plant and equipment|office equipment|office furniture and equipment|motor vehicles?|computer equipment|leasehold improvements)( at cost| at written down value| wdv| net)?$/,
     sections: ASSET_SECTIONS,
     key: 'nonCurrentAssets.propertyPlantEquipment',
   },

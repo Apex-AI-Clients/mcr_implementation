@@ -6,18 +6,29 @@ import { Activity, ChevronDown, ChevronUp, Download, Info, X } from 'lucide-reac
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
-import { RECONCILIATION_LABEL, reconciliationGap } from '@/lib/analysis/debtReconciliation'
+import { debtComposition } from '@/lib/analysis/debtComposition'
 import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate } from '@/lib/analysis/config'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { DpnRiskPanel } from '@/components/admin/lodgement/DpnRiskPanel'
-import { DebtCompositionPanel } from '@/components/admin/lodgement/DebtCompositionPanel'
+import {
+  DpnRiskPanel,
+  ESTIMATE_LABEL,
+  NOTICES_LABEL,
+  STAYS_LABEL,
+  describeDaysLeft,
+  formatDay,
+  removableLabel,
+} from '@/components/admin/lodgement/DpnRiskPanel'
+import { DebtCompositionPanel, withDates } from '@/components/admin/lodgement/DebtCompositionPanel'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
+import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 
 interface Props {
   clientId: string
   initialAnalysis: LodgementAnalysisPayload | null
   hasActivityStatementCsv: boolean
+  /** The ATO's director penalty notices' figures, when any are on file (loadDpnNoticeFigures). */
+  dpnNotices?: DpnNoticeFigures | null
 }
 
 // ─── CSV export helpers ───────────────────────────────────────────────────────
@@ -61,7 +72,12 @@ function formatIsoExport(iso: string | null | undefined): string {
   })
 }
 
-function buildExportCsv(analysis: LodgementAnalysisPayload): string {
+/** A signed amount for the CSV: "-$1,234.00" for a negative. */
+function formatSignedExport(value: number): string {
+  return `${value < 0 ? '-' : ''}${formatCurrencyExport(value)}`
+}
+
+export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnNoticeFigures | null = null): string {
   const lines: string[] = []
 
   const label = analysis.statementLabel ?? ''
@@ -75,13 +91,35 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
   lines.push(csvRow(company))
   lines.push('')
 
-  // DPN Risk Summary block
+  // Director penalty notices: the notices' own figures, or the estimate.
+  if (notices) {
+    lines.push(csvRow('DIRECTOR PENALTY NOTICES'))
+    lines.push(csvRow('Source', NOTICES_LABEL))
+    lines.push(csvRow('Unpaid', formatCurrencyExport(notices.unpaid)))
+    lines.push(csvRow(removableLabel(notices.deadline), formatCurrencyExport(notices.removable)))
+    lines.push(csvRow(STAYS_LABEL, formatCurrencyExport(notices.staysWithDirector)))
+    lines.push(csvRow('Deadline', formatDay(notices.deadline), describeDaysLeft(notices.daysLeft)))
+    lines.push(csvRow('Type', 'Unpaid', 'Removed if acted on by the deadline', STAYS_LABEL, 'Deadline'))
+    for (const t of notices.byType) {
+      lines.push(
+        csvRow(
+          t.label,
+          formatCurrencyExport(t.unpaid),
+          formatCurrencyExport(t.removable),
+          formatCurrencyExport(t.staysWithDirector),
+          formatDay(t.deadline),
+        ),
+      )
+    }
+    lines.push('')
+  }
   if (analysis.dpnRisk) {
     const dpn = analysis.dpnRisk
-    lines.push(csvRow('DPN Risk Summary'))
+    lines.push(csvRow(notices ? 'ESTIMATE FROM THE ATO ACCOUNT (secondary)' : 'DIRECTOR PENALTY NOTICES'))
+    if (!notices) lines.push(csvRow('Source', ESTIMATE_LABEL))
     lines.push(csvRow('Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
-    lines.push(csvRow('Paid since lodged', formatCurrencyExport(dpn.totalPaidSince)))
-    lines.push(csvRow('Net amount at risk', formatCurrencyExport(dpn.totalNetAtRisk)))
+    lines.push(csvRow('Reduced by later amendments (same period only)', formatCurrencyExport(dpn.totalReducedByAmendments)))
+    lines.push(csvRow('Estimated still owing', formatCurrencyExport(dpn.totalNetAtRisk)))
     lines.push(
       csvRow(
         'Period covered',
@@ -93,33 +131,36 @@ function buildExportCsv(analysis: LodgementAnalysisPayload): string {
     lines.push('')
   }
 
-  // Debt Composition block
+  // Debt composition: each line, its sentence, the rows behind it, and the rows not counted.
   if (analysis.debtBreakdown) {
-    const db = analysis.debtBreakdown
-    lines.push(csvRow('Debt Composition'))
-    if (Math.abs(db.openingBalance ?? 0) > 1) {
-      lines.push(csvRow('Balance brought forward (before this statement starts)', formatBalanceExport(db.openingBalance)))
+    const composition = debtComposition(withDates(analysis.rows), analysis.debtBreakdown)
+    lines.push(csvRow('DEBT COMPOSITION'))
+    lines.push(csvRow('Line', 'Amount', 'Explanation'))
+    for (const line of composition.lines) {
+      lines.push(csvRow(line.label, formatSignedExport(line.amount), line.explanation))
     }
-    lines.push(csvRow('Principal (gross debits)', formatCurrencyExport(db.principalDebits)))
-    lines.push(csvRow('Less: amendment credits', formatCurrencyExport(db.principalCredits)))
-    lines.push(csvRow('Principal (net)', formatCurrencyExport(db.principalNet)))
-    lines.push(csvRow('Interest / GIC (gross)', formatCurrencyExport(db.interestDebits)))
-    lines.push(csvRow('Less: GIC remissions', formatCurrencyExport(db.interestCredits)))
-    lines.push(csvRow('Interest (net)', formatCurrencyExport(db.interestNet)))
-    lines.push(csvRow('Penalties (net)', formatCurrencyExport(db.penaltyNet)))
-    lines.push(csvRow('Total ATO debt accrued', formatCurrencyExport(db.totalAtoDebt)))
-    if ((db.refundsPaid ?? 0) > 0) lines.push(csvRow('Add: refunds paid to the company', `+${formatCurrencyExport(db.refundsPaid)}`))
-    lines.push(csvRow('Payments received', formatCurrencyExport(db.paymentsReceived)))
-    lines.push(csvRow('Government credits (Cash Flow Boost etc)', formatCurrencyExport(db.governmentCredits)))
-    lines.push(csvRow('Other credits', formatCurrencyExport(db.otherCredits)))
-    const gap = reconciliationGap(db)
-    if (gap !== null) lines.push(csvRow(RECONCILIATION_LABEL, `${gap < 0 ? '-' : '+'}${formatCurrencyExport(gap)}`))
-    lines.push(
-      csvRow(
-        db.atoBalanceDate ? `Current balance owing (ATO, as at ${formatIsoExport(db.atoBalanceDate)})` : 'Current balance owing',
-        formatBalanceExport(db.currentBalance),
-      ),
-    )
+    lines.push('')
+    lines.push(csvRow('ATO ROWS BY LINE'))
+    lines.push(csvRow('Line', 'Processed date', 'Description', 'Debit (DR)', 'Credit (CR)'))
+    for (const line of composition.lines) {
+      for (const r of line.rows) {
+        lines.push(
+          csvRow(
+            line.label,
+            r.processedDate ? formatIsoExport(r.processedDate) : '',
+            `'${r.description}`,
+            formatCurrencyExport(r.debit),
+            formatCurrencyExport(r.credit),
+          ),
+        )
+      }
+    }
+    lines.push('')
+    lines.push(csvRow('ROWS NOT COUNTED'))
+    lines.push(csvRow('Rows', 'Count', 'Debits', 'Credits', 'Why'))
+    for (const g of composition.uncounted) {
+      lines.push(csvRow(g.label, g.count, formatCurrencyExport(g.debits), formatCurrencyExport(g.credits), g.reason))
+    }
     lines.push('')
   }
 
@@ -290,12 +331,12 @@ function WarningsList({ warnings }: { warnings: AnalysisWarning[] }) {
 
 function SummaryPanel({
   analysis,
+  notices,
 }: {
   analysis: LodgementAnalysisPayload
+  notices: DpnNoticeFigures | null
   onClose?: () => void
 }) {
-  const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
-
   return (
     <div className="p-5 space-y-3">
       <h4 className="text-sm font-semibold text-foreground pr-8">How the numbers are calculated</h4>
@@ -315,12 +356,14 @@ function SummaryPanel({
         (Processed Date − Statutory Due Date) &gt; 90 days
       </div>
       <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
-        <span className="text-accent">Paid since lodged</span> ={' '}
-        <span className="text-warning">Sum of </span> credits on Original / Client-Amended rows lodged &gt;90 days late (cash Payments are excluded)
+        <span className="text-accent">Reduced by later amendments</span> ={' '}
+        <span className="text-warning">per period: </span> credits on that period&apos;s Original / Client-Amended rows, less
+        its amended debits not already counted (cash Payments are excluded)
       </div>
       <div className="rounded-md border border-border bg-primary/40 px-4 py-2.5 font-mono text-sm text-foreground/85">
-        <span className="text-accent">Net at Risk</span> ={' '}
-        <span className="text-warning">max(0, </span> Gross debt &gt;90 days late − Paid since lodged<span className="text-warning">)</span>
+        <span className="text-accent">Estimated still owing</span> ={' '}
+        <span className="text-warning">Sum per period of max(0, </span> late debt − that period&apos;s reduction
+        <span className="text-warning">)</span>
       </div>
 
       {/* Explanation */}
@@ -345,12 +388,12 @@ function SummaryPanel({
           <p className="text-xs text-foreground/45 leading-relaxed">Total debit raised by Original / Client-Amended lodgements that were filed more than 90 days past their statutory due date. To verify: filter the CSV to those rows and sum the Debit column.</p>
         </div>
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
-          <p className="text-xs font-semibold text-foreground/80">Paid since lodged</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">Sum of credit amounts on Original / Client-Amended rows lodged &gt;90 days late — these are reversals of late-lodged liability (e.g. a client-initiated amendment that reduces a prior period). Cash Payments are NOT counted: the ATO applies them to the oldest debt first, so they may have settled an older non-DPN debit instead of the late lodgement.</p>
+          <p className="text-xs font-semibold text-foreground/80">Reduced by later amendments</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">A later amendment that lowers a period&apos;s figure reduces the late debt for that same period only — matched on the period ending. A credit for one period never reduces another period&apos;s debt. Cash Payments are NOT counted: the ATO decides which debt each payment goes to, and the account does not say.</p>
         </div>
         <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1 col-span-2">
-          <p className="text-xs font-semibold text-foreground/80">Net at Risk</p>
-          <p className="text-xs text-foreground/45 leading-relaxed">Gross debt &gt;90 days late minus the pooled late-credit reversals (floored at zero). This is the conservative ceiling on personal DPN liability — no cash payment has been credited against it because we can&apos;t prove the ATO allocated it to this specific period.</p>
+          <p className="text-xs font-semibold text-foreground/80">Estimated still owing</p>
+          <p className="text-xs text-foreground/45 leading-relaxed">For each period, the debt lodged more than 90 days late less that period&apos;s later amendments (never below zero), added up. An estimate from the ATO account only: when director penalty notices are uploaded, their own figures are shown instead.</p>
         </div>
       </div>
 
@@ -358,22 +401,26 @@ function SummaryPanel({
       <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
         <p className="text-xs font-semibold text-foreground/80">DPN Risk (&gt;90 days late)</p>
         <p className="text-xs text-foreground/45 leading-relaxed">
-          Every Original or Client-Amended lodgement filed more than 90 calendar days past
-          its statutory due date is examined. Debits in this bucket add to the gross late
-          figure; credits in the same bucket (e.g. late-filed client amendments that reduce
-          a prior period&apos;s liability) form a pool that offsets the gross.
+          When director penalty notices are uploaded, the panel shows the notices&apos; own
+          figures: unpaid, the part removed if an SBR practitioner, administrator or liquidator
+          is appointed or it is paid by the deadline, and the part that stays with the director
+          unless paid. Without notices, it shows an estimate from the ATO account.
+        </p>
+        <p className="text-xs text-foreground/45 leading-relaxed">
+          The estimate: every lodgement the late-lodgement setting counts, filed more than 90
+          calendar days past its statutory due date, adds its debit. A later amendment for the
+          SAME period (matched on the period ending) reduces that period&apos;s debt; it never
+          reduces another period&apos;s.
         </p>
         <p className="text-xs text-foreground/45 leading-relaxed">
           Cash Payments are deliberately excluded. The ATO applies payments to the oldest
           outstanding debt first, so a $10k payment can be entirely consumed by an older,
-          non-DPN debit (prior on-time lodgement, accrued GIC, etc.) without de-risking a
-          newer late lodgement at all. Since we can&apos;t prove where any particular payment
-          landed, the conservative position is to credit none of them.
+          non-DPN debit (prior on-time lodgement, accrued GIC, etc.). Since we can&apos;t prove
+          where any particular payment landed, none of them reduces the estimate.
         </p>
         <p className="text-xs text-foreground/45 leading-relaxed">
           Why 90 days matters: once a BAS is more than 90 days overdue, the ATO can pursue
-          the director personally via a Director Penalty Notice (DPN). The &quot;Net at Risk&quot;
-          figure is the maximum personal-liability ceiling after late-credit reversals.
+          the director personally via a Director Penalty Notice (DPN).
         </p>
       </div>
 
@@ -381,10 +428,11 @@ function SummaryPanel({
       <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
         <p className="text-xs font-semibold text-foreground/80">Debt Composition</p>
         <p className="text-xs text-foreground/45 leading-relaxed">
-          Splits the ATO ledger into principal (Original + Client-Amended amounts), interest (General
-          Interest Charge and remissions), and penalties. Sub-line rows and ATO-initiated amendments
-          are excluded to avoid double-counting. Useful for understanding whether the balance is
-          mostly real liability or accumulated charges and interest.
+          Splits the ATO ledger into tax lodged (Original + Client-Amended amounts), interest (General
+          Interest Charge and remissions), penalties and ATO audit amendments, then payments and
+          credits. Open any line to see the ATO rows behind it. Sub-lines, allocation and summary
+          rows are not counted twice; &quot;Other adjustments / unexplained difference&quot; lists every
+          row no line counts.
         </p>
       </div>
 
@@ -400,14 +448,29 @@ function SummaryPanel({
             <p className="text-sm text-foreground/85 leading-snug">
               {numberOfLateLodgements} {numberOfLateLodgements === 1 ? 'lodgement was' : 'lodgements were'} filed late,
               totalling {cumulativeDaysLate} days of delay.
-              {dpn && dpn.totalGrossLate > 0 && (
+              {notices ? (
                 <>
-                  {' '}Of that, ${fmt(dpn.totalGrossLate)} was lodged more than 90 days past due, with
-                  ${fmt(dpn.totalPaidSince)} paid since lodgement — leaving{' '}
-                  <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                    ${fmt(dpn.totalNetAtRisk)} of personal-liability exposure
-                  </span> under the DPN regime.
+                  {' '}The ATO&apos;s director penalty notices show ${fmt(notices.unpaid)} unpaid:{' '}
+                  ${fmt(notices.removable)} is removed if an SBR practitioner, administrator or liquidator is
+                  appointed, or it is paid, by {formatDay(notices.deadline)}, and{' '}
+                  <span className={notices.staysWithDirector > 0 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
+                    ${fmt(notices.staysWithDirector)} stays with the director unless paid
+                  </span>
+                  .
                 </>
+              ) : (
+                dpn &&
+                dpn.totalGrossLate > 0 && (
+                  <>
+                    {' '}No director penalty notice is uploaded. Estimated from the ATO account: $
+                    {fmt(dpn.totalGrossLate)} was lodged more than 90 days past due, reduced by $
+                    {fmt(dpn.totalReducedByAmendments)} of later amendments for the same periods — leaving an estimated{' '}
+                    <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
+                      ${fmt(dpn.totalNetAtRisk)}
+                    </span>{' '}
+                    still owing on those lodgements.
+                  </>
+                )
               )}
             </p>
           </div>
@@ -421,9 +484,11 @@ function SummaryPanel({
 
 function SummaryModal({
   analysis,
+  notices,
   onClose,
 }: {
   analysis: LodgementAnalysisPayload
+  notices: DpnNoticeFigures | null
   onClose: () => void
 }) {
   // Close on Escape and lock body scroll while open
@@ -459,7 +524,7 @@ function SummaryModal({
         >
           <X className="h-4 w-4" />
         </button>
-        <SummaryPanel analysis={analysis} onClose={onClose} />
+        <SummaryPanel analysis={analysis} notices={notices} onClose={onClose} />
       </div>
     </div>
   )
@@ -467,7 +532,7 @@ function SummaryModal({
 
 // ─── Main card ────────────────────────────────────────────────────────────────
 
-export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivityStatementCsv }: Props) {
+export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivityStatementCsv, dpnNotices = null }: Props) {
   const router = useRouter()
   const [analysis, setAnalysis] = useState<LodgementAnalysisPayload | null>(initialAnalysis)
   const [loading, setLoading] = useState(false)
@@ -506,9 +571,38 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // An analysis stored by an automatic run (on upload) has its figures but no
+  // summary: write it now that someone is looking. Only when there is
+  // something late to explain, as when staff run it themselves.
+  useEffect(() => {
+    if (!initialAnalysis || initialAnalysis.aiSummary) return
+    const late =
+      initialAnalysis.summary.numberOfLateLodgements > 0 || (initialAnalysis.dpnRisk?.totalGrossLate ?? 0) > 0
+    if (!late) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/clients/${clientId}/analyse-lodgements/summary`, { method: 'POST' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { aiSummary: string | null; aiSummaryGeneratedAt: string | null }
+        if (data.aiSummary) {
+          setAnalysis((prev) =>
+            prev ? { ...prev, aiSummary: data.aiSummary, aiSummaryGeneratedAt: data.aiSummaryGeneratedAt } : prev,
+          )
+        }
+      } catch {
+        // The figures stand on their own; the summary can be written next visit.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function handleExport() {
     if (!analysis) return
-    const csv = buildExportCsv(analysis)
+    const csv = buildExportCsv(analysis, dpnNotices)
     const name = analysis.sourceFilename.replace(/\.csv$/i, '')
     downloadCsv(csv, `${name} — Late Lodgements.csv`)
   }
@@ -604,7 +698,7 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
           </div>
 
           {showSummary && (
-            <SummaryModal analysis={analysis} onClose={() => setShowSummary(false)} />
+            <SummaryModal analysis={analysis} notices={dpnNotices} onClose={() => setShowSummary(false)} />
           )}
 
           {/* DPN Risk */}
@@ -613,6 +707,8 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
               <DpnRiskPanel
                 dpnRisk={analysis.dpnRisk}
                 paymentRows={analysis.rows}
+                notices={dpnNotices}
+                clientId={clientId}
               />
             </div>
           )}
@@ -620,7 +716,7 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
           {/* Debt Composition */}
           {analysis.debtBreakdown && (
             <div className="border-t border-border/40 pt-4">
-              <DebtCompositionPanel debtBreakdown={analysis.debtBreakdown} />
+              <DebtCompositionPanel debtBreakdown={analysis.debtBreakdown} rows={analysis.rows} />
             </div>
           )}
 

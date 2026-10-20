@@ -107,14 +107,14 @@ describe('ClientDetailsForm — creating a client', () => {
     render(<ClientDetailsForm clientId={null} initialName="" initialEmail="" />)
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
-    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.example.com.au')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/clients/cl_1/intake'))
     expect(submittedBody(fetchMock).companyDetails).toEqual({
       companyName: 'Whitlock Civil Pty Ltd',
-      abnNumber: '53004085616',
-      acnNumber: '004085616',
+      abnNumber: '86136533741',
+      acnNumber: '136533741',
     })
   })
 
@@ -127,8 +127,8 @@ describe('ClientDetailsForm — creating a client', () => {
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
     // Exact strings, not patterns: the ABN contains the ACN as a substring.
-    expect(screen.getByText('53004085616')).not.toBeNull()
-    expect(screen.getByText('004085616')).not.toBeNull()
+    expect(screen.getByText('86136533741')).not.toBeNull()
+    expect(screen.getByText('136533741')).not.toBeNull()
   })
 
   it('drops the pick once the name is edited by hand', async () => {
@@ -142,14 +142,14 @@ describe('ClientDetailsForm — creating a client', () => {
     await user.clear(nameField())
     await user.type(nameField(), 'Whitlock Earthmoving')
 
-    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.example.com.au')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalled())
     const body = submittedBody(fetchMock)
     expect(body.companyDetails).toBeUndefined()
     expect(body.name).toBe('Whitlock Earthmoving')
-    expect(screen.queryByText('53004085616')).toBeNull()
+    expect(screen.queryByText('86136533741')).toBeNull()
   })
 
   it('sends name and email alone when the register was never used', async () => {
@@ -158,13 +158,13 @@ describe('ClientDetailsForm — creating a client', () => {
     render(<ClientDetailsForm clientId={null} initialName="" initialEmail="" />)
 
     await user.type(nameField(), 'Whitlock Earthmoving')
-    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.example.com.au')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalled())
     expect(submittedBody(fetchMock)).toEqual({
       name: 'Whitlock Earthmoving',
-      email: 'dean@whitlockcivil.com.au',
+      email: 'dean@whitlockcivil.example.com.au',
       phone: '',
     })
   })
@@ -175,7 +175,7 @@ describe('ClientDetailsForm — creating a client', () => {
     render(<ClientDetailsForm clientId={null} initialName="" initialEmail="" />)
 
     await user.type(nameField(), 'Whitlock Earthmoving')
-    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.example.com.au')
     await user.type(screen.getByLabelText('Phone Number'), '0407 552 118')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
@@ -198,7 +198,7 @@ describe('ClientDetailsForm — creating a client', () => {
       'as a company acting as trustee of this trust',
     )
 
-    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.com.au')
+    await user.type(screen.getByLabelText('Email Address'), 'dean@whitlockcivil.example.com.au')
     await user.click(screen.getByRole('button', { name: /create & continue/i }))
 
     await waitFor(() => expect(replace).toHaveBeenCalled())
@@ -206,7 +206,7 @@ describe('ClientDetailsForm — creating a client', () => {
     // the company's own.
     expect(submittedBody(fetchMock).companyDetails).toEqual({
       trustName: 'Smith Family Trust',
-      trustAbnNumber: '82653091178',
+      trustAbnNumber: '51824753556',
       entityType: 'trust',
     })
   })
@@ -217,7 +217,7 @@ describe('ClientDetailsForm — editing an existing client', () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(
-      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.example.com.au" />,
     )
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
@@ -228,15 +228,15 @@ describe('ClientDetailsForm — editing an existing client', () => {
     // The client row takes a name, an email and the client's own phone.
     expect(bodySentTo(fetchMock, '/api/admin/clients/cl_1')).toEqual({
       name: 'Whitlock Civil Pty Ltd',
-      email: 'dean@whitlock.com.au',
+      email: 'dean@whitlock.example.com.au',
       phone: '',
     })
 
     expect(bodySentTo(fetchMock, '/api/portal/company-details')).toEqual({
       clientId: 'cl_1',
       companyName: 'Whitlock Civil Pty Ltd',
-      abnNumber: '53004085616',
-      acnNumber: '004085616',
+      abnNumber: '86136533741',
+      acnNumber: '136533741',
     })
   })
 
@@ -246,7 +246,7 @@ describe('ClientDetailsForm — editing an existing client', () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(
-      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.example.com.au" />,
     )
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
@@ -266,7 +266,7 @@ describe('ClientDetailsForm — editing an existing client', () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(
-      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.example.com.au" />,
     )
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')
@@ -289,7 +289,7 @@ describe('ClientDetailsForm — editing an existing client', () => {
     const user = userEvent.setup()
     const fetchMock = mockRoutes()
     render(
-      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.example.com.au" />,
     )
 
     await user.clear(nameField())
@@ -319,7 +319,7 @@ describe('ClientDetailsForm — editing an existing client', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     render(
-      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.com.au" />,
+      <ClientDetailsForm clientId="cl_1" initialName="Whitlock" initialEmail="dean@whitlock.example.com.au" />,
     )
 
     await pickFirstMatch(user, 'Whitlock Civil Pty Ltd')

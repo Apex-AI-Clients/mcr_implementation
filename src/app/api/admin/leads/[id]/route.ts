@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
+import { stateColumns } from '@/lib/leads/format'
 import type { Database } from '@/types/database'
 
 /**
@@ -25,6 +26,8 @@ import type { Database } from '@/types/database'
 
 type LeadUpdate = Database['public']['Tables']['leads']['Update']
 
+const StateSchema = z.enum(['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'])
+
 const ActivitySchema = z.object({
   id: z.string().uuid(),
   type: z.enum(['note', 'call', 'email', 'next_step', 'stage_change']),
@@ -35,12 +38,18 @@ const ActivitySchema = z.object({
 
 /** Only what the UI can actually edit. Anything else is rejected, not ignored. */
 const PatchSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
   email: z.string().email().optional(),
   phone: z.string().min(1).max(40).optional(),
   company: z.string().nullable().optional(),
   debtMin: z.number().int().min(0).nullable().optional(),
   debtMax: z.number().int().min(0).nullable().optional(),
   entityType: z.enum(['company', 'trust']).nullable().optional(),
+  /**
+   * A business type typed in Edit lead, shown instead of `entityType`. Null (or
+   * blank) goes back to showing `entityType` (migration 0029).
+   */
+  entityTypeLabel: z.string().max(100).nullable().optional(),
   /**
    * Corrected by hand from the lead table. Only the row's own source changes:
    * lead_submissions keeps each enquiry's source as delivered, and external_id
@@ -52,6 +61,22 @@ const PatchSchema = z.object({
    * blank) goes back to the delivered source. `source` is left as it is.
    */
   sourceLabel: z.string().max(100).nullable().optional(),
+  /**
+   * State, from the Edit lead form: one state, or two or more as
+   * `metaStateOptions`. Sending either replaces all three state columns, which
+   * are rebuilt here from the states themselves (as in POST), so the request
+   * cannot store display text that disagrees with them.
+   */
+  state: StateSchema.nullable().optional(),
+  metaStateOptions: z.array(StateSchema).min(2).max(8).nullable().optional(),
+  /**
+   * A state typed in Edit lead ("Australia wide"), kept only when no state is
+   * ticked. Stored as given, like a form answer that matched no state, so it
+   * shows on the record and matches no state filter.
+   */
+  metaStateRaw: z.string().max(200).nullable().optional(),
+  message: z.string().max(5000).nullable().optional(),
+  preferredCallTime: z.string().max(200).nullable().optional(),
   nextStep: z.string().nullable().optional(),
   stage: z
     .enum(['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact'])
@@ -91,15 +116,40 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (readError) throw readError
     if (!existing) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
+    if (patch.state && patch.metaStateOptions?.length) {
+      return NextResponse.json({ error: 'Send one state or a list, not both' }, { status: 400 })
+    }
+
     const update: LeadUpdate = {}
+    if (patch.name !== undefined) update.name = patch.name
     if (patch.email !== undefined) update.email = patch.email.trim().toLowerCase()
     if (patch.phone !== undefined) update.phone = patch.phone.trim()
     if (patch.company !== undefined) update.company = patch.company
     if (patch.debtMin !== undefined) update.debt_min = patch.debtMin
     if (patch.debtMax !== undefined) update.debt_max = patch.debtMax
     if (patch.entityType !== undefined) update.entity_type = patch.entityType
+    if (patch.entityTypeLabel !== undefined) {
+      update.entity_type_label = patch.entityTypeLabel?.trim() || null
+    }
     if (patch.source !== undefined) update.source = patch.source
     if (patch.sourceLabel !== undefined) update.source_label = patch.sourceLabel?.trim() || null
+    if (
+      patch.state !== undefined ||
+      patch.metaStateOptions !== undefined ||
+      patch.metaStateRaw !== undefined
+    ) {
+      const states = patch.state ? [patch.state] : (patch.metaStateOptions ?? [])
+      const columns = stateColumns(states)
+      update.state = columns.state
+      update.meta_state_options = columns.metaStateOptions
+      // Ticked states rebuild the text themselves; typed text stands alone.
+      update.meta_state_raw =
+        states.length > 0 ? columns.metaStateRaw : patch.metaStateRaw?.trim() || null
+    }
+    if (patch.message !== undefined) update.message = patch.message?.trim() || null
+    if (patch.preferredCallTime !== undefined) {
+      update.preferred_call_time = patch.preferredCallTime?.trim() || null
+    }
     if (patch.nextStep !== undefined) update.next_step = patch.nextStep
     if (patch.convertedClientId !== undefined) {
       update.converted_client_id = patch.convertedClientId
@@ -126,6 +176,12 @@ export async function PATCH(req: NextRequest, { params }: Props) {
       // A delivered lead is unique on (source, external_id), so a new source can
       // collide with another lead's delivery of the same id. Unlikely, but said
       // plainly rather than as a 500.
+      if (updateError?.code === '23505' && updateError.message.includes('leads_email_lower_key')) {
+        return NextResponse.json(
+          { error: 'Another lead already has that email.' },
+          { status: 409 },
+        )
+      }
       if (updateError?.code === '23505' && patch.source !== undefined) {
         return NextResponse.json(
           { error: 'Another lead already has that source and delivery id.' },

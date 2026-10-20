@@ -5,6 +5,8 @@ import type { Lead } from '@/types/leads'
 
 interface StageProgressProps {
   lead: Lead
+  /** Drop the card around it, for when it sits inside another card. */
+  embedded?: boolean
 }
 
 type StepState = 'done' | 'current' | 'pending' | 'abandoned'
@@ -28,7 +30,7 @@ type StepState = 'done' | 'current' | 'pending' | 'abandoned'
  * records when a stage change happened but not which stage it moved to, so
  * pairing the two would be invention.
  */
-export function StageProgress({ lead }: StageProgressProps) {
+export function StageProgress({ lead, embedded = false }: StageProgressProps) {
   const abandoned = OFF_RAMP_STAGES.includes(lead.stage) ? lead.stage : null
   const currentIndex = abandoned ? -1 : STAGE_PATH.indexOf(lead.stage)
   const lastIndex = STAGE_PATH.length - 1
@@ -52,7 +54,7 @@ export function StageProgress({ lead }: StageProgressProps) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
+    <div className={embedded ? undefined : 'rounded-xl border border-border bg-card p-4 sm:p-5'}>
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">Progress</p>
         {!abandoned && (

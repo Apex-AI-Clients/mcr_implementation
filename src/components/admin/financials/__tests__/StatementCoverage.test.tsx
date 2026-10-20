@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StatementCoverageTable } from '../StatementCoverageTable'
@@ -60,6 +60,32 @@ describe('StatementCoverageTable', () => {
     // "(older)" — present in the markup — does not show up here.
     expect(screen.getByRole('columnheader', { name: /FY2021\s*\(older\)/ })).toBeTruthy()
     expect(screen.getByRole('columnheader', { name: /Current period.*4 May 2026/ })).toBeTruthy()
+  })
+
+  it('leaves cells as plain text without a file handler', () => {
+    render(<StatementCoverageTable coverage={coverage} />)
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+  })
+
+  it('makes each cell that names a known file a button that selects it', async () => {
+    const user = userEvent.setup()
+    const onSelectFile = vi.fn()
+    render(
+      <StatementCoverageTable
+        coverage={coverage}
+        selectableDocumentIds={new Set(['d1', 'd2'])}
+        selectedDocumentId="d2"
+        onSelectFile={onSelectFile}
+      />,
+    )
+    // d1 appears twice (comparative P&L, own balance sheet); d0 and d3 are not known files.
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(3)
+    const own = screen.getByRole('button', { name: /2024-2025_PROFIT_AND_LOSS\.pdf/ })
+    expect(own.getAttribute('aria-pressed')).toBe('true')
+    await user.click(screen.getAllByRole('button', { name: /combined-2025\.pdf/ })[0])
+    expect(onSelectFile).toHaveBeenCalledWith('d1')
+    expect(screen.getByText(/click it to check or change its year and type/)).toBeTruthy()
   })
 
   it('renders nothing with no statements', () => {
@@ -160,5 +186,58 @@ describe('ComparisonChecksPanel', () => {
   it('renders nothing with no checks', () => {
     const { container } = render(<ComparisonChecksPanel checks={[]} />)
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('missing latest year and the comparison window', () => {
+  const withGap: StatementCoverage = {
+    columns: [
+      { key: 'fy2024', label: 'FY2024', financialYear: 2024, kind: 'annual', extra: false },
+      { key: 'fy2025', label: 'FY2025', financialYear: 2025, kind: 'annual', extra: false },
+      {
+        key: 'fy2026',
+        label: 'FY2026',
+        financialYear: 2026,
+        kind: 'annual',
+        extra: false,
+        notUploaded: true,
+        note: 'Year ended 30 June 2026 not uploaded',
+      },
+      { key: 'current', label: 'FY2027 to date', financialYear: 2027, kind: 'current_period', extra: false, periodLabel: '1 Jul – 15 Oct 2026' },
+    ],
+    rows: {
+      income_statement: [
+        { status: 'own', filename: 'a.pdf', documentId: 'a' },
+        { status: 'own', filename: 'b.pdf', documentId: 'b' },
+        { status: 'missing', filename: null, documentId: null },
+        { status: 'own', filename: 'c.pdf', documentId: 'c' },
+      ],
+      balance_sheet: [
+        { status: 'own', filename: 'a.pdf', documentId: 'a' },
+        { status: 'own', filename: 'b.pdf', documentId: 'b' },
+        { status: 'missing', filename: null, documentId: null },
+        { status: 'own', filename: 'c.pdf', documentId: 'c' },
+      ],
+    },
+    comparedYears: [2024, 2025],
+  }
+
+  it('notes the year not uploaded under its heading, and names the current period', () => {
+    render(<StatementCoverageTable coverage={withGap} />)
+    expect(screen.getByText('Year ended 30 June 2026 not uploaded')).toBeTruthy()
+    expect(screen.getByText('FY2027 to date')).toBeTruthy()
+    expect(screen.getByText('1 Jul – 15 Oct 2026')).toBeTruthy()
+  })
+
+  it('says which years the comparison uses', () => {
+    render(<StatementCoverageTable coverage={withGap} />)
+    expect(screen.getByTestId('comparison-window').textContent).toBe(
+      'The comparison uses the latest 2 annual years on file: FY2024–FY2025.',
+    )
+  })
+
+  it('says nothing about the window when it is not known', () => {
+    render(<StatementCoverageTable coverage={{ ...withGap, comparedYears: undefined }} />)
+    expect(screen.queryByTestId('comparison-window')).toBeNull()
   })
 })

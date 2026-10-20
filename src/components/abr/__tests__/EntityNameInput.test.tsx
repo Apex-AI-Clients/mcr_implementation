@@ -62,7 +62,7 @@ function mockRoutes({ configured = true, search, abn, acns }: RouteOptions = {})
     }
     if (url.startsWith('/api/abr/acns')) {
       // The company fixture's ACN, and the trust's lack of one.
-      return acns ? acns() : json({ acns: { '53004085616': '004085616', '82653091178': '' } })
+      return acns ? acns() : json({ acns: { '86136533741': '136533741', '51824753556': '' } })
     }
     if (url.startsWith('/api/abr/abn')) {
       return abn ? abn() : json({ details: parseAbnDetails(fixture('abn_details_company')) })
@@ -177,8 +177,8 @@ describe('EntityNameInput — searching', () => {
 
     await user.type(field(), 'Whitlock')
     // Two requests chained behind the typing debounce, so more than the default wait.
-    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
-    expect(screen.getByText('ABN 53004085616')).not.toBeNull()
+    await waitFor(() => expect(screen.getByText('ACN 136533741')).not.toBeNull(), ACN_WAIT)
+    expect(screen.getByText('ABN 86136533741')).not.toBeNull()
 
     // One batch for the whole page of results, not one request per row.
     const batches = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/abr/acns'))
@@ -192,7 +192,7 @@ describe('EntityNameInput — searching', () => {
 
     await user.type(field(), 'Whitlock')
     // Two requests chained behind the typing debounce, so more than the default wait.
-    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
+    await waitFor(() => expect(screen.getByText('ACN 136533741')).not.toBeNull(), ACN_WAIT)
     // Only the company has one; the trust row (and the rest) show none.
     expect(screen.getAllByText(/^ACN /)).toHaveLength(1)
   })
@@ -214,8 +214,8 @@ describe('EntityNameInput — searching', () => {
     // …and once it lands, the placeholder becomes the ACN on the company row,
     // and goes from every other row — the trust has none, and the rest were
     // not answered, which is finished too.
-    answer(json({ acns: { '53004085616': '004085616', '82653091178': '' } }))
-    await waitFor(() => expect(screen.getByText('ACN 004085616')).not.toBeNull(), ACN_WAIT)
+    answer(json({ acns: { '86136533741': '136533741', '51824753556': '' } }))
+    await waitFor(() => expect(screen.getByText('ACN 136533741')).not.toBeNull(), ACN_WAIT)
     expect(screen.queryAllByLabelText('Looking up ACN')).toHaveLength(0)
   })
 
@@ -265,8 +265,8 @@ describe('EntityNameInput — picking a match', () => {
     await waitFor(() => expect(onPick).toHaveBeenCalledTimes(1))
     expect(onPick.mock.calls[0][0]).toEqual({
       companyName: 'Whitlock Civil Pty Ltd',
-      abnNumber: '53004085616',
-      acnNumber: '004085616',
+      abnNumber: '86136533741',
+      acnNumber: '136533741',
       entityType: 'company',
     })
   })
@@ -319,7 +319,7 @@ describe('EntityNameInput — picking a match', () => {
     await waitFor(() => expect(onPick).toHaveBeenCalled())
     expect(onPick.mock.calls[0][0]).toEqual({
       trustName: 'Smith Family Trust',
-      abnNumber: '82653091178',
+      abnNumber: '51824753556',
       entityType: 'trust',
     })
   })

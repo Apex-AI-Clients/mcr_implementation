@@ -10,7 +10,7 @@ describe('parseActivityStatementCsv', () => {
   it('extracts statement label and company name from preamble', () => {
     const result = parseActivityStatementCsv(fixtureText)
     expect(result.statementLabel).toBe('Activity statement 002')
-    expect(result.companyName).toBe('PARKCON PTY LTD')
+    expect(result.companyName).toBe('SAMPLE TRADING PTY LTD')
   })
 
   it('returns the correct number of data rows (excluding preamble + header)', () => {
@@ -26,7 +26,7 @@ describe('parseActivityStatementCsv', () => {
     // Use local date parts — toISOString() converts to UTC which shifts the date in non-UTC timezones
     expect(first.processedDate!.getFullYear()).toBe(2026)
     expect(first.processedDate!.getMonth()).toBe(1) // 0-indexed: February
-    expect(first.processedDate!.getDate()).toBe(26)
+    expect(first.processedDate!.getDate()).toBe(24)
     expect(first.effectiveDate!.getFullYear()).toBe(2026)
     expect(first.effectiveDate!.getMonth()).toBe(2) // 0-indexed: March
     expect(first.effectiveDate!.getDate()).toBe(3)

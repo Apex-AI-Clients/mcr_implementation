@@ -2,6 +2,12 @@ import { ClientDetailView } from '@/components/admin/ClientDetailView'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Opening the page starts any analysis that is waiting (ClientDetailView), and
+ * that run works inside after(), on this page's time: 800s on Vercel Pro.
+ */
+export const maxDuration = 800
+
 interface Props {
   params: Promise<{ id: string }>
 }

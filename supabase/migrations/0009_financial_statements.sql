@@ -3,8 +3,8 @@
 --
 -- A single PDF can carry 1 OR 2 financial years (Xero shows current + comparative;
 -- some templates strip the comparative). The same FY can also appear in multiple
--- PDFs — e.g. FY22 as the primary in PARKCON_FY22.pdf AND as the comparative
--- column in PARKCON_FY23.pdf. The UNIQUE constraint is therefore (client_id,
+-- PDFs — e.g. FY22 as the primary in Company_FY22.pdf AND as the comparative
+-- column in Company_FY23.pdf. The UNIQUE constraint is therefore (client_id,
 -- financial_year), not (document_id). Conflict resolution ("primary wins over
 -- comparative") is enforced in the upsert logic of the extract-financials API
 -- route — see source_column.

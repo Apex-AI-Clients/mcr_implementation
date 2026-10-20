@@ -1,6 +1,7 @@
 import type { AuState, Lead, LeadSource, LeadStage } from '@/types/leads'
 import { needsFollowUp } from './followUp'
 import { compareByDebtDesc, normalisePhone, overlapsFloor } from './format'
+import { parseLooseDebt } from './ingest'
 
 /**
  * List filtering. Pure so it can be tested without mounting the table, and so
@@ -48,6 +49,33 @@ export function hasActiveFilters(filters: LeadFilterState): boolean {
   )
 }
 
+/**
+ * A search box term that reads as a debt amount — "120k", "$120,000",
+ * "1.2m", "250000" — as dollars, or null when it is not one.
+ *
+ * Only the whole term counts, so a name or message with a number in it is
+ * not mistaken for an amount. A leading 0 without a $ is a phone number
+ * ("0402915"), not a debt. Below MIN_PLAUSIBLE_DEBT is not a debt either.
+ */
+export function debtSearchAmount(rawTerm: string): number | null {
+  const term = rawTerm.trim()
+  if (!/^\$?\s*\d[\d,]*(\.\d+)?\s*[kKmM]?$/.test(term)) return null
+  if (term.startsWith('0')) return null
+  const parsed = parseLooseDebt(term)
+  return parsed.kind === 'parsed' ? parsed.min : null
+}
+
+/**
+ * Does the lead's debt include this amount? An exact figure must equal it, a
+ * bracket must contain it, and an open-ended "$150k+" contains anything from
+ * its floor up. Mirrored in SQL by withFilters() in queries.ts.
+ */
+export function debtIncludes(lead: Pick<Lead, 'debtMin' | 'debtMax'>, amount: number): boolean {
+  if (lead.debtMin === null && lead.debtMax === null) return false
+  const min = lead.debtMin ?? 0
+  return min <= amount && (lead.debtMax === null || lead.debtMax >= amount)
+}
+
 function matchesSearch(lead: Lead, rawTerm: string): boolean {
   const term = rawTerm.trim().toLowerCase()
   if (!term) return true
@@ -55,6 +83,9 @@ function matchesSearch(lead: Lead, rawTerm: string): boolean {
   if (lead.email.toLowerCase().includes(term)) return true
   // Searching what people wrote is more useful than searching their phone.
   if (lead.message?.toLowerCase().includes(term)) return true
+
+  const amount = debtSearchAmount(rawTerm)
+  if (amount !== null && debtIncludes(lead, amount)) return true
 
   // Phone matching ignores formatting on both sides, so "0402 915" and
   // "0402915" both find the same lead.

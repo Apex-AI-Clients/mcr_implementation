@@ -19,6 +19,7 @@ import {
   formatLeadNotes,
   countLeadNotes,
   partnerForCampaign,
+  formatEntityType,
   formatLeadSource,
   describeUncertainState,
 } from '../format'
@@ -42,6 +43,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     stage: 'lead',
     source: 'facebook',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: '2026-08-26T00:00:00.000Z',
@@ -415,7 +417,7 @@ describe('phone', () => {
 })
 
 describe('isValidEmail', () => {
-  it.each(['a@b.co', 'marcus.oyelaran@brightpath.com.au', 'x+tag@example.org'])(
+  it.each(['a@b.co', 'marcus.oyelaran@brightpath.example.com.au', 'x+tag@example.org'])(
     'accepts %s',
     (input) => {
       expect(isValidEmail(input)).toBe(true)
@@ -777,5 +779,18 @@ describe('describeUncertainState', () => {
       label: 'nsw,_auckland',
       description: 'State as given: nsw,_auckland',
     })
+  })
+})
+
+describe('formatEntityType', () => {
+  it('shows a typed business type in place of company or trust', () => {
+    expect(formatEntityType({ entityType: null, entityTypeLabel: 'Sole trader' })).toBe(
+      'Sole trader',
+    )
+  })
+
+  it('falls back to company or trust, then to null', () => {
+    expect(formatEntityType({ entityType: 'trust', entityTypeLabel: null })).toBe('Trust')
+    expect(formatEntityType({ entityType: null, entityTypeLabel: null })).toBeNull()
   })
 })

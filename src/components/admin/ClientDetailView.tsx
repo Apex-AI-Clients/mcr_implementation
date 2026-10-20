@@ -5,12 +5,17 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
 import { PredictOutcomeButton } from '@/components/admin/PredictOutcomeButton'
+import { ReadinessChecklist } from '@/components/admin/ReadinessChecklist'
+import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
+import { after } from 'next/server'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { getLeadIdForClient } from '@/lib/leads/queries'
 import { formatPhone } from '@/lib/leads/format'
 import { readDirectors } from '@/lib/clients/companyDetails'
+import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { describeDirector } from '@/lib/asic/fill'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { archiveReasonLabel } from '@/lib/clients/archive'
@@ -53,6 +58,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     { data: rawCompany },
     originLeadId,
     comparisonJob,
+    { data: noticeRows },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -67,7 +73,23 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     // A comparison running in the background, shown as a banner. Archived
     // files cannot start one.
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
+    supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
+  // What the prediction still needs. Archived files are read-only: no checklist.
+  let readiness = archived ? null : await loadReadiness(supabase, id)
+  // Work waiting with nothing running (a file a run had no time left for, or
+  // one uploaded before runs were automatic): start it now, in the background,
+  // rather than leave it for someone to press Run now. Files already read are
+  // never sent again (readState.ts), and a file whose read failed is not
+  // retried here. Read again so the checklist shows it running.
+  if (readiness?.items.some((item) => item.status === 'not_started')) {
+    try {
+      const { started } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
+      if (started) readiness = await loadReadiness(supabase, id)
+    } catch (err) {
+      console.error('[client page] starting the waiting analysis failed', err instanceof Error ? err.name : 'unknown')
+    }
+  }
 
   const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
     id: d.id,
@@ -112,6 +134,15 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       }
     : null
   const identity = identityDisplay(companyDetails ?? {})
+
+  // The DPN card: each notice checked against this file's ACN and directors.
+  const dpn = buildDpnPanel({
+    documents: documents.filter((d) => d.docCategory === 'director_penalty_notices'),
+    noticeRows: noticeRows ?? [],
+    client,
+    file: { acn: companyDetails?.acnNumber ?? null, directors: companyDetails?.directors ?? [] },
+    todayIso: sydneyToday(),
+  })
 
   // Document status, naming the required categories that have no file yet.
   const statusBadge = documentStatusBadge(client.status, documents.map((d) => d.docCategory))
@@ -180,8 +211,18 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
               <Pencil className="h-4 w-4" />
               Continue intake
             </Link>
-            <PredictOutcomeButton clientId={client.id} />
+            <PredictOutcomeButton
+              clientId={client.id}
+              canPredict={readiness?.canPredict ?? false}
+              waitingFor={readiness?.waitingFor ?? []}
+            />
           </div>
+        </div>
+      )}
+
+      {readiness && (
+        <div className="mb-6">
+          <ReadinessChecklist clientId={client.id} readiness={readiness} />
         </div>
       )}
 
@@ -317,7 +358,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
         {/* Read-only in the Archive: files can be downloaded, not changed. */}
-        <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} />
+        <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} dpn={dpn} />
       </div>
     </div>
   )

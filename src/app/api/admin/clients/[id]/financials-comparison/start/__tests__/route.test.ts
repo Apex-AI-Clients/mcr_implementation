@@ -27,10 +27,10 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { POST } from '../route'
 
 const PARAMS = { params: Promise.resolve({ id: 'client-1' }) }
-const request = () =>
+const request = (body: object = { mode: 'full' }) =>
   new NextRequest('http://localhost/api/admin/clients/client-1/financials-comparison/start', {
     method: 'POST',
-    body: JSON.stringify({ mode: 'full' }),
+    body: JSON.stringify(body),
   })
 
 /**
@@ -42,10 +42,13 @@ function mockDb({
   activeAtCheck,
   insertError,
   runningAfter,
+  ownedDocuments = [],
 }: {
   activeAtCheck: { id: string; status: string; created_at: string } | null
   insertError: { code: string; message: string } | null
   runningAfter: { id: string } | null
+  /** The client's financial statement files among those a start names. */
+  ownedDocuments?: { id: string }[]
 }) {
   let activeReads = 0
   const insert = vi.fn(() => ({
@@ -73,6 +76,14 @@ function mockDb({
   const from = vi.fn((table: string) => {
     if (table === 'clients') {
       return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'client-1' } }) }) }) }
+    }
+    if (table === 'documents') {
+      const chain: Record<string, unknown> = {}
+      chain.select = () => chain
+      chain.eq = () => chain
+      chain.in = () => chain
+      chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: ownedDocuments }).then(resolve)
+      return chain
     }
     return { select: activeQuery, insert, update }
   })
@@ -128,6 +139,24 @@ describe('one active comparison job per client', () => {
     const res = await POST(request(), PARAMS)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ jobId: 'job-winner', reused: true })
+    expect(afterSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('reading named files only', () => {
+  it("passes the client's own files to the job", async () => {
+    const { runComparisonJob } = await import('@/lib/financials/comparisonJob')
+    mockDb({ activeAtCheck: null, insertError: null, runningAfter: null, ownedDocuments: [{ id: 'doc-1' }] })
+    const res = await POST(request({ mode: 'full', documentIds: ['doc-1'] }), PARAMS)
+    expect(res.status).toBe(200)
+    await afterSpy.mock.calls[0][0]()
+    expect(vi.mocked(runComparisonJob)).toHaveBeenCalledWith(expect.objectContaining({ documentIds: ['doc-1'] }))
+  })
+
+  it("refuses a file that is not the client's financial statement", async () => {
+    mockDb({ activeAtCheck: null, insertError: null, runningAfter: null, ownedDocuments: [] })
+    const res = await POST(request({ mode: 'full', documentIds: ['someone-elses'] }), PARAMS)
+    expect(res.status).toBe(400)
     expect(afterSpy).not.toHaveBeenCalled()
   })
 })

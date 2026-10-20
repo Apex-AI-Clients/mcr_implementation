@@ -3,7 +3,6 @@ import { render, screen, waitFor, within, cleanup } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { LeadsPageClient } from '../LeadsPageClient'
 import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
-import { DuplicateLeadError } from '@/lib/leads/persistence'
 import { ToastProvider } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, type LeadFilterState } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
@@ -54,6 +53,7 @@ function makeLead(overrides: Partial<Lead>): Lead {
     stage: 'lead',
     source: 'facebook',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: daysAgo(5),
@@ -82,10 +82,10 @@ function makeLead(overrides: Partial<Lead>): Lead {
 }
 
 const LEADS: Lead[] = [
-  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2) }),
-  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', stage: 'prospect', source: 'website', createdAt: daysAgo(9) }),
-  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', createdAt: daysAgo(50) }),
-  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80) }),
+  makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.example.com.au', phone: '0402915338', state: 'VIC', createdAt: daysAgo(2) }),
+  makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.example.com.au', phone: '0433217604', stage: 'prospect', source: 'website', createdAt: daysAgo(9) }),
+  makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.example.com.au', phone: '0421004772', createdAt: daysAgo(50) }),
+  makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.example.com.au', phone: '0417645099', stage: 'non_proceeding', createdAt: daysAgo(80) }),
 ]
 
 interface RenderOptions {
@@ -381,7 +381,7 @@ describe('LeadsPageClient', () => {
     const dialog = await screen.findByRole('dialog')
 
     await user.type(within(dialog).getByLabelText('Name'), 'Dean Whitlock')
-    await user.type(within(dialog).getByLabelText('Email'), 'dean@whitlockcivil.com.au')
+    await user.type(within(dialog).getByLabelText('Email'), 'dean@whitlockcivil.example.com.au')
     await user.type(within(dialog).getByLabelText('Phone'), '0407 552 118')
     // "$150k – $250k" is index 7 in DEBT_PRESETS.
     await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
@@ -458,11 +458,9 @@ describe('LeadsPageClient', () => {
       expect(within(dismissed).queryByText(/New enquiry after/)).toBeNull()
     })
 
-    it('offers the existing lead when an added email already has one', async () => {
+    it('links to the existing lead when an added email is merged onto it', async () => {
       const user = userEvent.setup()
-      const createLead = vi.fn(async () => {
-        throw new DuplicateLeadError('A lead with this email already exists.', 'ld_existing')
-      })
+      const createLead = vi.fn(async () => ({ leadId: 'ld_existing', merged: true }))
       renderList({ persistence: { createLead } })
 
       await user.click(screen.getByRole('button', { name: /add lead/i }))
@@ -475,10 +473,12 @@ describe('LeadsPageClient', () => {
     await user.click(within(dialog).getByRole('checkbox', { name: 'QLD' }))
       await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 
-      const open = await screen.findByRole('link', { name: 'Open existing lead' })
+      const open = await screen.findByRole('link', { name: 'Open lead' })
       expect(open.getAttribute('href')).toBe('/leads/ld_existing')
-      expect(screen.getByText('known@example.test already has a lead.')).toBeTruthy()
-      // No merge, and the optimistic row is taken back out.
+      expect(
+        screen.getByText('known@example.test already had a lead. It now shows these details.'),
+      ).toBeTruthy()
+      // The details went onto the existing lead, so the optimistic second row goes.
       expect(createLead).toHaveBeenCalledTimes(1)
       expect(screen.queryByText('Test Person')).toBeNull()
     })

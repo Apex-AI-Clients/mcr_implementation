@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   EMPTY_FILTERS,
+  debtIncludes,
+  debtSearchAmount,
   filterLeads,
   hasActiveFilters,
   mightBeInState,
@@ -30,6 +32,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     stage: 'lead',
     source: 'facebook',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: at(5),
@@ -92,10 +95,10 @@ describe('hasActiveFilters', () => {
 describe('filterLeads', () => {
   const leads = [
     // a: closed low bracket, b: open-ended $150k+, c: no debt given, d: big closed bracket
-    makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.com.au', phone: '0402915338', state: 'VIC', stage: 'lead', source: 'facebook', debtMin: 50_000, debtMax: 74_999, message: 'Behind on PAYG after losing a builder.', createdAt: at(2), lastActionAt: at(2) }),
-    makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.com.au', phone: '0433217604', state: 'NSW', stage: 'prospect', source: 'website', debtMin: 150_000, debtMax: null, message: null, createdAt: at(10), lastActionAt: at(10) }),
-    makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.com.au', phone: '0421004772', state: 'NSW', stage: 'lead', source: 'facebook', debtMin: null, debtMax: null, message: 'Saw your advertisement.', createdAt: at(40), lastActionAt: at(40) }),
-    makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.com.au', phone: '0417645099', state: 'VIC', stage: 'non_proceeding', source: 'website', debtMin: 250_000, debtMax: 500_000, message: null, createdAt: at(75), lastActionAt: at(75) }),
+    makeLead({ id: 'a', name: 'Marcus Oyelaran', email: 'marcus@brightpath.example.com.au', phone: '0402915338', state: 'VIC', stage: 'lead', source: 'facebook', debtMin: 50_000, debtMax: 74_999, message: 'Behind on PAYG after losing a builder.', createdAt: at(2), lastActionAt: at(2) }),
+    makeLead({ id: 'b', name: 'Priya Raman', email: 'priya@freight.example.com.au', phone: '0433217604', state: 'NSW', stage: 'prospect', source: 'website', debtMin: 150_000, debtMax: null, message: null, createdAt: at(10), lastActionAt: at(10) }),
+    makeLead({ id: 'c', name: 'Sasha Lorenz', email: 'sasha@autoworks.example.com.au', phone: '0421004772', state: 'NSW', stage: 'lead', source: 'facebook', debtMin: null, debtMax: null, message: 'Saw your advertisement.', createdAt: at(40), lastActionAt: at(40) }),
+    makeLead({ id: 'd', name: 'Hugo Pemberton', email: 'hugo@tiling.example.com.au', phone: '0417645099', state: 'VIC', stage: 'non_proceeding', source: 'website', debtMin: 250_000, debtMax: 500_000, message: null, createdAt: at(75), lastActionAt: at(75) }),
   ]
 
   function ids(result: Lead[]): string[] {
@@ -292,5 +295,73 @@ describe('mightBeInState', () => {
       mightBeInState(makeLead({ state: null, metaStateOptions: ['NT', 'SA'] }), 'WA'),
     ).toBe(false)
     expect(mightBeInState(makeLead({ state: null }), 'NSW')).toBe(false)
+  })
+})
+
+describe('debtSearchAmount', () => {
+  it.each([
+    ['120k', 120_000],
+    ['$120,000', 120_000],
+    ['$ 120000', 120_000],
+    ['250000', 250_000],
+    ['1.2m', 1_200_000],
+    ['$0450k', 450_000],
+  ])('reads %s as %d', (term, amount) => {
+    expect(debtSearchAmount(term)).toBe(amount)
+  })
+
+  it.each([
+    ['0402915338', 'a phone number'],
+    ['0402 915', 'a phone number with a space'],
+    ['Dean', 'a name'],
+    ['unit 12', 'words with a number'],
+    ['100k-200k', 'a range'],
+    ['500', 'below a plausible debt'],
+    ['', 'nothing'],
+  ])('does not read %s (%s) as an amount', (term) => {
+    expect(debtSearchAmount(term)).toBeNull()
+  })
+})
+
+describe('debtIncludes', () => {
+  it('matches an exact figure only on that figure', () => {
+    const exact = { debtMin: 187_000, debtMax: 187_000 }
+    expect(debtIncludes(exact, 187_000)).toBe(true)
+    expect(debtIncludes(exact, 187_001)).toBe(false)
+  })
+
+  it('matches a bracket that contains the amount, ends included', () => {
+    const bracket = { debtMin: 100_000, debtMax: 124_999 }
+    expect(debtIncludes(bracket, 100_000)).toBe(true)
+    expect(debtIncludes(bracket, 124_999)).toBe(true)
+    expect(debtIncludes(bracket, 125_000)).toBe(false)
+  })
+
+  it('matches an open-ended range from its floor up', () => {
+    const open = { debtMin: 150_000, debtMax: null }
+    expect(debtIncludes(open, 2_000_000)).toBe(true)
+    expect(debtIncludes(open, 149_999)).toBe(false)
+  })
+
+  it('treats a missing floor as zero, and an unknown debt as no match', () => {
+    expect(debtIncludes({ debtMin: null, debtMax: 49_999 }, 20_000)).toBe(true)
+    expect(debtIncludes({ debtMin: null, debtMax: null }, 20_000)).toBe(false)
+  })
+})
+
+describe('filterLeads — debt search', () => {
+  const exact = makeLead({ id: 'exact', name: 'Exact', debtMin: 120_000, debtMax: 120_000 })
+  const bracket = makeLead({ id: 'bracket', name: 'Bracket', debtMin: 100_000, debtMax: 124_999 })
+  const big = makeLead({ id: 'big', name: 'Big', debtMin: 500_000, debtMax: null })
+  const leads = [exact, bracket, big]
+
+  it('finds every lead whose debt includes the amount', () => {
+    const found = filterLeads(leads, withFilters({ search: '$120k' }), NOW).map((l) => l.id)
+    expect(found.sort()).toEqual(['bracket', 'exact'])
+  })
+
+  it('finds an open-ended range above its floor', () => {
+    const found = filterLeads(leads, withFilters({ search: '750,000' }), NOW).map((l) => l.id)
+    expect(found).toEqual(['big'])
   })
 })

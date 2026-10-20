@@ -1,5 +1,5 @@
 import { Progress } from '@/components/ui/Progress'
-import { CHECKLIST_ORDER, REQUIRED_CATEGORIES } from '@/lib/constants'
+import { CHECKLIST_ORDER, REQUIRED_CATEGORIES, displayCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 
 interface CompletenessBarProps {
@@ -8,7 +8,7 @@ interface CompletenessBarProps {
 
 export function CompletenessBar({ documents }: CompletenessBarProps) {
   const receivedCategories = new Set(
-    documents.filter((d) => d.status !== 'rejected').map((d) => d.docCategory),
+    documents.filter((d) => d.status !== 'rejected').map((d) => displayCategory(d.docCategory)),
   )
 
   const requiredReceived = REQUIRED_CATEGORIES.filter((c) => receivedCategories.has(c)).length

@@ -6,6 +6,7 @@ import { LodgementAnalysisCard } from '@/components/admin/LodgementAnalysisCard'
 import { Badge } from '@/components/ui/Badge'
 import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
+import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ export default async function LodgementAnalysisPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [{ data: rawDocs }, { data: rawAnalysis }] = await Promise.all([
+  const [{ data: rawDocs }, { data: rawAnalysis }, dpnNotices] = await Promise.all([
     supabase
       .from('documents')
       .select('original_filename, doc_category')
@@ -34,13 +35,16 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       .order('analysed_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // The ATO's director penalty notices, when on file: the DPN panel shows
+    // their figures instead of the estimate from the account.
+    loadDpnNoticeFigures(supabase, id).catch(() => null),
   ])
 
+  // Any CSV in the account category may be the activity statement export: the
+  // analysis recognises it by its content, not its filename, and says so if
+  // none of them is one.
   const hasActivityStatementCsv = (rawDocs ?? []).some(
-    (d) =>
-      d.doc_category === 'integrated_client_account' &&
-      d.original_filename.toLowerCase().includes('activity statement') &&
-      d.original_filename.toLowerCase().endsWith('.csv'),
+    (d) => d.doc_category === 'integrated_client_account' && d.original_filename.toLowerCase().endsWith('.csv'),
   )
 
   // The saved totals are whatever the code computed on the day; re-run today's
@@ -117,6 +121,7 @@ export default async function LodgementAnalysisPage({ params }: Props) {
         clientId={id}
         initialAnalysis={initialAnalysis}
         hasActivityStatementCsv={hasActivityStatementCsv}
+        dpnNotices={dpnNotices}
       />
     </div>
   )

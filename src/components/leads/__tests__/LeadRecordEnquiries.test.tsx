@@ -7,7 +7,7 @@ import { ToastProvider } from '@/components/ui/Toast'
 import type { Lead, LeadSubmission } from '@/types/leads'
 
 /**
- * The record's side of repeat enquiries: the Enquiries list, and the
+ * The record's side of repeat enquiries: the Lead history list, and the
  * "enquired again" notice with its Dismiss. Synthetic data only.
  */
 
@@ -34,6 +34,7 @@ const LEAD: Lead = {
   stage: 'non_proceeding',
   source: 'facebook',
   sourceLabel: null,
+  entityTypeLabel: null,
   company: null,
   nextStep: null,
   stageSince: '2026-08-20T00:00:00.000Z',
@@ -115,7 +116,7 @@ function renderRecord(lead: Lead = LEAD, persistence: LeadsPersistence = {}) {
 }
 
 function enquiriesSection() {
-  return screen.getByRole('region', { name: /Enquiries/ })
+  return screen.getByRole('region', { name: /Lead history/ })
 }
 
 describe('Enquiries on the lead record', () => {

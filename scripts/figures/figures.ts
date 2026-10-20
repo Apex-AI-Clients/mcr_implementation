@@ -6,12 +6,16 @@ import type { CompanyDetailsForCheck, DocumentRecordForCheck } from '@/lib/finan
 import { correctFile, type FileColumn } from '@/lib/financials/lineCorrections'
 import type { FinancialsComparison, StatementLine, StoredStatementSlot } from '@/lib/financials/types'
 import { creditorDebt, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { ATO_EXCLUDING_SUPER_KEYS } from '@/lib/sbr/financialPoints'
 import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { computeLateLodgement, reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import type { LateLodgementScope } from '@/lib/analysis/config'
 import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
 import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
 import type { LodgementAnalysisResult } from '@/lib/analysis/types'
+import type { NoticeRow } from '@/lib/dpn/stored'
+import { buildDpnPanel } from '@/lib/dpn/view'
+import { summariseNotices } from '@/lib/dpn/summary'
 
 /**
  * Shared by the snapshot and check scripts. Nothing here prints a client's
@@ -34,6 +38,8 @@ export interface Snapshot {
   company: CompanyDetailsForCheck | null
   /** The ATO account rows the prediction reads (re-read from the CSV when the stored analysis has no balance). */
   icaRows?: IcaRow[] | null
+  /** Director penalty notices: the documents and the stored notices. */
+  dpn?: { documents: { id: string; originalFilename: string }[]; noticeRows: NoticeRow[] }
 }
 
 /** What the prediction page would use as the ATO debt, from the snapshot. */
@@ -152,6 +158,11 @@ export function flatten(c: FinancialsComparison): Figures {
     const equity = c.equityByYear?.[year]
     if (equity) put(`FY${year}`, 'Appropriations.distributions', equity.distributions)
   }
+  // ATO-related debt as the prediction's points state it: super left out.
+  for (const period of Object.keys(out)) {
+    const parts = ATO_EXCLUDING_SUPER_KEYS.flatMap((k) => [out[period][`Current Liabilities.${k}`], out[period][`Non-Current Liabilities.${k}`]])
+    if (parts.some((v) => typeof v === 'number')) put(period, 'ATO-related.excludingSuper', parts.reduce<number>((n, v) => n + (v ?? 0), 0))
+  }
   return out
 }
 
@@ -162,13 +173,18 @@ export interface Difference {
   actual: number | null | undefined
 }
 
+/** Line sums and printed totals can differ by a rounding dollar. */
+export const TOLERANCE_DOLLARS = 1
+
 export function compare(expected: Figures, actual: Figures): Difference[] {
   const out: Difference[] = []
   for (const period of Object.keys(expected).sort()) {
+    // A year outside the comparison's window is reported, not counted as a difference.
+    if (!(period in actual)) continue
     for (const key of Object.keys(expected[period]).sort()) {
       const want = expected[period][key]
       const got = actual[period]?.[key]
-      const same = want === null ? got === null || got === undefined : typeof got === 'number' && Math.abs(got - want) < 0.5
+      const same = want === null ? got === null || got === undefined : typeof got === 'number' && Math.abs(got - want) <= TOLERANCE_DOLLARS + 0.005
       if (!same) out.push({ period, key, expected: want, actual: got })
     }
   }
@@ -240,6 +256,26 @@ export function compareLodgement(expected: LodgementFigures, actual: LodgementFi
     const got = actual[key]
     const same = typeof want === 'number' ? typeof got === 'number' && Math.abs(got - want) < 0.005 : got === want
     if (!same) out.push(`lodgement  ${key}: verified ${want}, now ${got ?? 'missing'}`)
+  }
+  return out
+}
+
+// ── Director penalty notices ─────────────────────────────────────────────────
+
+/** The stored notices' company totals by type, columns 2–5 in dollars (current notices, each period once). */
+export function noticeTotals(snapshot: Snapshot): Record<string, [number, number, number, number]> {
+  if (!snapshot.dpn) return {}
+  const today = snapshot.takenAt.slice(0, 10)
+  const panel = buildDpnPanel({
+    documents: snapshot.dpn.documents,
+    noticeRows: snapshot.dpn.noticeRows,
+    client: { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
+    file: { acn: null, directors: [] },
+    todayIso: today,
+  })
+  const out: Record<string, [number, number, number, number]> = {}
+  for (const t of summariseNotices(panel.notices, today).companyByType) {
+    out[t.type] = [t.totals.column2, t.totals.column3, t.totals.column4, t.totals.column5].map((c) => c / 100) as [number, number, number, number]
   }
   return out
 }

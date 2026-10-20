@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, CornerDownLeft, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { CoverageCell, StatementCoverage } from '@/lib/financials/coverage'
+import { yearSpan } from '@/lib/financials/periodLabels'
 import type { StatementHalfKey } from '@/lib/financials/types'
 
 /**
@@ -10,12 +11,18 @@ import type { StatementHalfKey } from '@/lib/financials/types'
  * or missing — the filename is on hover.
  *
  * Presentational only (no hooks), so the client page renders it on the
- * server and the comparison page inside its client component.
+ * server and the comparison page inside its client component. There, a cell
+ * that names a file is a button (onSelectFile): it opens that file's year
+ * and type below the table.
  */
 
 interface Props {
   coverage: StatementCoverage
   className?: string
+  /** Cells whose file is in this set become buttons that select it. */
+  selectableDocumentIds?: ReadonlySet<string>
+  selectedDocumentId?: string | null
+  onSelectFile?: (documentId: string) => void
 }
 
 const ROWS: Array<{ half: StatementHalfKey; label: string }> = [
@@ -56,6 +63,11 @@ function CellContent({ cell }: { cell: CoverageCell }) {
   )
 }
 
+/** "The comparison uses the latest 4 annual years on file: FY2022–FY2025." */
+export function comparisonWindowNote(years: readonly number[]): string {
+  return `The comparison uses the latest ${years.length} annual year${years.length === 1 ? '' : 's'} on file: ${yearSpan(years)}.`
+}
+
 function hoverText(cell: CoverageCell): string | undefined {
   if (!cell.filename) return undefined
   return cell.status === 'comparative'
@@ -63,7 +75,7 @@ function hoverText(cell: CoverageCell): string | undefined {
     : cell.filename
 }
 
-export function StatementCoverageTable({ coverage, className }: Props) {
+export function StatementCoverageTable({ coverage, className, selectableDocumentIds, selectedDocumentId, onSelectFile }: Props) {
   if (coverage.columns.length === 0) return null
 
   return (
@@ -90,6 +102,7 @@ export function StatementCoverageTable({ coverage, className }: Props) {
                   {column.periodLabel && (
                     <span className="block font-normal text-foreground/40"> {column.periodLabel}</span>
                   )}
+                  {column.note && <span className="block font-normal text-warning">{column.note}</span>}
                 </th>
               ))}
             </tr>
@@ -109,8 +122,25 @@ export function StatementCoverageTable({ coverage, className }: Props) {
                       className={cn('px-3 py-2 whitespace-nowrap', column.extra && 'opacity-60')}
                       title={hover}
                     >
-                      <CellContent cell={cell} />
-                      {hover && <span className="sr-only">: {hover}</span>}
+                      {onSelectFile && cell.documentId && selectableDocumentIds?.has(cell.documentId) ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectFile(cell.documentId as string)}
+                          aria-pressed={selectedDocumentId === cell.documentId}
+                          className={cn(
+                            '-mx-1.5 -my-1 rounded px-1.5 py-1 text-left hover:bg-surface/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                            selectedDocumentId === cell.documentId && 'bg-surface/60 ring-1 ring-accent/40',
+                          )}
+                        >
+                          <CellContent cell={cell} />
+                          {hover && <span className="sr-only">: {hover}</span>}
+                        </button>
+                      ) : (
+                        <>
+                          <CellContent cell={cell} />
+                          {hover && <span className="sr-only">: {hover}</span>}
+                        </>
+                      )}
                     </td>
                   )
                 })}
@@ -124,8 +154,14 @@ export function StatementCoverageTable({ coverage, className }: Props) {
         <span className="text-accent">Comparative</span> — read from the prior-year column of the next
         year&apos;s statements. <span className="text-destructive">Missing</span> — no file supplies it.{' '}
         <span className="text-warning">Extraction failed</span> — a file prints it but it could not be read; re-run the
-        extraction. Hover a cell for the file. Years marked older are kept but not compared.
+        extraction. Hover a cell for the file{onSelectFile ? '; click it to check or change its year and type' : ''}. Years
+        marked older are kept but not compared.
       </p>
+      {coverage.comparedYears && coverage.comparedYears.length > 0 && (
+        <p className="text-[11px] text-foreground/70" data-testid="comparison-window">
+          {comparisonWindowNote(coverage.comparedYears)}
+        </p>
+      )}
     </div>
   )
 }

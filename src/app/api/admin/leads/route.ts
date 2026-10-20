@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
-import { requireStaffUser } from '@/lib/auth/staff'
+import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 import { stateColumns } from '@/lib/leads/format'
+import type { SubmissionPayload } from '@/lib/leads/ingestStore'
 
 /**
  * Create a lead, optionally with its first activity.
+ *
+ * A known email is not refused: it becomes a new enquiry on the existing lead,
+ * through the same `ingest_lead_submission` merge the forms use. The lead row
+ * takes the new details and the earlier ones stay in Lead history. Answers 200
+ * with `merged: true` and the existing lead's id in that case, 201 otherwise.
  *
  * `last_action_at` is deliberately absent from the insert — the trigger on
  * lead_activities owns that column. Two writers to one clock is how it drifts.
@@ -97,21 +103,41 @@ export async function POST(req: NextRequest) {
       company: lead.company,
       stage: 'lead',
     })
+    let leadId = lead.id
+    let merged = false
     if (insertError) {
-      // One lead per email (migration 0020). Staff adding someone who already
-      // enquired get the existing record to open, never a silent merge.
-      if (insertError.code === UNIQUE_VIOLATION && insertError.message.includes(EMAIL_KEY)) {
-        const { data: existing } = await supabase
-          .from('leads')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle()
-        return NextResponse.json(
-          { error: 'A lead with this email already exists.', leadId: existing?.id ?? null },
-          { status: 409 },
-        )
+      // One lead per email (migration 0020). Someone staff add again is a new
+      // enquiry on that lead, not a second lead and not an error.
+      if (insertError.code !== UNIQUE_VIOLATION || !insertError.message.includes(EMAIL_KEY)) {
+        throw insertError
       }
-      throw insertError
+      const author = staffAuthorName(staff)
+      const submission: SubmissionPayload = {
+        name: lead.name.trim(),
+        email,
+        phone: lead.phone.trim(),
+        debt_min: lead.debtMin,
+        debt_max: lead.debtMax,
+        state: stateFields.state,
+        meta_state_raw: stateFields.metaStateRaw,
+        meta_state_options: stateFields.metaStateOptions,
+        entity_type: lead.entityType,
+        message: lead.message,
+        preferred_call_time: lead.preferredCallTime,
+        source: lead.source,
+        external_id: null,
+      }
+      const { data, error: mergeError } = await supabase.rpc('ingest_lead_submission', {
+        p_submission: submission,
+        p_note_body: `Added again by ${author}. The new details are on the lead; the earlier ones are in Lead history.`,
+        p_note_author: author,
+        p_latest_touch: false,
+      })
+      if (mergeError) throw mergeError
+      const row = (data as { outcome: string; lead_id: string | null }[] | null)?.[0]
+      if (!row?.lead_id) throw new Error('ingest_lead_submission returned no lead')
+      leadId = row.lead_id
+      merged = true
     }
 
     // Best effort: the lead exists either way, and losing an opening note is a
@@ -119,7 +145,7 @@ export async function POST(req: NextRequest) {
     if (activity) {
       const { error: activityError } = await supabase.from('lead_activities').insert({
         id: activity.id,
-        lead_id: lead.id,
+        lead_id: leadId,
         type: activity.type,
         body: activity.body,
         author: activity.author,
@@ -130,7 +156,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ id: lead.id }, { status: 201 })
+    return NextResponse.json({ id: leadId, merged }, { status: merged ? 200 : 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err)
     console.error('[POST /api/admin/leads]', message, err)

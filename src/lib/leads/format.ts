@@ -207,6 +207,17 @@ export function describeUncertainState(
 }
 
 /**
+ * How a lead's business type reads: what staff typed, else Company or Trust,
+ * else null when nothing is known.
+ */
+export function formatEntityType(
+  lead: Pick<Lead, 'entityType'> & { entityTypeLabel?: string | null },
+): string | null {
+  if (lead.entityTypeLabel) return lead.entityTypeLabel
+  return lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : null
+}
+
+/**
  * How a lead's origin reads: "Facebook · EPIC DM", or plain "Facebook" when no
  * partner is known.
  *
@@ -669,7 +680,7 @@ export function leadsToCsv(
       formatPhone(lead.phone),
       lead.debtMin === null ? '' : String(lead.debtMin),
       lead.debtMax === null ? '' : String(lead.debtMax),
-      lead.entityType ? ENTITY_TYPE_META[lead.entityType].label : '',
+      formatEntityType(lead) ?? '',
       lead.state ?? '',
       // Collapsed, for the same reason the notes are: a newline the visitor
       // typed into the form makes this row as tall as their message.

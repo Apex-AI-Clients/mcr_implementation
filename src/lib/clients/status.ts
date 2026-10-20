@@ -1,5 +1,5 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
-import { REQUIRED_CATEGORIES, type DocCategory } from '@/lib/constants'
+import { REQUIRED_CATEGORIES, displayCategory, type DocCategory } from '@/lib/constants'
 
 /**
  * A client's DOCUMENT status: whether every required category has a file.
@@ -13,13 +13,15 @@ type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
 /** How a missing category reads in a badge. */
 const SHORT_NAME: Record<string, string> = {
+  financial_statements: 'financial statements',
   current_financials: 'current financials',
   historical_financials: 'last 4 years financials',
   integrated_client_account: 'ATO account CSV',
 }
 
 export function missingRequiredCategories(categories: Iterable<string>): DocCategory[] {
-  const have = new Set(categories)
+  // A file in either older financials category counts as financial statements.
+  const have = new Set([...categories].map((c) => displayCategory(c as DocCategory)))
   return REQUIRED_CATEGORIES.filter((c) => !have.has(c))
 }
 

@@ -30,8 +30,8 @@ describe('companyDetailsUpdate', () => {
     // The exact shape intake step 1 sends after a lookup.
     const update = companyDetailsUpdate({
       companyName: 'Whitlock Civil Pty Ltd',
-      abnNumber: '53004085616',
-      acnNumber: '004085616',
+      abnNumber: '86136533741',
+      acnNumber: '136533741',
     })
 
     expect(update).not.toHaveProperty('phone_number')
@@ -69,7 +69,7 @@ describe('companyDetailsUpdate', () => {
     const update = companyDetailsUpdate({
       companyName: undefined,
       acnNumber: null as unknown as string,
-      abnNumber: 53004085616 as unknown as string,
+      abnNumber: 86136533741 as unknown as string,
     })
     expect(update).toEqual({})
   })
@@ -117,7 +117,7 @@ describe('hasCompanyDetails', () => {
   })
 
   it('is true for a register-only write', () => {
-    expect(hasCompanyDetails({ abnNumber: '53004085616' })).toBe(true)
+    expect(hasCompanyDetails({ abnNumber: '86136533741' })).toBe(true)
   })
 })
 

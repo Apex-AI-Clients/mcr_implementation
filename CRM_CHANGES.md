@@ -269,9 +269,13 @@ Added 2026-09-29 at Gabby's request. Code: `supabase/migrations/0020_lead_submis
   locks on the email first. Two deliveries for the same new email arriving together
   produce one lead with two enquiries, not two leads. Execute is granted to
   `service_role` only; anon and authenticated cannot call it through `/rpc`.
-- **Add lead with a known email** returns 409 with the existing lead's id. The UI
-  says so and offers **Open existing lead**. No silent merge: staff typing someone
-  in is not an enquiry.
+- **Add lead with a known email** is merged, not refused (changed 2026-10-16). The
+  route falls back to `ingest_lead_submission` with source `manual`, so the lead
+  takes the new details by the merge rules above, the earlier ones stay in
+  **Lead history**, and a timeline note says who added them again. The opening
+  note goes on the existing lead. It answers 200 `{ id, merged: true }`; the UI
+  drops its optimistic row and offers **Open lead**.
+- The record's Enquiries section is now headed **Lead history**.
 
 ### What the table and record show
 
@@ -837,3 +841,22 @@ then it fails silently.
    the trust's ABN when there is one, else the company's — usually right for a
    trading trust, where the debt and lodgements sit under the trust. Not used
    anywhere until Gabby confirms.
+
+---
+
+## Edit lead (migration 0029)
+
+Added 2026-10-16. Code: `src/components/leads/EditLeadDialog.tsx`, PATCH
+`/api/admin/leads/[id]`, `supabase/migrations/0029_lead_entity_type_label.sql`.
+
+- **Edit** button beside Delete on the record opens a form prefilled from the
+  lead: name, email, phone, debt, state, business type, source, preferred call
+  time, message. Only changed fields are sent; no activity, so the follow-up
+  clock does not move. Lead history is not rewritten.
+- Debt, state, business type and source each have a **Type my own** checkbox:
+  - Debt: parsed to an exact figure (min = max), as the table's DebtInput does.
+  - State: kept as given in `meta_state_raw` with no state or options set. Shown
+    on the record, matches no state filter.
+  - Business type: new `leads.entity_type_label`, shown instead of company or
+    trust. `entity_type` is cleared so trust rules never act on a stale value.
+  - Source: `source_label` (0025). `source` is left for filters and dedup.

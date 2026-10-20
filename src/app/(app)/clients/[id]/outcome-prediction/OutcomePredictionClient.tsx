@@ -13,6 +13,8 @@ import {
   HelpCircle,
   Info,
   Landmark,
+  Minus,
+  Plus,
   RefreshCw,
   Target,
   TrendingUp,
@@ -32,11 +34,29 @@ import {
   isValidFeeRate,
 } from '@/lib/sbr/fees'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
+import {
+  FINANCIAL_POINTS_INTRO,
+  FINANCIAL_POINTS_NOT_READY,
+  type FinancialPoint,
+} from '@/lib/sbr/financialPoints'
+import {
+  CREDITOR_LABEL_MAX,
+  MAX_CREDITOR_ROWS,
+  creditorTotal,
+  defaultCreditorRows,
+  includedCreditorRows,
+  type CreditorHints,
+  type CreditorKind,
+  type CreditorRow,
+  type SavedCreditors,
+} from '@/lib/sbr/creditors'
 
 interface InitialAuto {
   cumulativeDaysLate: number | null
   numberOfLateLodgements: number | null
   daysSinceLastPayment: number | null
+  /** The ATO account's first and last dates, e.g. "1 Jul 2020 – 1 Oct 2026"; null without rows. */
+  icaHistory?: string | null
   directorLoanReceivableAmount: number
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
@@ -48,6 +68,10 @@ interface InitialAuto {
   latestFinancialYear: number | null
   hasLodgement: boolean
   hasFinancials: boolean
+  /** A balance-sheet figure per kind of creditor; shown beside its row, never filled in. */
+  creditorHints: CreditorHints
+  /** The creditors saved with the last prediction, if any (migration 0032). */
+  savedCreditors: SavedCreditors | null
 }
 
 interface CachedSummary {
@@ -64,16 +88,40 @@ interface CachedSummary {
   stale: boolean
 }
 
+/** What the prediction is waiting for, and the DPN factor, from readiness.ts. */
+interface PredictionReadiness {
+  canPredict: boolean
+  waitingFor: string[]
+  /** Yes if any notice is on file; No only if staff ticked "none issued"; null until known. */
+  dpn: boolean | null
+  /** Where the DPN answer comes from, in a line. */
+  dpnDetail: string
+}
+
+/** "What the financial statements show" (financialPoints.ts), worked out on the server. */
+interface FinancialPointsData {
+  /** False until the comparison is verified, or reviewed (readiness.ts). */
+  available: boolean
+  points: FinancialPoint[]
+}
+
 interface Props {
   clientId: string
   clientName: string
   initialAuto: InitialAuto
   initialPrediction: CachedSummary | null
+  readiness: PredictionReadiness
+  financialPoints: FinancialPointsData
 }
 
 interface FullPrediction extends SbrPrediction {
   inputFeatures: SbrPredictionInput
+  /** The creditor total the offer is sized on: ATO debt + other creditors. */
   creditorAmount: number | null
+  /** The ATO debt in that total. */
+  atoDebt?: number | null
+  /** The other creditor rows, as saved. */
+  creditors?: CreditorRow[]
   creditorDebt?: { description: string; missing: string | null; source: string | null }
   computedAt: string
   autoDetectedDirectorLoan?: {
@@ -96,6 +144,23 @@ const AUD = new Intl.NumberFormat('en-AU', {
   maximumFractionDigits: 0,
 })
 
+/** One creditor row as staff type it. `id` keeps React's rows apart as they are added and removed. */
+interface CreditorRowInput {
+  id: string
+  label: string
+  amountText: string
+  kind?: CreditorKind
+}
+
+let nextCreditorRowId = 0
+const newCreditorRowId = () => `creditor-${++nextCreditorRowId}`
+
+function parseAmount(text: string): number | null {
+  if (text.trim() === '') return null
+  const n = Number(text.replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 function formatAud(value: number | null | undefined): string {
   if (value == null) return '—'
   return AUD.format(value)
@@ -106,6 +171,15 @@ function formatNumber(value: number | null | undefined): string {
   return value.toLocaleString('en-AU')
 }
 
+/**
+ * A percentage as the fraction the offer was worked out with, to 6 places and
+ * no trailing zeros (42.4125% -> "0.424125"), so each calculation step
+ * reconciles with the next. The tiles show the % rounded to one place.
+ */
+export function exactFraction(percent: number): string {
+  return String(Number((percent / 100).toFixed(6)))
+}
+
 function roundToNearest(value: number, step: number): number {
   return Math.round(value / step) * step
 }
@@ -113,7 +187,6 @@ function roundToNearest(value: number, step: number): number {
 function extractCachedInput(
   cached: CachedSummary | null,
 ): {
-  dpn: boolean
   paymentPlanType: 'plan' | 'upfront'
   directorLoanAtAppointment: boolean
 } | null {
@@ -121,7 +194,6 @@ function extractCachedInput(
   const f = cached.inputFeatures
   const ppt = f.paymentPlanType
   return {
-    dpn: typeof f.dpn === 'boolean' ? f.dpn : false,
     paymentPlanType: ppt === 'plan' ? 'plan' : 'upfront',
     directorLoanAtAppointment:
       typeof f.directorLoanAtAppointment === 'boolean' ? f.directorLoanAtAppointment : false,
@@ -133,11 +205,19 @@ export function OutcomePredictionClient({
   clientName,
   initialAuto,
   initialPrediction,
+  readiness,
+  financialPoints,
 }: Props) {
   const cachedInputs = extractCachedInput(initialPrediction)
 
   const [auto] = useState<InitialAuto>(initialAuto)
-  const [dpn, setDpn] = useState(cachedInputs?.dpn ?? false)
+  // Set from what is on file (readiness.ts) when anything is: notices mean
+  // Yes, the "none issued" tick means No. With neither, staff tick it here
+  // (unticked = No), kept from the last prediction.
+  const dpnFromFile = readiness.dpn !== null
+  const [dpnManual, setDpnManual] = useState<boolean>(initialPrediction?.inputFeatures.dpn === true)
+  const dpn = readiness.dpn ?? dpnManual
+  const [notReady, setNotReady] = useState<string[]>(readiness.canPredict ? [] : readiness.waitingFor)
   const [paymentPlanType, setPaymentPlanType] = useState<'plan' | 'upfront'>(
     cachedInputs?.paymentPlanType ?? 'upfront',
   )
@@ -146,13 +226,28 @@ export function OutcomePredictionClient({
     cachedInputs?.directorLoanAtAppointment ?? initialAuto.directorLoanDetected === true,
   )
 
-  // The creditor (ATO) debt: prefilled from the automatic figure, editable by
-  // staff. Only an amount staff changed is sent; otherwise the server works
-  // it out afresh.
+  // The ATO debt: prefilled from the automatic figure, editable by staff
+  // (kept from the last prediction when staff typed it). Only an amount staff
+  // changed is sent; otherwise the server works it out afresh.
+  const savedAto = initialAuto.savedCreditors?.atoDebtEdited ? initialAuto.savedCreditors.atoDebt : null
   const [creditorText, setCreditorText] = useState(
-    initialAuto.creditorAmount != null ? String(Math.round(initialAuto.creditorAmount)) : '',
+    savedAto != null
+      ? String(Math.round(savedAto))
+      : initialAuto.creditorAmount != null
+        ? String(Math.round(initialAuto.creditorAmount))
+        : '',
   )
-  const [creditorEdited, setCreditorEdited] = useState(false)
+  const [creditorEdited, setCreditorEdited] = useState(savedAto != null)
+  // The other creditors in the SBR (creditors.ts), from the last prediction or the defaults.
+  const [creditorRows, setCreditorRows] = useState<CreditorRowInput[]>(() =>
+    (initialAuto.savedCreditors?.rows ?? defaultCreditorRows()).map((r) => ({
+      id: newCreditorRowId(),
+      label: r.label,
+      amountText: r.amount != null ? String(r.amount) : '',
+      kind: r.kind,
+    })),
+  )
+  const creditorRowsValid = creditorRows.every((r) => r.amountText.trim() === '' || parseAmount(r.amountText) !== null)
   const creditorOverride = (() => {
     if (!creditorEdited) return undefined
     const n = Number(creditorText.replace(/[$,\s]/g, ''))
@@ -176,7 +271,8 @@ export function OutcomePredictionClient({
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
   const lodgementReady = auto.hasLodgement
-  const canRun = lodgementReady && feeRate !== null
+  const canRun =
+    lodgementReady && feeRate !== null && creditorRowsValid && readiness.canPredict && notReady.length === 0
 
   async function runPrediction() {
     setRunning(true)
@@ -187,14 +283,24 @@ export function OutcomePredictionClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          dpn,
           paymentPlanType,
           directorLoanAtAppointment,
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
+          // Only when nothing is on file; the server ignores it otherwise.
+          ...(dpnFromFile ? {} : { dpn: dpnManual }),
+          creditors: creditorRows.map((r) => ({
+            label: r.label.trim().slice(0, CREDITOR_LABEL_MAX),
+            amount: parseAmount(r.amountText),
+            ...(r.kind ? { kind: r.kind } : {}),
+          })),
         }),
       })
       const data = await res.json()
+      if (res.status === 422 && data.error === 'NOT_READY') {
+        setNotReady(data.waitingFor ?? [])
+        return
+      }
       if (res.status === 422 && data.error === 'PREREQUISITES_MISSING') {
         setMissing(data.missing ?? [])
         return
@@ -220,7 +326,7 @@ export function OutcomePredictionClient({
   useEffect(() => {
     if (hydrated.current) return
     if (!initialPrediction || initialPrediction.stale) return
-    if (!lodgementReady) return
+    if (!lodgementReady || !readiness.canPredict) return
     hydrated.current = true
     runPrediction()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -307,6 +413,29 @@ export function OutcomePredictionClient({
 
       {missing.length > 0 && <PrereqMissingBlock clientId={clientId} missing={missing} />}
 
+      {notReady.length > 0 && (
+        <Card className="border-warning/30 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Not ready for a prediction yet</p>
+              <ul className="mt-1 list-disc pl-4 text-xs text-foreground/60">
+                {notReady.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <Link
+                href={`/clients/${clientId}`}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+              >
+                Open the readiness checklist
+                <ArrowLeft className="h-3 w-3 rotate-180" />
+              </Link>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {!lodgementReady && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex items-start gap-3">
@@ -335,7 +464,9 @@ export function OutcomePredictionClient({
         <InputPanel
           auto={auto}
           dpn={dpn}
-          setDpn={setDpn}
+          dpnDetail={readiness.dpnDetail}
+          dpnFromFile={dpnFromFile}
+          setDpnManual={setDpnManual}
           paymentPlanType={paymentPlanType}
           setPaymentPlanType={setPaymentPlanType}
           directorLoanAtAppointment={directorLoanAtAppointment}
@@ -350,6 +481,8 @@ export function OutcomePredictionClient({
           setCreditorText={setCreditorText}
           creditorEdited={creditorEdited}
           setCreditorEdited={setCreditorEdited}
+          creditorRows={creditorRows}
+          setCreditorRows={setCreditorRows}
           feeRate={feeRate}
           setFeeRate={setFeeRate}
         />
@@ -359,14 +492,7 @@ export function OutcomePredictionClient({
         <>
           <HeadlineTiles prediction={prediction} />
           {/* On screen and in the PDF: what the offer is sized against, and from where. */}
-          {prediction.creditorAmount != null && (
-            <p className="-mt-2 text-xs text-foreground/60">
-              ATO debt <span className="font-medium text-foreground">{formatAud(prediction.creditorAmount)}</span>
-              {prediction.creditorDebt ? ` — ${prediction.creditorDebt.description}` : ''}
-              {' · '}practitioner fee{' '}
-              <span className="font-medium text-foreground">{formatFeeRate(prediction.practitionerFeeRate)}</span>
-            </p>
-          )}
+          <CreditorsSummaryCard prediction={prediction} />
           {(prediction.selfMatchExcluded ?? 0) > 0 && (
             <p className="-mt-2 text-xs text-foreground/50">
               {prediction.selfMatchExcluded === 1
@@ -379,6 +505,8 @@ export function OutcomePredictionClient({
               and "How to strengthen this profile". Re-enable by uncommenting. */}
           {/* <RejectionLearningPanel prediction={prediction} /> */}
           {/* <ProfileStrengtheningPanel prediction={prediction} /> */}
+          {/* Below the result, in the PDF too. */}
+          <FinancialPointsPanel data={financialPoints} />
           <FeatureBreakdownPanel prediction={prediction} />
           {/* Print-only: the calculations breakdown that lives behind the
               "Show calculations" modal on screen, rendered inline for the PDF
@@ -451,7 +579,10 @@ function PrereqMissingBlock({
 interface InputPanelProps {
   auto: InitialAuto
   dpn: boolean
-  setDpn: (v: boolean) => void
+  dpnDetail: string
+  /** True when notices or the "none issued" tick set the answer; false: staff tick it here. */
+  dpnFromFile: boolean
+  setDpnManual: (v: boolean) => void
   paymentPlanType: 'plan' | 'upfront'
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
@@ -466,6 +597,8 @@ interface InputPanelProps {
   setCreditorText: (v: string) => void
   creditorEdited: boolean
   setCreditorEdited: (v: boolean) => void
+  creditorRows: CreditorRowInput[]
+  setCreditorRows: (rows: CreditorRowInput[]) => void
   feeRate: number | null
   setFeeRate: (v: number | null) => void
 }
@@ -474,7 +607,9 @@ function InputPanel(props: InputPanelProps) {
   const {
     auto,
     dpn,
-    setDpn,
+    dpnDetail,
+    dpnFromFile,
+    setDpnManual,
     paymentPlanType,
     setPaymentPlanType,
     directorLoanAtAppointment,
@@ -489,6 +624,8 @@ function InputPanel(props: InputPanelProps) {
     setCreditorText,
     creditorEdited,
     setCreditorEdited,
+    creditorRows,
+    setCreditorRows,
     feeRate,
     setFeeRate,
   } = props
@@ -509,6 +646,16 @@ function InputPanel(props: InputPanelProps) {
             <span className="text-foreground/30"> · </span>
             Practitioner fee:{' '}
             <span className="text-foreground">{feeRate !== null ? formatFeeRate(feeRate) : '—'}</span>
+            <span className="text-foreground/30"> · </span>
+            Creditors in the SBR:{' '}
+            <span className="text-foreground">
+              {formatAud(
+                creditorTotal(
+                  parseAmount(creditorText),
+                  creditorRows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
+                ),
+              )}
+            </span>
           </div>
           <button
             type="button"
@@ -545,7 +692,7 @@ function InputPanel(props: InputPanelProps) {
               label="Days since last payment"
               value={
                 auto.daysSinceLastPayment === 9999
-                  ? 'No payments on record'
+                  ? `No payments found in the ATO account${auto.icaHistory ? ` (${auto.icaHistory})` : ''}`
                   : formatNumber(auto.daysSinceLastPayment)
               }
               missing={auto.daysSinceLastPayment == null}
@@ -562,31 +709,6 @@ function InputPanel(props: InputPanelProps) {
               }
               softMissing={!auto.hasFinancials}
             />
-            <div>
-              <dt className="text-foreground/40">
-                <label htmlFor="creditor-amount">ATO debt (creditor amount)</label>
-              </dt>
-              <dd className="mt-0.5">
-                <input
-                  id="creditor-amount"
-                  inputMode="decimal"
-                  value={creditorText}
-                  placeholder="Enter amount"
-                  onChange={(event) => {
-                    setCreditorText(event.target.value)
-                    setCreditorEdited(true)
-                  }}
-                  className="h-7 w-36 rounded-md border border-border bg-input-bg px-2 text-sm font-medium tabular-nums text-foreground focus:border-accent focus:outline-none"
-                />
-              </dd>
-              <p className="mt-0.5 text-foreground/30">
-                {creditorEdited
-                  ? 'Source: entered by staff'
-                  : auto.creditorAmount != null
-                    ? `Source: ${auto.creditorSource}`
-                    : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
-              </p>
-            </div>
           </dl>
         </div>
 
@@ -607,11 +729,24 @@ function InputPanel(props: InputPanelProps) {
             Tick the items that apply to this client.
           </p>
           <div className="space-y-3">
-            <CheckboxField
-              label="Director Penalty Notice issued"
-              checked={dpn}
-              onChange={setDpn}
-            />
+            {dpnFromFile ? (
+              // Set from the client file: notices uploaded, or "none issued" ticked.
+              <div className="rounded-lg border border-border bg-surface/30 px-3 py-2 text-xs text-foreground/80">
+                <p>
+                  Director Penalty Notice issued:{' '}
+                  <span className="font-medium text-foreground">{dpn ? 'Yes' : 'No'}</span>
+                </p>
+                <p className="mt-0.5 text-foreground/40">{dpnDetail}</p>
+              </div>
+            ) : (
+              <div>
+                <CheckboxField label="Director Penalty Notice issued" checked={dpn} onChange={setDpnManual} />
+                <p className="mt-1 text-xs text-foreground/40">
+                  No notice uploaded and &ldquo;none issued&rdquo; not ticked on the client page: tick this if a
+                  notice was issued. Unticked counts as No.
+                </p>
+              </div>
+            )}
             <div>
               <CheckboxField
                 label="Director loan at appointment"
@@ -655,6 +790,16 @@ function InputPanel(props: InputPanelProps) {
         </div>
       </div>
 
+      <CreditorsEditor
+        auto={auto}
+        creditorText={creditorText}
+        setCreditorText={setCreditorText}
+        creditorEdited={creditorEdited}
+        setCreditorEdited={setCreditorEdited}
+        rows={creditorRows}
+        setRows={setCreditorRows}
+      />
+
       <div className="no-print mt-5 flex justify-end gap-2">
         {hasPrediction && (
           <Button variant="ghost" size="md" onClick={onToggleCollapsed}>
@@ -674,6 +819,192 @@ function InputPanel(props: InputPanelProps) {
       </div>
 
       {helpOpen && <ManualInputsHelpModal onClose={() => setHelpOpen(false)} />}
+    </Card>
+  )
+}
+
+/**
+ * "Creditors in the SBR": the ATO debt and six rows staff can relabel and
+ * fill in. The offer is sized on their total (creditors.ts). A balance-sheet
+ * figure is shown beside a row when there is one; it is never filled in.
+ */
+function CreditorsEditor({
+  auto,
+  creditorText,
+  setCreditorText,
+  creditorEdited,
+  setCreditorEdited,
+  rows,
+  setRows,
+}: {
+  auto: InitialAuto
+  creditorText: string
+  setCreditorText: (v: string) => void
+  creditorEdited: boolean
+  setCreditorEdited: (v: boolean) => void
+  rows: CreditorRowInput[]
+  setRows: (rows: CreditorRowInput[]) => void
+}) {
+  const total = creditorTotal(
+    parseAmount(creditorText),
+    rows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
+  )
+  const update = (id: string, change: Partial<CreditorRowInput>) =>
+    setRows(rows.map((r) => (r.id === id ? { ...r, ...change } : r)))
+  // The row just added gets the focus, ready to be named.
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const addRow = () => {
+    const id = newCreditorRowId()
+    setRows([...rows, { id, label: '', amountText: '' }])
+    setFocusId(id)
+  }
+  const removeRow = (id: string) => setRows(rows.filter((r) => r.id !== id))
+  const inputClass =
+    'h-7 rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none'
+  const grid = 'grid gap-2 sm:grid-cols-[minmax(0,14rem)_9rem_1.75rem_minmax(0,1fr)] sm:items-center'
+  const iconButton =
+    'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-foreground/60 transition-colors hover:bg-surface/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40'
+
+  return (
+    <section className="mt-6 border-t border-border pt-5" aria-labelledby="creditors-heading">
+      <h3 id="creditors-heading" className="text-sm font-semibold text-foreground">
+        Creditors in the SBR
+      </h3>
+      <p className="mt-1 mb-3 text-xs text-foreground/40">
+        The offer is the recommended % of the total below, grossed up for the practitioner fee. Name each
+        creditor as you like, add or remove rows, and leave an amount blank to leave that creditor out.
+      </p>
+      <div className="space-y-2 text-xs">
+        <div className={grid}>
+          <label htmlFor="creditor-amount" className="font-medium text-foreground">
+            ATO debt
+          </label>
+          <input
+            id="creditor-amount"
+            inputMode="decimal"
+            value={creditorText}
+            placeholder="Enter amount"
+            onChange={(event) => {
+              setCreditorText(event.target.value)
+              setCreditorEdited(true)
+            }}
+            className={cn(inputClass, 'w-36 font-medium tabular-nums')}
+          />
+          <span aria-hidden />
+          <p className="text-foreground/40">
+            {creditorEdited
+              ? 'Source: entered by staff'
+              : auto.creditorAmount != null
+                ? `Source: ${auto.creditorSource}`
+                : (auto.creditorMissing ?? 'Enter the ATO debt to get a suggested offer.')}
+          </p>
+        </div>
+        {rows.map((row, i) => {
+          const hint = row.kind ? auto.creditorHints[row.kind] : null
+          const invalid = row.amountText.trim() !== '' && parseAmount(row.amountText) === null
+          return (
+            <div key={row.id} className={grid}>
+              <input
+                aria-label={`Creditor ${i + 1} name`}
+                value={row.label}
+                maxLength={CREDITOR_LABEL_MAX}
+                placeholder="Creditor name"
+                autoFocus={row.id === focusId}
+                onChange={(event) => update(row.id, { label: event.target.value })}
+                className={cn(inputClass, 'w-full')}
+              />
+              <input
+                aria-label={`Creditor ${i + 1} amount`}
+                aria-invalid={invalid || undefined}
+                inputMode="decimal"
+                value={row.amountText}
+                placeholder="—"
+                onChange={(event) => update(row.id, { amountText: event.target.value })}
+                className={cn(inputClass, 'w-36 tabular-nums', invalid && 'border-destructive')}
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(row.id)}
+                aria-label={`Remove ${row.label.trim() || `creditor ${i + 1}`}`}
+                title="Remove this creditor"
+                className={iconButton}
+              >
+                <Minus className="h-3.5 w-3.5" aria-hidden />
+              </button>
+              <p className="text-foreground/40">
+                {invalid ? (
+                  <span className="text-destructive">Enter an amount of $0 or more, or leave it blank.</span>
+                ) : hint ? (
+                  <>
+                    Balance sheet shows {formatAud(hint.amount)} ({hint.source})
+                    {hint.caution && <span className="text-warning"> · {hint.caution}</span>}
+                  </>
+                ) : null}
+              </p>
+            </div>
+          )
+        })}
+        <div>
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={rows.length >= MAX_CREDITOR_ROWS}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-surface/60 hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Add creditor
+          </button>
+          {rows.length >= MAX_CREDITOR_ROWS && (
+            <span className="ml-2 text-foreground/40">Up to {MAX_CREDITOR_ROWS} creditors.</span>
+          )}
+        </div>
+        <div className={cn(grid, 'border-t border-border pt-2')}>
+          <span className="font-medium text-foreground">Total creditors</span>
+          <span className="font-semibold tabular-nums text-foreground" data-testid="creditor-total">
+            {formatAud(total)}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** On screen and in the PDF: the creditors the offer was sized on. */
+export function CreditorsSummaryCard({ prediction }: { prediction: FullPrediction }) {
+  if (prediction.creditorAmount == null) return null
+  const others = includedCreditorRows(prediction.creditors ?? [])
+  const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-foreground">Creditors in the SBR</h3>
+      <table className="mt-2 w-full max-w-lg text-xs">
+        <tbody>
+          <tr className="border-b border-border">
+            <td className="py-1 pr-3 text-foreground/70">
+              ATO debt
+              {prediction.creditorDebt ? (
+                <span className="text-foreground/40"> — {prediction.creditorDebt.description}</span>
+              ) : null}
+            </td>
+            <td className="py-1 text-right tabular-nums text-foreground">{formatAud(atoDebt)}</td>
+          </tr>
+          {others.map((row, i) => (
+            <tr key={i} className="border-b border-border">
+              <td className="py-1 pr-3 text-foreground/70">{row.label || 'Creditor'}</td>
+              <td className="py-1 text-right tabular-nums text-foreground">{formatAud(row.amount)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td className="py-1 pr-3 font-medium text-foreground">Total</td>
+            <td className="py-1 text-right font-semibold tabular-nums text-foreground">
+              {formatAud(prediction.creditorAmount)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-foreground/50">
+        Practitioner fee {formatFeeRate(prediction.practitionerFeeRate)}.
+      </p>
     </Card>
   )
 }
@@ -793,9 +1124,10 @@ function ManualInputsHelpModal({ onClose }: { onClose: () => void }) {
             body={
               <>
                 <p>
-                  Tick when the ATO has formally issued a DPN (Director Penalty Notice)
-                  to the director(s) — typically for unreported SGC, PAYG withholding,
-                  or GST debts. The director will have a physical copy of the notice.
+                  Yes when any director penalty notice is uploaded, No when staff have
+                  ticked &ldquo;No director penalty notice has been issued&rdquo; on the
+                  client page. With neither, tick it here if a notice was issued;
+                  unticked counts as No. Uploading the notices is optional.
                 </p>
                 <p className="mt-1 text-foreground/55">
                   <span className="text-foreground/80">Why it matters:</span> a DPN
@@ -1234,6 +1566,32 @@ function CalculationsModal({
   )
 }
 
+/** Each creditor in the SBR, step by step, adding up to the total the offer is sized on. */
+function CreditorTotalSteps({ prediction }: { prediction: FullPrediction }) {
+  const others = includedCreditorRows(prediction.creditors ?? [])
+  const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
+  return (
+    <div className="mb-2 border-b border-border/60 pb-2">
+      <div>
+        ATO debt = <span className="text-foreground">{formatAud(atoDebt)}</span>
+        {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
+      </div>
+      {others.map((row, i) => (
+        <div key={i}>
+          + {row.label || 'Creditor'} = <span className="text-foreground">{formatAud(row.amount)}</span>
+        </div>
+      ))}
+      <div className="mt-1">
+        Total creditors ={' '}
+        {others.length > 0
+          ? `${[atoDebt, ...others.map((r) => r.amount)].map((v) => formatAud(v)).join(' + ')} = `
+          : ''}
+        <span className="font-semibold text-foreground">{formatAud(prediction.creditorAmount)}</span>
+      </div>
+    </div>
+  )
+}
+
 function CalculationsContent({
   prediction,
   suggestedRounded,
@@ -1275,7 +1633,7 @@ function CalculationsContent({
             1. Recommended offer ({prediction.predictedOutcomePercent.toFixed(1)}%)
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the cents-in-the-dollar settlement to put forward, as a % of the ATO debt.
+            What it is: the cents-in-the-dollar settlement to put forward, as a % of the creditors in the SBR.
           </p>
           <p className="mb-2 text-xs text-foreground/65">
             Formula: <code className="text-foreground/90">average of the 8 nearest cases&apos; outcomes</code>
@@ -1329,9 +1687,9 @@ function CalculationsContent({
             {suggestedRounded != null ? `(current ${formatAud(suggestedRounded)})` : '(not available)'}
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the current dollar offer (the recommended % on this client&apos;s ATO debt,
-            grossed up for the SBR practitioner fee) — and the amount needed to match similar deals
-            that were accepted.
+            What it is: the current dollar offer (the recommended % of this client&apos;s creditors in
+            the SBR, grossed up for the SBR practitioner fee) — and the amount needed to match similar
+            deals that were accepted.
           </p>
           <p className="mb-2 text-xs font-medium text-foreground/80">2a. Current SBR amount</p>
           {prediction.creditorAmount != null && prediction.suggestedOfferAmount != null ? (
@@ -1339,15 +1697,11 @@ function CalculationsContent({
               <p className="mb-2 text-xs text-foreground/65">
                 Formula:{' '}
                 <code className="text-foreground/90">
-                  (predicted_outcome% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
+                  (predicted_outcome% × total_creditors) ÷ (1 − SBR_practitioner_fee)
                 </code>
               </p>
               <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
-                <div>
-                  ATO debt (creditor amount) ={' '}
-                  <span className="text-foreground">{formatAud(prediction.creditorAmount)}</span>
-                  {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
-                </div>
+                <CreditorTotalSteps prediction={prediction} />
                 <div>
                   Predicted outcome ={' '}
                   <span className="text-foreground">
@@ -1366,7 +1720,7 @@ function CalculationsContent({
                 </div>
                 <div className="mt-2 border-t border-border/60 pt-2">
                   Creditor receipt ={' '}
-                  {(prediction.predictedOutcomePercent / 100).toFixed(3)} ×{' '}
+                  {exactFraction(prediction.predictedOutcomePercent)} ×{' '}
                   {formatAud(prediction.creditorAmount)} ={' '}
                   <span className="text-foreground">
                     {formatAud(
@@ -1407,7 +1761,7 @@ function CalculationsContent({
                   <p className="mb-2 text-xs text-foreground/65">
                     Formula:{' '}
                     <code className="text-foreground/90">
-                      (highest_accepted_offer% × ATO_debt) ÷ (1 − SBR_practitioner_fee)
+                      (highest_accepted_offer% × total_creditors) ÷ (1 − SBR_practitioner_fee)
                     </code>
                   </p>
                   <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
@@ -1416,7 +1770,7 @@ function CalculationsContent({
                       <span className="text-foreground">{aligned.targetPercent.toFixed(1)}%</span>
                     </div>
                     <div>
-                      Creditor receipt = {(aligned.targetPercent / 100).toFixed(3)} ×{' '}
+                      Creditor receipt = {exactFraction(aligned.targetPercent)} ×{' '}
                       {formatAud(prediction.creditorAmount)} ={' '}
                       <span className="text-foreground">
                         {formatAud((aligned.targetPercent / 100) * prediction.creditorAmount)}
@@ -1808,6 +2162,34 @@ function ProfileStrengtheningPanel({ prediction }: { prediction: FullPrediction 
   )
 }
 
+/**
+ * Points to discuss with the client, from the financial statements: facts by
+ * rule (financialPoints.ts), never AI text, and never a change to the %.
+ */
+export function FinancialPointsPanel({ data }: { data: FinancialPointsData }) {
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-foreground">What the financial statements show</h3>
+      {data.available ? (
+        <>
+          <p className="mt-1 text-xs leading-relaxed text-foreground/55">{FINANCIAL_POINTS_INTRO}</p>
+          {data.points.length > 0 ? (
+            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/85">
+              {data.points.map((point) => (
+                <li key={point.rule}>{point.text}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-foreground/60">Nothing stands out in the financial statements.</p>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-foreground/60">{FINANCIAL_POINTS_NOT_READY}</p>
+      )}
+    </Card>
+  )
+}
+
 function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
   return (
     <Card>
@@ -2079,14 +2461,22 @@ function ExportButton({
         ? roundToNearest(prediction.suggestedOfferAmount, 500)
         : '',
     )
-    push('ATO debt (creditor amount)', prediction.creditorAmount ?? '')
+    push('ATO debt', prediction.atoDebt === undefined ? (prediction.creditorAmount ?? '') : (prediction.atoDebt ?? ''))
     push('ATO debt source', prediction.creditorDebt?.description ?? '')
+    push('Total creditors in the SBR', prediction.creditorAmount ?? '')
     push('Risk Band', riskBandExportLabel(prediction.riskBand))
     push('Risk Band Reasoning', prediction.riskBandReasoning)
     push(
       'Payment Structure Recommendation',
       `${paymentStructureLabel(prediction.paymentStructureRecommendation.recommended)} — ${prediction.paymentStructureRecommendation.reasoning}`,
     )
+    push('')
+
+    push('CREDITORS IN THE SBR')
+    push('Creditor', 'Amount')
+    push('ATO debt', prediction.atoDebt === undefined ? (prediction.creditorAmount ?? '') : (prediction.atoDebt ?? ''))
+    for (const row of includedCreditorRows(prediction.creditors ?? [])) push(row.label || 'Creditor', row.amount)
+    push('Total', prediction.creditorAmount ?? '')
     push('')
 
     // Temporarily hidden (client request): "What the rejections tell us" and

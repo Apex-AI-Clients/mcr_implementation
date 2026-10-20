@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { computeFinancialsComparison } from '../computeComparison'
 import type { ExtractedFinancialStatement } from '../types'
 import {
-  PARKCON_ALL,
-  PARKCON_FY22,
-  PARKCON_FY23,
-  PARKCON_FY24,
-  PARKCON_FY25,
-} from './fixtures/parkcon-placeholder'
+  COMPANY_ALL,
+  COMPANY_FY22,
+  COMPANY_FY23,
+  COMPANY_FY24,
+  COMPANY_FY25,
+} from './fixtures/combinedCompanyStatements'
 
 function blank(fy: number): ExtractedFinancialStatement {
   return {
@@ -122,58 +122,57 @@ describe('computeFinancialsComparison — synthetic cases', () => {
 })
 
 describe('current period handling', () => {
-  // Hand-built PARKCON current-period fixture from the merged BS_DOA + PL_DOA
-  // export covering 1 July 2025 → 4 May 2026. Headline figures (revenue,
-  // gross profit, net profit, ATO-related liabilities total, director loans,
-  // net assets) are taken verbatim from the source PDF.
+  // SYNTHETIC current period for the same invented company, laid out like a
+  // merged balance sheet + P&L export covering 1 July 2025 → 4 May 2026,
+  // with cents. Figures invented.
   const currentPeriodMay2026: ExtractedFinancialStatement = {
-    sourceFilename: 'PARKCON_current_period_2026.pdf',
+    sourceFilename: 'SYNTH_Company_current_period_2026.pdf',
     financialYear: 2026,
     periodEndDate: '2026-05-04',
     periodStartDate: '2025-07-01',
     periodLabel: '1 July 2025 to 4 May 2026',
     sourceColumn: 'current_period',
     incomeStatement: {
-      income: { sales: 462858.5, interestIncome: null, otherRevenue: null },
-      cogs: { purchases: 212047.52, directCosts: null },
+      income: { sales: 478300.4, interestIncome: null, otherRevenue: null },
+      cogs: { purchases: 219880.15, directCosts: null },
       expenses: {
-        wagesAndSalaries: 180000,
-        superannuation: 20000,
-        rent: 24000,
-        generalExpenses: 18801.88,
+        wagesAndSalaries: 186000,
+        superannuation: 21000,
+        rent: 25200,
+        generalExpenses: 19113.7,
       },
       totals: {
-        totalIncome: 462858.5,
-        totalCogs: 212047.52,
-        grossProfit: 250810.98,
-        totalExpenses: 242801.88,
-        profitBeforeTax: 8009.1,
-        netProfitAfterTax: 8009.1,
+        totalIncome: 478300.4,
+        totalCogs: 219880.15,
+        grossProfit: 258420.25,
+        totalExpenses: 251313.7,
+        profitBeforeTax: 7106.55,
+        netProfitAfterTax: 7106.55,
       },
     },
     balanceSheet: {
       currentAssets: { bankAccounts: 5000, accountsReceivable: 10000 },
       nonCurrentAssets: {
         propertyPlantEquipment: 60000,
-        directorRelatedLoansReceivable: 148313.15,
+        directorRelatedLoansReceivable: 155961.2,
       },
       currentLiabilities: {
-        atoLiability: 178822.17,
-        gstPayable: 14002.13,
-        paygWithholdingPayable: 21974,
-        superannuationPayable: 31978.41,
+        atoLiability: 184605.3,
+        gstPayable: 14560.75,
+        paygWithholdingPayable: 22840,
+        superannuationPayable: 33120.45,
       },
-      nonCurrentLiabilities: { loansAndFinance: 70910.5 },
-      equity: { retainedEarnings: -82373.06, shareCapital: 0 },
+      nonCurrentLiabilities: { loansAndFinance: 73450.2 },
+      equity: { retainedEarnings: -90508.95, shareCapital: 0 },
       totals: {
         totalCurrentAssets: 15000,
-        totalNonCurrentAssets: 208313.15,
-        totalAssets: 223313.15,
-        totalCurrentLiabilities: 246776.71,
-        totalNonCurrentLiabilities: 70910.5,
-        totalLiabilities: 317687.21,
-        netAssets: -94374.06,
-        totalEquity: -94374.06,
+        totalNonCurrentAssets: 215961.2,
+        totalAssets: 230961.2,
+        totalCurrentLiabilities: 255126.5,
+        totalNonCurrentLiabilities: 73450.2,
+        totalLiabilities: 328576.7,
+        netAssets: -97615.5,
+        totalEquity: -97615.5,
       },
     },
     rawExtraction: [],
@@ -182,10 +181,10 @@ describe('current period handling', () => {
 
   it('exposes currentPeriod separately from years', () => {
     const result = computeFinancialsComparison([
-      PARKCON_FY22,
-      PARKCON_FY23,
-      PARKCON_FY24,
-      PARKCON_FY25,
+      COMPANY_FY22,
+      COMPANY_FY23,
+      COMPANY_FY24,
+      COMPANY_FY25,
       currentPeriodMay2026,
     ])
     expect(result.years).toEqual([2022, 2023, 2024, 2025])
@@ -195,10 +194,10 @@ describe('current period handling', () => {
 
   it('does not include current period in scorecard sparklines', () => {
     const result = computeFinancialsComparison([
-      PARKCON_FY22,
-      PARKCON_FY23,
-      PARKCON_FY24,
-      PARKCON_FY25,
+      COMPANY_FY22,
+      COMPANY_FY23,
+      COMPANY_FY24,
+      COMPANY_FY25,
       currentPeriodMay2026,
     ])
     expect(result.headlines.revenue.trend).toHaveLength(4)
@@ -206,10 +205,10 @@ describe('current period handling', () => {
 
   it('does not include current period in YoY ratio calculations', () => {
     const result = computeFinancialsComparison([
-      PARKCON_FY22,
-      PARKCON_FY23,
-      PARKCON_FY24,
-      PARKCON_FY25,
+      COMPANY_FY22,
+      COMPANY_FY23,
+      COMPANY_FY24,
+      COMPANY_FY25,
       currentPeriodMay2026,
     ])
     expect(Object.keys(result.ratiosByYear).map(Number).sort()).toEqual([
@@ -217,19 +216,19 @@ describe('current period handling', () => {
     ])
   })
 
-  it('PARKCON regression: headlines (annual fields) and ratios unchanged when current period is added', () => {
+  it('regression: headlines (annual fields) and ratios unchanged when current period is added', () => {
     const withCurrent = computeFinancialsComparison([
-      PARKCON_FY22,
-      PARKCON_FY23,
-      PARKCON_FY24,
-      PARKCON_FY25,
+      COMPANY_FY22,
+      COMPANY_FY23,
+      COMPANY_FY24,
+      COMPANY_FY25,
       currentPeriodMay2026,
     ])
     const withoutCurrent = computeFinancialsComparison([
-      PARKCON_FY22,
-      PARKCON_FY23,
-      PARKCON_FY24,
-      PARKCON_FY25,
+      COMPANY_FY22,
+      COMPANY_FY23,
+      COMPANY_FY24,
+      COMPANY_FY25,
     ])
 
     // Strip the additive currentPeriodValue so the annual headline state is
@@ -255,42 +254,42 @@ describe('current period handling', () => {
   })
 })
 
-describe('computeFinancialsComparison — PARKCON regression', () => {
-  // These assertions anchor against the four real PARKCON PDFs in sample pdf/.
+describe('computeFinancialsComparison — four-year company regression', () => {
+  // These assertions anchor against the SYNTHETIC four-year company fixture.
   // If any of these fail after refactoring, the methodology is wrong — fix the
-  // algorithm, never weaken the test. If the source PDFs change, update the
-  // fixture, then update the expected values here verbatim.
+  // algorithm, never weaken the test. If the fixture changes, recompute the
+  // expected values here from it.
 
   it('headline revenue tracks the published trajectory FY22-FY25', () => {
-    const result = computeFinancialsComparison(PARKCON_ALL)
-    expect(result.headlines.revenue.latestValue).toBe(851021)
-    expect(result.headlines.revenue.trend).toEqual([340856, 740148, 760405, 851021])
+    const result = computeFinancialsComparison(COMPANY_ALL)
+    expect(result.headlines.revenue.latestValue).toBe(869300)
+    expect(result.headlines.revenue.trend).toEqual([352410, 728600, 781900, 869300])
     expect(result.headlines.revenue.severity).toBe('good')
     expect(result.headlines.revenue.direction).toBe('up')
   })
 
-  it('headline net profit is the FY25 marginal loss ($190)', () => {
-    const result = computeFinancialsComparison(PARKCON_ALL)
-    expect(result.headlines.netProfit.latestValue).toBe(-190)
-    // -190 is between $0 and -$5,000 -> 'watch'
+  it('headline net profit is the FY25 marginal loss ($270)', () => {
+    const result = computeFinancialsComparison(COMPANY_ALL)
+    expect(result.headlines.netProfit.latestValue).toBe(-270)
+    // -270 is between $0 and -$5,000 -> 'watch'
     expect(result.headlines.netProfit.severity).toBe('watch')
   })
 
-  it('net assets remain deeply negative across the period (FY22 -46k → FY25 -82k)', () => {
-    const result = computeFinancialsComparison(PARKCON_ALL)
-    expect(result.headlines.netAssets.latestValue).toBe(-82383)
-    expect(result.headlines.netAssets.trend).toEqual([-46206, -47357, -82193, -82383])
+  it('net assets remain deeply negative across the period (FY22 -37k → FY25 -71k)', () => {
+    const result = computeFinancialsComparison(COMPANY_ALL)
+    expect(result.headlines.netAssets.latestValue).toBe(-71200)
+    expect(result.headlines.netAssets.trend).toEqual([-37330, -39670, -70930, -71200])
     expect(result.headlines.netAssets.severity).toBe('concern')
   })
 
   it('ATO-related debt sum stayed roughly proportional to revenue (28.5% → 28.1%)', () => {
     // Sums atoLiability + gstPayable + paygWithholdingPayable + superannuationPayable.
-    // PARKCON: FY22 65,432+2,634+0+29,098 = 97,164 over revenue 340,856 = 28.50%.
-    //          FY25 200,422+5,964+0+32,438 = 238,824 over revenue 851,021 = 28.06%.
-    // Note: the ATO Liability LINE alone tripled (65k → 200k) but the full ATO
+    // FY22 70,080+2,410+0+27,950 = 100,440 over revenue 352,410 = 28.50%.
+    // FY25 204,390+6,180+0+33,700 = 244,270 over revenue 869,300 = 28.10%.
+    // Note: the ATO Liability LINE alone almost tripled (70k → 204k) but the full ATO
     // payables block grew roughly in line with revenue, so atoDebtTrajectory
     // severity lands on 'watch' not 'concern' under the current rule.
-    const result = computeFinancialsComparison(PARKCON_ALL)
+    const result = computeFinancialsComparison(COMPANY_ALL)
     expect(result.ratiosByYear[2022].atoDebtAsPercentOfRevenue).toBeCloseTo(28.5, 0)
     expect(result.ratiosByYear[2025].atoDebtAsPercentOfRevenue).toBeCloseTo(28.1, 0)
     expect(result.headlines.atoDebtTrajectory.severity).toBe('watch')
@@ -298,22 +297,22 @@ describe('computeFinancialsComparison — PARKCON regression', () => {
 
   it('director loans receivable build-up — $0 FY22 to >40% of assets FY25', () => {
     // This is the single strongest negative SBR signal — locked tight.
-    const result = computeFinancialsComparison(PARKCON_ALL)
+    const result = computeFinancialsComparison(COMPANY_ALL)
     expect(result.ratiosByYear[2022].directorLoansAsPercentOfAssets).toBe(0)
     expect(result.ratiosByYear[2025].directorLoansAsPercentOfAssets).toBeGreaterThan(40)
-    expect(result.headlines.directorLoansReceivable.latestValue).toBe(148312)
+    expect(result.headlines.directorLoansReceivable.latestValue).toBe(155960)
     expect(result.headlines.directorLoansReceivable.severity).toBe('concern')
   })
 
-  it('cumulative profit/(loss) across the four years is negative (-$20,238)', () => {
-    // FY22 +15,940; FY23 -1,152; FY24 -34,836; FY25 -190 → -20,238.
+  it('cumulative profit/(loss) across the four years is negative (-$21,000)', () => {
+    // FY22 +12,870; FY23 -2,340; FY24 -31,260; FY25 -270 → -21,000.
     // Three of the four years posted losses, matching the spec narrative.
-    const cumulativeProfitLoss = [PARKCON_FY22, PARKCON_FY23, PARKCON_FY24, PARKCON_FY25].reduce(
+    const cumulativeProfitLoss = [COMPANY_FY22, COMPANY_FY23, COMPANY_FY24, COMPANY_FY25].reduce(
       (s, fy) => s + (fy.incomeStatement.totals.profitBeforeTax ?? 0),
       0,
     )
-    expect(cumulativeProfitLoss).toBe(-20238)
-    const result = computeFinancialsComparison(PARKCON_ALL)
+    expect(cumulativeProfitLoss).toBe(-21000)
+    const result = computeFinancialsComparison(COMPANY_ALL)
     expect(result.cumulativeProfitBeforeTax).toBe(cumulativeProfitLoss)
   })
 })

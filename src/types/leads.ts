@@ -67,6 +67,11 @@ export interface Lead {
   metaStateOptions: AuState[] | null
   /** Null when the form didn't ask, or posted its unselected sentinel. */
   entityType: EntityType | null
+  /**
+   * A business type staff typed in Edit lead ("Sole trader"), shown in place of
+   * `entityType`, which stays company, trust or null (migration 0029).
+   */
+  entityTypeLabel: string | null
   /** What the lead wrote on the capture form. Their words, not ours. */
   message: string | null
   /** Free text, e.g. "after 6pm". Record only — too variable for a column. */

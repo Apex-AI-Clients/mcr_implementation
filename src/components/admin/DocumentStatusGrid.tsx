@@ -2,13 +2,15 @@
 
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
+import { CHECKLIST_ORDER, CATEGORY_META, displayCategory } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { uploadClientDocument } from '@/lib/storage/browserUpload'
 import { CheckCircle2, XCircle, Download, Trash2, X, Upload } from 'lucide-react'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
+import { DpnPanel } from '@/components/admin/dpn/DpnPanel'
+import type { DpnPanelData } from '@/lib/dpn/view'
 import { formatBytes } from '@/lib/utils'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -19,6 +21,8 @@ interface DocumentStatusGridProps {
   onDocumentDeleted?: () => void
   /** An archived file: downloads only — no upload, delete or analysis. */
   readOnly?: boolean
+  /** The director penalty notices card's notices and "none issued" tick. */
+  dpn?: DpnPanelData
 }
 
 export function DocumentStatusGrid({
@@ -26,13 +30,16 @@ export function DocumentStatusGrid({
   clientId,
   onDocumentDeleted,
   readOnly = false,
+  dpn,
 }: DocumentStatusGridProps) {
   const router = useRouter()
   const refresh = onDocumentDeleted ?? (() => router.refresh())
   const byCategory = new Map<string, DocumentRecord[]>()
   for (const doc of documents) {
-    const existing = byCategory.get(doc.docCategory) ?? []
-    byCategory.set(doc.docCategory, [...existing, doc])
+    // Files uploaded under the two older financials categories show under
+    // the one Financial Statements card.
+    const card = displayCategory(doc.docCategory)
+    byCategory.set(card, [...(byCategory.get(card) ?? []), doc])
   }
 
   return (
@@ -80,6 +87,7 @@ export function DocumentStatusGrid({
               <p className="mt-2 ml-6.5 text-xs text-foreground/30 italic">Not yet uploaded</p>
             )}
 
+
             {clientId && !readOnly && (
               <CategoryUploader
                 clientId={clientId}
@@ -90,8 +98,14 @@ export function DocumentStatusGrid({
             )}
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
-            {category === 'historical_financials' && clientId && !readOnly && (
+            {category === 'financial_statements' && clientId && !readOnly && (
               <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
+            )}
+
+            {/* Below the upload area, as Compare Financials: the "none issued"
+                tick, or the way to the DPN summary. */}
+            {category === 'director_penalty_notices' && clientId && dpn && (
+              <DpnPanel clientId={clientId} data={dpn} readOnly={readOnly} />
             )}
 
             {category === 'integrated_client_account' && clientId && !readOnly && (

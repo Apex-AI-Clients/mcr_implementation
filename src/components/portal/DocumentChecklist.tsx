@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/Badge'
-import { CHECKLIST_ORDER, CATEGORY_META } from '@/lib/constants'
+import { CHECKLIST_ORDER, CATEGORY_META, displayCategory } from '@/lib/constants'
 import type { DocCategory } from '@/lib/constants'
 import type { DocumentRecord } from '@/types/app'
 import { CheckCircle2 } from 'lucide-react'
@@ -11,8 +11,8 @@ interface DocumentChecklistProps {
 export function DocumentChecklist({ documents }: DocumentChecklistProps) {
   const byCategory = new Map<string, DocumentRecord[]>()
   for (const doc of documents) {
-    const existing = byCategory.get(doc.docCategory) ?? []
-    byCategory.set(doc.docCategory, [...existing, doc])
+    const card = displayCategory(doc.docCategory)
+    byCategory.set(card, [...(byCategory.get(card) ?? []), doc])
   }
 
   const received = CHECKLIST_ORDER.filter((c) => (byCategory.get(c)?.length ?? 0) > 0).length

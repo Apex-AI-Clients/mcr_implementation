@@ -475,7 +475,7 @@ function buildImprovementLevers(
         ? 'Make a payment to the ATO before submitting — even a partial payment demonstrates good faith.'
         : 'Make a recent payment to demonstrate ongoing good-faith engagement.',
       basis: 'Recent payment activity reads as good-faith engagement and supports the proposal.',
-      current: never ? 'No payments on record' : `${input.daysSinceLastPayment} days since last payment`,
+      current: never ? 'No payments found in the ATO account' : `${input.daysSinceLastPayment} days since last payment`,
       target: `≈${accPay >= 9999 ? 'recent activity' : `${Math.round(accPay)} days`} (accepted median)`,
       impact: 'medium',
     })

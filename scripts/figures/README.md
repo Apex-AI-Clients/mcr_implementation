@@ -29,3 +29,23 @@ names, filenames or free-text line labels.
 
 The replay doesn't include the AI read or the text-layer check, so differences
 that come from those only show after a re-extraction and a new snapshot.
+
+## Director penalty notices
+
+`npm run figures:dpn` reads every PDF in `/dpn-samples/` (gitignored) with the
+current DPN parser and compares each notice with
+`verified-figures/dpn.expected.json`. That file is keyed by notice type
+(`paygw`, `gst`), so it holds no filename, reference or name:
+
+```json
+{
+  "notices": {
+    "paygw": { "issuedOn": "2026-09-30", "rows": 18, "totals": { "column2": 0, "column3": 0, "column4": 0, "column5": 0 } }
+  }
+}
+```
+
+Totals are in cents. The output shows the notice type, dates, the row count,
+which checks failed and the totals. Fields such as the reference, ACN and
+director are reported only as found or MISSING, never by value, and the
+director's address is never read into the result at all.

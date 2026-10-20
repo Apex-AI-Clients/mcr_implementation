@@ -28,11 +28,12 @@ describe('WORKSPACES', () => {
     }
   })
 
-  it('gives the SBR workspace Dashboard, Clients and Archive', () => {
+  it('gives the SBR workspace Dashboard, Clients, Prediction data and Archive', () => {
     const sbr = WORKSPACES.find((w) => w.id === 'sbr')!
     expect(sbr.nav.map((n) => [n.label, n.href])).toEqual([
       ['Dashboard', '/sbr'],
       ['Clients', '/clients'],
+      ['Prediction data', '/sbr/prediction-data'],
       ['Archive', '/sbr/archive'],
     ])
   })

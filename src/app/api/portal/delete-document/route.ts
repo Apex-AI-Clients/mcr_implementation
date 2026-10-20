@@ -1,7 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import { categoryTriggersAnalysis, scheduleClientAnalysis } from '@/lib/analysis/autoRun'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { recomputeClientStatus } from '@/lib/clients/status'
+
+/** The analysis started after a delete runs inside after(), on this function's time. */
+export const maxDuration = 800
 
 export async function POST(req: NextRequest) {
   const user = await requireStaffUser()
@@ -17,7 +21,7 @@ export async function POST(req: NextRequest) {
   // Verify the document belongs to the supplied client.
   const { data: doc } = await supabase
     .from('documents')
-    .select('id, file_path, client_id')
+    .select('id, file_path, client_id, doc_category')
     .eq('id', documentId)
     .eq('client_id', clientId)
     .single()
@@ -43,6 +47,16 @@ export async function POST(req: NextRequest) {
 
   // A required category may now be empty.
   await recomputeClientStatus(supabase, clientId)
+
+  // What the file fed (a comparison, the lodgement figures) is worked out
+  // again without it, in the background.
+  if (categoryTriggersAnalysis(doc.doc_category)) {
+    try {
+      await scheduleClientAnalysis(supabase, doc.client_id, (task) => after(task))
+    } catch (err) {
+      console.error('[delete] scheduling the analysis failed', err instanceof Error ? err.name : 'unknown')
+    }
+  }
 
   return NextResponse.json({ success: true })
 }

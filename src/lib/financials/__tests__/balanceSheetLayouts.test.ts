@@ -12,7 +12,7 @@ import type {
 } from '../types'
 
 /**
- * Balance sheet layouts like the PARKCON current-period statement and the
+ * Balance sheet layouts like a combined company current-period statement and the
  * year files: separate "Fixed Assets" headings, overdrawn bank accounts,
  * finance with its unexpired interest. SYNTHETIC figures throughout.
  */
@@ -159,22 +159,22 @@ describe('an overdrawn bank account is never also cash (item 3)', () => {
         line('currentAssets', 'Business Account', null, 'currentAssets.bankAccounts'),
         line('currentAssets', 'Trade Debtors', 20_000, 'currentAssets.accountsReceivable'),
         // The model's own total counted the overdraft as cash too: the lines do not add up.
-        line('currentAssets', 'Total Current Assets', 24_268, 'totals.totalCurrentAssets', true),
-        line('currentLiabilities', 'Business Account', 4_268, 'currentLiabilities.bankOverdraft'),
+        line('currentAssets', 'Total Current Assets', 24_510, 'totals.totalCurrentAssets', true),
+        line('currentLiabilities', 'Business Account', 4_510, 'currentLiabilities.bankOverdraft'),
         line('currentLiabilities', 'GST', 3_000, 'currentLiabilities.gstPayable'),
         line('currentLiabilities', 'Total Current Liabilities', 9_000, 'totals.totalCurrentLiabilities', true),
       ],
       {
         // The model also put the overdraft figure in bank accounts.
-        currentAssets: { bankAccounts: 4_268, accountsReceivable: 20_000 },
-        currentLiabilities: { bankOverdraft: 4_268, gstPayable: 3_000 },
-        totals: { totalCurrentAssets: 24_268, totalCurrentLiabilities: 9_000 },
+        currentAssets: { bankAccounts: 4_510, accountsReceivable: 20_000 },
+        currentLiabilities: { bankOverdraft: 4_510, gstPayable: 3_000 },
+        totals: { totalCurrentAssets: 24_510, totalCurrentLiabilities: 9_000 },
       },
     )
     const { columnNotes } = correctFile([col], { isTrust: false }, null)
     expect(col.balanceSheet.currentAssets.bankAccounts).toBe(0)
-    expect(col.balanceSheet.currentLiabilities.bankOverdraft).toBe(4_268)
-    expect(columnNotes[0].find((n) => n.group === 'nil_line')?.message).toMatch(/^Bank accounts was read as \$4,268/)
+    expect(col.balanceSheet.currentLiabilities.bankOverdraft).toBe(4_510)
+    expect(columnNotes[0].find((n) => n.group === 'nil_line')?.message).toMatch(/^Bank accounts was read as \$4,510/)
   })
 })
 

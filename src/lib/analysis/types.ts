@@ -18,6 +18,14 @@ export type LodgementType =
   | 'RefundDetail'
   /** A GIC row (e.g. a remission) that only breaks down a "General interest charge" total above it. */
   | 'GICDetail'
+  /**
+   * A plain "General interest charge" row with a balance that only sums the
+   * interest rows printed under it (amended GIC, remissions; same dates; the
+   * same net to the cent). The rows under it are counted; this one is not.
+   */
+  | 'GICSummary'
+  /** "Tax Office audit amended Activity Statement…": debt the ATO raised on audit, not lodged by the client. */
+  | 'ATOAudit'
   | 'FTLPenalty'
   | 'GeneralPenalty'
   | 'CreditTransfer'
@@ -58,12 +66,12 @@ export interface AnalysisWarning {
 }
 
 /**
- * A single lodgement row that contributes to DPN risk: Original or ClientAmended,
- * filed more than 90 calendar days past its statutory due date, with a positive
- * debit (the lodgement actually added to ATO debt).
+ * A single lodgement row that contributes to the DPN estimate: Original or
+ * ClientAmended (as the late-lodgement setting counts them), filed more than
+ * 90 calendar days past its statutory due date, with a positive debit.
  *
- * Credit-only amendments (e.g. ClientAmended with credit > 0 and no debit) are
- * NOT contributing debits — they aren't a personal-liability event.
+ * Credit-only amendments are NOT contributing debits; they can only reduce a
+ * debit for the SAME period (computeDpnRisk).
  */
 export interface DpnContributingDebit {
   rowIndex: number
@@ -73,8 +81,9 @@ export interface DpnContributingDebit {
   description: string
   daysLate: number
   debit: number                  // gross amount that landed on the ATO ledger
-  paymentsSinceLodged: number    // sum of cash payments processed on/after processedDate, CAPPED at debit
-  netAtRisk: number              // max(debit - paymentsSinceLodged, 0)
+  /** The same period's net downward amendments applied to this debit, capped at it. Never a payment. */
+  reducedByAmendments: number
+  netAtRisk: number              // max(debit - reducedByAmendments, 0)
 }
 
 export interface DpnRiskBreakdown {
@@ -83,8 +92,8 @@ export interface DpnRiskBreakdown {
   contributingDebits: DpnContributingDebit[]
   /** Sum of `debit` across all contributingDebits. */
   totalGrossLate: number
-  /** Sum of `paymentsSinceLodged` across all contributingDebits. */
-  totalPaidSince: number
+  /** Sum of `reducedByAmendments` across all contributingDebits. */
+  totalReducedByAmendments: number
   /** Sum of `netAtRisk` across all contributingDebits. */
   totalNetAtRisk: number
   /** Earliest processedDate across ALL CSV rows (display only). */
@@ -103,6 +112,10 @@ export interface DebtBreakdown {
   penaltyDebits: number
   penaltyCredits: number
   penaltyNet: number
+  /** Activity statements the ATO amended on audit ("Tax Office audit amended…"). */
+  auditDebits: number
+  auditCredits: number
+  auditNet: number
   /** Cash payments, allocation rows excluded (paymentAllocations.ts). */
   paymentsReceived: number
   /** How many payments that is. */

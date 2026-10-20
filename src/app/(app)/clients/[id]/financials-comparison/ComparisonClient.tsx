@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -24,6 +24,10 @@ import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
 import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
 import type { StatementCoverage } from '@/lib/financials/coverage'
+import type { FinancialFileRow } from '@/lib/financials/financialFiles'
+import { FinancialFilesTable } from '@/components/admin/financials/FinancialFilesTable'
+import { FilePeriodPanel } from '@/components/admin/financials/FilePeriodPanel'
+import { UnusedFilesList, filesNotInCoverage } from '@/components/admin/financials/UnusedFilesList'
 import type { FinancialsComparison } from '@/lib/financials/types'
 
 interface ExtractionState {
@@ -43,10 +47,15 @@ interface Props {
   initialJobId: string | null
   /** Which statement each year has, from the stored statements as they are now. */
   coverage: StatementCoverage
+  /** Each financial statement file, what it was read as, and whether it is used. */
+  files: FinancialFileRow[]
+  /** The financial years a file's override can name. */
+  overrideYears: number[]
   /** Set when a financials document was deleted after the comparison was built. */
   initialStaleSince: string | null
   /**
-   * Show "Statements on file" and the statement checks. Development and test
+   * Show "Statements on file" (coverage table, year override, files not
+   * used, per-file list) and the statement checks. Development and test
    * deployments only (SHOW_FINANCIALS_DIAGNOSTICS); hidden in production.
    */
   showDiagnostics: boolean
@@ -87,6 +96,8 @@ export function ComparisonClient({
   initialExtraction,
   initialJobId,
   coverage,
+  files,
+  overrideYears,
   initialStaleSince,
   showDiagnostics,
 }: Props) {
@@ -102,6 +113,15 @@ export function ComparisonClient({
   const [includeChecks, setIncludeChecks] = useState(false)
 
   const [phase, setPhase] = useState<JobPhase>(initialJobId ? 'processing' : 'idle')
+
+  // The file picked in the "Statements on file" table.
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+  const selectableDocumentIds = useMemo(() => new Set(files.map((f) => f.documentId)), [files])
+  const selectedFile = files.find((f) => f.documentId === selectedFileId) ?? null
+  // Files no table cell names (superseded, read as nothing, not a statement): listed under it.
+  const unusedFiles = useMemo(() => filesNotInCoverage(files, coverage), [files, coverage])
+  const selectedIsUnused = selectedFile !== null && unusedFiles.some((f) => f.documentId === selectedFile.documentId)
+  const toggleFile = (documentId: string) => setSelectedFileId((current) => (current === documentId ? null : documentId))
 
   // Track the active poll loop so we can cancel it on unmount / new job.
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -186,7 +206,7 @@ export function ComparisonClient({
   )
 
   const startJob = useCallback(
-    async (mode: JobMode) => {
+    async (mode: JobMode, documentIds?: string[]) => {
       clearPoll()
       setError(null)
       setErrors([])
@@ -198,7 +218,7 @@ export function ComparisonClient({
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode }),
+            body: JSON.stringify(documentIds ? { mode, documentIds } : { mode }),
           },
         )
         const data = (await res.json()) as { jobId?: string; error?: string }
@@ -236,6 +256,28 @@ export function ComparisonClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // A comparison built by an automatic run (on upload or delete) has no
+  // summary: write it now that someone is looking, unless the comparison is
+  // out of date or being rebuilt.
+  useEffect(() => {
+    if (!initialComparison || initialAiSummary || initialStaleSince || initialJobId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/clients/${clientId}/financials-comparison/summary`, { method: 'POST' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { aiSummary: string; aiSummaryGeneratedAt: string }
+        setAiSummary(data.aiSummary)
+      } catch {
+        // The figures stand on their own; the summary can be written next visit.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // A job found by a later refresh (e.g. after a start request whose answer
   // was lost) is picked up and followed like any other.
   useEffect(() => {
@@ -255,6 +297,20 @@ export function ComparisonClient({
   const periodRangeLabel = comparison
     ? `${formatIso(comparison.periodRange.start)} to ${formatIso(comparison.periodRange.end)}`
     : null
+
+  function filePanel(file: FinancialFileRow) {
+    return (
+      <FilePeriodPanel
+        key={file.documentId}
+        clientId={clientId}
+        file={file}
+        yearOptions={overrideYears}
+        running={running}
+        onReread={(documentIds) => void startJob('full', documentIds)}
+        onClose={() => setSelectedFileId(null)}
+      />
+    )
+  }
 
   return (
     <div id="financials-export-root" className="space-y-6">
@@ -393,11 +449,35 @@ export function ComparisonClient({
         </div>
       )}
 
-      {/* Which statement each year has. Built fresh from storage on every load. */}
-      {showDiagnostics && coverage.columns.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-3">Statements on file</h3>
-          <StatementCoverageTable coverage={coverage} />
+      {/* Which statement each year has. Built fresh from storage on every
+          load. Clicking a file shows the year and type it was read as, and
+          lets staff correct them (the file is then read again). Diagnostics
+          only: hidden in production (client request, 19 Oct 2026). */}
+      {showDiagnostics && (coverage.columns.length > 0 || unusedFiles.length > 0 || files.length > 0) && (
+        <div className="no-print space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Statements on file</h3>
+          <StatementCoverageTable
+            coverage={coverage}
+            selectableDocumentIds={selectableDocumentIds}
+            selectedDocumentId={selectedFile?.documentId ?? null}
+            onSelectFile={toggleFile}
+          />
+          {selectedFile && !selectedIsUnused && filePanel(selectedFile)}
+          <UnusedFilesList
+            files={unusedFiles}
+            selectedDocumentId={selectedIsUnused ? selectedFile.documentId : null}
+            onSelect={toggleFile}
+            panel={selectedIsUnused ? filePanel(selectedFile) : null}
+          />
+          {showDiagnostics && (
+            <FinancialFilesTable
+              clientId={clientId}
+              files={files}
+              yearOptions={overrideYears}
+              running={running}
+              onReread={(documentIds) => void startJob('full', documentIds)}
+            />
+          )}
         </div>
       )}
 

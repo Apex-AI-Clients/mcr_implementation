@@ -1,7 +1,11 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { ComparisonClient } from './ComparisonClient'
 import { buildCoverage } from '@/lib/financials/coverage'
+import { describeFinancialFiles, overrideYearOptions } from '@/lib/financials/financialFiles'
+import { periodOverrideOf } from '@/lib/financials/periodOverride'
+import type { FinancialDocumentKind } from '@/lib/financials/types'
 import { financialsDiagnosticsEnabled } from '@/lib/financials/diagnostics'
 import { closeDeadJob, isJobDead } from '@/lib/financials/jobLiveness'
 import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
@@ -38,16 +42,20 @@ export default async function FinancialsComparisonPage({ params }: Props) {
   ] = await Promise.all([
     supabase
       .from('documents')
-      .select('id')
+      .select('id, original_filename, uploaded_at, fs_override_kind, fs_override_fy, fs_override_by, fs_override_at')
       .eq('client_id', id)
-      .in('doc_category', ['historical_financials', 'current_financials']),
+      .in('doc_category', FINANCIAL_STATEMENT_CATEGORIES)
+      .order('uploaded_at', { ascending: true }),
     supabase
       .from('financial_statements')
       .select('id, document_id, is_document_id, bs_document_id')
       .eq('client_id', id),
     // Documents the pre-pass has seen, including ones that stored nothing
     // (a trust deed in a financials slot) — they are not "unextracted".
-    supabase.from('financial_document_extractions').select('document_id').eq('client_id', id),
+    supabase
+      .from('financial_document_extractions')
+      .select('document_id, kind, extracted_at')
+      .eq('client_id', id),
     supabase
       .from('financial_comparisons')
       .select('*')
@@ -106,6 +114,22 @@ export default async function FinancialsComparisonPage({ params }: Props) {
         }}
         initialJobId={liveJob?.id ?? null}
         coverage={buildCoverage(slots, failures)}
+        files={describeFinancialFiles({
+          documents: (documents ?? []).map((d) => ({
+            id: d.id,
+            filename: d.original_filename,
+            override: periodOverrideOf(d),
+            overrideBy: d.fs_override_by,
+            overrideAt: d.fs_override_at,
+          })),
+          slots,
+          extractions: (recorded ?? []).map((r) => ({
+            documentId: r.document_id,
+            kind: r.kind as FinancialDocumentKind,
+            extractedAt: r.extracted_at,
+          })),
+        })}
+        overrideYears={overrideYearOptions()}
         initialStaleSince={comparisonRow?.stale_since ?? null}
         showDiagnostics={financialsDiagnosticsEnabled()}
       />

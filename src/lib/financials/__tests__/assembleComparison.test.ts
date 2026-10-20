@@ -179,7 +179,7 @@ describe('restatement by raw label', () => {
     expect(check.details).toContain('Shop Fittings $40,000 → $46,000')
   })
 
-  it('makes PARKCON-style reclassifications one note per year when the headlines match', () => {
+  it('makes combined-statement reclassifications one note per year when the headlines match', () => {
     // FY2023 as its own file and as the FY2024 file's comparative: a loan moved
     // from current to non-current and a director loan moved from liabilities
     // to assets — net assets, total assets, total liabilities and profit unchanged.
@@ -272,8 +272,8 @@ describe('restatement: retained-earnings lines and signs', () => {
   it('leaves appropriation and after-loss lines out entirely', () => {
     const own = pnlWith([
       line('income', 'Sales', 100, 'income.sales'),
-      line('incomeTotals', 'NET TRADING PROFIT /(LOSS) AFTER DEDUCTING LOSS', 4_682, 'ignore.profitAfterLosses', true),
-      line('appropriation', 'Distribution to Beneficiaries', 16_996, null),
+      line('incomeTotals', 'NET TRADING PROFIT /(LOSS) AFTER DEDUCTING LOSS', 5_317, 'ignore.profitAfterLosses', true),
+      line('appropriation', 'Distribution to Beneficiaries', 15_284, null),
     ])
     const later = pnlWith([
       line('income', 'Sales', 100, 'income.sales'),
@@ -285,8 +285,8 @@ describe('restatement: retained-earnings lines and signs', () => {
   })
 
   it('reports a difference in sign only as a note, not a warning', () => {
-    const own = pnlWith([line('expenses', 'Bank Charges', 4_682, 'expenses.bankFees')])
-    const later = pnlWith([line('expenses', 'Bank Charges', -4_682, 'expenses.bankFees')])
+    const own = pnlWith([line('expenses', 'Bank Charges', 5_317, 'expenses.bankFees')])
+    const later = pnlWith([line('expenses', 'Bank Charges', -5_317, 'expenses.bankFees')])
     const slots = [slot(2024, 'primary', { is: [own, 'pnl-23-24'] }), slot(2024, 'comparative', { is: [later, 'pnl-24-25'] })]
     const checks = restatementChecks(slots)
     expect(checks).toEqual([
@@ -345,14 +345,14 @@ describe('equity figures for the summary', () => {
       totals: { totalAssets: 1 },
     })
     const slots = [
-      slot(2024, 'primary', { is: [pnl(200_000), 'p24'], bs: [bs(-4_682), 'b24'] }),
-      slot(2025, 'primary', { is: [pnl(250_000, 16_996), 'p25'], bs: [bs(0), 'b25'] }),
+      slot(2024, 'primary', { is: [pnl(200_000), 'p24'], bs: [bs(-5_317), 'b24'] }),
+      slot(2025, 'primary', { is: [pnl(250_000, 15_284), 'p25'], bs: [bs(0), 'b25'] }),
     ]
     const result = assembleComparison({ slots, records: trustRecords, company: null })
     if (!result.ok) throw new Error('expected a comparison')
     expect(result.comparison.equityByYear).toEqual({
-      2024: { retainedEarnings: -4_682, distributions: null, dividends: null },
-      2025: { retainedEarnings: 0, distributions: 16_996, dividends: null },
+      2024: { retainedEarnings: -5_317, distributions: null, dividends: null },
+      2025: { retainedEarnings: 0, distributions: 15_284, dividends: null },
     })
   })
 })

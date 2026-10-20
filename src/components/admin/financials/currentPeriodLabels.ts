@@ -1,10 +1,14 @@
 import type { CurrentPeriodSnapshot } from '@/lib/financials/types'
+import { currentPeriodLabel, currentPeriodName, currentPeriodRange } from '@/lib/financials/periodLabels'
 
-/** Compact two-line column header. e.g. "to 4 May 2026". */
+/** Column heading, first line: "FY2027 to date". */
+export function formatCurrentPeriodHeaderName(cp: CurrentPeriodSnapshot): string {
+  return currentPeriodName(cp)
+}
+
+/** Column heading, second line: "1 Jul – 15 Oct 2026". */
 export function formatCurrentPeriodHeaderDate(cp: CurrentPeriodSnapshot): string {
-  const d = new Date(cp.periodEndDate)
-  if (Number.isNaN(d.getTime())) return cp.periodEndDate
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+  return currentPeriodRange(cp)
 }
 
 /** Months between periodStartDate and periodEndDate, rounded to the nearest
@@ -19,5 +23,5 @@ function monthsBetween(startIso: string, endIso: string): number {
 
 export function formatCurrentPeriodTooltip(cp: CurrentPeriodSnapshot): string {
   const months = monthsBetween(cp.periodStartDate, cp.periodEndDate)
-  return `Current period covers ${cp.periodLabel} (${months} month${months === 1 ? '' : 's'}). Not directly comparable year-over-year — figures are pre-annualised. Use for trend awareness only.`
+  return `${currentPeriodLabel(cp)}: ${months} month${months === 1 ? '' : 's'} of the year. Not directly comparable year-over-year — figures are pre-annualised. Use for trend awareness only.`
 }

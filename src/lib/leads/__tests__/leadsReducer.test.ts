@@ -33,6 +33,7 @@ function staleLead(overrides: Partial<Lead> = {}): Lead {
     stage: 'lead',
     source: 'facebook',
     sourceLabel: null,
+    entityTypeLabel: null,
     company: null,
     nextStep: null,
     stageSince: at(40),
