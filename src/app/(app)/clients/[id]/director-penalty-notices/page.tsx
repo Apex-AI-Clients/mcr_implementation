@@ -9,6 +9,8 @@ import { DpnNoticeList } from '@/components/admin/dpn/DpnNoticeList'
 import { buildDpnPanel, formatCents, sydneyToday } from '@/lib/dpn/view'
 import {
   DPN_EXPORT_SOURCE_NOTE,
+  DPN_TABLE_LEGEND,
+  amountHeadings,
   columnLabels,
   describeDaysLeft,
   formatIsoDate,
@@ -171,24 +173,35 @@ function AmountLine({ label, value, strong, muted }: { label: string; value: num
 
 const AMOUNT_KEYS: (keyof DpnAmounts)[] = ['column2', 'column3', 'column4', 'column5']
 
+/** Amount headings as the notices print them: long, so they wrap above the figures. */
+function AmountHeaders({ headings }: { headings: Record<keyof DpnAmounts, string> }) {
+  return (
+    <>
+      {AMOUNT_KEYS.map((key) => (
+        <th key={key} className="min-w-[9rem] px-3 py-2 text-right align-bottom font-medium leading-snug">
+          {headings[key]}
+        </th>
+      ))}
+    </>
+  )
+}
+
 function NoticesTable({ notices }: { notices: SummaryNotice[] }) {
+  const headings = amountHeadings(notices.map((n) => n.type))
   return (
     <section aria-labelledby="dpn-notices-heading">
       <SectionTitle id="dpn-notices-heading">Notices</SectionTitle>
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[960px] text-sm">
+        <table className="w-full min-w-[1180px] text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-xs text-foreground/50">
+            <tr className="border-b border-border text-left align-bottom text-xs text-foreground/50">
               <th className="px-3 py-2 font-medium">Standing</th>
               <th className="px-3 py-2 font-medium">Type</th>
               <th className="px-3 py-2 font-medium">Director</th>
               <th className="px-3 py-2 font-medium">Issued</th>
               <th className="px-3 py-2 font-medium">Deadline</th>
               <th className="px-3 py-2 font-medium">Reference</th>
-              <th className="px-3 py-2 text-right font-medium">Column 2</th>
-              <th className="px-3 py-2 text-right font-medium">Col 3 Unpaid</th>
-              <th className="px-3 py-2 text-right font-medium">Column 4</th>
-              <th className="px-3 py-2 text-right font-medium">Column 5</th>
+              <AmountHeaders headings={headings} />
               <th className="px-3 py-2 font-medium">How read</th>
             </tr>
           </thead>
@@ -238,17 +251,13 @@ function NoticesTable({ notices }: { notices: SummaryNotice[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-foreground/40">
-        Column 2: the notice&apos;s own amount (withheld, or assessed). Column 3: unpaid. Column 4: removed if the
-        company appoints an SBR practitioner, administrator or liquidator, or pays, by the notice&apos;s deadline.
-        Column 5: stays with the director unless paid. &ldquo;Current&rdquo; is the most recent notice for that
-        director and type; totals use current notices.
-      </p>
+      <p className="mt-2 text-xs text-foreground/40">{DPN_TABLE_LEGEND.join(' ')}</p>
     </section>
   )
 }
 
 function DirectorTotals({ summary }: { summary: DpnSummary }) {
+  const headings = amountHeadings(summary.directors.flatMap((d) => d.byType.map((t) => t.type)))
   return (
     <section aria-labelledby="dpn-directors-heading">
       <SectionTitle id="dpn-directors-heading">By director (current notices)</SectionTitle>
@@ -257,15 +266,12 @@ function DirectorTotals({ summary }: { summary: DpnSummary }) {
         company figures above count each period once.
       </p>
       <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-xs text-foreground/50">
+            <tr className="border-b border-border text-left align-bottom text-xs text-foreground/50">
               <th className="px-3 py-2 font-medium">Director</th>
               <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 text-right font-medium">Column 2</th>
-              <th className="px-3 py-2 text-right font-medium">Col 3 Unpaid</th>
-              <th className="px-3 py-2 text-right font-medium">Column 4</th>
-              <th className="px-3 py-2 text-right font-medium">Column 5</th>
+              <AmountHeaders headings={headings} />
             </tr>
           </thead>
           <tbody>

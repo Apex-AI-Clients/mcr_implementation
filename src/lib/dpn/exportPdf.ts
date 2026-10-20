@@ -2,6 +2,8 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf
 import { formatCents } from './view'
 import {
   DPN_EXPORT_SOURCE_NOTE,
+  DPN_TABLE_LEGEND,
+  amountHeadings,
   columnLabels,
   describeDaysLeft,
   formatIsoDate,
@@ -77,10 +79,11 @@ const NOTICE_COLUMNS = [
   { key: 'issued', title: 'Issued', x: 276, w: 56 },
   { key: 'deadline', title: 'Deadline', x: 334, w: 56 },
   { key: 'days', title: 'Days left', x: 392, w: 64 },
-  { key: 'column2', title: 'Column 2', x: 458, w: 62, right: true },
-  { key: 'column3', title: 'Col 3 Unpaid', x: 528, w: 62, right: true },
-  { key: 'column4', title: 'Column 4', x: 598, w: 62, right: true },
-  { key: 'column5', title: 'Column 5', x: 668, w: 62, right: true },
+  // Amount columns are titled from the notices' own headings (amountHeadings).
+  { key: 'column2', title: '', x: 458, w: 62, right: true },
+  { key: 'column3', title: '', x: 528, w: 62, right: true },
+  { key: 'column4', title: '', x: 598, w: 62, right: true },
+  { key: 'column5', title: '', x: 668, w: 62, right: true },
   { key: 'source', title: 'How read', x: 744, w: 58 },
 ] as const
 
@@ -128,6 +131,34 @@ class Writer {
     this.text(text, MARGIN, { font: this.bold, size: 12 })
     this.y -= 18
   }
+}
+
+/** Header text and line height for the long, wrapped column headings. */
+const HEAD_SIZE = 6.5
+const HEAD_LINE = 7.5
+
+/**
+ * A table header whose cells wrap: each title over as many lines as it needs,
+ * bottom-aligned so every column's last line sits on the rule.
+ */
+function drawWrappedHeader(
+  w: Writer,
+  cells: { title: string; x: number; w: number; right?: boolean }[],
+) {
+  const wrapped = cells.map((c) => wrap(w.bold, c.title, HEAD_SIZE, c.w))
+  const depth = Math.max(...wrapped.map((lines) => lines.length))
+  w.ensure(depth * HEAD_LINE + LINE * 2)
+  const top = w.y
+  cells.forEach((c, i) => {
+    const lines = wrapped[i]
+    lines.forEach((line, k) => {
+      w.y = top - (depth - lines.length + k) * HEAD_LINE
+      w.text(line, c.x, { font: w.bold, size: HEAD_SIZE, right: c.right ? c.x + c.w : undefined })
+    })
+  })
+  w.y = top - (depth - 1) * HEAD_LINE - 6
+  w.rule()
+  w.y -= 8
 }
 
 function money(a: DpnAmounts, key: keyof DpnAmounts) {
@@ -188,14 +219,14 @@ export async function buildDpnPdf(summary: DpnSummary, meta: DpnExportMeta): Pro
 
   // ── Notices ───────────────────────────────────────────────────────────────
   w.heading('Notices')
-  const drawNoticeHeader = () => {
-    for (const c of NOTICE_COLUMNS) {
-      w.text(c.title, c.x, { font: bold, size: 8, right: 'right' in c ? c.x + c.w : undefined })
-    }
-    w.y -= 6
-    w.rule()
-    w.y -= 8
-  }
+  const noticeHeadings = amountHeadings(summary.notices.map((n) => n.type))
+  const noticeHeaderCells = NOTICE_COLUMNS.map((c) => ({
+    title: c.key in noticeHeadings ? noticeHeadings[c.key as keyof DpnAmounts] : c.title,
+    x: c.x,
+    w: c.w,
+    right: 'right' in c,
+  }))
+  const drawNoticeHeader = () => drawWrappedHeader(w, noticeHeaderCells)
   drawNoticeHeader()
   for (const n of summary.notices) {
     if (w.y - LINE < MARGIN + FOOTER_SPACE) {
@@ -231,12 +262,7 @@ export async function buildDpnPdf(summary: DpnSummary, meta: DpnExportMeta): Pro
     w.text('None yet.', MARGIN, { color: MUTED })
     w.y -= LINE
   }
-  const legend = [
-    "Column 2: the notice's own amount (withheld, or assessed). Column 3: unpaid.",
-    "Column 4: removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by the notice's deadline.",
-    'Column 5: stays with the director unless paid. "Current" is the most recent notice for that director and type; totals use current notices.',
-    '* Something on this notice needs checking: see the client page.',
-  ]
+  const legend = [...DPN_TABLE_LEGEND, '* Something on this notice needs checking: see the client page.']
   w.y -= 4
   for (const line of legend) {
     for (const part of wrap(font, line, 8, PAGE[0] - 2 * MARGIN)) {
@@ -247,21 +273,23 @@ export async function buildDpnPdf(summary: DpnSummary, meta: DpnExportMeta): Pro
   }
 
   // ── By director ───────────────────────────────────────────────────────────
+  // The heading, the wrapped column headings and a first row stay together.
+  w.ensure(110)
   w.heading('By director (current notices)')
-  const dirCols = [
-    { title: 'Director', x: 40 },
-    { title: 'Type', x: 260 },
-    { title: 'Column 2', right: 480 },
-    { title: 'Col 3 Unpaid', right: 580 },
-    { title: 'Column 4', right: 680 },
-    { title: 'Column 5', right: 780 },
+  const dirHeadings = amountHeadings(summary.directors.flatMap((d) => d.byType.map((t) => t.type)))
+  // Right edges of the four amount columns.
+  const dirAmountRights = [480, 580, 680, 780]
+  const dirHeaderCells = [
+    { title: 'Director', x: 40, w: 210 },
+    { title: 'Type', x: 260, w: 120 },
+    ...(['column2', 'column3', 'column4', 'column5'] as const).map((key, k) => ({
+      title: dirHeadings[key],
+      x: dirAmountRights[k] - 90,
+      w: 90,
+      right: true,
+    })),
   ]
-  const drawDirHeader = () => {
-    for (const c of dirCols) w.text(c.title, c.x ?? 0, { font: bold, size: 8, right: c.right })
-    w.y -= 6
-    w.rule()
-    w.y -= 8
-  }
+  const drawDirHeader = () => drawWrappedHeader(w, dirHeaderCells)
   drawDirHeader()
   for (const d of summary.directors) {
     const rows = [
@@ -277,7 +305,7 @@ export async function buildDpnPdf(summary: DpnSummary, meta: DpnExportMeta): Pro
       if (i === 0) w.text(fit(font, d.directorName, 8, 210), 40, { size: 8 })
       w.text(r.type, 260, { size: 8, font: f })
       ;(['column2', 'column3', 'column4', 'column5'] as const).forEach((key, k) => {
-        w.text(money(r.totals, key), 0, { size: 8, font: f, right: dirCols[k + 2].right })
+        w.text(money(r.totals, key), 0, { size: 8, font: f, right: dirAmountRights[k] })
       })
       w.y -= LINE
     })

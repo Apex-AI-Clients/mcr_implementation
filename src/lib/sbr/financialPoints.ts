@@ -21,13 +21,41 @@ import { currentPeriodAt } from '@/lib/financials/periodLabels'
 
 export type PointRule = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h'
 
+/**
+ * How a point reads at a glance. 'concern': worth raising with the client;
+ * 'positive': moving the right way; 'neutral': for the record. Facts only:
+ * the tone colours the card, it never adds words.
+ */
+export type PointTone = 'concern' | 'neutral' | 'positive'
+
+export interface PointFigure {
+  /** "FY2023", or the current period: "30 Sep 2026 (FY2027 to date)". */
+  label: string
+  value: number
+}
+
+/** The same facts as `text`, laid out as a card: what, which way, the figures. */
+export interface FinancialPointCard {
+  /** What it is about: "ATO-related debt". */
+  title: string
+  /** Which way, in a few words: "Rose", "Loss in 3 of 4 years". */
+  verdict: string
+  tone: PointTone
+  /** Oldest first, as the statements show them. */
+  figures: PointFigure[]
+  /** One short line of context, when the figures alone don't say it. */
+  note: string | null
+}
+
 export interface FinancialPoint {
   rule: PointRule
+  /** The point in one sentence: the whole fact, for reading in full. */
   text: string
+  card: FinancialPointCard
 }
 
 export const FINANCIAL_POINTS_INTRO =
-  "Points to discuss with the client, from the financial statements. The recommended % comes from similar past SBR cases, which don't include these figures, so these points explain the situation but don't change the %."
+  "From the financial statements, to discuss with the client. They explain the situation; they don't change the recommended %."
 
 export const FINANCIAL_POINTS_NOT_READY = 'Financial points will appear once the financial comparison is verified.'
 
@@ -45,6 +73,8 @@ export const MATERIAL_TOTAL_LOSS = 10_000
 export const MATERIAL_LATEST_LOSS = 5_000
 
 const ATO = 'ATO-related debt (ATO account, GST and PAYG withholding; excluding super)'
+/** What the card's "ATO-related debt" covers, said once under it. */
+const ATO_NOTE = 'ATO account, GST and PAYG withholding. Super is not included.'
 /** The ATO-related keys the points add up (super is owed to super funds, not the ATO). */
 export const ATO_EXCLUDING_SUPER_KEYS = ['atoLiability', 'gstPayable', 'paygWithholdingPayable']
 const ATO_KEYS = ATO_EXCLUDING_SUPER_KEYS
@@ -131,6 +161,22 @@ function roseMaterially(s: Series): boolean {
   return a !== null && b !== null && b !== a && b.value > a.value && isMaterial(a.value, b.value)
 }
 
+/** First and last compared year, then the current period: the figures a card shows. */
+function figuresOf(s: Series): PointFigure[] {
+  const out: PointFigure[] = []
+  const a = firstOf(s)
+  const b = lastOf(s)
+  if (a) out.push(a)
+  if (b && b !== a) out.push(b)
+  if (s.current) out.push(s.current)
+  return out
+}
+
+/** "ATO-related debt rose from $12,000 to $80,000 over the same years." */
+function alongside(what: string, s: Series): string {
+  return `${what} rose from ${money(firstOf(s)!.value)} to ${money(lastOf(s)!.value)} over the same years.`
+}
+
 export interface FinancialPointsInput {
   comparison: FinancialsComparison
   /** From company_details: "the company", "the trust", else "the business". */
@@ -141,6 +187,8 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
   const rows = rowsByKey(c)
   const entity = entityType === 'company' ? 'The company' : entityType === 'trust' ? 'The trust' : 'The business'
   const points = new Map<PointRule, string>()
+  const cards = new Map<PointRule, FinancialPointCard>()
+  const card = (rule: PointRule, c: FinancialPointCard) => cards.set(rule, c)
 
   const ato = series(c, rows, ATO_KEYS, true)
   const atoFrom = firstOf(ato)
@@ -151,12 +199,21 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
   // (a) ATO-related debt: always.
   if (!atoFrom && !ato.current) {
     points.set('a', 'The balance sheets show no ATO-related debt (ATO account, GST or PAYG withholding; super is not counted here).')
+    card('a', { title: 'ATO-related debt', verdict: 'None shown', tone: 'positive', figures: [], note: ATO_NOTE })
   } else if (atoFrom && atoTo && atoTo !== atoFrom) {
     const verb = isMaterial(atoFrom.value, atoTo.value) ? (atoTo.value > atoFrom.value ? 'rose' : 'fell') : 'went'
     points.set('a', `${ATO} ${verb} from ${money(atoFrom.value)} (${atoFrom.label}) to ${money(atoTo.value)} (${atoTo.label})${currentTail(ato)}.`)
+    card('a', {
+      title: 'ATO-related debt',
+      verdict: verb === 'rose' ? 'Rose' : verb === 'fell' ? 'Fell' : 'Little change',
+      tone: verb === 'rose' ? 'concern' : verb === 'fell' ? 'positive' : 'neutral',
+      figures: figuresOf(ato),
+      note: ATO_NOTE,
+    })
   } else {
     const when = atoTo ? `in ${atoTo.label}` : `at ${ato.current!.label}`
     points.set('a', `${ATO} was ${money((atoTo ?? ato.current!).value)} ${when}${atoTo ? currentTail(ato) : ''}.`)
+    card('a', { title: 'ATO-related debt', verdict: 'On the balance sheet', tone: 'neutral', figures: figuresOf(ato), note: ATO_NOTE })
   }
 
   // (b) Assets bought while ATO-related debt rose: plant & equipment, else
@@ -165,6 +222,13 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
     const ppe = series(c, rows, ['propertyPlantEquipment'], false)
     if (roseMaterially(ppe)) {
       points.set('b', `Property, plant & equipment rose from ${money(firstOf(ppe)!.value)} (${firstOf(ppe)!.label}) to ${money(lastOf(ppe)!.value)} (${lastOf(ppe)!.label})${atoChange}.`)
+      card('b', {
+        title: 'Property, plant & equipment',
+        verdict: 'Rose while ATO debt rose',
+        tone: 'concern',
+        figures: figuresOf(ppe),
+        note: alongside('ATO-related debt', ato),
+      })
     } else {
       const nca = series(c, rows, ['totalNonCurrentAssets'], false)
       const loans = series(c, rows, ['directorRelatedLoansReceivable'], false)
@@ -177,6 +241,13 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
       }
       if (roseMaterially(net)) {
         points.set('b', `Non-current assets other than loans to directors rose from ${money(firstOf(net)!.value)} (${firstOf(net)!.label}) to ${money(lastOf(net)!.value)} (${lastOf(net)!.label})${atoChange}.`)
+        card('b', {
+          title: 'Non-current assets (excluding loans to directors)',
+          verdict: 'Rose while ATO debt rose',
+          tone: 'concern',
+          figures: figuresOf(net),
+          note: alongside('ATO-related debt', ato),
+        })
       }
     }
   }
@@ -185,12 +256,14 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
   const owedTo = series(c, rows, ['directorRelatedLoansPayable'], true)
   if (roseMaterially(owedTo)) {
     points.set('c', `Loans owed to directors or related parties rose from ${money(firstOf(owedTo)!.value)} (${firstOf(owedTo)!.label}) to ${money(lastOf(owedTo)!.value)} (${lastOf(owedTo)!.label})${currentTail(owedTo, 'were')}.`)
+    card('c', { title: 'Loans owed to directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedTo), note: null })
   }
 
   // (d) Loans owed BY directors or related parties, growing.
   const owedBy = series(c, rows, ['directorRelatedLoansReceivable'], true)
   if (roseMaterially(owedBy)) {
     points.set('d', `Loans owed to the business by directors or related parties rose from ${money(firstOf(owedBy)!.value)} (${firstOf(owedBy)!.label}) to ${money(lastOf(owedBy)!.value)} (${lastOf(owedBy)!.label})${currentTail(owedBy, 'were')}.`)
+    card('d', { title: 'Loans owed by directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedBy), note: null })
   }
 
   // (e) Losses. The threshold decides whether to show; the sentence counts
@@ -209,6 +282,14 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
         turnedToLoss ? `, including ${latest!.label} after a profit in ${before!.label}` : ''
       }.`,
     )
+    card('e', {
+      title: 'Profit before tax',
+      verdict: `Loss in ${lossYears.length} of ${profit.years.length} years`,
+      tone: 'concern',
+      // Every year compared, so each loss is seen against the years around it.
+      figures: profit.years,
+      note: `${money(Math.abs(totalLoss))} lost in total${turnedToLoss ? `; ${latest!.label} was a loss after a profit in ${before!.label}` : ''}.`,
+    })
   }
 
   // (f) Net assets.
@@ -221,8 +302,17 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
     const tail = net.current ? `; at ${net.current.label}, ${position(net.current.value)}` : ''
     if (nTo.value < 0) {
       points.set('f', `Liabilities exceeded assets by ${money(-nTo.value)} in ${nTo.label}; in ${nFrom.label} ${position(nFrom.value)}${tail}.`)
+      card('f', {
+        title: 'Net assets',
+        verdict: 'Liabilities exceed assets',
+        tone: 'concern',
+        figures: figuresOf(net),
+        note: 'A figure below zero is the amount liabilities exceed assets by.',
+      })
     } else {
-      points.set('f', `Net assets ${nTo.value > nFrom.value ? 'rose' : 'fell'} from ${money(nFrom.value)} (${nFrom.label}) to ${money(nTo.value)} (${nTo.label})${tail}.`)
+      const rose = nTo.value > nFrom.value
+      points.set('f', `Net assets ${rose ? 'rose' : 'fell'} from ${money(nFrom.value)} (${nFrom.label}) to ${money(nTo.value)} (${nTo.label})${tail}.`)
+      card('f', { title: 'Net assets', verdict: rose ? 'Rose' : 'Fell', tone: rose ? 'positive' : 'concern', figures: figuresOf(net), note: null })
     }
   }
 
@@ -232,6 +322,13 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
   const rTo = lastOf(revenue)
   if (atoRose && rFrom && rTo && rTo !== rFrom && rTo.value <= rFrom.value * (1 + FLAT_REVENUE_GROWTH)) {
     points.set('g', `Revenue went from ${money(rFrom.value)} (${rFrom.label}) to ${money(rTo.value)} (${rTo.label})${atoChange}.`)
+    card('g', {
+      title: 'Revenue',
+      verdict: rTo.value < rFrom.value ? 'Down while ATO debt rose' : 'Flat while ATO debt rose',
+      tone: 'concern',
+      figures: figuresOf(revenue),
+      note: alongside('ATO-related debt', ato),
+    })
   }
 
   // (h) Wages and super rising while super and PAYG withholding owing rose.
@@ -242,11 +339,18 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
       'h',
       `Wages and super expense rose from ${money(firstOf(pay)!.value)} (${firstOf(pay)!.label}) to ${money(lastOf(pay)!.value)} (${lastOf(pay)!.label}) while super and PAYG withholding owing rose from ${money(firstOf(owing)!.value)} to ${money(lastOf(owing)!.value)}.`,
     )
+    card('h', {
+      title: 'Wages and super expense',
+      verdict: 'Rose, and so did what is owed',
+      tone: 'concern',
+      figures: figuresOf(pay),
+      note: alongside('Super and PAYG withholding owing', owing),
+    })
   }
 
   return ORDER.filter((rule) => points.has(rule))
     .slice(0, MAX_POINTS)
-    .map((rule) => ({ rule, text: points.get(rule)! }))
+    .map((rule) => ({ rule, text: points.get(rule)!, card: cards.get(rule)! }))
 }
 
 /** Words a point must never use: no legal conclusions. */

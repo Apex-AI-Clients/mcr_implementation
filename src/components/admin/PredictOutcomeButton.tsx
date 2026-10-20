@@ -7,7 +7,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 
 interface Props {
   clientId: string
-  /** Every readiness item Ready, or Needs review and reviewed (readiness.ts). */
+  /** Every readiness item finished: Ready or Failed (readiness.ts). */
   canPredict: boolean
   /** What it is waiting for, one per item, shown on the info icon when it cannot open yet. */
   waitingFor: string[]

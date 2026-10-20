@@ -322,7 +322,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
             <Input
               id="edit-lead-debt"
               inputMode="decimal"
-              placeholder="e.g. 120000 or $120k. Blank for not given."
               value={form.debtText}
               onChange={(event) => set('debtText', event.target.value)}
               error={errors.debtText}
@@ -346,7 +345,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
           {form.stateTyped ? (
             <Input
               id="edit-lead-state"
-              placeholder="e.g. Australia wide. Blank for not given."
               maxLength={STATE_TEXT_MAX}
               value={form.stateText}
               onChange={(event) => set('stateText', event.target.value)}
@@ -359,7 +357,7 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
           ) : (
             <MultiSelect
               id="edit-lead-state"
-              placeholder="Not given"
+              placeholder=""
               options={STATE_OPTIONS}
               value={form.states}
               onChange={setStates}
@@ -376,7 +374,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
           {form.entityTyped ? (
             <Input
               id="edit-lead-entity"
-              placeholder="e.g. Sole trader, Partnership"
               maxLength={LABEL_MAX}
               value={form.entityText}
               onChange={(event) => set('entityText', event.target.value)}
@@ -385,7 +382,7 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
           ) : (
             <Select
               id="edit-lead-entity"
-              placeholder="Not given"
+              placeholder=""
               value={form.entityType}
               onChange={(event) => set('entityType', event.target.value)}
               options={ENTITY_OPTIONS}
@@ -402,7 +399,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
           {form.sourceTyped ? (
             <Input
               id="edit-lead-source"
-              placeholder="e.g. Referral, Trade show"
               maxLength={LABEL_MAX}
               value={form.sourceText}
               onChange={(event) => set('sourceText', event.target.value)}
@@ -421,7 +417,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
         <Input
           id="edit-lead-call-time"
           label="Preferred call time"
-          placeholder="Not given"
           value={form.preferredCallTime}
           onChange={(event) => set('preferredCallTime', event.target.value)}
         />
@@ -435,7 +430,6 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
             rows={4}
             value={form.message}
             onChange={(event) => set('message', event.target.value)}
-            placeholder="Not given"
             className="w-full resize-y rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted transition-colors focus:border-accent focus:outline-none"
           />
         </div>

@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { rowAddsUp } from '@/lib/dpn/checks'
 import { ManualNoticeSchema, centsToTyped, parseTypedAmount } from '@/lib/dpn/manualEntry'
 import { formatCents } from '@/lib/dpn/view'
+import { amountHeadings, columnHeading } from '@/lib/dpn/summary'
 import { DPN_TYPE_LABEL, type DpnType } from '@/lib/dpn/types'
 import type { StoredNotice } from '@/lib/dpn/stored'
 
@@ -24,12 +25,6 @@ interface DpnManualFormProps {
 const COLUMNS = ['column2', 'column3', 'column4', 'column5'] as const
 type Column = (typeof COLUMNS)[number]
 
-const COLUMN_LABEL: Record<Column, string> = {
-  column2: 'Col 2 · Withheld / assessed',
-  column3: 'Col 3 · Unpaid',
-  column4: 'Col 4 · Notified within 3 months',
-  column5: 'Col 5 · Not notified',
-}
 
 interface RowDraft {
   key: number
@@ -77,6 +72,11 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
   const [reference, setReference] = useState(notice?.reference ?? '')
   const [issuedOn, setIssuedOn] = useState(notice?.issuedOn ?? '')
   const [type, setType] = useState<string>(notice?.type ?? '')
+  // The table's headings as this notice prints them, so the figures can be
+  // copied across column by column. They follow the type chosen above.
+  const noticeType = type ? (type as DpnType) : null
+  const headings = amountHeadings([noticeType])
+  const period = columnHeading('column1', [noticeType])
   const [companyName, setCompanyName] = useState(notice?.companyName ?? '')
   const [acn, setAcn] = useState(notice?.acn ?? '')
   const [directorName, setDirectorName] = useState(notice?.directorName ?? '')
@@ -188,14 +188,14 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[1000px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
-                <th className="px-2 py-2 font-medium">Period from</th>
-                <th className="px-2 py-2 font-medium">Period to</th>
+                <th className="px-2 py-2 align-bottom font-medium">{period}: from</th>
+                <th className="px-2 py-2 align-bottom font-medium">{period}: to</th>
                 {COLUMNS.map((c) => (
-                  <th key={c} className="px-2 py-2 text-right font-medium">
-                    {COLUMN_LABEL[c]}
+                  <th key={c} className="min-w-[8rem] px-2 py-2 text-right align-bottom font-medium leading-snug">
+                    {headings[c]}
                   </th>
                 ))}
                 <th className="px-2 py-2 font-medium">
@@ -231,7 +231,7 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
                       <td key={c} className="px-2 py-1.5">
                         <input
                           inputMode="decimal"
-                          aria-label={`Row ${index + 1} ${COLUMN_LABEL[c]}`}
+                          aria-label={`Row ${index + 1} ${headings[c]}`}
                           value={row[c]}
                           onChange={(e) => setCell(row.key, c, e.target.value)}
                           className={`h-8 w-full rounded-md border bg-input-bg px-2 text-right text-sm tabular-nums text-foreground focus:border-accent focus:outline-none ${
@@ -243,9 +243,9 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
                     <td className="whitespace-nowrap px-2 py-1.5">
                       <span
                         className={`mr-1 text-xs ${complete ? (adds ? 'text-success' : 'text-warning') : 'text-foreground/30'}`}
-                        title="Column 3 should equal Column 4 + Column 5"
+                        title="The unpaid amount should be the notified and not-notified amounts added together"
                       >
-                        {complete ? (adds ? '3 = 4 + 5' : '3 ≠ 4 + 5') : '—'}
+                        {complete ? (adds ? 'Adds up' : 'Does not add up') : '—'}
                       </span>
                       <button
                         type="button"

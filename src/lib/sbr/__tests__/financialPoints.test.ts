@@ -240,6 +240,23 @@ describe('order, limit and wording', () => {
     expect(shown.map((p) => p.rule)).toEqual(['b', 'a', 'c', 'd', 'e', 'f'])
   })
 
+  it('gives every point a card whose figures are the ones its sentence states', () => {
+    for (const p of points(busy)) {
+      expect(p.card.title.length).toBeGreaterThan(0)
+      expect(p.card.verdict.length).toBeGreaterThan(0)
+      expect(BANNED_WORDS.test(`${p.card.title} ${p.card.verdict} ${p.card.note ?? ''}`)).toBe(false)
+      // Losses show every year compared; the sentence gives the count and total.
+      if (p.rule === 'e') continue
+      for (const f of p.card.figures) expect(p.text + (p.card.note ?? '')).toContain(money(Math.abs(f.value)))
+    }
+  })
+
+  it('shows every year on the losses card, with the total in its note', () => {
+    const e = points(busy).find((p) => p.rule === 'e')!
+    expect(e.card).toMatchObject({ verdict: 'Loss in 4 of 4 years', tone: 'concern', note: '$140,000 lost in total.' })
+    expect(e.card.figures.map((f) => f.value)).toEqual([-20_000, -30_000, -40_000, -50_000])
+  })
+
   it('never uses a legal conclusion', () => {
     for (const p of points(busy)) expect(BANNED_WORDS.test(p.text)).toBe(false)
     expect(BANNED_WORDS.test('the business may be insolvent')).toBe(true)

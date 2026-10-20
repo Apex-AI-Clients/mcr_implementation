@@ -1,24 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { computeReadiness, type ReadinessInput } from '../readiness'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
-import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
 
 /** The readiness checklist's rules. Synthetic data only. */
-
-const own = { status: 'own' as const, filename: 'f.pdf', documentId: 'd' }
-const missing = { status: 'missing' as const, filename: null, documentId: null }
-
-function coverage(withCurrent = true, gap = false): StatementCoverage {
-  const years = [2023, 2024, 2025, 2026]
-  const columns = [
-    ...years.map((y) => ({ key: `fy${y}`, label: `FY${y}`, financialYear: y, kind: 'annual' as const, extra: false })),
-    ...(withCurrent ? [{ key: 'current', label: 'Current period', financialYear: 2027, kind: 'current_period' as const, extra: false }] : []),
-  ]
-  const row = columns.map((_, i) => (gap && i === 0 ? missing : own))
-  return { columns, rows: { income_statement: row, balance_sheet: columns.map(() => own) } }
-}
 
 function file(over: Partial<FinancialFileRow> = {}): FinancialFileRow {
   return {
@@ -71,27 +57,24 @@ function input(over: {
   financials?: Partial<ReadinessInput['financials']>
   lodgement?: Partial<ReadinessInput['lodgement']>
   dpn?: Partial<ReadinessInput['dpn']>
-  reviews?: ReadinessInput['reviews']
 } = {}): ReadinessInput {
   return {
     clientId: 'c1',
     jobRunning: over.jobRunning ?? false,
     financials: {
       files: [file()],
-      coverage: coverage(),
       comparison: { generatedAt: '2026-10-17T00:00:00Z', staleSince: null },
       outOfDate: false,
       ...over.financials,
     },
     lodgement: {
       csvCount: 1,
-      analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', warnings: 0, late: 3, daysLate: 120 },
+      analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z' },
       outOfDate: false,
       noExportFound: false,
       ...over.lodgement,
     },
     dpn: { notices: [view(notice())], noneIssued: null, ...over.dpn },
-    reviews: over.reviews ?? {},
   }
 }
 
@@ -124,77 +107,26 @@ describe('financial statements', () => {
     const r = computeReadiness(input({ jobRunning: true, financials: { outOfDate: true } }))
     expect(statusOf(r, 'financials')).toMatchObject({ status: 'processing', canRunNow: false })
     expect(r.items.every((i) => !i.canRunNow)).toBe(true)
+    expect(r.waitingFor).toEqual(['Financial statements: processing'])
   })
 
-  it('lists a file whose read failed, with why, rather than waiting on it for ever', () => {
-    const failed = file({
-      documentId: 'scan',
-      filename: 'scan.pdf',
-      annualYears: [],
-      comparativeYears: [],
-      usage: 'nothing_read',
-      note: 'Could not be read: extraction timed out after 200s Re-extract from the comparison page to try again.',
-    })
+  it('is ready once compared, whatever gaps the comparison has', () => {
+    const failed = file({ documentId: 'scan', filename: 'scan.pdf', annualYears: [], comparativeYears: [], usage: 'nothing_read' })
     const item = statusOf(computeReadiness(input({ financials: { files: [file(), failed] } })), 'financials')
-    expect(item.status).toBe('needs_review')
-    expect(item.notes[0]).toMatch(/^scan\.pdf: Could not be read: extraction timed out/)
+    expect(item.status).toBe('ready')
   })
 
-  it('needs review for a gap, a missing current period, or a file that gave nothing', () => {
-    const gap = statusOf(computeReadiness(input({ financials: { coverage: coverage(true, true) } })), 'financials')
-    expect(gap.status).toBe('needs_review')
-    expect(gap.notes).toContain('FY2023 Profit and Loss is missing.')
-
-    const noCurrent = statusOf(computeReadiness(input({ financials: { coverage: coverage(false) } })), 'financials')
-    expect(noCurrent.notes).toContain('No current-period statement is on file.')
-
-    const deed = file({ documentId: 'x', filename: 'deed.pdf', usage: 'not_financial', note: 'Reads as a trust deed.' })
-    const withDeed = statusOf(computeReadiness(input({ financials: { files: [file(), deed] } })), 'financials')
-    expect(withDeed.notes).toContain('deed.pdf: Reads as a trust deed.')
-  })
-
-  it('needs review when the latest full year was never uploaded, with one note for it', () => {
-    const base = coverage()
-    const withGap: StatementCoverage = {
-      columns: [
-        ...base.columns.slice(0, 4),
-        { key: 'fy2027', label: 'FY2027', financialYear: 2027, kind: 'annual', extra: false, notUploaded: true, note: 'Year ended 30 June 2027 not uploaded' },
-        { key: 'current', label: 'FY2028 to date', financialYear: 2028, kind: 'current_period', extra: false },
-      ],
-      rows: {
-        income_statement: [own, own, own, own, missing, own],
-        balance_sheet: [own, own, own, own, missing, own],
-      },
-    }
-    const item = statusOf(computeReadiness(input({ financials: { coverage: withGap } })), 'financials')
-    expect(item.status).toBe('needs_review')
-    expect(item.notes).toContain('Latest full year (FY2027) missing: year ended 30 June 2027 not uploaded.')
-    expect(item.notes.some((n) => /FY2027 (Profit and Loss|Balance Sheet) is missing/.test(n))).toBe(false)
-  })
-
-  it('needs review when there is no comparison', () => {
-    const item = statusOf(computeReadiness(input({ financials: { comparison: null } })), 'financials')
-    expect(item.status).toBe('needs_review')
-    expect(item.detail).toMatch(/Fewer than two annual statements/)
-  })
-})
-
-describe('reviews', () => {
-  const gapInput = (reviews: ReadinessInput['reviews'] = {}) =>
-    input({ financials: { coverage: coverage(true, true) }, reviews })
-
-  it('lets a reviewed item through while its data is unchanged', () => {
-    const fingerprint = statusOf(computeReadiness(gapInput()), 'financials').fingerprint!
-    const r = computeReadiness(gapInput({ financials: { fingerprint, by: 'Sam', at: '2026-10-17T01:00:00Z' } }))
-    expect(statusOf(r, 'financials').review).toMatchObject({ by: 'Sam' })
+  it('is failed when there is nothing to compare, and does not hold the prediction up', () => {
+    const r = computeReadiness(input({ financials: { comparison: null } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'failed', canRunNow: false })
     expect(r.canPredict).toBe(true)
   })
 
-  it('needs a new review once the data changes', () => {
-    const r = computeReadiness(gapInput({ financials: { fingerprint: 'an older comparison', by: 'Sam', at: '2026-10-01' } }))
-    expect(statusOf(r, 'financials').review).toBeNull()
-    expect(r.canPredict).toBe(false)
-    expect(r.waitingFor).toEqual(['Financial statements: needs review'])
+  it('never has a line under the heading, in any state', () => {
+    for (const over of [{ files: [] }, { outOfDate: true }, { comparison: null }, {}]) {
+      expect(statusOf(computeReadiness(input({ financials: over })), 'financials').detail).toBeNull()
+    }
+    expect(statusOf(computeReadiness(input({ jobRunning: true })), 'financials').detail).toBeNull()
   })
 })
 
@@ -216,10 +148,8 @@ describe('ATO activity statement', () => {
     })
   })
 
-  it('says what it found, and needs review when the export raised warnings', () => {
-    expect(statusOf(computeReadiness(input()), 'lodgement').detail).toBe('3 late lodgements, 120 days late in total.')
-    const warned = input({ lodgement: { analysis: { id: 'la', analysedAt: 't', warnings: 2, late: 1, daysLate: 5 } } })
-    expect(statusOf(computeReadiness(warned), 'lodgement').status).toBe('needs_review')
+  it('is ready once analysed, with no summary under the heading', () => {
+    expect(statusOf(computeReadiness(input()), 'lodgement')).toMatchObject({ status: 'ready', detail: null })
   })
 })
 
@@ -246,18 +176,24 @@ describe('director penalty notices and the DPN factor', () => {
     expect(r.canPredict).toBe(false)
   })
 
-  it('is ready once one notice is read cleanly, listing the rest to check', () => {
+  it('is ready once one notice is read', () => {
     const r = computeReadiness(
       input({ dpn: { notices: [view(notice()), view(notice({ documentId: 'dpn-2', status: 'needs_manual' }))] } }),
     )
     expect(statusOf(r, 'dpn')).toMatchObject({ status: 'ready', detail: '1 notice read (PAYG withholding).' })
-    expect(statusOf(r, 'dpn').notes).toEqual(['notice.pdf: needs entering manually.'])
     expect(r.dpn).toBe(true)
   })
 
-  it('needs review when no notice reads cleanly, and the factor is still Yes', () => {
+  it('is ready when a notice is read with something flagged: the notices page shows that', () => {
     const r = computeReadiness(input({ dpn: { notices: [view(notice(), ['This notice is for ACN 000 000 019, but the client file has ACN 123 456 780.'])] } }))
-    expect(statusOf(r, 'dpn').status).toBe('needs_review')
+    expect(statusOf(r, 'dpn').status).toBe('ready')
+    expect(r.dpn).toBe(true)
+  })
+
+  it('is failed when no notice could be read, without holding the prediction up', () => {
+    const r = computeReadiness(input({ dpn: { notices: [view(notice({ status: 'needs_manual' }))] } }))
+    expect(statusOf(r, 'dpn').status).toBe('failed')
+    expect(r.canPredict).toBe(true)
     expect(r.dpn).toBe(true)
   })
 

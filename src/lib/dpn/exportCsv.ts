@@ -1,6 +1,8 @@
 import { csvRow } from '@/lib/csv'
 import {
   DPN_EXPORT_SOURCE_NOTE,
+  amountHeadings,
+  columnHeading,
   columnLabels,
   describeDaysLeft,
   formatIsoDate,
@@ -34,18 +36,19 @@ export function buildDpnCsv(summary: DpnSummary, meta: DpnExportMeta): string {
     csvRow('As at', formatIsoDate(meta.asAtIso)),
     '',
     csvRow('Company totals by type (each period counted once, from the most recently issued notice)'),
-    csvRow('Type', 'Column', 'Meaning', 'Amount'),
+    csvRow('Type', 'Heading on the notice', 'Meaning', 'Amount'),
   ]
   for (const t of summary.companyByType) {
     const labels = columnLabels(t.type, t.earliestDeadline)
     for (const key of ['column3', 'column4', 'column5', 'column2'] as const) {
-      lines.push(csvRow(typeLabel(t.type), key.replace('column', 'Column '), labels[key], dollars(t.totals[key])))
+      lines.push(csvRow(typeLabel(t.type), columnHeading(key, [t.type]), labels[key], dollars(t.totals[key])))
     }
   }
   if (summary.companyByType.length > 1) {
-    lines.push(csvRow('All types', 'Column 3', 'Unpaid', dollars(summary.company.column3)))
+    lines.push(csvRow('All types', columnHeading('column3', summary.companyByType.map((t) => t.type)), 'Unpaid', dollars(summary.company.column3)))
   }
 
+  const noticeHeadings = amountHeadings(summary.notices.map((n) => n.type))
   lines.push(
     '',
     csvRow('Notices'),
@@ -57,10 +60,10 @@ export function buildDpnCsv(summary: DpnSummary, meta: DpnExportMeta): string {
       'Date of issue',
       'Deadline',
       'Days left',
-      'Column 2',
-      'Column 3 (unpaid)',
-      'Column 4',
-      'Column 5',
+      noticeHeadings.column2,
+      noticeHeadings.column3,
+      noticeHeadings.column4,
+      noticeHeadings.column5,
       'How it was read',
       'Needs checking',
     ),
@@ -82,7 +85,19 @@ export function buildDpnCsv(summary: DpnSummary, meta: DpnExportMeta): string {
     )
   }
 
-  lines.push('', csvRow('By director (current notices)'), csvRow('Director', 'Type', 'Column 2', 'Column 3 (unpaid)', 'Column 4', 'Column 5'))
+  const directorHeadings = amountHeadings(summary.directors.flatMap((d) => d.byType.map((t) => t.type)))
+  lines.push(
+    '',
+    csvRow('By director (current notices)'),
+    csvRow(
+      'Director',
+      'Type',
+      directorHeadings.column2,
+      directorHeadings.column3,
+      directorHeadings.column4,
+      directorHeadings.column5,
+    ),
+  )
   for (const d of summary.directors) {
     for (const t of d.byType) lines.push(csvRow(d.directorName, typeLabel(t.type), ...amounts(t.totals)))
     if (d.byType.length > 1) lines.push(csvRow(d.directorName, 'All types', ...amounts(d.overall)))

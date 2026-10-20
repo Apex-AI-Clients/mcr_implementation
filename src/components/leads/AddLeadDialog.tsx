@@ -22,6 +22,11 @@ import type { AuState, EntityType } from '@/types/leads'
 interface AddLeadDialogProps {
   open: boolean
   onClose: () => void
+  /**
+   * Handed the save as it starts; settles once the database has the lead (or
+   * refused it). Omitted, the dialog re-reads the list itself once it lands.
+   */
+  onAdded?: (saved: Promise<void>) => void
 }
 
 interface FormState {
@@ -69,7 +74,7 @@ const ENTITY_OPTIONS = ALL_ENTITY_TYPES.map((type) => ({
  * form to reduce friction on the ad, and this mirrors that form. Company can be
  * added on the record afterwards.
  */
-export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
+export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
   const router = useRouter()
   const { addLead } = useLeads()
   const { toast } = useToast()
@@ -111,24 +116,27 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
     }
 
     const preset = DEBT_PRESETS[Number(form.debt)]
-    addLead(
-      {
-        name: form.name.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim(),
-        debtMin: preset.min,
-        debtMax: preset.max,
-        states: form.states,
-        entityType: (form.entityType || null) as EntityType | null,
-        message: form.message,
-        note: form.note,
-      },
-      // Re-read the list only once the insert has landed. Refreshing at the
-      // same moment as sending it raced the write: the list was usually read
-      // first, came back without the new lead, and showed it only after a
-      // manual reload.
-      { onSaved: () => router.refresh() },
+    const saved = new Promise<void>((resolve, reject) =>
+      addLead(
+        {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim(),
+          debtMin: preset.min,
+          debtMax: preset.max,
+          states: form.states,
+          entityType: (form.entityType || null) as EntityType | null,
+          message: form.message,
+          note: form.note,
+        },
+        { onSaved: resolve, onFailed: reject },
+      ),
     )
+    // Re-read the list only once the insert has landed. Refreshing at the same
+    // moment as sending it raced the write: the list was usually read first,
+    // came back without the new lead, and showed it only after a manual reload.
+    if (onAdded) onAdded(saved)
+    else void saved.then(() => router.refresh(), () => {})
 
     toast('Lead added.')
     handleClose()
@@ -136,7 +144,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
     // The list renders the page the server sent, so an optimistic row that is
     // not in it would not appear at all. Going to an unfiltered page 1 — which
     // sorts newest first — is where the new lead will be; the refresh that
-    // brings it in is onSaved, above.
+    // brings it in waits on `saved`, above.
     router.push('/leads')
   }
 
@@ -175,7 +183,6 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
           id="lead-email"
           label="Email"
           type="email"
-          placeholder="name@company.com.au"
           value={form.email}
           onChange={(event) => set('email', event.target.value)}
           error={errors.email}
@@ -184,7 +191,6 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
           id="lead-phone"
           label="Phone"
           inputMode="tel"
-          placeholder="0412 345 678"
           value={form.phone}
           onChange={(event) => set('phone', event.target.value)}
           error={errors.phone}
@@ -193,7 +199,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
           <Select
             id="lead-debt"
             label="Debt"
-            placeholder="Select"
+            placeholder=""
             value={form.debt}
             onChange={(event) => set('debt', event.target.value)}
             options={DEBT_OPTIONS}
@@ -204,7 +210,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
           <MultiSelect
             id="lead-state"
             label="State"
-            placeholder="Select"
+            placeholder=""
             options={STATE_OPTIONS}
             value={form.states}
             onChange={setStates}
@@ -215,7 +221,7 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
         <Select
           id="lead-entity"
           label="Business type (optional)"
-          placeholder="Not given"
+          placeholder=""
           value={form.entityType}
           onChange={(event) => set('entityType', event.target.value)}
           options={ENTITY_OPTIONS}
@@ -230,7 +236,6 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
             rows={3}
             value={form.message}
             onChange={(event) => set('message', event.target.value)}
-            placeholder="Anything they told you"
             className="w-full resize-y rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted transition-colors focus:border-accent focus:outline-none"
           />
         </div>
@@ -244,7 +249,6 @@ export function AddLeadDialog({ open, onClose }: AddLeadDialogProps) {
             rows={3}
             value={form.note}
             onChange={(event) => set('note', event.target.value)}
-            placeholder="Saved as the first entry in their history."
             className="w-full resize-y rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted transition-colors focus:border-accent focus:outline-none"
           />
         </div>

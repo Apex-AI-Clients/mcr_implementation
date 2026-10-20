@@ -87,7 +87,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             )}
             {...props}
           >
-            {placeholder && <option value="">{placeholder}</option>}
+            {/* An empty string still renders the blank leading option, so an
+                unset value never displays as the first real choice. */}
+            {placeholder !== undefined && <option value="">{placeholder}</option>}
             {items}
           </select>
           <ChevronDown

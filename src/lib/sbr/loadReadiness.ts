@@ -1,17 +1,16 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readDirectors } from '@/lib/clients/companyDetails'
-import { buildCoverage } from '@/lib/financials/coverage'
 import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { periodOverrideOf } from '@/lib/financials/periodOverride'
 import { lastReadAt } from '@/lib/financials/readState'
-import { loadColumnFailures, loadStoredSlots } from '@/lib/financials/storedStatements'
+import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import type { FinancialDocumentKind, StoredStatementSlot } from '@/lib/financials/types'
 import { decideWork } from '@/lib/analysis/autoRun'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
-import { computeReadiness, type Readiness, type ReadinessKey, type Review } from './readiness'
+import { computeReadiness, type Readiness } from './readiness'
 
 /**
  * Server-only. Everything computeReadiness needs, read for one client.
@@ -28,13 +27,11 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     { data: client },
     { data: docs },
     slots,
-    failures,
     { data: extractions },
     { data: comparison },
     { data: analyses },
     { data: noticeRows },
     { data: company },
-    { data: reviewRows },
     liveJob,
   ] = await Promise.all([
     supabase
@@ -48,17 +45,15 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .eq('client_id', clientId)
       .order('uploaded_at', { ascending: false }),
     loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
-    loadColumnFailures(supabase, clientId),
     supabase.from('financial_document_extractions').select('document_id, kind, extracted_at, warnings').eq('client_id', clientId),
     supabase.from('financial_comparisons').select('generated_at, stale_since').eq('client_id', clientId).maybeSingle(),
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, analysed_at, warnings, number_of_late_lodgements, cumulative_days_late')
+      .select('id, document_id, analysed_at')
       .eq('client_id', clientId)
       .order('analysed_at', { ascending: false }),
     supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
     supabase.from('company_details').select('acn_number, directors').eq('client_id', clientId).maybeSingle(),
-    supabase.from('sbr_readiness_reviews').select('item, fingerprint, reviewed_by, reviewed_at').eq('client_id', clientId),
     findLiveComparisonJob(supabase, clientId).catch(() => null),
   ])
 
@@ -124,39 +119,23 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     todayIso: sydneyToday(),
   })
 
-  const reviews: Partial<Record<ReadinessKey, Review>> = {}
-  for (const r of reviewRows ?? []) {
-    reviews[r.item as ReadinessKey] = { fingerprint: r.fingerprint, by: r.reviewed_by, at: r.reviewed_at }
-  }
-
   return computeReadiness({
     clientId,
     jobRunning: liveJob !== null,
     financials: {
       files,
-      coverage: buildCoverage(slots, failures),
       comparison: comparison ? { generatedAt: comparison.generated_at, staleSince: comparison.stale_since } : null,
       // Files never read, or a comparison made stale by a change. A file
-      // whose read failed is recorded as read-and-failed (Needs review, with
-      // why), and a comparison that could not be built at all is Needs review
-      // too: neither is waiting work.
+      // whose read failed is recorded as read-and-failed, and a comparison
+      // that could not be built at all is Failed: neither is waiting work.
       outOfDate: work.extract.length > 0 || comparison?.stale_since != null,
     },
     lodgement: {
       csvCount: csvs.length,
-      analysis: latest
-        ? {
-            id: latest.id,
-            analysedAt: latest.analysed_at,
-            warnings: Array.isArray(latest.warnings) ? latest.warnings.length : 0,
-            late: latest.number_of_late_lodgements,
-            daysLate: latest.cumulative_days_late,
-          }
-        : null,
+      analysis: latest ? { id: latest.id, analysedAt: latest.analysed_at } : null,
       outOfDate: lodgementOutOfDate,
       noExportFound,
     },
     dpn: { notices: panel.notices, noneIssued: panel.noneIssued },
-    reviews,
   })
 }

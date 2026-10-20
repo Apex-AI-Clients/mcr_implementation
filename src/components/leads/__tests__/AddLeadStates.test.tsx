@@ -63,9 +63,9 @@ async function savedLead(createLead: ReturnType<typeof renderDialog>['createLead
 }
 
 describe('AddLeadDialog — the State dropdown', () => {
-  it('is closed to start with, showing "Select"', () => {
+  it('is closed to start with, showing nothing', () => {
     const { dialog } = renderDialog()
-    expect(stateButton(dialog).textContent).toBe('Select')
+    expect(stateButton(dialog).textContent).toBe('')
     expect(stateButton(dialog).getAttribute('aria-expanded')).toBe('false')
     expect(within(dialog).queryByRole('checkbox')).toBeNull()
   })

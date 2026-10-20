@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Download, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Pagination } from '@/components/ui/Pagination'
+import { Spinner } from '@/components/ui/Spinner'
 import { LeadTable } from '@/components/leads/LeadTable'
 import { LeadFilters } from '@/components/leads/LeadFilters'
 import { AddLeadDialog } from '@/components/leads/AddLeadDialog'
@@ -60,6 +61,8 @@ export function LeadsPageClient({
   const [deleteTarget, setDeleteTarget] = useState<Lead[] | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
   const [pending, startTransition] = useTransition()
+  // From pressing Add until the re-read that brings the new row in has landed.
+  const [adding, setAdding] = useState(false)
 
   // Hand this page's rows to the store so edits made in the table have
   // something to apply to. Activities are loaded per record, not here.
@@ -119,6 +122,21 @@ export function LeadsPageClient({
   function toggleAll() {
     setSelectedIds((current) =>
       current.size === leads.length ? new Set() : new Set(leads.map((lead) => lead.id)),
+    )
+  }
+
+  function handleAdded(saved: Promise<void>) {
+    setAdding(true)
+    saved.then(
+      // Cleared inside the same transition as the refresh, so the overlay
+      // stays up until the list with the new lead in it is on screen.
+      () =>
+        startTransition(() => {
+          setAdding(false)
+          router.refresh()
+        }),
+      // The store has already said it could not be saved.
+      () => setAdding(false),
     )
   }
 
@@ -229,28 +247,43 @@ export function LeadsPageClient({
       )}
 
       {/* Dimmed while the next page is in flight, so a slow query looks like
-          waiting rather than like nothing happening. */}
-      <div className={pending ? 'opacity-60 transition-opacity' : undefined}>
-        <LeadTable
-          leads={rows}
-          filtered={active}
-          onResetFilters={resetFilters}
-          onRequestConvert={setConvertTarget}
-          selectedIds={selectedIds}
-          onToggleLead={toggleLead}
-          onToggleAll={toggleAll}
-          onRequestDelete={setDeleteTarget}
-        />
+          waiting rather than like nothing happening. A hand-added lead also
+          gets a spinner: the dialog has closed, but the row only appears once
+          the save has landed and the list has been read again. */}
+      <div className="relative">
+        {adding && (
+          <div
+            role="status"
+            className="absolute inset-0 z-10 flex items-start justify-center rounded-xl bg-surface/60 pt-24"
+          >
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
+              <Spinner size="sm" />
+              <span className="text-sm text-foreground">Adding lead…</span>
+            </div>
+          </div>
+        )}
+        <div className={pending || adding ? 'opacity-60 transition-opacity' : undefined}>
+          <LeadTable
+            leads={rows}
+            filtered={active}
+            onResetFilters={resetFilters}
+            onRequestConvert={setConvertTarget}
+            selectedIds={selectedIds}
+            onToggleLead={toggleLead}
+            onToggleAll={toggleAll}
+            onRequestDelete={setDeleteTarget}
+          />
 
-        <Pagination
-          page={page}
-          pageCount={pageCount}
-          hrefFor={(target) => leadsHref(filters, target)}
-          label={pageRangeLabel(page, pageSize, total)}
-        />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            hrefFor={(target) => leadsHref(filters, target)}
+            label={pageRangeLabel(page, pageSize, total)}
+          />
+        </div>
       </div>
 
-      <AddLeadDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddLeadDialog open={addOpen} onClose={() => setAddOpen(false)} onAdded={handleAdded} />
       <ConvertToClientDialog lead={convertTarget} onClose={() => setConvertTarget(null)} />
       <DeleteLeadsDialog
         leads={deleteTarget}

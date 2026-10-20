@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { columnLabels, describeDaysLeft, summariseNotices } from '../summary'
+import { amountHeadings, columnHeading, columnLabels, describeDaysLeft, summariseNotices } from '../summary'
 import { buildDpnCsv } from '../exportCsv'
 import { buildDpnPdf, pdfSafe } from '../exportPdf'
 import { readPdfPageLines } from '@/lib/pdf/pageLines'
@@ -145,7 +145,29 @@ describe('labels', () => {
         'Removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by 21 Oct 2026',
       column5: 'Stays with the director unless paid',
     })
-    expect(columnLabels('gst', null).column2).toBe('Net amount from the latest activity statement')
+    expect(columnLabels('gst', null).column2).toBe('Net amount from the latest Business Activity Statement')
+  })
+
+  it("heads each column as the notice's second header row does", () => {
+    expect(amountHeadings(['paygw'])).toEqual({
+      column2: 'Amount withheld',
+      column3: "Amount the Commissioner thinks is the unpaid amount of the company's liability",
+      column4: "Unpaid amount of the company's liability notified on or before the end of 3 months after the due day",
+      column5: "Unpaid amount of the company's liability not notified on or before the end of 3 months after the due day",
+    })
+    expect(columnHeading('column1', ['paygw'])).toBe('Particular withholding period')
+    expect(columnHeading('column1', ['gst'])).toBe('Particular period')
+    expect(columnHeading('column2', ['gst'])).toBe('Net amount from the latest Business Activity Statement')
+  })
+
+  it('gives both column 2 headings for a mix of types, and a plain one when the wording is not known', () => {
+    expect(columnHeading('column2', ['paygw', 'gst', 'paygw'])).toBe(
+      'Amount withheld / Net amount from the latest Business Activity Statement',
+    )
+    expect(columnHeading('column2', ['sgc'])).toBe('Amount on the notice')
+    expect(columnHeading('column2', [null])).toBe('Amount on the notice')
+    expect(columnHeading('column2', [])).toBe('Amount on the notice')
+    expect(columnHeading('column1', [])).toBe('Period')
   })
 
   it.each([
@@ -176,10 +198,16 @@ describe('buildDpnCsv', () => {
   const csv = buildDpnCsv(sampleSummary(), META)
 
   it('carries the company totals with their plain-English labels', () => {
-    expect(csv).toContain('PAYG withholding,Column 3,Unpaid,1000.00')
+    expect(csv).toContain("PAYG withholding,Amount the Commissioner thinks is the unpaid amount of the company's liability,Unpaid,1000.00")
     expect(csv).toContain(
-      'PAYG withholding,Column 4,"Removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by 21 Oct 2026",600.00',
+      `PAYG withholding,Unpaid amount of the company's liability notified on or before the end of 3 months after the due day,"Removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by 21 Oct 2026",600.00`,
     )
+  })
+
+  it(`heads its tables with the notices' own wording, never "Column 2"`, () => {
+    expect(csv).not.toMatch(/\bCol(umn)? [1-5]\b/)
+    // PAYG withholding and GST together: both column 2 headings.
+    expect(csv).toContain('Amount withheld / Net amount from the latest Business Activity Statement')
   })
 
   it('marks how each notice was read, and escapes free text', () => {
@@ -217,6 +245,18 @@ describe('buildDpnPdf', () => {
       expect(page).toContain(`Page ${i + 1} of ${text.length}`)
     })
     expect(text.join('\n')).not.toContain(SYNTHETIC.street)
+  })
+
+  it("heads its tables with the notices' own wording, never a column number", async () => {
+    const { pages } = await readPdfPageLines(await buildDpnPdf(sampleSummary(), META), 20)
+    const text = pages.map((p) => p.join(' ')).join(' ').replace(/\s+/g, ' ')
+    expect(text).not.toMatch(/\bCol(umn)? [1-5]\b/)
+    // Wrapped headings read back line by line across columns, so look for
+    // pieces of them rather than whole phrases.
+    expect(text).toContain('Commissioner')
+    expect(text).toContain('thinks is the unpaid')
+    expect(text).toContain('liability not notified')
+    expect(text).toContain('Amount withheld')
   })
 
   it('runs onto more pages when there are many notices', async () => {

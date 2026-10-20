@@ -213,7 +213,7 @@ export function noticeIssues(notice: StoredNotice, file: ClientFileForDpn): stri
     switch (check.code) {
       case 'row_does_not_add_up':
         issues.push(
-          `Row ${check.rowIndex + 1} (${periodText(check)}): Column 3 is not Column 4 + Column 5.`,
+          `Row ${check.rowIndex + 1} (${periodText(check)}): the unpaid amount is not the notified and not-notified amounts added together.`,
         )
         break
       case 'acn_invalid':

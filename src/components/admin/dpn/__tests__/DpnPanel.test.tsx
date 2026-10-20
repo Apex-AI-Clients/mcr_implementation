@@ -135,12 +135,13 @@ describe('DpnManualForm', () => {
     const dialog = await screen.findByRole('dialog')
 
     expect((within(dialog).getByLabelText('Our reference') as HTMLInputElement).value).toBe('1234567890123')
-    const col3 = within(dialog).getByLabelText(/Row 1 Col 3/) as HTMLInputElement
+    // Labelled with the notice's own headings (a PAYG withholding notice).
+    const col3 = within(dialog).getByLabelText(/Row 1 Amount the Commissioner thinks/) as HTMLInputElement
     expect(col3.value).toBe('900.00')
 
     await user.clear(col3)
     await user.paste('950')
-    expect(within(dialog).getByText('3 ≠ 4 + 5')).toBeTruthy()
+    expect(within(dialog).getByText('Does not add up')).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Save as entered manually' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
@@ -155,7 +156,7 @@ describe('DpnManualForm', () => {
     render(<DpnNoticeList clientId="client-1" notices={[view()]} todayIso="2026-10-17" />)
     await user.click(screen.getByRole('button', { name: 'Correct by hand' }))
     const dialog = await screen.findByRole('dialog')
-    await user.clear(within(dialog).getByLabelText(/Row 1 Col 2/))
+    await user.clear(within(dialog).getByLabelText(/Row 1 Amount withheld/))
     await user.click(within(dialog).getByRole('button', { name: 'Save as entered manually' }))
     expect(within(dialog).getByRole('alert').textContent).toMatch(/Row 1: enter all four amounts/)
     expect(fetchMock).not.toHaveBeenCalled()

@@ -199,8 +199,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
     }
 
-    // Every readiness item Ready, or Needs review and reviewed — the same rule
-    // as the checklist and the button (readiness.ts).
+    // Every readiness item finished (Ready or Failed) — the same rule as the
+    // checklist and the button (readiness.ts).
     const readiness = await loadReadiness(supabase, clientId)
     if (!readiness.canPredict) {
       return NextResponse.json({ error: 'NOT_READY', waitingFor: readiness.waitingFor }, { status: 422 })

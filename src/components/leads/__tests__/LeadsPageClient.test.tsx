@@ -394,6 +394,56 @@ describe('LeadsPageClient', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
+  describe('adding a lead — the loading overlay', () => {
+    async function addOne(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /add lead/i }))
+      const dialog = await screen.findByRole('dialog')
+      await user.type(within(dialog).getByLabelText('Name'), 'Test Person')
+      await user.type(within(dialog).getByLabelText('Email'), 'test.person@example.test')
+      await user.type(within(dialog).getByLabelText('Phone'), '0400 000 001')
+      await user.selectOptions(within(dialog).getByLabelText('Debt'), '7')
+      await user.click(within(dialog).getByLabelText('State'))
+      await user.click(within(dialog).getByRole('checkbox', { name: 'NSW' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
+    }
+
+    it('shows until the lead is saved and the list re-read', async () => {
+      const user = userEvent.setup()
+      let finishSave: () => void = () => {}
+      const createLead = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishSave = resolve
+          }),
+      )
+      renderList({ persistence: { createLead } })
+
+      await addOne(user)
+
+      expect(screen.getByText('Adding lead…')).toBeTruthy()
+      expect(refresh).not.toHaveBeenCalled()
+
+      finishSave()
+
+      await waitFor(() => expect(screen.queryByText('Adding lead…')).toBeNull())
+      expect(refresh).toHaveBeenCalledTimes(1)
+    })
+
+    it('goes away when the save fails', async () => {
+      const user = userEvent.setup()
+      const createLead = vi.fn(async () => {
+        throw new Error('insert failed')
+      })
+      renderList({ persistence: { createLead } })
+
+      await addOne(user)
+
+      await waitFor(() => expect(screen.getByText(/could not be saved/)).toBeTruthy())
+      expect(screen.queryByText('Adding lead…')).toBeNull()
+      expect(refresh).not.toHaveBeenCalled()
+    })
+  })
+
   describe('repeat enquiries', () => {
     it('heads the date column with the latest enquiry, which the list sorts on', () => {
       renderList()

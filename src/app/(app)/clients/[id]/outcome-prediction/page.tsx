@@ -61,10 +61,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
   // "What the financial statements show": only from a comparison that is
-  // verified, or reviewed by staff — the readiness checklist's safety net.
+  // built and current — the readiness checklist's Ready.
   const financialsItem = readiness.items.find((i) => i.key === 'financials')
-  const financialsVerified =
-    financialsItem?.status === 'ready' || (financialsItem?.status === 'needs_review' && financialsItem.review !== null)
+  const financialsVerified = financialsItem?.status === 'ready'
   const [{ data: comparisonRow }, { data: companyRow }] = await Promise.all([
     supabase.from('financial_comparisons').select('computed, stale_since').eq('client_id', id).maybeSingle(),
     supabase.from('company_details').select('entity_type').eq('client_id', id).maybeSingle(),

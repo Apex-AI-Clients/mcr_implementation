@@ -289,8 +289,12 @@ interface LeadsContextValue {
   /**
    * Optimistic: the lead is in the store at once. `onSaved` runs once the
    * database has it — the moment a re-read of the list can actually find it.
+   * `onFailed` runs if the write is refused and the row has been taken back out.
    */
-  addLead: (input: NewLeadInput, options?: { onSaved?: () => void }) => Lead
+  addLead: (
+    input: NewLeadInput,
+    options?: { onSaved?: () => void; onFailed?: () => void },
+  ) => Lead
   updateLead: (leadId: string, patch: Partial<Lead>) => void
   logActivity: (leadId: string, type: LeadActivityType, body: string) => void
   /** Optimistic — applies immediately and rolls back if persistence fails. */
@@ -379,7 +383,7 @@ export function LeadsStoreProvider({
   )
 
   const addLead = useCallback(
-    (input: NewLeadInput, options?: { onSaved?: () => void }) => {
+    (input: NewLeadInput, options?: { onSaved?: () => void; onFailed?: () => void }) => {
       const at = new Date().toISOString()
       const lead: Lead = {
         id: newId(),
@@ -459,6 +463,7 @@ export function LeadsStoreProvider({
         () => {
           dispatch({ type: 'REMOVE_LEAD', leadId: lead.id })
           toast(`${lead.name} could not be saved. Please add them again.`, { tone: 'error' })
+          options?.onFailed?.()
         },
       )
 

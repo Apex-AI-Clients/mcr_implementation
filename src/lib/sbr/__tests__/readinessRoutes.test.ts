@@ -19,7 +19,8 @@ vi.mock('next/server', async (importOriginal) => ({
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
-import { POST as REVIEW } from '@/app/api/admin/clients/[id]/readiness/review/route'
+import { requireStaffUser } from '@/lib/auth/staff'
+import { GET as READINESS } from '@/app/api/admin/clients/[id]/readiness/route'
 import { POST as RUN } from '@/app/api/admin/clients/[id]/analysis/run/route'
 import { POST as PREDICT } from '@/app/api/admin/clients/[id]/predict-outcome/route'
 import type { Readiness, ReadinessItem } from '../readiness'
@@ -35,18 +36,15 @@ function readiness(item: Partial<ReadinessItem>, over: Partial<Readiness> = {}):
       {
         key: 'financials',
         label: 'Financial statements',
-        status: 'needs_review',
-        detail: '',
-        notes: [],
-        fingerprint: 'fp-now',
-        review: null,
+        status: 'not_started',
+        detail: null,
         canRunNow: false,
         href: '',
         ...item,
       },
     ],
     canPredict: false,
-    waitingFor: ['Financial statements: needs review'],
+    waitingFor: ['Financial statements: not run yet'],
     dpn: true,
     ...over,
   }
@@ -57,29 +55,21 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
-describe('POST readiness/review', () => {
-  function mockUpsert() {
-    const upsert = vi.fn(async () => ({ error: null }))
-    vi.mocked(getSupabaseServerClient).mockReturnValue({ from: () => ({ upsert }) } as never)
-    return upsert
-  }
-
-  it("records the review against the data as it is now, never the request's say-so", async () => {
-    const upsert = mockUpsert()
-    vi.mocked(loadReadiness).mockResolvedValue(readiness({}))
-    const res = await REVIEW(post({ item: 'financials', fingerprint: 'forged' }), PARAMS)
+describe('GET readiness', () => {
+  it('hands back the checklist as it is now, never cached', async () => {
+    vi.mocked(getSupabaseServerClient).mockReturnValue({} as never)
+    vi.mocked(loadReadiness).mockResolvedValue(readiness({ status: 'processing' }))
+    const res = await READINESS(new Request('http://localhost/x'), PARAMS)
     expect(res.status).toBe(200)
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ client_id: 'client-1', item: 'financials', fingerprint: 'fp-now', reviewed_by: 'Sam' }),
-      { onConflict: 'client_id,item' },
-    )
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
+    expect((await res.json()).items[0].status).toBe('processing')
+    expect(loadReadiness).toHaveBeenCalledWith(expect.anything(), 'client-1')
   })
 
-  it('refuses when the item is not waiting for a review', async () => {
-    const upsert = mockUpsert()
-    vi.mocked(loadReadiness).mockResolvedValue(readiness({ status: 'ready' }))
-    expect((await REVIEW(post({ item: 'financials' }), PARAMS)).status).toBe(409)
-    expect(upsert).not.toHaveBeenCalled()
+  it('refuses anyone who is not staff', async () => {
+    vi.mocked(requireStaffUser).mockResolvedValueOnce(null as never)
+    expect((await READINESS(new Request('http://localhost/x'), PARAMS)).status).toBe(401)
+    expect(loadReadiness).not.toHaveBeenCalled()
   })
 })
 
@@ -120,7 +110,7 @@ describe('POST predict-outcome — the readiness gate', () => {
 
     const res = await PREDICT(post({ dpn: false, paymentPlanType: 'plan', directorLoanAtAppointment: false }), PARAMS)
     expect(res.status).toBe(422)
-    expect(await res.json()).toEqual({ error: 'NOT_READY', waitingFor: ['Financial statements: needs review'] })
+    expect(await res.json()).toEqual({ error: 'NOT_READY', waitingFor: ['Financial statements: not run yet'] })
     expect(from.mock.calls.map(([t]) => t)).toEqual(['clients'])
   })
 })

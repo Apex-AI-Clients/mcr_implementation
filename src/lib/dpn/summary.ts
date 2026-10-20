@@ -196,17 +196,63 @@ export function formatIsoDate(iso: string): string {
 }
 
 /**
+ * Each table column's heading as the ATO prints it: the second header row,
+ * under "Column 1" … "Column 5". Read from PAYG withholding and GST notices;
+ * Columns 3–5 are worded the same on both. This is statutory form wording, so
+ * it is held here rather than read from each PDF (whose text layer runs
+ * neighbouring headings together).
+ */
+const COMMON_HEADINGS = {
+  column3: "Amount the Commissioner thinks is the unpaid amount of the company's liability",
+  column4: "Unpaid amount of the company's liability notified on or before the end of 3 months after the due day",
+  column5: "Unpaid amount of the company's liability not notified on or before the end of 3 months after the due day",
+} as const
+
+const TYPE_HEADINGS: Record<'paygw' | 'gst', { column1: string; column2: string }> = {
+  paygw: { column1: 'Particular withholding period', column2: 'Amount withheld' },
+  gst: { column1: 'Particular period', column2: 'Net amount from the latest Business Activity Statement' },
+}
+
+export type DpnColumn = 'column1' | keyof DpnAmounts
+
+/**
+ * A column's heading for notices of these types. Columns 1 and 2 differ by
+ * type: one type gives its own heading; a mix gives both, "withheld / net
+ * amount"; a type whose wording is not known (super guarantee) gives a plain
+ * description.
+ */
+export function columnHeading(column: DpnColumn, types: readonly (DpnType | null)[]): string {
+  if (column !== 'column1' && column !== 'column2') return COMMON_HEADINGS[column]
+  const known = [...new Set(types)]
+  const headings = known.map((t) => (t === 'paygw' || t === 'gst' ? TYPE_HEADINGS[t][column] : null))
+  if (headings.length > 0 && headings.every((h) => h !== null)) return headings.join(' / ')
+  return column === 'column1' ? 'Period' : 'Amount on the notice'
+}
+
+/** Columns 2–5's headings, for a table of notices of these types. */
+export function amountHeadings(types: readonly (DpnType | null)[]): Record<keyof DpnAmounts, string> {
+  return {
+    column2: columnHeading('column2', types),
+    column3: columnHeading('column3', types),
+    column4: columnHeading('column4', types),
+    column5: columnHeading('column5', types),
+  }
+}
+
+/** Under the notices table, on the page and in the PDF: what the columns mean for an SBR. */
+export const DPN_TABLE_LEGEND = [
+  "Notified on or before the end of 3 months: removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by the notice's deadline.",
+  'Not notified on or before the end of 3 months: stays with the director unless paid.',
+  '"Current" is the most recent notice for that director and type; totals use current notices.',
+]
+
+/**
  * The columns in plain English, after the notices' own wording. Column 4's
  * label carries the deadline that applies to it.
  */
 export function columnLabels(type: DpnType | null, deadline: string | null): Record<keyof DpnAmounts, string> {
   return {
-    column2:
-      type === 'paygw'
-        ? 'Amount withheld'
-        : type === 'gst'
-          ? 'Net amount from the latest activity statement'
-          : 'Amount on the notice (Column 2)',
+    column2: columnHeading('column2', [type]),
     column3: 'Unpaid',
     column4: `Removed if the company appoints an SBR practitioner, administrator or liquidator, or pays, by ${
       deadline ? formatIsoDate(deadline) : 'the deadline'
