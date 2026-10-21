@@ -55,9 +55,7 @@ export interface FinancialPoint {
 }
 
 export const FINANCIAL_POINTS_INTRO =
-  "From the financial statements, to discuss with the client. They explain the situation; they don't change the recommended %."
-
-export const FINANCIAL_POINTS_NOT_READY = 'Financial points will appear once the financial comparison is verified.'
+  "From the financial statements, to discuss with the client. Facts only; they don't change the SBR prediction."
 
 /** Shown first to last; at most MAX_POINTS. */
 const ORDER: PointRule[] = ['b', 'a', 'c', 'd', 'e', 'f', 'g', 'h']
@@ -216,19 +214,32 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
     card('a', { title: 'ATO-related debt', verdict: 'On the balance sheet', tone: 'neutral', figures: figuresOf(ato), note: ATO_NOTE })
   }
 
-  // (b) Assets bought while ATO-related debt rose: plant & equipment, else
-  // non-current assets other than loans to directors (those are point d).
-  if (atoRose) {
+  // The director / related-party loan account, net: positive when the
+  // directors owe the business, negative when it owes them. Comparisons built
+  // before the net account have only the two loan lines (rules c and d below).
+  const account = rows.has('directorLoanAccountNet') ? series(c, rows, ['directorLoanAccountNet'], true) : null
+  const accFrom = account ? firstOf(account) : null
+  const accTo = account ? lastOf(account) : null
+  const accountMoved = accFrom !== null && accTo !== null && accTo !== accFrom && isMaterial(accFrom.value, accTo.value)
+  /** What the directors put in over the compared years (the account fell), else null. */
+  const putIn = accountMoved && accTo!.value < accFrom!.value ? accFrom!.value - accTo!.value : null
+  const putInClause = putIn !== null ? `the directors or related parties put in ${money(putIn)} (loan account ${money(accFrom!.value)} to ${money(accTo!.value)})` : ''
+
+  // (b) Assets bought while ATO-related debt rose, or while the directors put
+  // money in: plant & equipment, else non-current assets other than loans to
+  // directors (those are point d). The facts side by side; no conclusion.
+  if (atoRose || putIn !== null) {
+    const clauses = [atoRose ? `${ATO} rose from ${money(atoFrom!.value)} to ${money(atoTo!.value)}` : null, putIn !== null ? putInClause : null].filter(Boolean)
+    const over = ` while ${clauses.join(', and ')}`
+    const verdict = atoRose && putIn !== null ? 'Rose; directors put money in' : atoRose ? 'Rose while ATO debt rose' : 'Rose while directors put money in'
+    const tone: PointTone = putIn !== null ? 'neutral' : 'concern'
+    const note = [atoRose ? alongside('ATO-related debt', ato) : null, putIn !== null ? `The directors or related parties put in ${money(putIn)} over the same years.` : null]
+      .filter(Boolean)
+      .join(' ')
     const ppe = series(c, rows, ['propertyPlantEquipment'], false)
     if (roseMaterially(ppe)) {
-      points.set('b', `Property, plant & equipment rose from ${money(firstOf(ppe)!.value)} (${firstOf(ppe)!.label}) to ${money(lastOf(ppe)!.value)} (${lastOf(ppe)!.label})${atoChange}.`)
-      card('b', {
-        title: 'Property, plant & equipment',
-        verdict: 'Rose while ATO debt rose',
-        tone: 'concern',
-        figures: figuresOf(ppe),
-        note: alongside('ATO-related debt', ato),
-      })
+      points.set('b', `Property, plant & equipment rose from ${money(firstOf(ppe)!.value)} (${firstOf(ppe)!.label}) to ${money(lastOf(ppe)!.value)} (${lastOf(ppe)!.label})${over}.`)
+      card('b', { title: 'Property, plant & equipment', verdict, tone, figures: figuresOf(ppe), note })
     } else {
       const nca = series(c, rows, ['totalNonCurrentAssets'], false)
       const loans = series(c, rows, ['directorRelatedLoansReceivable'], false)
@@ -240,30 +251,47 @@ export function financialPoints({ comparison: c, entityType }: FinancialPointsIn
         current: null,
       }
       if (roseMaterially(net)) {
-        points.set('b', `Non-current assets other than loans to directors rose from ${money(firstOf(net)!.value)} (${firstOf(net)!.label}) to ${money(lastOf(net)!.value)} (${lastOf(net)!.label})${atoChange}.`)
-        card('b', {
-          title: 'Non-current assets (excluding loans to directors)',
-          verdict: 'Rose while ATO debt rose',
-          tone: 'concern',
-          figures: figuresOf(net),
-          note: alongside('ATO-related debt', ato),
-        })
+        points.set('b', `Non-current assets other than loans to directors rose from ${money(firstOf(net)!.value)} (${firstOf(net)!.label}) to ${money(lastOf(net)!.value)} (${lastOf(net)!.label})${over}.`)
+        card('b', { title: 'Non-current assets (excluding loans to directors)', verdict, tone, figures: figuresOf(net), note })
       }
     }
   }
 
-  // (c) Loans owed to directors or related parties, growing.
-  const owedTo = series(c, rows, ['directorRelatedLoansPayable'], true)
-  if (roseMaterially(owedTo)) {
-    points.set('c', `Loans owed to directors or related parties rose from ${money(firstOf(owedTo)!.value)} (${firstOf(owedTo)!.label}) to ${money(lastOf(owedTo)!.value)} (${lastOf(owedTo)!.label})${currentTail(owedTo, 'were')}.`)
-    card('c', { title: 'Loans owed to directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedTo), note: null })
-  }
+  if (account) {
+    // (c) The directors put money in; (d) they took money out. One account, net.
+    if (accountMoved) {
+      const side = (v: number) => (v > 0 ? 'owed to the business' : v < 0 ? 'owed to the directors or related parties' : 'nil')
+      const moved = `The director / related-party loan account went from ${money(accFrom!.value)} (${accFrom!.label}, ${side(accFrom!.value)}) to ${money(accTo!.value)} (${accTo!.label}, ${side(accTo!.value)})`
+      const accountCard = (verdict: string, tone: PointTone): FinancialPointCard => ({
+        title: 'Director / related-party loan account (net)',
+        verdict,
+        tone,
+        figures: figuresOf(account),
+        note: 'Positive: owed to the business. Negative: owed to the directors or related parties.',
+      })
+      if (putIn !== null) {
+        points.set('c', `${moved}: the directors or related parties put in ${money(putIn)}${currentTail(account)}.`)
+        card('c', accountCard(`Directors put in ${money(putIn)}`, 'neutral'))
+      } else {
+        const out = accTo!.value - accFrom!.value
+        points.set('d', `${moved}: the directors or related parties took out ${money(out)}${currentTail(account)}.`)
+        card('d', accountCard(`Directors took out ${money(out)}`, 'concern'))
+      }
+    }
+  } else {
+    // (c) Loans owed to directors or related parties, growing.
+    const owedTo = series(c, rows, ['directorRelatedLoansPayable'], true)
+    if (roseMaterially(owedTo)) {
+      points.set('c', `Loans owed to directors or related parties rose from ${money(firstOf(owedTo)!.value)} (${firstOf(owedTo)!.label}) to ${money(lastOf(owedTo)!.value)} (${lastOf(owedTo)!.label})${currentTail(owedTo, 'were')}.`)
+      card('c', { title: 'Loans owed to directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedTo), note: null })
+    }
 
-  // (d) Loans owed BY directors or related parties, growing.
-  const owedBy = series(c, rows, ['directorRelatedLoansReceivable'], true)
-  if (roseMaterially(owedBy)) {
-    points.set('d', `Loans owed to the business by directors or related parties rose from ${money(firstOf(owedBy)!.value)} (${firstOf(owedBy)!.label}) to ${money(lastOf(owedBy)!.value)} (${lastOf(owedBy)!.label})${currentTail(owedBy, 'were')}.`)
-    card('d', { title: 'Loans owed by directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedBy), note: null })
+    // (d) Loans owed BY directors or related parties, growing.
+    const owedBy = series(c, rows, ['directorRelatedLoansReceivable'], true)
+    if (roseMaterially(owedBy)) {
+      points.set('d', `Loans owed to the business by directors or related parties rose from ${money(firstOf(owedBy)!.value)} (${firstOf(owedBy)!.label}) to ${money(lastOf(owedBy)!.value)} (${lastOf(owedBy)!.label})${currentTail(owedBy, 'were')}.`)
+      card('d', { title: 'Loans owed by directors or related parties', verdict: 'Rose', tone: 'concern', figures: figuresOf(owedBy), note: null })
+    }
   }
 
   // (e) Losses. The threshold decides whether to show; the sentence counts

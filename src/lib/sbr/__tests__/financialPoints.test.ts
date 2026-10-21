@@ -149,6 +149,29 @@ describe('(c) and (d) related-party loans', () => {
   })
 })
 
+describe('(b), (c) and (d) from the net director loan account', () => {
+  it('(c) the directors put money in: receivable to payable', () => {
+    const c = comparison(Y, { directorLoanAccountNet: [4_511, null, null, -730_290] })
+    expect(rule(c, 'c')).toBe(
+      'The director / related-party loan account went from $4,511 (FY2023, owed to the business) to -$730,290 (FY2026, owed to the directors or related parties): the directors or related parties put in $734,801.',
+    )
+    expect(rule(c, 'd')).toBeNull()
+  })
+
+  it('(d) the directors took money out', () => {
+    const c = comparison(Y, { directorLoanAccountNet: [-50_000, null, null, 40_000] })
+    expect(rule(c, 'd')).toMatch(/took out \$90,000\.$/)
+    expect(rule(c, 'c')).toBeNull()
+  })
+
+  it('(b) plant & equipment rose while the directors put money in, with no rise in ATO debt', () => {
+    const c = comparison(Y, { directorLoanAccountNet: [0, null, null, -200_000], propertyPlantEquipment: [100_000, null, null, 180_000] })
+    expect(rule(c, 'b')).toBe(
+      'Property, plant & equipment rose from $100,000 (FY2023) to $180,000 (FY2026) while the directors or related parties put in $200,000 (loan account $0 to -$200,000).',
+    )
+  })
+})
+
 describe('(e) losses — the threshold decides whether, never the facts', () => {
   it('counts EVERY loss year and the true total (client-b: 3 of 4, not 1 of 4)', () => {
     const c = comparison(Y, { profitBeforeTax: [16_000, -2_406, -21_871, -240] })

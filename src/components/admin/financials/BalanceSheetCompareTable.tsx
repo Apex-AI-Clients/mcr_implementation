@@ -1,7 +1,5 @@
 import { AlertTriangle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { YoYBadge } from './YoYBadge'
-import { negativeNoun } from '@/lib/financials/changeLabel'
 import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
 import type {
   CurrentPeriodSnapshot,
@@ -45,21 +43,22 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
   const { years, balanceSheetDiffs, atoLiabilityByYear } = comparison
   const cp = comparison.currentPeriod ?? null
 
-  const sections = balanceSheetDiffs.filter((s) => s.category !== 'Totals')
+  // The net director loan account: highlighted above the table and shown in it.
+  const loanAccountSection = balanceSheetDiffs.find((s) => s.category === 'Director Loan Account')
+  const loanAccountRow = loanAccountSection?.rows[0]
+  const sections = balanceSheetDiffs.filter((s) => s.category !== 'Totals' && s.category !== 'Director Loan Account')
   const totalsSection = balanceSheetDiffs.find((s) => s.category === 'Totals')
 
-  // Pull the director loans row out of nonCurrentAssets so it can be rendered
-  // in its own highlighted block above the section.
+  // A comparison built before the net account: the receivable is pulled out
+  // of non-current assets into the block instead.
   const nonCurrentAssetsSection = sections.find((s) => s.category === 'Non-Current Assets')
-  const directorLoansRow = nonCurrentAssetsSection?.rows.find(
-    (r) => r.canonicalKey === 'directorRelatedLoansReceivable',
-  )
+  const legacyReceivableRow = loanAccountSection
+    ? undefined
+    : nonCurrentAssetsSection?.rows.find((r) => r.canonicalKey === 'directorRelatedLoansReceivable')
   const nonCurrentAssetsWithoutDirectorLoans = nonCurrentAssetsSection
     ? {
         ...nonCurrentAssetsSection,
-        rows: nonCurrentAssetsSection.rows.filter(
-          (r) => r.canonicalKey !== 'directorRelatedLoansReceivable',
-        ),
+        rows: nonCurrentAssetsSection.rows.filter((r) => r !== legacyReceivableRow),
       }
     : undefined
 
@@ -77,16 +76,27 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
     <div>
       <h3 className="text-sm font-semibold text-foreground mb-3">Balance Sheet</h3>
 
-      {/* Director Loans highlighted block */}
-      {directorLoansRow && (
+      {/* Director loan account highlighted block */}
+      {loanAccountRow ? (
         <HighlightBlock
           tone="danger"
           icon={<AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
-          title="Director / Related Party Loans Receivable"
-          subtitle="The ATO will scrutinise growth in related-party loans as evidence of funds being withdrawn from the business."
+          title="Director / related-party loan account (net)"
+          subtitle="Positive: the directors or related parties owe the company. Negative: the company owes them (they funded it). Net = receivable − payable."
         >
-          <SingleRowTable row={directorLoansRow} years={years} currentPeriod={cp} />
+          <SingleRowTable row={loanAccountRow} years={years} currentPeriod={cp} />
         </HighlightBlock>
+      ) : (
+        legacyReceivableRow && (
+          <HighlightBlock
+            tone="danger"
+            icon={<AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
+            title="Director / Related Party Loans Receivable"
+            subtitle="The ATO will scrutinise growth in related-party loans as evidence of funds being withdrawn from the business."
+          >
+            <SingleRowTable row={legacyReceivableRow} years={years} currentPeriod={cp} />
+          </HighlightBlock>
+        )
       )}
 
       {/* ATO-related liabilities group */}
@@ -117,6 +127,7 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
             {sectionsWithoutNCA.map((section) => (
               <SectionRows key={section.category} section={section} years={years} currentPeriod={cp} />
             ))}
+            {loanAccountSection && <SectionRows section={loanAccountSection} years={years} currentPeriod={cp} />}
             {otherTotalsRows.length > 0 && (
               <>
                 <tr className="bg-primary/30">
@@ -151,12 +162,9 @@ function TableHeader({
     <thead>
       <tr className="border-b border-border bg-primary/30 text-left text-foreground/45">
         <th className="py-2 pl-3 pr-4 font-medium">Line item</th>
-        {years.map((fy, i) => (
+        {years.map((fy) => (
           <th key={fy} className="py-2 pr-4 font-medium text-right">
-            <div className="inline-flex flex-col items-end">
-              <span>FY{fy}</span>
-              {i > 0 && <span className="text-[10px] text-foreground/30">vs FY{years[i - 1]}</span>}
-            </div>
+            FY{fy}
           </th>
         ))}
         {currentPeriod && (
@@ -228,26 +236,14 @@ function DiffRowEl({
       <td className={cn('py-1.5 pl-3 pr-4 text-foreground/80', { 'font-semibold text-foreground': bold })}>
         {row.label}
       </td>
-      {years.map((fy, i) => {
+      {years.map((fy) => {
         const v = row.valuesByYear[fy]
-        const yoy = row.yoyPercentByYear[fy]
         return (
           <td
             key={fy}
             className={cn('py-1.5 pr-4 text-right tabular-nums', { 'font-semibold': bold })}
           >
-            <div className="inline-flex items-center justify-end gap-1.5">
-              <span>{formatAud(v)}</span>
-              {i > 0 && (
-                <YoYBadge
-                  percent={yoy}
-                  invertSentiment={shouldInvertSentiment(row.canonicalKey)}
-                  previous={row.valuesByYear[years[i - 1]]}
-                  current={v}
-                  negativeNoun={negativeNoun(row.canonicalKey)}
-                />
-              )}
-            </div>
+            {formatAud(v)}
           </td>
         )
       })}
@@ -281,7 +277,6 @@ function NetAssetsRow({
       <td className="py-2.5 pl-3 pr-4 text-sm font-bold text-foreground">{row.label}</td>
       {years.map((fy, i) => {
         const v = row.valuesByYear[fy]
-        const yoy = row.yoyPercentByYear[fy]
         return (
           <td
             key={fy}
@@ -290,17 +285,7 @@ function NetAssetsRow({
               'text-destructive': tone === 'bad' && i === years.length - 1,
             })}
           >
-            <div className="inline-flex items-center justify-end gap-1.5">
-              <span>{formatAud(v)}</span>
-              {i > 0 && (
-                <YoYBadge
-                  percent={yoy}
-                  previous={row.valuesByYear[years[i - 1]]}
-                  current={v}
-                  negativeNoun={negativeNoun(row.canonicalKey)}
-                />
-              )}
-            </div>
+            {formatAud(v)}
           </td>
         )
       })}
@@ -406,20 +391,4 @@ function buildAtoAggregateRow(
     direction: last !== null && first !== null && last > first ? 'up' : last !== null && first !== null && last < first ? 'down' : 'flat',
     ...(currentPeriod ? { currentPeriodValue: currentPeriod.atoLiabilityTotal } : {}),
   }
-}
-
-function shouldInvertSentiment(canonicalKey: string): boolean {
-  // Liabilities growing = bad. Director loans receivable growing = bad.
-  return (
-    canonicalKey === 'directorRelatedLoansReceivable' ||
-    canonicalKey.toLowerCase().includes('liability') ||
-    canonicalKey.toLowerCase().includes('payable') ||
-    canonicalKey === 'atoLiability' ||
-    canonicalKey === 'gstPayable' ||
-    canonicalKey === 'paygWithholdingPayable' ||
-    canonicalKey === 'superannuationPayable' ||
-    canonicalKey === 'totalLiabilities' ||
-    canonicalKey === 'totalCurrentLiabilities' ||
-    canonicalKey === 'totalNonCurrentLiabilities'
-  )
 }

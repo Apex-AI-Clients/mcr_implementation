@@ -96,6 +96,7 @@ function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = 
     <ComparisonClient
       clientId="client-1"
       clientName="Synthetic Client"
+      entityType={null}
       initialComparison={comparison}
       initialAiSummary={null}
       initialGeneratedAt={null}

@@ -18,11 +18,13 @@ import { ScorecardTiles } from '@/components/admin/financials/ScorecardTiles'
 import { AiNarrativeCallout } from '@/components/admin/financials/AiNarrativeCallout'
 import { IncomeStatementCompareTable } from '@/components/admin/financials/IncomeStatementCompareTable'
 import { BalanceSheetCompareTable } from '@/components/admin/financials/BalanceSheetCompareTable'
-import { RatiosPanel } from '@/components/admin/financials/RatiosPanel'
 import { ExportButton } from '@/components/admin/financials/ExportButton'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
 import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
+import { FinancialPointsPanel } from '@/components/admin/financials/FinancialPointsPanel'
+import { ProfitReviewNotice } from '@/components/admin/financials/ProfitReviewNotice'
+import { financialPoints } from '@/lib/sbr/financialPoints'
 import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
 import { FinancialFilesTable } from '@/components/admin/financials/FinancialFilesTable'
@@ -59,6 +61,8 @@ interface Props {
    * deployments only (SHOW_FINANCIALS_DIAGNOSTICS); hidden in production.
    */
   showDiagnostics: boolean
+  /** company_details.entity_type, for "The company" / "The trust" in the financial points. */
+  entityType: string | null
 }
 
 interface ExtractError {
@@ -100,6 +104,7 @@ export function ComparisonClient({
   overrideYears,
   initialStaleSince,
   showDiagnostics,
+  entityType,
 }: Props) {
   const router = useRouter()
   const [comparison, setComparison] = useState<FinancialsComparison | null>(initialComparison)
@@ -526,13 +531,16 @@ export function ComparisonClient({
             </div>
           )}
 
+          <ProfitReviewNotice checks={comparison.checks ?? []} />
+
           <ScorecardTiles comparison={comparison} />
 
           {aiSummary && <AiNarrativeCallout text={aiSummary} />}
 
+          <FinancialPointsPanel points={financialPoints({ comparison, entityType })} />
+
           <IncomeStatementCompareTable comparison={comparison} />
           <BalanceSheetCompareTable comparison={comparison} />
-          <RatiosPanel comparison={comparison} />
         </>
       )}
     </div>

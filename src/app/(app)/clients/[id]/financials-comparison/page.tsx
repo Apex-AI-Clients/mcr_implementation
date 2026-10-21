@@ -39,6 +39,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     { data: activeJob },
     slots,
     failures,
+    { data: company },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -74,6 +75,8 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     // For the coverage table. A failed read shows no table rather than an error.
     loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
     loadColumnFailures(supabase, id),
+    // "The company" / "The trust" in the financial points.
+    supabase.from('company_details').select('entity_type').eq('client_id', id).maybeSingle(),
   ])
 
   // A job that outlived its function is dead: close it rather than resume it.
@@ -131,6 +134,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
         })}
         overrideYears={overrideYearOptions()}
         initialStaleSince={comparisonRow?.stale_since ?? null}
+        entityType={company?.entity_type ?? null}
         showDiagnostics={financialsDiagnosticsEnabled()}
       />
     </div>

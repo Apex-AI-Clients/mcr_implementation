@@ -3,8 +3,6 @@
 import { useState } from 'react'
 import { Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { YoYBadge } from './YoYBadge'
-import { negativeNoun } from '@/lib/financials/changeLabel'
 import type {
   CurrentPeriodSnapshot,
   DiffTableSection,
@@ -47,7 +45,9 @@ export function IncomeStatementCompareTable({ comparison }: Props) {
 
   const incomeDiffs = comparison.incomeStatementDiffs
   const totalsSection = incomeDiffs.find((s) => s.category === 'Totals')
-  const detailSections = incomeDiffs.filter((s) => s.category !== 'Totals')
+  // A trust's profit before distributions, distributions and net profit after.
+  const distributionsSection = incomeDiffs.find((s) => s.category === 'Distributions')
+  const detailSections = incomeDiffs.filter((s) => s.category !== 'Totals' && s.category !== 'Distributions')
 
   const summarySections = buildSummarySections(detailSections, totalsSection)
 
@@ -74,6 +74,9 @@ export function IncomeStatementCompareTable({ comparison }: Props) {
             ))}
             {totalsSection && totalsSection.rows.length > 0 && (
               <TotalsRows section={totalsSection} years={years} currentPeriod={cp} />
+            )}
+            {distributionsSection && distributionsSection.rows.length > 0 && (
+              <TotalsRows section={distributionsSection} years={years} currentPeriod={cp} />
             )}
           </tbody>
         </table>
@@ -116,12 +119,9 @@ function TableHeader({
     <thead>
       <tr className="border-b border-border bg-primary/30 text-left text-foreground/45">
         <th className="py-2 pl-3 pr-4 font-medium">Line item</th>
-        {years.map((fy, i) => (
+        {years.map((fy) => (
           <th key={fy} className="py-2 pr-4 font-medium text-right">
-            <div className="inline-flex flex-col items-end">
-              <span>FY{fy}</span>
-              {i > 0 && <span className="text-[10px] text-foreground/30">vs FY{years[i - 1]}</span>}
-            </div>
+            FY{fy}
           </th>
         ))}
         {currentPeriod && <CurrentPeriodHeaderCell currentPeriod={currentPeriod} />}
@@ -188,7 +188,7 @@ function TotalsRows({
     <>
       <tr className="bg-primary/30">
         <td colSpan={colSpan} className="py-1.5 pl-3 pr-4 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
-          Totals
+          {section.category}
         </td>
       </tr>
       {section.rows.map((row) => (
@@ -198,7 +198,7 @@ function TotalsRows({
           years={years}
           hasCurrentPeriod={Boolean(currentPeriod)}
           isBold
-          isTopBordered={row.canonicalKey === 'netProfitAfterTax'}
+          isTopBordered={row.canonicalKey === 'netProfitAfterTax' || row.canonicalKey === 'netProfitAfterDistributions'}
         />
       ))}
     </>
@@ -229,22 +229,11 @@ function DiffRowEl({
       <td className={cn('py-1.5 pl-3 pr-4 text-foreground/80', { 'font-semibold text-foreground': bold })}>
         {row.label}
       </td>
-      {years.map((fy, i) => {
+      {years.map((fy) => {
         const v = row.valuesByYear[fy]
-        const yoy = row.yoyPercentByYear[fy]
         return (
           <td key={fy} className={cn('py-1.5 pr-4 text-right tabular-nums', { 'font-semibold': bold })}>
-            <div className="inline-flex items-center justify-end gap-1.5">
-              <span>{formatAud(v)}</span>
-              {i > 0 && (
-                <YoYBadge
-                  percent={yoy}
-                  previous={row.valuesByYear[years[i - 1]]}
-                  current={v}
-                  negativeNoun={negativeNoun(row.canonicalKey)}
-                />
-              )}
-            </div>
+            {formatAud(v)}
           </td>
         )
       })}
@@ -262,7 +251,7 @@ function DiffRowEl({
   )
 }
 
-/** Summary tab: keep totals + top-5 expense lines by absolute change. */
+/** Summary tab: keep totals + the five largest expense lines of the latest year. */
 function buildSummarySections(
   detailSections: DiffTableSection[],
   totalsSection: DiffTableSection | undefined,
@@ -276,10 +265,12 @@ function buildSummarySections(
   if (cogsSection) sections.push(cogsSection)
 
   if (expensesSection) {
-    const topFive = [...expensesSection.rows]
-      .sort((a, b) => Math.abs(b.absoluteChangeOldestToLatest ?? 0) - Math.abs(a.absoluteChangeOldestToLatest ?? 0))
-      .slice(0, 5)
-    sections.push({ category: 'Top 5 Expense Changes', rows: topFive })
+    const latest = (r: DiffTableSection['rows'][number]) => {
+      const values = Object.entries(r.valuesByYear).sort((a, b) => Number(a[0]) - Number(b[0]))
+      return Math.abs(values[values.length - 1]?.[1] ?? 0)
+    }
+    const topFive = [...expensesSection.rows].sort((a, b) => latest(b) - latest(a)).slice(0, 5)
+    sections.push({ category: 'Top 5 Expenses', rows: topFive })
   }
 
   // totalsSection is rendered separately by the parent, regardless of tab

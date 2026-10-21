@@ -1,7 +1,5 @@
 import { cn } from '@/lib/utils'
 import { TrendSparkline } from './TrendSparkline'
-import { YoYBadge } from './YoYBadge'
-import { negativeNoun } from '@/lib/financials/changeLabel'
 import { currentPeriodLabel, currentPeriodName } from '@/lib/financials/periodLabels'
 import type { FinancialsComparison, HeadlineKey, HeadlineMetric } from '@/lib/financials/types'
 
@@ -14,32 +12,28 @@ const TILE_ORDER: HeadlineKey[] = [
   'netProfit',
   'netAssets',
   'atoDebtTrajectory',
-  'directorLoansReceivable',
+  'directorLoanAccountNet',
 ]
 
-/** Whether an INCREASE in this metric is a bad sign. ATO debt growing is bad;
- *  director loans growing is bad; revenue / net profit / net assets growing
- *  is good. Drives YoY badge sentiment. */
-const INVERT_SENTIMENT: Record<HeadlineKey, boolean> = {
-  revenue: false,
-  netProfit: false,
-  netAssets: false,
-  atoDebtTrajectory: true,
-  directorLoansReceivable: true,
-}
-
+/**
+ * Values and trends only: no previous-year comparison (Gabby, 21 Oct). A
+ * comparison built before the net loan account shows the receivable tile.
+ */
 export function ScorecardTiles({ comparison }: Props) {
   const cp = comparison.currentPeriod ?? null
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-      {TILE_ORDER.map((key) => (
-        <Tile
-          key={key}
-          metric={comparison.headlines[key]}
-          invertSentiment={INVERT_SENTIMENT[key]}
-          currentPeriod={cp ? { name: currentPeriodName(cp), label: currentPeriodLabel(cp) } : null}
-        />
-      ))}
+      {TILE_ORDER.map((key) => {
+        const metric = comparison.headlines[key] ?? (key === 'directorLoanAccountNet' ? comparison.headlines.directorLoansReceivable : undefined)
+        if (!metric) return null
+        return (
+          <Tile
+            key={key}
+            metric={metric}
+            currentPeriod={cp ? { name: currentPeriodName(cp), label: currentPeriodLabel(cp) } : null}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -57,18 +51,13 @@ function formatAud(v: number | null | undefined): string {
 
 function Tile({
   metric,
-  invertSentiment,
   currentPeriod,
 }: {
   metric: HeadlineMetric
-  invertSentiment: boolean
   /** "FY2027 to date", and its full label for the hover. */
   currentPeriod: { name: string; label: string } | null
 }) {
-  const { label, formatted, trend, yoyPercent, severity, currentPeriodValue } = metric
-  // The two latest years with a value: what the YoY change compares.
-  const present = trend.filter((v): v is number => v !== null)
-  const lastTwo: [number | null, number | null] = present.length >= 2 ? [present[present.length - 2], present[present.length - 1]] : [null, null]
+  const { label, formatted, trend, severity, currentPeriodValue } = metric
   const hasCurrentPeriod = currentPeriodValue !== undefined && currentPeriodValue !== null
 
   return (
@@ -79,16 +68,7 @@ function Tile({
         'border-destructive/30 bg-destructive/10': severity === 'concern',
       })}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-xs font-medium text-foreground/55 leading-tight">{label}</span>
-        <YoYBadge
-          percent={yoyPercent}
-          invertSentiment={invertSentiment}
-          previous={lastTwo[0]}
-          current={lastTwo[1]}
-          negativeNoun={negativeNoun(metric.key)}
-        />
-      </div>
+      <span className="text-xs font-medium text-foreground/55 leading-tight">{label}</span>
       <div
         className={cn('text-xl font-bold tabular-nums leading-tight', {
           'text-success': severity === 'good',

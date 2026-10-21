@@ -31,11 +31,6 @@ function fmtCurrency(v: number | null | undefined): string {
   return v < 0 ? `($${abs})` : `$${abs}`
 }
 
-function fmtPercent(v: number | null | undefined): string {
-  if (v === null || v === undefined) return ''
-  return `${v.toFixed(2)}%`
-}
-
 function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, clientName: string): string {
   const lines: string[] = []
   const years = comparison.years
@@ -61,9 +56,11 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
     'netProfit',
     'netAssets',
     'atoDebtTrajectory',
-    'directorLoansReceivable',
+    'directorLoanAccountNet',
   ] as const) {
-    const m = comparison.headlines[key]
+    // A comparison built before the net loan account has the receivable only.
+    const m = comparison.headlines[key] ?? (key === 'directorLoanAccountNet' ? comparison.headlines.directorLoansReceivable : undefined)
+    if (!m) continue
     const cells: Array<string | number | null | undefined> = [m.label, ...m.trend.map(fmtCurrency)]
     if (ytdHeader) cells.push(fmtCurrency(m.currentPeriodValue ?? null))
     cells.push(m.severity)
@@ -137,55 +134,18 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
   lines.push(csvRow(...totalCells))
   lines.push('')
 
-  // Ratios — leave the current-period column blank (ratios are full-year only).
-  lines.push(csvRow('KEY RATIOS'))
-  const ratioHeader: string[] = ['Ratio', ...years.map((y) => `FY${y}`)]
-  if (ytdHeader) ratioHeader.push(ytdHeader)
-  lines.push(csvRow(...ratioHeader))
-  const ratioKeys: Array<keyof (typeof comparison.ratiosByYear)[number]> = [
-    'grossMarginPercent',
-    'atoDebtAsPercentOfRevenue',
-    'atoDebtAsPercentOfTotalLiabilities',
-    'directorLoansAsPercentOfAssets',
-    'currentRatio',
-    'debtToAssetRatio',
-    'daysRevenueInAtoDebt',
-    'netAssetsToTotalLiabilities',
-  ]
-  for (const rk of ratioKeys) {
-    const cells: Array<string | number | null | undefined> = [
-      rk,
-      ...years.map((y) => {
-        const v = comparison.ratiosByYear[y]?.[rk] ?? null
-        if (v === null) return ''
-        return rk.includes('Percent') || rk.includes('Revenue')
-          ? fmtPercent(v)
-          : v.toFixed(2)
-      }),
-    ]
-    if (ytdHeader) cells.push('')
-    lines.push(csvRow(...cells))
-  }
-  if (ytdHeader) {
-    lines.push(
-      csvRow(
-        `Note: Ratios are calculated on a full-year basis from the annual financial statements only. ${ytdHeader} figures are shown for raw line items only.`,
-      ),
-    )
-  }
-
   // Methodology footer
   lines.push('')
   lines.push(csvRow('METHODOLOGY'))
   lines.push(
     csvRow(
-      `Severities, sparklines and year-over-year ratios are computed exclusively from the annual financial statements (${yearSpan(years)}).${ytdHeader ? ` The ${ytdHeader} column is shown alongside for trend awareness only.` : ''}`,
+      `Severities and sparklines are computed exclusively from the annual financial statements (${yearSpan(years)}).${ytdHeader ? ` The ${ytdHeader} column is shown alongside for trend awareness only.` : ''}`,
     ),
   )
   if (cp) {
     lines.push(
       csvRow(
-        `The ${ytdHeader} column shows partial-period figures from the client's accounting software. Year-over-year comparisons exclude this column because it represents a partial period only.`,
+        `The ${ytdHeader} column shows partial-period figures from the client's accounting software. Severities and sparklines exclude this column because it represents a partial period only.`,
       ),
     )
   }
