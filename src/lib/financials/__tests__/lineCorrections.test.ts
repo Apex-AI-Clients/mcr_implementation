@@ -261,3 +261,73 @@ describe('"Total Income" printed after cost of sales', () => {
     expect(s.incomeStatement.totals.grossProfit).toBe(600_020)
   })
 })
+
+describe('profit from the printed lines (Gabby, 21 Oct)', () => {
+  // A trust's Xero P&L: "Distribution to Beneficiaries" printed among the
+  // operating expenses, so total expenses equal gross profit and "Net Profit"
+  // prints "-". The model returned the gross profit as profit before tax.
+  function distributingTrust() {
+    const lines: StatementLine[] = [
+      line('income', 'Sales', 500_000, 'income.sales'),
+      line('income', 'Total Trading Income', 500_000, 'totals.totalIncome', true),
+      line('cogs', 'Cost of Goods Sold', 200_000, 'cogs.purchases'),
+      line('cogs', 'Total Cost of Sales', 200_000, 'totals.totalCogs', true),
+      line('incomeTotals', 'Gross Profit', 300_000, 'totals.grossProfit', true),
+      line('expenses', 'Wages and Salaries', 280_000, 'expenses.wagesAndSalaries'),
+      line('expenses', 'Distribution to Beneficiaries', 20_000, 'appropriations.distributions'),
+      line('expenses', 'Total Operating Expenses', 300_000, 'totals.totalExpenses', true),
+      line('incomeTotals', 'Net Profit', null, 'totals.netProfitAfterTax', true),
+    ]
+    const s = {
+      incomeStatement: {
+        ...blankIs(),
+        income: { sales: 500_000 },
+        cogs: { purchases: 200_000 },
+        expenses: { wagesAndSalaries: 280_000 },
+        totals: { totalIncome: 500_000, totalCogs: 200_000, grossProfit: 300_000, totalExpenses: 300_000, profitBeforeTax: 300_000, netProfitAfterTax: 300_000 },
+        appropriations: { distributions: 20_000 },
+      },
+      balanceSheet: blankBs(),
+    }
+    return { s, lines }
+  }
+
+  it('reads profit before distributions, the distributions, and the printed nil after them', () => {
+    const { s, lines } = distributingTrust()
+    const notes = correctProfit(s, lines, { isTrust: false })
+    const t = s.incomeStatement.totals
+    expect(t.profitBeforeTax).toBe(20_000)
+    expect(t.netProfitAfterTax).toBe(20_000)
+    expect(t.totalExpenses).toBe(280_000)
+    expect(s.incomeStatement.appropriations).toEqual({ distributions: 20_000, netProfitAfterDistributions: 0 })
+    expect(notes).toEqual([expect.objectContaining({ kind: 'profit_corrected', message: expect.stringMatching(/after distributions/) })])
+  })
+
+  it('is the same when run again (extraction, then the comparison build)', () => {
+    const { s, lines } = distributingTrust()
+    correctProfit(s, lines, { isTrust: true })
+    expect(correctProfit(s, lines, { isTrust: true })).toEqual([])
+    expect(s.incomeStatement.totals.totalExpenses).toBe(280_000)
+    expect(s.incomeStatement.totals.profitBeforeTax).toBe(20_000)
+  })
+
+  it('uses the printed net profit when the profit read differs and there is no tax', () => {
+    const s = { incomeStatement: { ...blankIs(), totals: { grossProfit: 90_000, totalExpenses: 60_000, profitBeforeTax: 90_000 } as ExtractedIncomeStatement['totals'] }, balanceSheet: blankBs() }
+    const notes = correctProfit(s, [line('incomeTotals', 'Net Profit', 30_000, 'totals.netProfitAfterTax', true)], { isTrust: false })
+    expect(s.incomeStatement.totals.profitBeforeTax).toBe(30_000)
+    expect(s.incomeStatement.totals.netProfitAfterTax).toBe(30_000)
+    expect(notes[0].message).toMatch(/prints \$30,000 on its "Net Profit" line/)
+  })
+
+  it('without a printed net profit, takes income less cost of sales and expenses over a copied gross profit', () => {
+    const s = { incomeStatement: { ...blankIs(), totals: { totalIncome: 150_000, totalCogs: 60_000, grossProfit: 90_000, totalExpenses: 60_000, profitBeforeTax: 90_000 } }, balanceSheet: blankBs() }
+    correctProfit(s, [line('expenses', 'Rent', 60_000, 'expenses.rent')], { isTrust: false })
+    expect(s.incomeStatement.totals.profitBeforeTax).toBe(30_000)
+  })
+
+  it('leaves a profit that is not the gross profit alone when no net profit is printed', () => {
+    const s = { incomeStatement: { ...blankIs(), totals: { grossProfit: 90_000, totalExpenses: 60_000, profitBeforeTax: 30_000 } }, balanceSheet: blankBs() }
+    expect(correctProfit(s, [line('expenses', 'Rent', 60_000, 'expenses.rent')], { isTrust: false })).toEqual([])
+    expect(s.incomeStatement.totals.profitBeforeTax).toBe(30_000)
+  })
+})

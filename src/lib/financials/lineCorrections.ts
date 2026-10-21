@@ -1154,6 +1154,105 @@ export function correctFile(
   return { columnNotes, fileNotes }
 }
 
+const NOT_NET_PROFIT = /\b(gross|before|undistributed|retained|total|tax)\b/
+const NET_PROFIT = /\b(profit|loss|surplus|deficit)\b/
+
+/** The printed net profit line: the last profit total that is not gross profit, a pre-tax figure or one after prior-year losses. */
+function printedNetProfitIndex(lines: StatementLine[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]
+    if (!l.isTotal || (l.section !== 'incomeTotals' && l.section !== 'appropriation')) continue
+    if (l.canonicalKey !== 'totals.netProfitAfterTax' && l.canonicalKey !== 'totals.profitBeforeTax') continue
+    const label = normaliseLabel(l.rawLabel)
+    if (isPriorYearLossLabel(l.rawLabel) || NOT_NET_PROFIT.test(label) || !NET_PROFIT.test(label)) continue
+    return i
+  }
+  return -1
+}
+
+/**
+ * Profit from the printed lines (Gabby, 21 Oct): the printed net profit line
+ * when there is one, else income less cost of sales and expenses.
+ *
+ * A trust whose expenses list "Distribution to Beneficiaries" above the net
+ * profit line prints its profit AFTER distributions — nil when it distributes
+ * everything. Profit before tax is then that figure plus the distributions,
+ * total expenses leave the distribution out, and the printed figure is kept
+ * as the net profit after distributions.
+ */
+function profitFromPrintedLines(s: Statements, lines: StatementLine[], noTax: boolean): ExtractionWarning[] {
+  const t = s.incomeStatement.totals as Record<string, number | null | undefined>
+  const netIndex = printedNetProfitIndex(lines)
+  const net = netIndex === -1 ? null : lines[netIndex]
+  const differs = (a: number | null | undefined, b: number) => typeof a !== 'number' || Math.abs(a - b) > 1
+
+  const distributionLines = lines.filter(
+    (l, i) =>
+      l.section === 'expenses' &&
+      !l.isTotal &&
+      l.value !== null &&
+      i < netIndex &&
+      (l.canonicalKey === 'appropriations.distributions' || DISTRIBUTION_HEADING.test(normaliseLabel(l.rawLabel))),
+  )
+  if (net && distributionLines.length > 0) {
+    const distributions = distributionLines.reduce((sum, l) => sum + Math.abs(l.value as number), 0)
+    // A net profit printed "-" is nil: everything was distributed.
+    const after = net.value ?? 0
+    const before = after + distributions
+    const notes: ExtractionWarning[] = []
+    // The printed expenses total includes the distribution; taken out once.
+    const printedExpenses = lastPrintedTotal(lines, 'expenses')
+    if (typeof t.totalExpenses === 'number' && printedExpenses !== null && Math.abs(t.totalExpenses - printedExpenses) < 0.5) {
+      t.totalExpenses = printedExpenses - distributions
+    }
+    s.incomeStatement.appropriations = { ...s.incomeStatement.appropriations, distributions, netProfitAfterDistributions: after }
+    if (differs(t.profitBeforeTax, before)) {
+      notes.push({
+        kind: 'profit_corrected',
+        section: 'incomeStatement',
+        message: `Profit was read as ${t.profitBeforeTax == null ? 'blank' : money(t.profitBeforeTax)}. The statement lists distributions to beneficiaries (${money(distributions)}) among its expenses, so its "${net.rawLabel}" (${money(after)}) is after distributions: profit before distributions is ${money(before)}.`,
+      })
+      t.profitBeforeTax = before
+    }
+    if (noTax) t.netProfitAfterTax = before
+    return notes
+  }
+  if (!noTax) return []
+
+  if (net && net.value !== null) {
+    if (!differs(t.profitBeforeTax, net.value)) return []
+    const before = t.profitBeforeTax
+    t.profitBeforeTax = net.value
+    return [
+      {
+        kind: 'profit_corrected',
+        section: 'incomeStatement',
+        message: `Profit was read as ${before == null ? 'blank' : money(before)}; the statement prints ${money(net.value)} on its "${net.rawLabel}" line. The printed figure was used.`,
+      },
+    ]
+  }
+  if (net) return []
+
+  // No net profit printed: income less cost of sales and expenses, when the
+  // profit read is missing or is just the gross profit again.
+  const { totalIncome, totalCogs, totalExpenses, grossProfit } = t
+  if (typeof totalExpenses !== 'number' || (typeof grossProfit !== 'number' && typeof totalIncome !== 'number')) return []
+  const pbt = t.profitBeforeTax
+  const copiedGross = typeof pbt === 'number' && typeof grossProfit === 'number' && Math.abs(pbt - grossProfit) < 0.5 && Math.abs(totalExpenses) > 1
+  if (typeof pbt === 'number' && !copiedGross) return []
+  const otherIncome = linesTotal(lines, 'otherIncome') ?? 0
+  const computed =
+    typeof grossProfit === 'number' ? grossProfit + otherIncome - totalExpenses : (totalIncome as number) - (totalCogs ?? 0) - totalExpenses
+  t.profitBeforeTax = computed
+  return [
+    {
+      kind: 'profit_corrected',
+      section: 'incomeStatement',
+      message: `Profit was read as ${pbt == null ? 'blank' : `${money(pbt)}, the gross profit`}; the statement prints no net profit line, so it was taken as income less cost of sales and expenses: ${money(computed)}.`,
+    },
+  ]
+}
+
 /**
  * 4. Profit. Run on every column at extraction, and again on stored
  * statements when the comparison is built (where, without lines, only the
@@ -1187,13 +1286,14 @@ export function correctProfit(
     }
   }
 
-  const pbt = t.profitBeforeTax
-  if (typeof pbt !== 'number') return notes
-
   const hasTaxLine = lines.some(
     (l) => !l.isTotal && l.value != null && l.value !== 0 && (l.section === 'incomeTax' || isIncomeTaxExpenseLabel(l.rawLabel)),
   )
   const noTax = isTrust || (lines.length > 0 && !hasTaxLine)
+  if (lines.length > 0) notes.push(...profitFromPrintedLines(s, lines, noTax))
+
+  const pbt = t.profitBeforeTax
+  if (typeof pbt !== 'number') return notes
   if (!noTax) return notes
 
   if (typeof t.netProfitAfterTax !== 'number') {

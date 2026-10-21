@@ -316,3 +316,40 @@ describe('computeFinancialsComparison — four-year company regression', () => {
     expect(result.cumulativeProfitBeforeTax).toBe(cumulativeProfitLoss)
   })
 })
+
+describe('director loan account and distributions (Gabby, 21 Oct)', () => {
+  it('nets the loan account: receivable positive, payable negative', () => {
+    const a = blank(2023)
+    a.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable = 4_000
+    const b = blank(2026)
+    b.balanceSheet.nonCurrentLiabilities.directorRelatedLoansPayable = 700_000
+    const c = computeFinancialsComparison([a, b])
+    expect(c.headlines.directorLoanAccountNet.trend).toEqual([4_000, -700_000])
+    expect(c.headlines.directorLoanAccountNet.label).toBe('Director / related-party loan account (net)')
+    const section = c.balanceSheetDiffs.find((s) => s.category === 'Director Loan Account')
+    expect(section?.rows[0].valuesByYear).toEqual({ 2023: 4_000, 2026: -700_000 })
+    // The receivable alone is unchanged, for the prediction's input.
+    expect(c.headlines.directorLoansReceivable.trend).toEqual([4_000, null])
+  })
+
+  it('shows profit before distributions, distributions and the printed net profit after them', () => {
+    const a = blank(2023)
+    a.incomeStatement.totals.profitBeforeTax = 20_000
+    a.incomeStatement.appropriations = { distributions: 20_000, netProfitAfterDistributions: 0 }
+    const b = blank(2024)
+    b.incomeStatement.totals.profitBeforeTax = -5_000
+    const c = computeFinancialsComparison([a, b])
+    const rows = Object.fromEntries(c.incomeStatementDiffs.find((s) => s.category === 'Distributions')!.rows.map((r) => [r.canonicalKey, r.valuesByYear]))
+    expect(rows).toEqual({
+      profitBeforeDistributions: { 2023: 20_000, 2024: null },
+      distributions: { 2023: 20_000, 2024: null },
+      netProfitAfterDistributions: { 2023: 0, 2024: null },
+    })
+    // The net profit tile is the printed net profit.
+    expect(c.headlines.netProfit.trend).toEqual([0, -5_000])
+  })
+
+  it('has no distributions section without distributions', () => {
+    expect(computeFinancialsComparison([blank(2023), blank(2024)]).incomeStatementDiffs.map((s) => s.category)).not.toContain('Distributions')
+  })
+})

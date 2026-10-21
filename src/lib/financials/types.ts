@@ -40,6 +40,12 @@ export interface Appropriations {
   dividends?: LineValue
   /** Prior-year losses set against this year's profit. Positive. Not a distribution. */
   priorYearLossesApplied?: LineValue
+  /**
+   * The printed net profit when distributions are printed among the expenses,
+   * above it (a trust distributing everything prints nil). Profit before tax
+   * is then this plus the distributions. Absent for any other layout.
+   */
+  netProfitAfterDistributions?: LineValue
 }
 
 /** The printed section a line sits under. */
@@ -267,6 +273,8 @@ export type HeadlineKey =
   | 'netAssets'
   | 'atoDebtTrajectory'
   | 'directorLoansReceivable'
+  /** Receivable less payable: positive when the directors owe the company. Absent on older comparisons. */
+  | 'directorLoanAccountNet'
 
 export interface YearRatios {
   grossMarginPercent: number | null

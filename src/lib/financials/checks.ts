@@ -35,6 +35,8 @@ import type {
  */
 
 export const ANNUAL_TOLERANCE = 50
+/** The profit identities hold to the dollar on a printed statement (Gabby, 21 Oct). */
+export const PROFIT_TOLERANCE = 5
 /** Interim exports carry rounding and suspense lines. Balance sheet only. */
 export const CURRENT_PERIOD_BS_TOLERANCE = 200
 export const YEAR_WINDOW = 4
@@ -62,7 +64,11 @@ export interface ArithmeticFinding {
   statement: StatementHalfKey
   kind: 'totals_reconciliation' | 'balance_sheet_equation'
   message: string
+  /** PROFIT_IDENTITY: a profit figure that does not reconcile; the comparison needs review. */
+  group?: string
 }
+
+export const PROFIT_IDENTITY = 'profit_identity'
 
 /**
  * A statement's own arithmetic. Each identity is checked only when every
@@ -77,20 +83,45 @@ export function arithmeticFindings(
   const t = s.incomeStatement.totals ?? {}
   const b = s.balanceSheet.totals ?? {}
 
-  const [income, cogs, expenses, pbt] = [t.totalIncome, t.totalCogs, t.totalExpenses, t.profitBeforeTax].map(num)
-  if (income !== null && cogs !== null && expenses !== null && pbt !== null) {
-    const calc = income - cogs - expenses
-    // Templates that print "Other Income" after the first Total Income leave
-    // it out of total income: the profit then includes it on top.
+  // Profit before tax = gross profit + other income − total expenses, to the
+  // dollar (±$5). "Gross profit + other income" is also total income less
+  // cost of sales when total income includes every income line (templates
+  // that keep interest out of the printed gross profit), so either reading
+  // passes.
+  const [income, cogs, expenses, pbt, printedGross] = [t.totalIncome, t.totalCogs, t.totalExpenses, t.profitBeforeTax, t.grossProfit].map(num)
+  const fromIncome = income !== null && cogs !== null ? income - cogs : null
+  const gross = printedGross ?? fromIncome
+  if (gross !== null && expenses !== null && pbt !== null) {
+    // Other income printed after gross profit. Without printed lines it is
+    // not known whether total income already includes it, so both are tried.
+    const isLines = s.incomeStatement.lines ?? []
+    const otherLines = isLines.filter((l) => l.section === 'otherIncome' && !l.isTotal && typeof l.value === 'number')
     const inc = (s.incomeStatement.income ?? {}) as Record<string, unknown>
-    const otherIncome = (num(inc.interestIncome) ?? 0) + (num(inc.otherRevenue) ?? 0)
-    if (Math.abs(calc - pbt) > ANNUAL_TOLERANCE && Math.abs(calc + otherIncome - pbt) > ANNUAL_TOLERANCE) {
+    const other =
+      isLines.length > 0
+        ? otherLines.reduce((sum, l) => sum + (l.value as number), 0)
+        : (num(inc.interestIncome) ?? 0) + (num(inc.otherRevenue) ?? 0)
+    const readings = [gross + other, gross, ...(fromIncome !== null ? [fromIncome, fromIncome + other] : [])]
+    if (readings.every((r) => Math.abs(r - expenses - pbt) > PROFIT_TOLERANCE)) {
       out.push({
         statement: 'income_statement',
         kind: 'totals_reconciliation',
-        message: `Total income ${money(income)} − cost of sales ${money(cogs)} − expenses ${money(expenses)} = ${money(calc)}, but the profit before tax shown is ${money(pbt)}.`,
+        group: PROFIT_IDENTITY,
+        message: `Gross profit ${money(gross)} + other income ${money(other)} − total expenses ${money(expenses)} = ${money(gross + other - expenses)}, but the profit before tax shown is ${money(pbt)}.`,
       })
     }
+  }
+
+  // Net profit after distributions = profit − distributions (±$5).
+  const ap = s.incomeStatement.appropriations
+  const [after, distributions] = [ap?.netProfitAfterDistributions, ap?.distributions].map(num)
+  if (after !== null && distributions !== null && pbt !== null && Math.abs(pbt - distributions - after) > PROFIT_TOLERANCE) {
+    out.push({
+      statement: 'income_statement',
+      kind: 'totals_reconciliation',
+      group: PROFIT_IDENTITY,
+      message: `Profit before distributions ${money(pbt)} − distributions ${money(distributions)} = ${money(pbt - distributions)}, but the net profit after distributions shown is ${money(after)}.`,
+    })
   }
 
   // Cost of sales with stock: opening + purchases + direct costs + other - closing.
@@ -171,6 +202,7 @@ export function arithmeticChecks(merged: MergedStatement[], current: MergedState
         ...(currentPeriod ? { currentPeriod: true } : {}),
         message: f.message,
         documentIds: documentIdsOf(m, f.statement),
+        ...(f.group ? { group: f.group } : {}),
       })
     }
   }

@@ -97,6 +97,26 @@ function totalCogs(s: ExtractedFinancialStatement): number | null {
 function directorLoansReceivable(s: ExtractedFinancialStatement): number | null {
   return s.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable ?? null
 }
+/**
+ * The director / related-party loan account, net: what the directors owe the
+ * company (positive) less what the company owes them (negative). Null when
+ * neither is on the balance sheet.
+ */
+export function directorLoanAccountNet(s: ExtractedFinancialStatement): number | null {
+  const receivable = s.balanceSheet.nonCurrentAssets.directorRelatedLoansReceivable ?? null
+  const payable = s.balanceSheet.nonCurrentLiabilities.directorRelatedLoansPayable ?? null
+  if (receivable === null && payable === null) return null
+  return (receivable ?? 0) - Math.abs(payable ?? 0)
+}
+/**
+ * Net profit as printed: after distributions when the statement lists them
+ * among its expenses (a trust distributing everything prints nil), else
+ * profit before tax.
+ */
+function printedNetProfit(s: ExtractedFinancialStatement): number | null {
+  const after = s.incomeStatement.appropriations?.netProfitAfterDistributions
+  return typeof after === 'number' ? after : profitBeforeTax(s)
+}
 
 function computeRatios(s: ExtractedFinancialStatement): YearRatios {
   const income = totalIncome(s)
@@ -279,6 +299,22 @@ function pickBalanceLine(
   const sec = s.balanceSheet[section] as Record<string, number | null | undefined>
   return sec[key] ?? null
 }
+const DISTRIBUTION_ROWS = {
+  profitBeforeDistributions: 'Profit before distributions',
+  distributions: 'Distributions to beneficiaries',
+  netProfitAfterDistributions: 'Net profit after distributions',
+}
+function pickDistributionRow(s: ExtractedFinancialStatement, key: string): number | null {
+  const ap = s.incomeStatement.appropriations
+  const distributions = typeof ap?.distributions === 'number' ? Math.abs(ap.distributions) : null
+  const profit = profitBeforeTax(s)
+  if (key === 'profitBeforeDistributions') return distributions === null ? null : profit
+  if (key === 'distributions') return distributions
+  if (typeof ap?.netProfitAfterDistributions === 'number') return ap.netProfitAfterDistributions
+  return distributions !== null && profit !== null ? profit - distributions : null
+}
+const DIRECTOR_LOAN_ROWS = { directorLoanAccountNet: 'Director / related-party loan account (net)' }
+
 function pickBalanceTotal(s: ExtractedFinancialStatement, key: string): number | null {
   const t = s.balanceSheet.totals as Record<string, number | null | undefined>
   return t[key] ?? null
@@ -342,10 +378,11 @@ export function computeFinancialsComparison(
 
   // Trend series for the headline tiles
   const revenueTrend = years.map((fy) => sales(byYear[fy]))
-  const netProfitTrend = years.map((fy) => profitBeforeTax(byYear[fy]))
+  const netProfitTrend = years.map((fy) => printedNetProfit(byYear[fy]))
   const netAssetsTrend = years.map((fy) => netAssets(byYear[fy]))
   const atoTrend = years.map((fy) => atoLiabilityByYear[fy].total)
   const dirLoansTrend = years.map((fy) => directorLoansReceivable(byYear[fy]))
+  const loanAccountTrend = years.map((fy) => directorLoanAccountNet(byYear[fy]))
 
   function lastPresent(values: Array<number | null>): number | null {
     for (let i = values.length - 1; i >= 0; i--) {
@@ -408,7 +445,7 @@ export function computeFinancialsComparison(
       'Net Profit / (Loss)',
       netProfitTrend,
       netProfitSeverity(latestNetProfit),
-      currentPeriodStatement ? profitBeforeTax(currentPeriodStatement) : null,
+      currentPeriodStatement ? printedNetProfit(currentPeriodStatement) : null,
     ),
     netAssets: buildHeadline(
       'netAssets',
@@ -430,6 +467,14 @@ export function computeFinancialsComparison(
       dirLoansTrend,
       directorLoansSeverity(latestDirLoans, latestTotalAssets, prevDirLoans),
       currentPeriodStatement ? directorLoansReceivable(currentPeriodStatement) : null,
+    ),
+    directorLoanAccountNet: buildHeadline(
+      'directorLoanAccountNet',
+      'Director / related-party loan account (net)',
+      loanAccountTrend,
+      // Money owed TO the directors is not the warning sign; money they owe is.
+      directorLoansSeverity(Math.max(0, lastPresent(loanAccountTrend) ?? 0), latestTotalAssets, null),
+      currentPeriodStatement ? directorLoanAccountNet(currentPeriodStatement) : null,
     ),
   }
 
@@ -466,6 +511,9 @@ export function computeFinancialsComparison(
     ),
     buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear, cp),
   ]
+  // A trust's distributions, as printed: shown only when a year has them.
+  const distributionsSection = buildDiffTable('Distributions', DISTRIBUTION_ROWS, years, pickDistributionRow, byYear, cp)
+  if (distributionsSection.rows.some((r) => r.canonicalKey === 'distributions')) incomeStatementDiffs.push(distributionsSection)
 
   // Diff tables — balance sheet
   const balanceSheetDiffs: DiffTableSection[] = [
@@ -515,6 +563,7 @@ export function computeFinancialsComparison(
       'balance_sheet',
     ),
     buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear, cp),
+    buildDiffTable('Director Loan Account', DIRECTOR_LOAN_ROWS, years, (s) => directorLoanAccountNet(s), byYear, cp),
   ]
 
   const cumulativeProfitBeforeTax = sorted.reduce(
@@ -575,13 +624,18 @@ function buildCurrentPeriodOnlyComparison(
     periodRange: { start: cp.periodEndDate, end: cp.periodEndDate },
     headlines: {
       revenue: emptyHeadline('revenue', 'Revenue', sales(cp)),
-      netProfit: emptyHeadline('netProfit', 'Net Profit / (Loss)', profitBeforeTax(cp)),
+      netProfit: emptyHeadline('netProfit', 'Net Profit / (Loss)', printedNetProfit(cp)),
       netAssets: emptyHeadline('netAssets', 'Net Assets', netAssets(cp)),
       atoDebtTrajectory: emptyHeadline('atoDebtTrajectory', 'ATO Debt Trajectory', atoTotal),
       directorLoansReceivable: emptyHeadline(
         'directorLoansReceivable',
         'Director Loans Receivable',
         directorLoansReceivable(cp),
+      ),
+      directorLoanAccountNet: emptyHeadline(
+        'directorLoanAccountNet',
+        'Director / related-party loan account (net)',
+        directorLoanAccountNet(cp),
       ),
     },
     ratiosByYear: {},

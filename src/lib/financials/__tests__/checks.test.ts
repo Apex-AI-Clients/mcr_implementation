@@ -3,6 +3,7 @@ import {
   applyYearWindow,
   arithmeticFindings,
   comparableName,
+  PROFIT_IDENTITY,
   documentChecks,
   entityChecks,
   restatementChecks,
@@ -19,7 +20,11 @@ import type {
   ExtractedFinancialStatement,
   ExtractedIncomeStatement,
   FinancialStatementSourceColumn,
+  LineSection,
+  StatementLine,
 } from '../types'
+
+const line = (section: LineSection, rawLabel: string, value: number): StatementLine => ({ section, rawLabel, value, canonicalKey: null, isTotal: false })
 
 /**
  * Stage 4: the checks and the year window. SYNTHETIC figures only — the
@@ -276,6 +281,29 @@ describe('arithmetic checks', () => {
     delete s.balanceSheet.totals.totalLiabilities
     expect(arithmeticFindings(s)).toEqual([])
   })
+
+  it('holds profit before tax to gross profit + other income − total expenses within $5', () => {
+    const s = statement(2025)
+    const t = s.incomeStatement.totals
+    t.grossProfit = 300_000
+    t.totalExpenses = 250_000
+    s.incomeStatement.lines = [line('otherIncome', 'Grant', 10_000), line('expenses', 'Rent', 250_000)]
+    t.profitBeforeTax = 60_004
+    expect(arithmeticFindings(s).filter((f) => f.statement === 'income_statement')).toEqual([])
+    t.profitBeforeTax = 60_006
+    expect(arithmeticFindings(s)).toEqual([
+      expect.objectContaining({ group: PROFIT_IDENTITY, message: expect.stringMatching(/Gross profit \$300,000 \+ other income \$10,000/) }),
+    ])
+  })
+
+  it('holds net profit after distributions to profit − distributions within $5', () => {
+    const s = statement(2025)
+    const pbt = s.incomeStatement.totals.profitBeforeTax as number
+    s.incomeStatement.appropriations = { distributions: pbt, netProfitAfterDistributions: 0 }
+    expect(arithmeticFindings(s)).toEqual([])
+    s.incomeStatement.appropriations.netProfitAfterDistributions = 100
+    expect(arithmeticFindings(s)).toEqual([expect.objectContaining({ group: PROFIT_IDENTITY, message: expect.stringMatching(/after distributions/) })])
+  })
 })
 
 // ─── Retained earnings ────────────────────────────────────────────────────────
@@ -519,6 +547,7 @@ describe('cost of sales with stock', () => {
     const s = statement(2025)
     s.incomeStatement.cogs = { openingStock: 15_000, purchases: 80_000, closingStock: 20_000 }
     s.incomeStatement.totals.totalCogs = totalCogs
+    s.incomeStatement.totals.grossProfit = (s.incomeStatement.totals.totalIncome ?? 0) - totalCogs
     s.incomeStatement.totals.profitBeforeTax =
       (s.incomeStatement.totals.totalIncome ?? 0) - totalCogs - (s.incomeStatement.totals.totalExpenses ?? 0)
     return s
