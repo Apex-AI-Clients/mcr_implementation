@@ -7,6 +7,8 @@ import {
   ArrowRight,
   AlertTriangle,
   Banknote,
+  ChevronDown,
+  ChevronUp,
   Download,
   FileCheck,
   FileClock,
@@ -153,6 +155,16 @@ function formatAud(value: number | null | undefined): string {
   return AUD.format(value)
 }
 
+/** "$87,912.70": the in-between steps keep their cents so each one reconciles. */
+function formatAudCents(value: number): string {
+  return value.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Up to four decimals, no trailing zeros: 39.371250 -> "39.3713". */
+function exactPercent(value: number): string {
+  return String(Math.round(value * 10_000) / 10_000)
+}
+
 function formatNumber(value: number | null | undefined): string {
   if (value == null) return '—'
   return value.toLocaleString('en-AU')
@@ -169,6 +181,23 @@ export function exactFraction(percent: number): string {
 
 function roundToNearest(value: number, step: number): number {
   return Math.round(value / step) * step
+}
+
+/**
+ * The SBR payment as a share of the creditors, and the discount that leaves
+ * (Gabby, 21 Oct): 97,500 ÷ 223,129 = 43.70%, so 56.30%. Rounded to two
+ * decimals; the discount is taken from the rounded offer so the two add up
+ * to 100%.
+ */
+export function offerPercentages(payment: number | null, totalCreditors: number | null): { offer: number; discount: number } | null {
+  if (payment == null || totalCreditors == null || totalCreditors <= 0) return null
+  const offer = Math.round((payment / totalCreditors) * 10_000) / 100
+  return { offer, discount: Math.round((100 - offer) * 100) / 100 }
+}
+
+/** "with a payment plan offer" / "with an upfront offer": the case set depends on it. */
+export function basedOnLine(cases: number, paymentPlanType: 'plan' | 'upfront'): string {
+  return `Based on the ${cases} past cases most similar to this client with ${paymentPlanType === 'plan' ? 'a payment plan' : 'an upfront'} offer.`
 }
 
 function extractCachedInput(
@@ -1345,21 +1374,37 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
 
   const band = RISK_BAND_META[prediction.riskBand]
   const payment = prediction.paymentStructureRecommendation
+  const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
 
   return (
     <Card>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 1. Recommended offer (predicted cents-in-the-dollar outcome) */}
+        {/* 1. The SBR payment as a share of the creditors, and the discount;
+            the cents in the dollar creditors receive under them. */}
         <div className="rounded-lg border border-border bg-surface/50 p-4 text-center">
-          <p className="text-4xl font-bold tabular-nums text-foreground">
-            {prediction.predictedOutcomePercent.toFixed(1)}%
-          </p>
-          <p className="mt-1 text-xs text-foreground/60">
-            Range {prediction.predictedLowPercent.toFixed(1)}% –{' '}
-            {prediction.predictedHighPercent.toFixed(1)}% across {prediction.comparableCases.length}{' '}
-            similar cases
-          </p>
-          <p className="mt-2 text-xs text-foreground/40">Recommended offer</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-3xl font-bold tabular-nums text-foreground" data-testid="offer-percent">
+                {percentages ? `${percentages.offer.toFixed(2)}%` : '—'}
+              </p>
+              <p className="mt-1 text-xs text-foreground/60">SBR offer percentage</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold tabular-nums text-foreground" data-testid="expected-discount">
+                {percentages ? `${percentages.discount.toFixed(2)}%` : '—'}
+              </p>
+              <p className="mt-1 text-xs text-foreground/60">SBR expected discount</p>
+            </div>
+          </div>
+          <div className="mt-3 border-t border-border/60 pt-2">
+            <p className="text-lg font-semibold tabular-nums text-foreground">
+              {prediction.predictedOutcomePercent.toFixed(1)}c
+            </p>
+            <p className="text-xs text-foreground/60">Creditors receive (cents in the dollar)</p>
+            <p className="mt-1 text-[11px] text-foreground/45">
+              Offer % = creditors&apos; share ÷ (1 − practitioner fee)
+            </p>
+          </div>
         </div>
 
         {/* 2. SBR amount — for risky profiles, shows the offer needed to reach
@@ -1482,10 +1527,13 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           <p className="mt-2 text-xs text-foreground/40">Payment structure</p>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+      <p className="mt-4 text-sm text-foreground/75" data-testid="based-on">
+        {basedOnLine(prediction.comparableCases.length, prediction.inputFeatures.paymentPlanType)}
+      </p>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-foreground/40">
-          Prediction based on the {prediction.comparableCases.length} most similar of{' '}
-          {prediction.trainingSetSize} historical cases.
+          {prediction.comparableCases.length} most similar of {prediction.trainingSetSize} historical cases; the
+          payment type is one of the 7 factors, so a plan and an upfront offer are compared with different cases.
           {prediction.accuracyDisclosure.meanAbsoluteError != null &&
             ` Typical accuracy: ±${prediction.accuracyDisclosure.meanAbsoluteError} percentage points.`}
         </p>
@@ -1596,6 +1644,9 @@ function CalculationsContent({
   const aligned = prediction.acceptedAlignedOffer
   const targetRounded =
     aligned.targetAmount != null ? roundToNearest(aligned.targetAmount, 500) : null
+  // The offer is worked out from the unrounded average, so the steps use it too.
+  const receipt = prediction.creditorAmount != null ? (mean / 100) * prediction.creditorAmount : 0
+  const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
 
   return (
     <>
@@ -1612,13 +1663,14 @@ function CalculationsContent({
           </p>
         </div>
 
-        {/* 1. Recommended offer */}
+        {/* 1. Creditors receive (cents in the dollar) */}
         <section className="mb-5">
           <h3 className="mb-1 text-sm font-semibold text-foreground">
-            1. Recommended offer ({prediction.predictedOutcomePercent.toFixed(1)}%)
+            1. Creditors receive ({prediction.predictedOutcomePercent.toFixed(1)}c in the dollar)
           </h3>
           <p className="mb-2 text-xs italic text-foreground/45">
-            What it is: the cents-in-the-dollar settlement to put forward, as a % of the creditors in the SBR.
+            What it is: the cents in the dollar the creditors in the SBR receive, after the practitioner fee.
+            The SBR offer percentage is this ÷ (1 − practitioner fee).
           </p>
           <p className="mb-2 text-xs text-foreground/65">
             Formula: <code className="text-foreground/90">average of the 8 nearest cases&apos; outcomes</code>
@@ -1688,47 +1740,51 @@ function CalculationsContent({
               <div className="rounded-lg border border-border bg-surface/40 p-3 text-xs text-foreground/70 space-y-1">
                 <CreditorTotalSteps prediction={prediction} />
                 <div>
-                  Predicted outcome ={' '}
-                  <span className="text-foreground">
-                    {prediction.predictedOutcomePercent.toFixed(1)}%
-                  </span>
+                  Step 1. Creditors&apos; share (average of the {k} cases, unrounded) ={' '}
+                  <span className="text-foreground">{exactPercent(mean)}%</span>
+                  <span className="text-foreground/40"> (shown as {prediction.predictedOutcomePercent.toFixed(1)}c in the dollar)</span>
                 </div>
                 <div>
-                  SBR practitioner fee = {formatFeeRate(sbrPractitionerFeeRate)} (so creditors receive{' '}
-                  {formatFeeRate(1 - sbrPractitionerFeeRate)} of the offer)
+                  Step 2. To creditors = {exactPercent(mean)}% × {formatAud(prediction.creditorAmount)} ={' '}
+                  <span className="text-foreground">{formatAudCents(receipt)}</span>
+                </div>
+                <div>
+                  Step 3. Practitioner fee = {formatFeeRate(sbrPractitionerFeeRate)}
                   {sbrPractitionerFeeRate !== DEFAULT_PRACTITIONER_FEE_RATE && (
-                    <span className="text-foreground/45">
-                      {' '}
-                      — chosen for this client; the default is {formatFeeRate(DEFAULT_PRACTITIONER_FEE_RATE)}
-                    </span>
+                    <span className="text-warning"> (chosen for this client; the default is {formatFeeRate(DEFAULT_PRACTITIONER_FEE_RATE)})</span>
                   )}
-                </div>
-                <div className="mt-2 border-t border-border/60 pt-2">
-                  Creditor receipt ={' '}
-                  {exactFraction(prediction.predictedOutcomePercent)} ×{' '}
-                  {formatAud(prediction.creditorAmount)} ={' '}
-                  <span className="text-foreground">
-                    {formatAud(
-                      (prediction.predictedOutcomePercent / 100) * prediction.creditorAmount,
-                    )}
-                  </span>
+                  , so creditors receive 1 − {formatFeeRate(sbrPractitionerFeeRate)} ={' '}
+                  <span className="text-foreground">{(1 - sbrPractitionerFeeRate).toFixed(3)}</span> of the payment
                 </div>
                 <div>
-                  Offer ={' '}
-                  {formatAud(
-                    (prediction.predictedOutcomePercent / 100) * prediction.creditorAmount,
-                  )}{' '}
-                  ÷ {(1 - sbrPractitionerFeeRate).toFixed(3)} ={' '}
-                  <span className="text-foreground font-semibold">
-                    {formatAud(prediction.suggestedOfferAmount)}
-                  </span>
+                  Step 4. SBR payment = {formatAudCents(receipt)} ÷ {(1 - sbrPractitionerFeeRate).toFixed(3)} ={' '}
+                  <span className="text-foreground font-semibold">{formatAud(prediction.suggestedOfferAmount)}</span>
                 </div>
-                <div className="text-foreground/45">
-                  Rounded to nearest $500 ={' '}
-                  <span className="text-foreground">
+                <div>
+                  Step 5. Rounded to the nearest $500 ={' '}
+                  <span className="text-foreground font-semibold">
                     {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
                   </span>
                 </div>
+                {percentages && (
+                  <>
+                    <div className="mt-2 border-t border-border/60 pt-2">
+                      SBR offer percentage = {formatAud(suggestedRounded)} ÷ {formatAud(prediction.creditorAmount)} ={' '}
+                      <span className="text-foreground font-semibold">{percentages.offer.toFixed(2)}%</span>
+                    </div>
+                    <div>
+                      SBR expected discount = 100% − {percentages.offer.toFixed(2)}% ={' '}
+                      <span className="text-foreground font-semibold">{percentages.discount.toFixed(2)}%</span>
+                    </div>
+                  </>
+                )}
+                {sbrPractitionerFeeRate !== DEFAULT_PRACTITIONER_FEE_RATE && (
+                  <div className="text-foreground/45">
+                    At the default {formatFeeRate(DEFAULT_PRACTITIONER_FEE_RATE)} fee it would be {formatAudCents(receipt)} ÷{' '}
+                    {(1 - DEFAULT_PRACTITIONER_FEE_RATE).toFixed(3)} ={' '}
+                    {formatAud(Math.round(receipt / (1 - DEFAULT_PRACTITIONER_FEE_RATE)))}.
+                  </div>
+                )}
               </div>
               <p className="mt-2 text-xs text-foreground/45">
                 The SBR practitioner fee comes off the gross offer before creditors are paid, so the
@@ -2207,81 +2263,100 @@ function CaseInfoTooltip({ explanation }: { explanation: string }) {
   )
 }
 
+/**
+ * Closed by default (Gabby, 21 Oct), on screen and in the PDF: the PDF is
+ * taken from the page as it is, so it shows the cases only when opened.
+ */
 function ComparableCasesPanel({ prediction }: { prediction: FullPrediction }) {
+  const [open, setOpen] = useState(false)
+  const count = prediction.comparableCases.length
   return (
     <Card>
-      <h3 className="mb-1 text-sm font-semibold text-foreground">Closest historical cases</h3>
-      <p className="mb-4 text-xs text-foreground/50">
-        The {prediction.comparableCases.length} closest historical cases, sorted by similarity.
-        Hover the ⓘ for why each case got its outcome.
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {prediction.comparableCases.map((c) => (
-          <div
-            key={c.id}
-            className={cn(
-              'rounded-lg border border-border bg-surface/40 p-3',
-              // Rejected cases get a subtle amber left border instead of a pill.
-              !c.accepted && 'border-l-2 border-l-warning',
-            )}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">{c.clientName}</p>
-              <CaseInfoTooltip explanation={c.outcomeExplanation} />
-            </div>
-            <div className="mt-1 flex items-center gap-3 text-xs text-foreground/60">
-              <span>
-                Outcome: <span className="text-foreground">{c.outcomePercent.toFixed(1)}%</span>
-              </span>
-              <span className="text-foreground/30">·</span>
-              <span>Distance: {c.distance.toFixed(2)}</span>
-            </div>
-            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-foreground/60">
-              <div>
-                Cum. days late:{' '}
-                <span className="text-foreground/80">
-                  {formatNumber(c.features.cumulativeDaysLate)}
-                </span>
+      <h3 className="text-sm font-semibold text-foreground">Closest historical cases</h3>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+      >
+        {open ? <ChevronUp className="h-3.5 w-3.5" aria-hidden /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
+        {open ? `Hide the ${count} similar past cases` : `Show the ${count} similar past cases`}
+      </button>
+      {open && (
+        <>
+          <p className="mt-2 mb-4 text-xs text-foreground/50">
+            The {count} closest historical cases, sorted by similarity.
+            Hover the ⓘ for why each case got its outcome.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {prediction.comparableCases.map((c) => (
+              <div
+                key={c.id}
+                className={cn(
+                  'rounded-lg border border-border bg-surface/40 p-3',
+                  // Rejected cases get a subtle amber left border instead of a pill.
+                  !c.accepted && 'border-l-2 border-l-warning',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-foreground">{c.clientName}</p>
+                  <CaseInfoTooltip explanation={c.outcomeExplanation} />
+                </div>
+                <div className="mt-1 flex items-center gap-3 text-xs text-foreground/60">
+                  <span>
+                    Outcome: <span className="text-foreground">{c.outcomePercent.toFixed(1)}%</span>
+                  </span>
+                  <span className="text-foreground/30">·</span>
+                  <span>Distance: {c.distance.toFixed(2)}</span>
+                </div>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-foreground/60">
+                  <div>
+                    Cum. days late:{' '}
+                    <span className="text-foreground/80">
+                      {formatNumber(c.features.cumulativeDaysLate)}
+                    </span>
+                  </div>
+                  <div>
+                    Late lodgements:{' '}
+                    <span className="text-foreground/80">
+                      {formatNumber(c.features.numberOfLateLodgements)}
+                    </span>
+                  </div>
+                  <div>
+                    Days since payment:{' '}
+                    <span className="text-foreground/80">
+                      {c.features.daysSinceLastPayment === 9999
+                        ? 'Never'
+                        : formatNumber(c.features.daysSinceLastPayment)}
+                    </span>
+                  </div>
+                  <div>
+                    DPN:{' '}
+                    <span className="text-foreground/80">{c.features.dpn ? 'Yes' : 'No'}</span>
+                  </div>
+                  <div>
+                    Plan:{' '}
+                    <span className="text-foreground/80 capitalize">
+                      {c.features.paymentPlanType}
+                    </span>
+                  </div>
+                  <div>
+                    Director loan:{' '}
+                    <span className="text-foreground/80">
+                      {c.features.directorLoanAtAppointment ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs text-foreground/50">
+                  SBR offer: <span className="text-foreground/80">{formatAud(c.sbrPayment)}</span> of{' '}
+                  <span className="text-foreground/80">{formatAud(c.creditorAmount)}</span> creditor
+                  debt
+                </p>
               </div>
-              <div>
-                Late lodgements:{' '}
-                <span className="text-foreground/80">
-                  {formatNumber(c.features.numberOfLateLodgements)}
-                </span>
-              </div>
-              <div>
-                Days since payment:{' '}
-                <span className="text-foreground/80">
-                  {c.features.daysSinceLastPayment === 9999
-                    ? 'Never'
-                    : formatNumber(c.features.daysSinceLastPayment)}
-                </span>
-              </div>
-              <div>
-                DPN:{' '}
-                <span className="text-foreground/80">{c.features.dpn ? 'Yes' : 'No'}</span>
-              </div>
-              <div>
-                Plan:{' '}
-                <span className="text-foreground/80 capitalize">
-                  {c.features.paymentPlanType}
-                </span>
-              </div>
-              <div>
-                Director loan:{' '}
-                <span className="text-foreground/80">
-                  {c.features.directorLoanAtAppointment ? 'Yes' : 'No'}
-                </span>
-              </div>
-            </dl>
-            <p className="mt-2 text-xs text-foreground/50">
-              SBR offer: <span className="text-foreground/80">{formatAud(c.sbrPayment)}</span> of{' '}
-              <span className="text-foreground/80">{formatAud(c.creditorAmount)}</span> creditor
-              debt
-            </p>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </Card>
   )
 }
@@ -2408,7 +2483,13 @@ function ExportButton({
     push('')
 
     push('SUMMARY')
-    push('Predicted outcome %', prediction.predictedOutcomePercent)
+    const percentages = offerPercentages(
+      prediction.suggestedOfferAmount != null ? roundToNearest(prediction.suggestedOfferAmount, 500) : null,
+      prediction.creditorAmount,
+    )
+    push('SBR offer percentage', percentages ? percentages.offer.toFixed(2) : '')
+    push('SBR expected discount', percentages ? percentages.discount.toFixed(2) : '')
+    push('Creditors receive (cents in the dollar)', prediction.predictedOutcomePercent)
     push('Range low %', prediction.predictedLowPercent)
     push('Range high %', prediction.predictedHighPercent)
     push('Neighbour stdev (pp)', prediction.neighbourStdev)

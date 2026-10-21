@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CreditorsSummaryCard, OutcomePredictionClient, exactFraction } from '../OutcomePredictionClient'
+import { CreditorsSummaryCard, OutcomePredictionClient, basedOnLine, exactFraction, offerPercentages } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -354,5 +354,24 @@ describe('director penalty notice not on file', () => {
     await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(bodyOf(fetchMock).dpn).toBe(false)
+  })
+})
+
+describe('SBR offer percentage and expected discount (Gabby, 21 Oct)', () => {
+  it('is the SBR payment ÷ total creditors, and 100% less that, rounded to two decimals', () => {
+    // 43.6967%: rounded, not cut off (the review's example showed 43.69%).
+    expect(offerPercentages(97_500, 223_129)).toEqual({ offer: 43.7, discount: 56.3 })
+    expect(offerPercentages(87_500, 200_000)).toEqual({ offer: 43.75, discount: 56.25 })
+  })
+
+  it('needs a payment and a total', () => {
+    expect(offerPercentages(null, 223_129)).toBeNull()
+    expect(offerPercentages(97_500, null)).toBeNull()
+    expect(offerPercentages(97_500, 0)).toBeNull()
+  })
+
+  it('says which payment type the similar cases were chosen with', () => {
+    expect(basedOnLine(8, 'plan')).toBe('Based on the 8 past cases most similar to this client with a payment plan offer.')
+    expect(basedOnLine(8, 'upfront')).toBe('Based on the 8 past cases most similar to this client with an upfront offer.')
   })
 })
