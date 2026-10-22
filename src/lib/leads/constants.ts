@@ -68,12 +68,13 @@ export const OFF_RAMP_STAGES: LeadStage[] = ['non_proceeding', 'do_not_contact']
  * one tab (a test holds this). `tab` is the URL value, so a tab can be
  * bookmarked; Leads has none.
  */
-export type LeadView = 'leads' | 'prospects' | 'clients' | 'non_proceeding' | 'do_not_contact'
+export type LeadView = 'leads' | 'prospects' | 'clients' | 'converted' | 'non_proceeding' | 'do_not_contact'
 
 export const LEAD_VIEWS: Record<LeadView, { label: string; tab: string; stages: LeadStage[] }> = {
   leads: { label: 'Leads', tab: 'leads', stages: ['lead'] },
   prospects: { label: 'Prospects', tab: 'prospects', stages: ['prospect'] },
-  clients: { label: 'Clients', tab: 'clients', stages: ['client', 'converted'] },
+  clients: { label: 'Clients', tab: 'clients', stages: ['client'] },
+  converted: { label: 'Converted', tab: 'converted', stages: ['converted'] },
   non_proceeding: { label: 'Non-proceeding', tab: 'non-proceeding', stages: ['non_proceeding'] },
   do_not_contact: { label: 'Do not contact', tab: 'do-not-contact', stages: ['do_not_contact'] },
 }
