@@ -6,7 +6,10 @@ import type {
   DiffRow,
   DiffTableSection,
   FinancialsComparison,
+  ValueSource,
+  ValueTerm,
 } from '@/lib/financials/types'
+import { AmountWithSource } from './AmountWithSource'
 import {
   formatCurrentPeriodHeaderDate,
   formatCurrentPeriodHeaderName,
@@ -15,17 +18,6 @@ import {
 
 interface Props {
   comparison: FinancialsComparison
-}
-
-const AUD = new Intl.NumberFormat('en-AU', {
-  style: 'currency',
-  currency: 'AUD',
-  maximumFractionDigits: 0,
-})
-
-function formatAud(v: number | null): string {
-  if (v === null) return '—'
-  return AUD.format(v)
 }
 
 const BS_BOLD_KEYS = new Set([
@@ -68,7 +60,8 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
 
   // Build a synthetic "ATO-related liabilities" diff row showing the SUM of
   // the four ATO-related current-liability lines per year.
-  const atoDiffRow = buildAtoAggregateRow(years, atoLiabilityByYear, cp)
+  const currentLiabilityRows = sections.find((s) => s.category === 'Current Liabilities')?.rows ?? []
+  const atoDiffRow = buildAtoAggregateRow(years, atoLiabilityByYear, cp, currentLiabilityRows)
 
   // Pull netAssets out of totals so it can be rendered as a bold highlighted row.
   const netAssetsRow = totalsSection?.rows.find((r) => r.canonicalKey === 'netAssets')
@@ -246,7 +239,7 @@ function DiffRowEl({
             key={fy}
             className={cn('py-1.5 pr-4 text-right tabular-nums', { 'font-semibold': bold })}
           >
-            {formatAud(v)}
+            <AmountWithSource value={v} source={row.sourcesByYear?.[fy] ?? null} />
           </td>
         )
       })}
@@ -257,7 +250,7 @@ function DiffRowEl({
             { 'font-semibold': bold },
           )}
         >
-          {formatAud(row.currentPeriodValue ?? null)}
+          <AmountWithSource value={row.currentPeriodValue ?? null} source={row.currentPeriodSource ?? null} />
         </td>
       )}
     </tr>
@@ -288,13 +281,13 @@ function NetAssetsRow({
               'text-destructive': tone === 'bad' && i === years.length - 1,
             })}
           >
-            {formatAud(v)}
+            <AmountWithSource value={v} source={row.sourcesByYear?.[fy] ?? null} />
           </td>
         )
       })}
       {currentPeriod && (
         <td className="py-2.5 pr-4 pl-4 text-right text-sm font-bold tabular-nums border-l border-border/40 text-foreground/70">
-          {formatAud(row.currentPeriodValue ?? null)}
+          <AmountWithSource value={row.currentPeriodValue ?? null} source={row.currentPeriodSource ?? null} />
         </td>
       )}
     </tr>
@@ -386,6 +379,7 @@ function buildAtoAggregateRow(
   years: number[],
   atoByYear: FinancialsComparison['atoLiabilityByYear'],
   currentPeriod: CurrentPeriodSnapshot | null,
+  currentLiabilityRows: DiffRow[],
 ): DiffRow | null {
   const valuesByYear: Record<number, number | null> = {}
   let hasAny = false
@@ -424,5 +418,34 @@ function buildAtoAggregateRow(
     absoluteChangeOldestToLatest: absoluteChange,
     direction: last !== null && first !== null && last > first ? 'up' : last !== null && first !== null && last < first ? 'down' : 'flat',
     ...(currentPeriod ? { currentPeriodValue: currentPeriod.atoLiabilityTotal } : {}),
+    ...atoSources(years, currentPeriod, currentLiabilityRows),
+  }
+}
+
+/**
+ * The combined ATO figure as a sum of the ATO lines shown in Current
+ * Liabilities. Only for comparisons that carry sources for those lines.
+ */
+function atoSources(
+  years: number[],
+  currentPeriod: CurrentPeriodSnapshot | null,
+  currentLiabilityRows: DiffRow[],
+): Pick<DiffRow, 'sourcesByYear' | 'currentPeriodSource'> {
+  const atoRows = currentLiabilityRows.filter((r) => (ATO_LIABILITY_KEYS as readonly string[]).includes(r.canonicalKey))
+  if (!atoRows.some((r) => r.sourcesByYear)) return {}
+  const source = (value: (r: DiffRow) => number | null | undefined, from: (r: DiffRow) => ValueSource | null | undefined): ValueSource => {
+    const terms: ValueTerm[] = atoRows
+      .map((r) => ({ label: r.label, value: value(r) ?? 0, sign: 1 as const }))
+      .filter((t) => t.value !== 0)
+    const file = atoRows.map(from).find((s) => s?.sourceFilename)?.sourceFilename ?? null
+    return terms.length
+      ? { kind: 'calculated', sourceFilename: file, terms }
+      : { kind: 'nil', sourceFilename: file }
+  }
+  return {
+    sourcesByYear: Object.fromEntries(
+      years.map((fy) => [fy, source((r) => r.valuesByYear[fy], (r) => r.sourcesByYear?.[fy])]),
+    ),
+    ...(currentPeriod ? { currentPeriodSource: source((r) => r.currentPeriodValue, (r) => r.currentPeriodSource) } : {}),
   }
 }

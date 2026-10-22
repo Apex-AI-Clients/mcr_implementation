@@ -356,3 +356,41 @@ describe('equity figures for the summary', () => {
     })
   })
 })
+
+describe('"Undistributed Income" is never a distribution', () => {
+  /** A trust P&L that prints its loss before distribution, then the same loss as undistributed income. */
+  function lossYear(loss: number, undistributedKey: string | null, stored: Partial<ExtractedIncomeStatement> = {}): ExtractedIncomeStatement {
+    return {
+      income: { sales: 100_000 },
+      cogs: {},
+      expenses: { rent: 100_000 + loss },
+      totals: { totalIncome: 100_000, totalExpenses: 100_000 + loss, profitBeforeTax: -loss, netProfitAfterTax: -loss },
+      appropriations: {},
+      ...stored,
+      lines: [
+        line('income', 'Sales', 100_000, 'income.sales'),
+        line('expenses', 'Rent', 100_000 + loss, 'expenses.rent'),
+        line('incomeTotals', 'Profit / (Loss) Before Distribution', -loss, 'totals.profitBeforeTax', true),
+        line('appropriation', 'Undistributed Income', -loss, undistributedKey),
+      ],
+    }
+  }
+
+  it('drops the distribution the model read, and the vote does not spread it to other years', () => {
+    const slots = [
+      slot(2023, 'primary', { is: [lossYear(12_000, 'equity.retainedEarnings'), 'fy23'] }),
+      slot(2024, 'primary', { is: [lossYear(28_000, 'appropriations.distributions', { appropriations: { distributions: 28_000 } }), 'fy24'] }),
+      slot(2025, 'primary', {
+        is: [lossYear(800, 'totals.netProfitAfterTax', { appropriations: { distributions: null } }), 'fy25'],
+      }),
+    ]
+    const result = assembleComparison({ slots, records: [], company: null })
+    if (!result.ok) throw new Error('expected a comparison')
+    const c = result.comparison
+    expect(c.incomeStatementDiffs.map((s) => s.category)).not.toContain('Distributions')
+    const totals = c.incomeStatementDiffs.find((s) => s.category === 'Totals')!
+    const npat = totals.rows.find((r) => r.canonicalKey === 'netProfitAfterTax')!
+    expect(npat.valuesByYear).toEqual({ 2023: -12_000, 2024: -28_000, 2025: -800 })
+    for (const s of slots) expect(s.incomeStatement!.data.appropriations?.distributions ?? null).toBeNull()
+  })
+})

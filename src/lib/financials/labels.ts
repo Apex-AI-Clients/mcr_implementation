@@ -192,6 +192,9 @@ const DICTIONARY: DictionaryEntry[] = [
   // A profit figure AFTER prior-year losses is a subtotal, not a result to
   // keep: "ignore.*" keys are dropped (and clear a total the model put them in).
   { pattern: /\bafter deducting (prior years? )?loss|\bprofit after prior years? loss|\bafter prior years? loss/, key: 'ignore.profitAfterLosses' },
+  // What a trust did NOT distribute: the year's profit or loss carried
+  // forward. Never a distribution, and not a separate net profit.
+  { pattern: /^undistributed (income|profits?|loss(es)?|earnings)\b/, key: 'ignore.undistributedIncome' },
   // The loss amount itself.
   { pattern: /^(less )?prior years? loss(es)?( applied| recouped| deducted)?$|\blosses? brought forward\b|\bcarried forward loss/, key: 'appropriations.priorYearLossesApplied' },
 ]

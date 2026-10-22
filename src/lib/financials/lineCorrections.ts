@@ -171,9 +171,12 @@ export function moveLine(s: Statements, line: StatementLine, wanted: string, abs
   if (fromTotal && line.canonicalKey !== 'totals.netProfitAfterTax') return false
   const from = locate(s, line.canonicalKey, false) ?? otherEntryFor(s, line)
 
-  // A figure the model filed as a total (net profit) is cleared, not reduced.
-  if (from && fromTotal) {
-    if (typeof from.object[from.key] === 'number' && Math.abs((from.object[from.key] as number) - value) < 0.5) {
+  // A figure the model filed as a total (net profit) or as an appropriation
+  // (set, not summed, and stored positive) is cleared, not reduced.
+  const fromAppropriation = line.canonicalKey?.startsWith('appropriations.') ?? false
+  if (from && (fromTotal || fromAppropriation)) {
+    const filed = fromAppropriation ? Math.abs(value) : value
+    if (typeof from.object[from.key] === 'number' && Math.abs((from.object[from.key] as number) - filed) < 0.5) {
       delete from.object[from.key]
     }
   } else if (!from || !subtract(from, value)) {

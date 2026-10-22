@@ -14,7 +14,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { ScorecardTiles } from '@/components/admin/financials/ScorecardTiles'
 import { AiNarrativeCallout } from '@/components/admin/financials/AiNarrativeCallout'
 import { IncomeStatementCompareTable } from '@/components/admin/financials/IncomeStatementCompareTable'
 import { BalanceSheetCompareTable } from '@/components/admin/financials/BalanceSheetCompareTable'
@@ -554,8 +553,6 @@ export function ComparisonClient({
             checked={figuresChecked}
             onChecked={setFiguresChecked}
           />
-
-          <ScorecardTiles comparison={comparison} />
 
           {aiSummary && <AiNarrativeCallout text={aiSummary} />}
 

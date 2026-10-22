@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { CreditorsSummaryCard, OutcomePredictionClient, basedOnLine, exactFraction, offerPercentages } from '../OutcomePredictionClient'
+import { CreditorsSummaryCard, OutcomePredictionClient, basedOnLine, exactFraction, headlineExplanations, offerPercentages } from '../OutcomePredictionClient'
 
 /**
  * The prediction page's stale banner and practitioner-fee selector. Synthetic
@@ -373,5 +373,43 @@ describe('SBR offer percentage and expected discount (Gabby, 21 Oct)', () => {
   it('says which payment type the similar cases were chosen with', () => {
     expect(basedOnLine(8, 'plan')).toBe('Based on the 8 past cases most similar to this client with a payment plan offer.')
     expect(basedOnLine(8, 'upfront')).toBe('Based on the 8 past cases most similar to this client with an upfront offer.')
+  })
+})
+
+describe('how the offer figures were calculated', () => {
+  const cases = [40, 42, 38, 44].map((outcomePercent, i) => ({ outcomePercent, id: `c${i}` }))
+  const prediction = {
+    comparableCases: cases,
+    predictedOutcomePercent: 41,
+    practitionerFeeRate: 0.1,
+    creditorAmount: 200_000,
+    atoDebt: 150_000,
+    creditors: [{ label: 'Trade creditors', amount: 50_000 }, { label: 'Blank', amount: null }],
+  } as unknown as Parameters<typeof headlineExplanations>[0]
+
+  it('shows the offer percentage with the payment, the creditors and how the payment was sized', () => {
+    const { offer } = headlineExplanations(prediction, 91_000)
+    expect(offer).toContain('$91,000 ÷ $200,000 = 45.50%')
+    expect(offer).toContain('ATO debt $150,000 + Trade creditors $50,000 = $200,000')
+    expect(offer).toContain('41% × $200,000 = $82,000.00')
+    expect(offer).toContain('$82,000.00 ÷ 0.900 = $91,111.11')
+    expect(offer).not.toContain('Blank')
+  })
+
+  it('shows the discount as 100% less the offer', () => {
+    expect(headlineExplanations(prediction, 91_000).discount).toContain('100% − 45.50% = 54.50%')
+  })
+
+  it('shows the cents in the dollar as the average of the similar cases', () => {
+    const { cents } = headlineExplanations(prediction, 91_000)
+    expect(cents).toContain('40.0 + 42.0 + 38.0 + 44.0 = 164.0')
+    expect(cents).toContain('164.0 ÷ 4 = 41, shown as 41.0c')
+  })
+
+  it('has no offer or discount working without a creditor total', () => {
+    const r = headlineExplanations({ ...prediction, creditorAmount: null }, null)
+    expect(r.offer).toBeNull()
+    expect(r.discount).toBeNull()
+    expect(r.cents).toBeTruthy()
   })
 })

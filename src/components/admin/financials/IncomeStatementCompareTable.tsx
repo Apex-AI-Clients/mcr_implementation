@@ -8,6 +8,7 @@ import type {
   DiffTableSection,
   FinancialsComparison,
 } from '@/lib/financials/types'
+import { AmountWithSource } from './AmountWithSource'
 import {
   formatCurrentPeriodHeaderDate,
   formatCurrentPeriodHeaderName,
@@ -16,17 +17,6 @@ import {
 
 interface Props {
   comparison: FinancialsComparison
-}
-
-const AUD = new Intl.NumberFormat('en-AU', {
-  style: 'currency',
-  currency: 'AUD',
-  maximumFractionDigits: 0,
-})
-
-function formatAud(v: number | null): string {
-  if (v === null) return '—'
-  return AUD.format(v)
 }
 
 const BOLD_KEYS = new Set([
@@ -233,7 +223,7 @@ function DiffRowEl({
         const v = row.valuesByYear[fy]
         return (
           <td key={fy} className={cn('py-1.5 pr-4 text-right tabular-nums', { 'font-semibold': bold })}>
-            {formatAud(v)}
+            <AmountWithSource value={v} source={row.sourcesByYear?.[fy] ?? null} />
           </td>
         )
       })}
@@ -244,7 +234,7 @@ function DiffRowEl({
             { 'font-semibold': bold },
           )}
         >
-          {formatAud(row.currentPeriodValue ?? null)}
+          <AmountWithSource value={row.currentPeriodValue ?? null} source={row.currentPeriodSource ?? null} />
         </td>
       )}
     </tr>

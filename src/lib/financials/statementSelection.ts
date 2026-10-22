@@ -122,6 +122,7 @@ function merge(slots: StoredStatementSlot[]): MergedStatement | null {
     ],
     extractionModel: lead.extractionModel ?? undefined,
     present: { income_statement: is !== null, balance_sheet: bs !== null },
+    halfFilenames: { income_statement: is?.half.sourceFilename ?? null, balance_sheet: bs?.half.sourceFilename ?? null },
     ...(lead.periodLabel ? { periodLabel: lead.periodLabel } : {}),
     ...(lead.periodStartDate ? { periodStartDate: lead.periodStartDate } : {}),
   }

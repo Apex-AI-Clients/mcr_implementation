@@ -16,8 +16,17 @@ import type {
   HeadlineKey,
   HeadlineMetric,
   Severity,
+  ValueSource,
   YearRatios,
 } from './types'
+import {
+  explainBalanceLine,
+  explainBalanceTotal,
+  explainDistributionRow,
+  explainIncomeLine,
+  explainIncomeTotal,
+  explainLoanAccountNet,
+} from './valueSources'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -227,6 +236,8 @@ function buildDiffTable(
    * for a year whose statement is missing. (Totals pass none.)
    */
   half?: StatementHalfKey,
+  /** Where each figure came from, for the info icon. */
+  explain?: (s: ExtractedFinancialStatement, key: string, value: number | null) => ValueSource | null,
 ): DiffTableSection {
   const rows: DiffRow[] = []
   const nilWhenListed = (s: ExtractedFinancialStatement | undefined, v: number | null): number | null =>
@@ -249,6 +260,7 @@ function buildDiffTable(
 
     if (allNull) continue
     for (const fy of years) valuesByYear[fy] = nilWhenListed(byYear[fy], valuesByYear[fy])
+    const cpValue = currentPeriodStatement ? nilWhenListed(currentPeriodStatement, currentPeriodValue) : null
 
     const yoyByYear: Record<number, number | null> = {}
     for (let i = 0; i < years.length; i++) {
@@ -268,7 +280,15 @@ function buildDiffTable(
       yoyPercentByYear: yoyByYear,
       absoluteChangeOldestToLatest: absoluteChange,
       direction: direction(trend),
-      ...(currentPeriodStatement ? { currentPeriodValue: nilWhenListed(currentPeriodStatement, currentPeriodValue) } : {}),
+      ...(currentPeriodStatement ? { currentPeriodValue: cpValue } : {}),
+      ...(explain
+        ? {
+            sourcesByYear: Object.fromEntries(
+              years.map((fy) => [fy, byYear[fy] ? explain(byYear[fy], canonicalKey, valuesByYear[fy]) : null]),
+            ),
+            ...(currentPeriodStatement ? { currentPeriodSource: explain(currentPeriodStatement, canonicalKey, cpValue) } : {}),
+          }
+        : {}),
     })
   }
   return { category, rows }
@@ -490,6 +510,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'income_statement',
+      (s, k, v) => explainIncomeLine('income', s, k, v),
     ),
     buildDiffTable(
       'Cost of Goods Sold',
@@ -499,6 +520,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'income_statement',
+      (s, k, v) => explainIncomeLine('cogs', s, k, v),
     ),
     buildDiffTable(
       'Expenses',
@@ -508,11 +530,12 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'income_statement',
+      (s, k, v) => explainIncomeLine('expenses', s, k, v),
     ),
-    buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear, cp),
+    buildDiffTable('Totals', INCOME_STATEMENT_SCHEMA.totals, years, pickIncomeTotal, byYear, cp, undefined, explainIncomeTotal),
   ]
   // A trust's distributions, as printed: shown only when a year has them.
-  const distributionsSection = buildDiffTable('Distributions', DISTRIBUTION_ROWS, years, pickDistributionRow, byYear, cp)
+  const distributionsSection = buildDiffTable('Distributions', DISTRIBUTION_ROWS, years, pickDistributionRow, byYear, cp, undefined, explainDistributionRow)
   if (distributionsSection.rows.some((r) => r.canonicalKey === 'distributions')) incomeStatementDiffs.push(distributionsSection)
 
   // Diff tables — balance sheet
@@ -525,6 +548,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'balance_sheet',
+      (s, k, v) => explainBalanceLine('currentAssets', s, k, v),
     ),
     buildDiffTable(
       'Non-Current Assets',
@@ -534,6 +558,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'balance_sheet',
+      (s, k, v) => explainBalanceLine('nonCurrentAssets', s, k, v),
     ),
     buildDiffTable(
       'Current Liabilities',
@@ -543,6 +568,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'balance_sheet',
+      (s, k, v) => explainBalanceLine('currentLiabilities', s, k, v),
     ),
     buildDiffTable(
       'Non-Current Liabilities',
@@ -552,6 +578,7 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'balance_sheet',
+      (s, k, v) => explainBalanceLine('nonCurrentLiabilities', s, k, v),
     ),
     buildDiffTable(
       'Equity',
@@ -561,9 +588,10 @@ export function computeFinancialsComparison(
       byYear,
       cp,
       'balance_sheet',
+      (s, k, v) => explainBalanceLine('equity', s, k, v),
     ),
-    buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear, cp),
-    buildDiffTable('Director Loan Account', DIRECTOR_LOAN_ROWS, years, (s) => directorLoanAccountNet(s), byYear, cp),
+    buildDiffTable('Totals', BALANCE_SHEET_SCHEMA.totals, years, pickBalanceTotal, byYear, cp, undefined, explainBalanceTotal),
+    buildDiffTable('Director Loan Account', DIRECTOR_LOAN_ROWS, years, (s) => directorLoanAccountNet(s), byYear, cp, undefined, explainLoanAccountNet),
   ]
 
   const cumulativeProfitBeforeTax = sorted.reduce(

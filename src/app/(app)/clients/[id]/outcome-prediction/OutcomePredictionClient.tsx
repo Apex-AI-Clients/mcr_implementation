@@ -26,6 +26,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { cn, formatDateRelative } from '@/lib/utils'
 import {
@@ -193,6 +194,62 @@ export function offerPercentages(payment: number | null, totalCreditors: number 
   if (payment == null || totalCreditors == null || totalCreditors <= 0) return null
   const offer = Math.round((payment / totalCreditors) * 10_000) / 100
   return { offer, discount: Math.round((100 - offer) * 100) / 100 }
+}
+
+/**
+ * The working behind the three figures on the first tile, with this client's
+ * values, for the info icon beside each. Null where a figure is not shown.
+ */
+export function headlineExplanations(
+  prediction: Pick<FullPrediction, 'comparableCases' | 'predictedOutcomePercent' | 'practitionerFeeRate' | 'creditorAmount' | 'atoDebt' | 'creditors'>,
+  suggestedRounded: number | null,
+): { offer: string | null; discount: string | null; cents: string } {
+  const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
+  const sum = outcomes.reduce((t, v) => t + v, 0)
+  const mean = outcomes.length ? sum / outcomes.length : 0
+  const fee = prediction.practitionerFeeRate
+  const cents = [
+    `Average of the ${outcomes.length} most similar past cases' outcomes:`,
+    `${outcomes.map((o) => o.toFixed(1)).join(' + ')} = ${sum.toFixed(1)}`,
+    `${sum.toFixed(1)} ÷ ${outcomes.length} = ${exactPercent(mean)}, shown as ${prediction.predictedOutcomePercent.toFixed(1)}c`,
+    '',
+    `This is what creditors receive after the ${formatFeeRate(fee)} practitioner fee.`,
+  ].join('\n')
+
+  const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
+  if (!percentages || prediction.creditorAmount == null) return { offer: null, discount: null, cents }
+
+  const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
+  const others = includedCreditorRows(prediction.creditors ?? [])
+  const receipt = (mean / 100) * prediction.creditorAmount
+  const offer = [
+    'SBR offer percentage = SBR payment ÷ total creditors',
+    `${formatAud(suggestedRounded)} ÷ ${formatAud(prediction.creditorAmount)} = ${percentages.offer.toFixed(2)}%`,
+    '',
+    `Total creditors = ATO debt ${formatAud(atoDebt)}${others.map((r) => ` + ${r.label || 'Creditor'} ${formatAud(r.amount)}`).join('')}${others.length ? ` = ${formatAud(prediction.creditorAmount)}` : ''}`,
+    '',
+    'SBR payment:',
+    `To creditors = ${exactPercent(mean)}% × ${formatAud(prediction.creditorAmount)} = ${formatAudCents(receipt)}`,
+    `Grossed up for the ${formatFeeRate(fee)} fee: ${formatAudCents(receipt)} ÷ ${(1 - fee).toFixed(3)} = ${formatAudCents(receipt / (1 - fee))}`,
+    `Rounded to the nearest $500 = ${formatAud(suggestedRounded)}`,
+  ].join('\n')
+  const discount = [
+    'SBR expected discount = 100% − SBR offer percentage',
+    `100% − ${percentages.offer.toFixed(2)}% = ${percentages.discount.toFixed(2)}%`,
+    '',
+    `The share of the ${formatAud(prediction.creditorAmount)} owed that would be written off.`,
+  ].join('\n')
+  return { offer, discount, cents }
+}
+
+/** An info icon that shows how a figure was worked out, on hover, focus or tap. */
+function HowCalculated({ text, label }: { text: string | null; label: string }) {
+  if (!text) return null
+  return (
+    <Tooltip content={text} className="no-print ml-1 inline-flex cursor-help align-middle text-foreground/35 hover:text-foreground/70 focus:text-foreground/70 focus:outline-none">
+      <Info className="h-3.5 w-3.5" aria-label={`How the ${label} was calculated`} />
+    </Tooltip>
+  )
 }
 
 /** "with a payment plan offer" / "with an upfront offer": the case set depends on it. */
@@ -1375,6 +1432,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
   const band = RISK_BAND_META[prediction.riskBand]
   const payment = prediction.paymentStructureRecommendation
   const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
+  const explain = headlineExplanations(prediction, suggestedRounded)
 
   return (
     <Card>
@@ -1387,20 +1445,29 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
               <p className="text-3xl font-bold tabular-nums text-foreground" data-testid="offer-percent">
                 {percentages ? `${percentages.offer.toFixed(2)}%` : '—'}
               </p>
-              <p className="mt-1 text-xs text-foreground/60">SBR offer percentage</p>
+              <p className="mt-1 text-xs text-foreground/60">
+                SBR offer percentage
+                <HowCalculated text={explain.offer} label="SBR offer percentage" />
+              </p>
             </div>
             <div>
               <p className="text-3xl font-bold tabular-nums text-foreground" data-testid="expected-discount">
                 {percentages ? `${percentages.discount.toFixed(2)}%` : '—'}
               </p>
-              <p className="mt-1 text-xs text-foreground/60">SBR expected discount</p>
+              <p className="mt-1 text-xs text-foreground/60">
+                SBR expected discount
+                <HowCalculated text={explain.discount} label="SBR expected discount" />
+              </p>
             </div>
           </div>
           <div className="mt-3 border-t border-border/60 pt-2">
             <p className="text-lg font-semibold tabular-nums text-foreground">
               {prediction.predictedOutcomePercent.toFixed(1)}c
             </p>
-            <p className="text-xs text-foreground/60">Creditors receive (cents in the dollar)</p>
+            <p className="text-xs text-foreground/60">
+              Creditors receive (cents in the dollar)
+              <HowCalculated text={explain.cents} label="cents in the dollar" />
+            </p>
             <p className="mt-1 text-[11px] text-foreground/45">
               Offer % = creditors&apos; share ÷ (1 − practitioner fee)
             </p>

@@ -167,6 +167,8 @@ export interface ExtractedFinancialStatement {
    * already an empty section.
    */
   present?: Record<StatementHalfKey, boolean>
+  /** The file each half was read from, when the halves were merged from stored slots. */
+  halfFilenames?: Record<StatementHalfKey, string | null>
 }
 
 // ─── Stored statements, per half (migration 0026) ────────────────────────────
@@ -298,6 +300,28 @@ export interface DiffRow {
   /** Partial-period value for the same line, populated when a current-period
    *  statement is present. Not included in YoY/trend math. */
   currentPeriodValue?: number | null
+  /** Where each year's figure came from. Absent on older comparisons. */
+  sourcesByYear?: Record<number, ValueSource | null>
+  currentPeriodSource?: ValueSource | null
+}
+
+/** One figure in a formula; sign -1 is subtracted. */
+export interface ValueTerm {
+  label: string
+  value: number
+  sign: 1 | -1
+}
+
+/** How one cell's figure was arrived at, for the info icon beside it. */
+export interface ValueSource {
+  /** picked: read from the file; calculated: worked out from other figures; nil: not listed, taken as $0. */
+  kind: 'picked' | 'calculated' | 'nil'
+  sourceFilename: string | null
+  /** The printed lines it was read from, as printed. */
+  printed?: Array<{ label: string; value: number }>
+  /** The figures it is made of. On a picked total, the check that it adds up. */
+  terms?: ValueTerm[]
+  note?: string
 }
 
 export interface DiffTableSection {
