@@ -17,7 +17,8 @@ interface Props {
 /**
  * Red "Needs review" when a hard check fails — a total, the balance-sheet
  * equation, a profit identity (±$5) or the retained-earnings roll-forward —
- * shown in every deployment, unlike the full statement checks panel. The PDF
+ * on development and test deployments only, like the statement checks panel
+ * (the page passes no failures otherwise). The PDF
  * and CSV stay locked until a staff member ticks that they checked the
  * figures against the source documents; the tick covers this build only.
  */

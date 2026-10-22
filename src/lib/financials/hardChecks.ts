@@ -5,7 +5,9 @@ import type { FinancialCheck, FinancialCheckKind } from './types'
  * equation, the profit identities) and the retained-earnings roll-forward.
  * When one fails, the comparison shows "Needs review" and its PDF and CSV stay
  * locked until a staff member ticks that they checked the figures against the
- * source documents. Pure; shared by the page, the tick route and the tests.
+ * source documents — on development and test deployments only
+ * (SHOW_FINANCIALS_DIAGNOSTICS, diagnostics.ts); production shows neither.
+ * Pure; shared by the page, the tick route and the tests.
  *
  * The tick is stored in sbr_readiness_reviews (item 'financials', migration
  * 0030) with the fingerprint below: it covers exactly the comparison and the

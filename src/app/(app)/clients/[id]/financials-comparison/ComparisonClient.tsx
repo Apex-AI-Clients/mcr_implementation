@@ -306,7 +306,10 @@ export function ComparisonClient({
   const hasComparison = comparison !== null
   // A failed hard check locks the PDF and CSV until a staff member ticks that
   // they checked the figures (hardChecks.ts); the tick covers this build only.
-  const failures = hardCheckFailures(comparison?.checks)
+  // Like the checks panel, development and test deployments only
+  // (SHOW_FINANCIALS_DIAGNOSTICS): without the banner there is no tick, so
+  // production never locks.
+  const failures = showDiagnostics ? hardCheckFailures(comparison?.checks) : []
   const exportLock = exportsLocked(failures, generatedAt, figuresChecked)
     ? `Needs review: tick "I've checked these figures against the source documents" first.`
     : null

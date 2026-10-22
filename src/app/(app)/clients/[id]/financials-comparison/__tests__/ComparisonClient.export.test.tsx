@@ -91,13 +91,29 @@ const supersededRow = {
   note: "Current period within FY2025, but FY2025 already has its annual statement, so this file isn't used.",
 }
 
-function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = false, extraFiles = [] as (typeof fileRow | typeof supersededRow)[] } = {}) {
+/** The fixture with one failed hard check: a profit that does not reconcile. */
+const withHardFailure: FinancialsComparison = {
+  ...comparison,
+  checks: [
+    ...(comparison.checks ?? []),
+    {
+      kind: 'totals_reconciliation',
+      severity: 'warning',
+      financialYear: 2025,
+      statement: 'income_statement',
+      message: 'Gross profit $300,000 + other income $0 − total expenses $250,000 = $50,000, but the profit before tax shown is $60,000.',
+      documentIds: [],
+    },
+  ],
+}
+
+function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = false, extraFiles = [] as (typeof fileRow | typeof supersededRow)[], initial = comparison } = {}) {
   return render(
     <ComparisonClient
       clientId="client-1"
       clientName="Synthetic Client"
       entityType={null}
-      initialComparison={comparison}
+      initialComparison={initial}
       initialAiSummary={null}
       initialGeneratedAt={null}
       initialExtraction={{ extractedCount: 2, documentCount: 2, hasUnextracted: false }}
@@ -112,6 +128,22 @@ function renderPage({ showDiagnostics = true, withCoverage = false, withFiles = 
 }
 
 const checksWrapper = () => screen.getByRole('button', { name: /Statement checks/ }).closest('.rounded-lg')!.parentElement!
+
+describe('Needs review banner and export lock', () => {
+  it('shows the banner and locks the PDF and CSV on a failed hard check, with diagnostics on', () => {
+    renderPage({ showDiagnostics: true, initial: withHardFailure })
+    expect(screen.getByText(/Needs review: a figure does not reconcile/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows neither in production (no SHOW_FINANCIALS_DIAGNOSTICS)', () => {
+    renderPage({ showDiagnostics: false, initial: withHardFailure })
+    expect(screen.queryByText(/Needs review/)).toBeNull()
+    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
 
 describe('export contents', () => {
   it('leaves the statement checks out of the PDF unless "Include checks in PDF" is ticked', async () => {
