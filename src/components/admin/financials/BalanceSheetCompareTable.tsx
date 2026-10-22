@@ -49,18 +49,20 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
   const sections = balanceSheetDiffs.filter((s) => s.category !== 'Totals' && s.category !== 'Director Loan Account')
   const totalsSection = balanceSheetDiffs.find((s) => s.category === 'Totals')
 
-  // A comparison built before the net account: the receivable is pulled out
-  // of non-current assets into the block instead.
+  // The director / related-party loans block: what the directors owe the
+  // company, then what it owes them, then the net account (comparisons built
+  // before the net account have only the first two). Both lines also stay in
+  // their own sections of the table.
   const nonCurrentAssetsSection = sections.find((s) => s.category === 'Non-Current Assets')
-  const legacyReceivableRow = loanAccountSection
-    ? undefined
-    : nonCurrentAssetsSection?.rows.find((r) => r.canonicalKey === 'directorRelatedLoansReceivable')
-  const nonCurrentAssetsWithoutDirectorLoans = nonCurrentAssetsSection
-    ? {
-        ...nonCurrentAssetsSection,
-        rows: nonCurrentAssetsSection.rows.filter((r) => r !== legacyReceivableRow),
-      }
-    : undefined
+  const receivableRow = nonCurrentAssetsSection?.rows.find((r) => r.canonicalKey === 'directorRelatedLoansReceivable')
+  const payableRow = sections
+    .find((s) => s.category === 'Non-Current Liabilities')
+    ?.rows.find((r) => r.canonicalKey === 'directorRelatedLoansPayable')
+  const directorLoanRows = [
+    ...(receivableRow ? [{ row: receivableRow }] : []),
+    ...(payableRow ? [{ row: payableRow }] : []),
+    ...(loanAccountRow ? [{ row: loanAccountRow, bold: true, topBorder: true }] : []),
+  ]
 
   const sectionsWithoutNCA = sections.filter((s) => s.category !== 'Non-Current Assets')
 
@@ -76,27 +78,20 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
     <div>
       <h3 className="text-sm font-semibold text-foreground mb-3">Balance Sheet</h3>
 
-      {/* Director loan account highlighted block */}
-      {loanAccountRow ? (
+      {/* Director / related-party loans highlighted block */}
+      {directorLoanRows.length > 0 && (
         <HighlightBlock
           tone="danger"
           icon={<AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
-          title="Director / related-party loan account (net)"
-          subtitle="Positive: the directors or related parties owe the company. Negative: the company owes them (they funded it). Net = receivable − payable."
+          title="Director / Related Party Loans"
+          subtitle={
+            loanAccountRow
+              ? 'Receivable: the directors or related parties owe the company. Payable: the company owes them (they funded it). Net = receivable − payable.'
+              : 'The ATO will scrutinise growth in related-party loans as evidence of funds being withdrawn from the business.'
+          }
         >
-          <SingleRowTable row={loanAccountRow} years={years} currentPeriod={cp} />
+          <RowsTable rows={directorLoanRows} years={years} currentPeriod={cp} />
         </HighlightBlock>
-      ) : (
-        legacyReceivableRow && (
-          <HighlightBlock
-            tone="danger"
-            icon={<AlertTriangle className="h-3.5 w-3.5 text-destructive" />}
-            title="Director / Related Party Loans Receivable"
-            subtitle="The ATO will scrutinise growth in related-party loans as evidence of funds being withdrawn from the business."
-          >
-            <SingleRowTable row={legacyReceivableRow} years={years} currentPeriod={cp} />
-          </HighlightBlock>
-        )
       )}
 
       {/* ATO-related liabilities group */}
@@ -121,8 +116,8 @@ export function BalanceSheetCompareTable({ comparison }: Props) {
         <table className="w-full text-xs">
           <TableHeader years={years} currentPeriod={cp} />
           <tbody>
-            {nonCurrentAssetsWithoutDirectorLoans && (
-              <SectionRows section={nonCurrentAssetsWithoutDirectorLoans} years={years} currentPeriod={cp} />
+            {nonCurrentAssetsSection && (
+              <SectionRows section={nonCurrentAssetsSection} years={years} currentPeriod={cp} />
             )}
             {sectionsWithoutNCA.map((section) => (
               <SectionRows key={section.category} section={section} years={years} currentPeriod={cp} />
@@ -224,15 +219,23 @@ function DiffRowEl({
   years,
   hasCurrentPeriod,
   isBold,
+  topBorder,
 }: {
   row: DiffRow
   years: number[]
   hasCurrentPeriod: boolean
   isBold?: boolean
+  /** A total under the lines it adds up. */
+  topBorder?: boolean
 }) {
   const bold = isBold || BS_BOLD_KEYS.has(row.canonicalKey)
   return (
-    <tr className={cn('border-b border-border/30 last:border-0', { 'bg-primary/15': bold })}>
+    <tr
+      className={cn('border-b border-border/30 last:border-0', {
+        'bg-primary/15': bold,
+        'border-t-2 border-t-foreground/40': topBorder,
+      })}
+    >
       <td className={cn('py-1.5 pl-3 pr-4 text-foreground/80', { 'font-semibold text-foreground': bold })}>
         {row.label}
       </td>
@@ -295,6 +298,37 @@ function NetAssetsRow({
         </td>
       )}
     </tr>
+  )
+}
+
+/** Several rows under one header, for a highlighted block. */
+function RowsTable({
+  rows,
+  years,
+  currentPeriod,
+}: {
+  rows: { row: DiffRow; bold?: boolean; topBorder?: boolean }[]
+  years: number[]
+  currentPeriod: CurrentPeriodSnapshot | null
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border/40 bg-primary/10">
+      <table className="w-full text-xs">
+        <TableHeader years={years} currentPeriod={currentPeriod} />
+        <tbody>
+          {rows.map(({ row, bold, topBorder }) => (
+            <DiffRowEl
+              key={row.canonicalKey}
+              row={row}
+              years={years}
+              hasCurrentPeriod={Boolean(currentPeriod)}
+              isBold={bold}
+              topBorder={topBorder}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
