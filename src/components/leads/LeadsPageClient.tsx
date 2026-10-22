@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Download, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -12,9 +13,11 @@ import { AddLeadDialog } from '@/components/leads/AddLeadDialog'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
-import { hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
+import { EMPTY_FILTERS, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
 import { pageRangeLabel } from '@/lib/leads/pagination'
+import { ALL_VIEWS, LEAD_VIEWS, type LeadView } from '@/lib/leads/constants'
+import { cn } from '@/lib/utils'
 import type { Lead } from '@/types/leads'
 
 const SEARCH_DEBOUNCE_MS = 250
@@ -29,6 +32,12 @@ interface LeadsPageClientProps {
   page: number
   pageCount: number
   pageSize: number
+  /** The header tab: which stages are listed (LEAD_VIEWS). None: every stage. */
+  view?: LeadView
+  /** The Source filter's options, from the data. */
+  sources?: string[]
+  /** Leads per tab, with the other filters applied. No tabs without them. */
+  counts?: Record<LeadView, number>
 }
 
 /**
@@ -51,7 +60,11 @@ export function LeadsPageClient({
   page,
   pageCount,
   pageSize,
+  view,
+  sources = [],
+  counts,
 }: LeadsPageClientProps) {
+  const screen = view ? LEAD_VIEWS[view] : null
   const router = useRouter()
   const { getLead, syncFromServer } = useLeads()
 
@@ -99,7 +112,7 @@ export function LeadsPageClient({
 
   function resetFilters() {
     setTerm('')
-    startTransition(() => router.replace('/leads', { scroll: false }))
+    startTransition(() => router.replace(leadsHref({ ...EMPTY_FILTERS, view: view ?? 'all' }), { scroll: false }))
   }
 
   function handleExport() {
@@ -151,8 +164,22 @@ export function LeadsPageClient({
   const active = hasActiveFilters(filters)
 
   // Server order, store values. The store wins on a field somebody has just
-  // edited; the server decides which rows are here and in what order.
-  const rows = useMemo(() => leads.map((lead) => getLead(lead.id) ?? lead), [leads, getLead])
+  // edited; the server decides which rows are here and in what order. A lead
+  // whose stage has just changed to another screen's leaves this one.
+  const current = useMemo(() => leads.map((lead) => getLead(lead.id) ?? lead), [leads, getLead])
+  const rows = useMemo(
+    () => (screen ? current.filter((lead) => screen.stages.includes(lead.stage)) : current),
+    [current, screen],
+  )
+  // Re-read once per lead that left, so the counts are right and the page
+  // fills up again — once, not on every render while the re-read is on its way.
+  const movedAway = current.filter((lead) => !rows.includes(lead)).map((lead) => lead.id).join(',')
+  const refreshedFor = useRef('')
+  useEffect(() => {
+    if (!movedAway || refreshedFor.current === movedAway) return
+    refreshedFor.current = movedAway
+    startTransition(() => router.refresh())
+  }, [movedAway, router])
 
   const selectedLeads = useMemo(
     () => rows.filter((lead) => selectedIds.has(lead.id)),
@@ -187,6 +214,39 @@ export function LeadsPageClient({
         </div>
       </div>
 
+      {/* One tab per group of stages, each with its count. The tab is in the
+          URL (?tab=), so it can be bookmarked; the other filters carry over. */}
+      {counts && (
+        <nav aria-label="Lead stages" className="-mt-2 mb-4 flex flex-wrap gap-1 border-b border-border">
+          {ALL_VIEWS.map((tab) => {
+            const selected = tab === (view ?? 'leads')
+            return (
+              <Link
+                key={tab}
+                href={leadsHref({ ...filters, view: tab }, 1)}
+                aria-current={selected ? 'page' : undefined}
+                className={cn(
+                  '-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors',
+                  selected
+                    ? 'border-accent font-medium text-foreground'
+                    : 'border-transparent text-foreground/60 hover:text-foreground',
+                )}
+              >
+                {LEAD_VIEWS[tab].label}
+                <span
+                  className={cn(
+                    'rounded-full px-1.5 text-xs tabular-nums',
+                    selected ? 'bg-accent/15 text-accent' : 'bg-surface text-foreground/50',
+                  )}
+                >
+                  {counts[tab]}
+                </span>
+              </Link>
+            )
+          })}
+        </nav>
+      )}
+
       {/* Search and filters read as one toolbar rather than controls adrift on
           the page background. */}
       <div className="mb-4 rounded-xl border border-border bg-card p-3">
@@ -206,7 +266,7 @@ export function LeadsPageClient({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <LeadFilters filters={filters} onChange={navigate} onReset={resetFilters} />
+          <LeadFilters filters={filters} onChange={navigate} onReset={resetFilters} sources={sources} />
           {pageCount > 1 && (
             <p className="shrink-0 text-xs tabular-nums text-foreground/50">
               {pageRangeLabel(page, pageSize, total)}

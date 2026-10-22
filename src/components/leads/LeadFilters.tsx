@@ -3,33 +3,18 @@
 // Flag is only used by the follow-up toggle, hidden for now.
 import { X } from 'lucide-react'
 import { Select } from '@/components/ui/Select'
-import {
-  ALL_STAGES,
-  FILTERABLE_SOURCES,
-  AU_STATES,
-  DATE_RANGES,
-  DEBT_FLOORS,
-  SORT_OPTIONS,
-  SOURCE_META,
-  STAGE_META,
-} from '@/lib/leads/constants'
+import { AU_STATES, DATE_RANGES, DEBT_FLOORS, SORT_OPTIONS } from '@/lib/leads/constants'
 import { hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 
 interface LeadFiltersProps {
   filters: LeadFilterState
   onChange: (patch: Partial<LeadFilterState>) => void
   onReset: () => void
+  /** Every source the leads show, from the data (getLeadSourceOptions). */
+  sources?: string[]
 }
 
-const STAGE_OPTIONS = ALL_STAGES.map((stage) => ({
-  value: stage,
-  label: STAGE_META[stage].label,
-}))
 const STATE_OPTIONS = AU_STATES.map((state) => ({ value: state, label: state }))
-const SOURCE_OPTIONS = FILTERABLE_SOURCES.map((source) => ({
-  value: source,
-  label: SOURCE_META[source].label,
-}))
 // Floors, not brackets: "show me the big ones", not "exactly this bracket".
 const DEBT_OPTIONS = DEBT_FLOORS.map((f) => ({ value: f.value, label: f.label }))
 const DATE_OPTIONS = DATE_RANGES.filter((range) => range.value !== 'any').map((range) => ({
@@ -39,26 +24,21 @@ const DATE_OPTIONS = DATE_RANGES.filter((range) => range.value !== 'any').map((r
 
 /**
  * Additive filters on one row. Follow-up is a toggle here, not a separate page.
+ * No stage filter: each stage has its own screen (LEAD_VIEWS).
  *
  * Widths go on each Select's wrapper: `className` reaches the inner <select>,
  * and the wrapper is what this flex row actually lays out.
  */
-export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
+export function LeadFilters({ filters, onChange, onReset, sources = [] }: LeadFiltersProps) {
   const active = hasActiveFilters(filters)
+  // A source in the URL that no lead shows any more is still offered, so the
+  // select never reads as unfiltered while it filters.
+  const sourceOptions = [...sources, ...(filters.source !== 'all' && !sources.includes(filters.source) ? [filters.source] : [])].map(
+    (source) => ({ value: source, label: source }),
+  )
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
-        aria-label="Filter by stage"
-        selectSize="sm"
-        wrapperClassName="w-[132px]"
-        placeholder="All stages"
-        value={filters.stage === 'all' ? '' : filters.stage}
-        onChange={(event) =>
-          onChange({ stage: (event.target.value || 'all') as LeadFilterState['stage'] })
-        }
-        options={STAGE_OPTIONS}
-      />
       <Select
         aria-label="Filter by state"
         selectSize="sm"
@@ -88,9 +68,9 @@ export function LeadFilters({ filters, onChange, onReset }: LeadFiltersProps) {
         placeholder="All sources"
         value={filters.source === 'all' ? '' : filters.source}
         onChange={(event) =>
-          onChange({ source: (event.target.value || 'all') as LeadFilterState['source'] })
+          onChange({ source: event.target.value || 'all' })
         }
-        options={SOURCE_OPTIONS}
+        options={sourceOptions}
       />
       <Select
         aria-label="Filter by date added"

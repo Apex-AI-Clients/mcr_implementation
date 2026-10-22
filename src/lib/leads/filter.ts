@@ -1,4 +1,5 @@
-import type { AuState, Lead, LeadSource, LeadStage } from '@/types/leads'
+import type { AuState, Lead } from '@/types/leads'
+import { LEAD_VIEWS, sourceName, type LeadView } from './constants'
 import { needsFollowUp } from './followUp'
 import { compareByDebtDesc, normalisePhone, overlapsFloor } from './format'
 import { parseLooseDebt } from './ingest'
@@ -10,9 +11,11 @@ import { parseLooseDebt } from './ingest'
 
 export interface LeadFilterState {
   search: string
-  stage: LeadStage | 'all'
+  /** The screen (its stages); 'all' only outside the list pages. Not a filter: no Clear. */
+  view: LeadView | 'all'
   state: AuState | 'all'
-  source: LeadSource | 'all'
+  /** A source as the list shows it (sourceName): typed by staff or delivered. */
+  source: string | 'all'
   /** Minimum debt in whole dollars, or null for any. An overlap test, not equality. */
   debtFloor: number | null
   /** Days back from now, or 'any'. Applies to date added. */
@@ -24,7 +27,7 @@ export interface LeadFilterState {
 
 export const EMPTY_FILTERS: LeadFilterState = {
   search: '',
-  stage: 'all',
+  view: 'all',
   state: 'all',
   source: 'all',
   debtFloor: null,
@@ -40,7 +43,6 @@ export const EMPTY_FILTERS: LeadFilterState = {
 export function hasActiveFilters(filters: LeadFilterState): boolean {
   return (
     filters.search.trim() !== '' ||
-    filters.stage !== 'all' ||
     filters.state !== 'all' ||
     filters.source !== 'all' ||
     filters.debtFloor !== null ||
@@ -124,9 +126,9 @@ export function filterLeads(
   return leads
     .filter((lead) => {
       if (!matchesSearch(lead, filters.search)) return false
-      if (filters.stage !== 'all' && lead.stage !== filters.stage) return false
+      if (filters.view !== 'all' && !LEAD_VIEWS[filters.view].stages.includes(lead.stage)) return false
       if (filters.state !== 'all' && !mightBeInState(lead, filters.state)) return false
-      if (filters.source !== 'all' && lead.source !== filters.source) return false
+      if (filters.source !== 'all' && sourceName(lead).toLowerCase() !== filters.source.trim().toLowerCase()) return false
       if (filters.debtFloor !== null && !overlapsFloor(lead, filters.debtFloor)) return false
       if (cutoff !== null && new Date(lead.lastEnquiryAt).getTime() < cutoff) return false
       if (filters.followUpOnly && !needsFollowUp(lead, now)) return false

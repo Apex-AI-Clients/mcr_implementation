@@ -6,6 +6,7 @@ import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, type LeadFilterState } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
+import type { LeadView } from '@/lib/leads/constants'
 
 /**
  * Smoke test for the leads list.
@@ -95,6 +96,9 @@ interface RenderOptions {
   page?: number
   pageCount?: number
   persistence?: LeadsPersistence
+  sources?: string[]
+  view?: LeadView
+  counts?: Record<LeadView, number>
 }
 
 function renderList(options: RenderOptions = {}) {
@@ -109,6 +113,9 @@ function renderList(options: RenderOptions = {}) {
           page={options.page ?? 1}
           pageCount={options.pageCount ?? 1}
           pageSize={10}
+          sources={options.sources ?? ['Facebook', 'Website', 'Added manually']}
+          view={options.view}
+          counts={options.counts}
         />
       </LeadsStoreProvider>
     </ToastProvider>,
@@ -200,17 +207,17 @@ describe('LeadsPageClient', () => {
     expect(replace).toHaveBeenCalledTimes(1)
   })
 
-  it('offers only the sources that can actually arrive', async () => {
-    // No live form posts as google_form, so offering it is a filter that can
-    // only ever return nothing. The other three stay.
-    renderList()
+  it('offers the sources the data has, typed ones included, and no stage filter', async () => {
+    // Built from the data (getLeadSourceOptions), never a fixed list: a
+    // source staff typed on a manual lead is offered like any other.
+    renderList({ sources: ['Facebook', 'Referral — Dave', 'Website'] })
     const source = screen.getByLabelText('Filter by source')
     const options = Array.from(source.querySelectorAll('option')).map((o) => o.textContent)
 
+    expect(options).toEqual(expect.arrayContaining(['Facebook', 'Referral — Dave', 'Website']))
     expect(options).not.toContain('Google Form')
-    expect(options).toEqual(
-      expect.arrayContaining(['Facebook', 'Website', 'Added manually']),
-    )
+    // Each stage has its own screen.
+    expect(screen.queryByLabelText('Filter by stage')).toBeNull()
   })
 
   it('carries a filter into the URL', async () => {
@@ -225,10 +232,10 @@ describe('LeadsPageClient', () => {
     const user = userEvent.setup()
     renderList({ filters: { state: 'NSW' } })
 
-    await user.selectOptions(screen.getByLabelText('Filter by stage'), 'prospect')
+    await user.selectOptions(screen.getByLabelText('Filter by source'), 'Facebook')
     const href = lastReplace()
     expect(href).toContain('state=NSW')
-    expect(href).toContain('stage=prospect')
+    expect(href).toContain('source=Facebook')
   })
 
   it('returns to page 1 when a filter changes', async () => {
@@ -307,6 +314,34 @@ describe('LeadsPageClient', () => {
     const select = inTable().getByLabelText('Stage for Marcus Oyelaran')
     await user.selectOptions(select, 'prospect')
     await waitFor(() => expect((select as HTMLSelectElement).value).toBe('prospect'))
+  })
+
+  it('shows a tab per group of stages in the header, each with its count and a bookmarkable link', () => {
+    renderList({
+      view: 'prospects',
+      filters: { view: 'prospects', state: 'NSW' },
+      counts: { leads: 27, prospects: 2, clients: 9, non_proceeding: 2, do_not_contact: 0 },
+    })
+    const nav = screen.getByRole('navigation', { name: 'Lead stages' })
+    const tabs = Array.from(nav.querySelectorAll('a'))
+    expect(tabs.map((a) => a.textContent)).toEqual(['Leads27', 'Prospects2', 'Clients9', 'Non-proceeding2', 'Do not contact0'])
+    expect(tabs.map((a) => a.getAttribute('href'))).toEqual([
+      '/leads?state=NSW',
+      '/leads?tab=prospects&state=NSW',
+      '/leads?tab=clients&state=NSW',
+      '/leads?tab=non-proceeding&state=NSW',
+      '/leads?tab=do-not-contact&state=NSW',
+    ])
+    expect(tabs[1].getAttribute('aria-current')).toBe('page')
+  })
+
+  it('moves a lead off the Leads screen when its stage changes, and re-reads the list', async () => {
+    const user = userEvent.setup()
+    renderList({ view: 'leads', leads: LEADS.filter((lead) => lead.stage === 'lead') })
+
+    await user.selectOptions(inTable().getByLabelText('Stage for Marcus Oyelaran'), 'prospect')
+    await waitFor(() => expect(inTable().queryByLabelText('Stage for Marcus Oyelaran')).toBeNull())
+    expect(refresh).toHaveBeenCalled()
   })
 
   it('groups the stage select into Pipeline and Closed', () => {

@@ -3,7 +3,7 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { toLead, toLeadActivity, toLeadSubmission } from '@/lib/leads/rowMappers'
 import { normalisePhone } from '@/lib/leads/format'
 import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
-import { DATE_RANGES } from '@/lib/leads/constants'
+import { ALL_SOURCES, ALL_VIEWS, DATE_RANGES, LEAD_VIEWS, sourceName, sourcesNamed, type LeadView } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
 import { debtSearchAmount, type LeadFilterState } from '@/lib/leads/filter'
 import type {
@@ -48,6 +48,14 @@ function escapeForOr(term: string): string {
     .trim()
 }
 
+/** A value inside a PostgREST `in.(…)` list, quoted so commas and brackets stay text. */
+function quoteForIn(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+/** A staff-typed source counts as none when blank, as sourceName() reads it. */
+const NO_SOURCE_LABEL = 'source_label.is.null,source_label.eq.""'
+
 /**
  * The subset of the Supabase builder these helpers touch.
  *
@@ -64,11 +72,18 @@ export interface LeadsFilterable<T> {
   order(column: string, options: { ascending: boolean; nullsFirst?: boolean }): T
 }
 
-/** Apply every active filter. Shared by the page read and the export. */
+/**
+ * Apply every active filter. Shared by the page read and the export.
+ *
+ * `sourceLabels`: the stored staff-typed sources matching filters.source by
+ * name (sourceLabelsNamed), so the source filter is an exact list, never a
+ * pattern built from what was typed.
+ */
 export function withFilters<T extends LeadsFilterable<T>>(
   query: T,
   filters: LeadFilterState,
   now: Date,
+  sourceLabels: string[] = [],
 ): T {
   let built = query
 
@@ -98,14 +113,23 @@ export function withFilters<T extends LeadsFilterable<T>>(
     )
   }
 
-  if (filters.stage !== 'all') built = built.eq('stage', filters.stage)
+  if (filters.view !== 'all') built = built.in('stage', LEAD_VIEWS[filters.view].stages)
   if (filters.state !== 'all') {
     // mightBeInState() in SQL: the state itself, or a grouping containing it.
     // filters.state is an AuState from searchParams' allow-list, so it is safe
     // inside the filter string.
     built = built.or(`state.eq.${filters.state},meta_state_options.cs.{${filters.state}}`)
   }
-  if (filters.source !== 'all') built = built.eq('source', filters.source)
+  if (filters.source !== 'all') {
+    // sourceName() in SQL: a staff-typed source by that name, or no typed
+    // source and a delivered source with that label.
+    const delivered = sourcesNamed(filters.source)
+    const parts = [
+      ...(sourceLabels.length ? [`source_label.in.(${sourceLabels.map(quoteForIn).join(',')})`] : []),
+      ...(delivered.length ? [`and(or(${NO_SOURCE_LABEL}),source.in.(${delivered.join(',')}))`] : []),
+    ]
+    built = parts.length ? built.or(parts.join(',')) : built.in('id', [])
+  }
 
   if (filters.debtFloor !== null) {
     // The same overlap test as overlapsFloor(): an open-ended range qualifies
@@ -174,10 +198,11 @@ export async function getLeadsPage(input: {
   const now = input.now ?? new Date()
   const supabase = getSupabaseServerClient()
 
+  const labels = await sourceLabelsNamed(input.filters.source)
   function read(page: number) {
     const [from, to] = rangeFor(page, pageSize)
     const base = supabase.from('leads').select('*', { count: 'exact' })
-    return withSort(withFilters(base, input.filters, now), input.filters.sort).range(from, to)
+    return withSort(withFilters(base, input.filters, now, labels), input.filters.sort).range(from, to)
   }
 
   const first = await read(Math.max(1, input.page))
@@ -259,10 +284,11 @@ export async function getLeadsForExport(
   const now = options.now ?? new Date()
   const supabase = getSupabaseServerClient()
 
+  const labels = await sourceLabelsNamed(filters.source)
   const all: Lead[] = []
   for (let from = 0; from < maxRows; from += chunkSize) {
     const base = supabase.from('leads').select('*')
-    const { data, error } = await withSort(withFilters(base, filters, now), filters.sort).range(
+    const { data, error } = await withSort(withFilters(base, filters, now, labels), filters.sort).range(
       from,
       from + chunkSize - 1,
     )
@@ -464,6 +490,66 @@ export async function getLeadIdForClient(clientId: string): Promise<string | nul
  * needs the number and nothing else, and reading every lead to call `.length`
  * on it was both wasteful and capped at 1000.
  */
+/**
+ * How many leads each header tab holds, with the other filters (search,
+ * state, source, …) as they are, so a search shows which tab its matches are in.
+ */
+export async function getLeadViewCounts(filters: LeadFilterState, now: Date = new Date()): Promise<Record<LeadView, number>> {
+  const supabase = getSupabaseServerClient()
+  const labels = await sourceLabelsNamed(filters.source)
+  async function count(view: LeadView): Promise<number> {
+    const base = supabase.from('leads').select('id', { count: 'exact', head: true })
+    const { count: n, error } = await withFilters(base, { ...filters, view }, now, labels)
+    if (error) console.error('[getLeadViewCounts]', error.message)
+    return n ?? 0
+  }
+  const counts = await Promise.all(ALL_VIEWS.map(count))
+  return Object.fromEntries(ALL_VIEWS.map((view, i) => [view, counts[i]])) as Record<LeadView, number>
+}
+
+/** Every staff-typed source, as stored. Few: typed by hand, one per lead at most. */
+async function storedSourceLabels(): Promise<string[]> {
+  const supabase = getSupabaseServerClient()
+  const { data, error } = await supabase.from('leads').select('source_label').not('source_label', 'is', null)
+  if (error) {
+    console.error('[storedSourceLabels]', error.message)
+    return []
+  }
+  return [...new Set((data ?? []).map((row) => row.source_label as string))]
+}
+
+/** The stored typed sources that read as this name (sourceName), for withFilters. */
+export async function sourceLabelsNamed(name: string | 'all'): Promise<string[]> {
+  if (name === 'all') return []
+  const wanted = name.trim().toLowerCase()
+  return (await storedSourceLabels()).filter((label) => label.trim().toLowerCase() === wanted)
+}
+
+/**
+ * The Source filter's options: every source a lead shows (sourceName), from
+ * the data — staff-typed ones included — never a fixed list. One option per
+ * name whatever its case; delivered labels keep their own spelling.
+ */
+export async function getLeadSourceOptions(): Promise<string[]> {
+  const supabase = getSupabaseServerClient()
+  const [labels, ...counts] = await Promise.all([
+    storedSourceLabels(),
+    ...ALL_SOURCES.map((source) =>
+      supabase.from('leads').select('id', { count: 'exact', head: true }).eq('source', source).or(NO_SOURCE_LABEL),
+    ),
+  ])
+  const names = new Map<string, string>()
+  ALL_SOURCES.forEach((source, i) => {
+    const name = sourceName({ source })
+    if ((counts[i].count ?? 0) > 0) names.set(name.toLowerCase(), name)
+  })
+  for (const label of labels) {
+    const name = label.trim()
+    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name)
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b, 'en-AU', { sensitivity: 'base' }))
+}
+
 export async function getOpenLeadCount(): Promise<number> {
   const supabase = getSupabaseServerClient()
   const { count, error } = await supabase

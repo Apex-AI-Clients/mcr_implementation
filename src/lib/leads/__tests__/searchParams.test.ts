@@ -18,9 +18,9 @@ describe('parseLeadQuery', () => {
   it('reads a full URL', () => {
     const { filters: parsed, page } = parseLeadQuery({
       q: 'whitlock',
-      stage: 'prospect',
+      tab: 'prospects',
       state: 'QLD',
-      source: 'facebook',
+      source: 'Facebook',
       debt: '150000',
       added: '30',
       followup: '1',
@@ -30,9 +30,9 @@ describe('parseLeadQuery', () => {
 
     expect(parsed).toEqual({
       search: 'whitlock',
-      stage: 'prospect',
+      view: 'prospects',
       state: 'QLD',
-      source: 'facebook',
+      source: 'Facebook',
       debtFloor: 150_000,
       dateRange: '30',
       followUpOnly: true,
@@ -43,7 +43,8 @@ describe('parseLeadQuery', () => {
 
   it('defaults an empty URL to an unfiltered first page', () => {
     const { filters: parsed, page } = parseLeadQuery({})
-    expect(parsed).toEqual(EMPTY_FILTERS)
+    // It opens on the Leads tab.
+    expect(parsed).toEqual({ ...EMPTY_FILTERS, view: 'leads' })
     expect(page).toBe(1)
   })
 
@@ -51,16 +52,14 @@ describe('parseLeadQuery', () => {
     // Each of these would otherwise reach a .eq() and either match nothing or
     // error, for a URL nobody can reproduce from the UI.
     const { filters: parsed } = parseLeadQuery({
-      stage: 'archived',
+      tab: 'archived',
       state: 'Auckland',
-      source: 'tiktok',
       added: 'forever',
       sort: 'name',
     })
 
-    expect(parsed.stage).toBe('all')
+    expect(parsed.view).toBe('leads')
     expect(parsed.state).toBe('all')
-    expect(parsed.source).toBe('all')
     expect(parsed.dateRange).toBe('any')
     expect(parsed.sort).toBe('recent')
   })
@@ -89,9 +88,19 @@ describe('parseLeadQuery', () => {
   })
 
   it('takes the first of a repeated param instead of failing', () => {
-    // ?stage=lead&stage=prospect arrives as an array.
-    expect(parseLeadQuery({ stage: ['lead', 'prospect'] }).filters.stage).toBe('lead')
-    expect(parseLeadQuery({ stage: [] }).filters.stage).toBe('all')
+    // ?state=NSW&state=VIC arrives as an array.
+    expect(parseLeadQuery({ state: ['NSW', 'VIC'] }).filters.state).toBe('NSW')
+    expect(parseLeadQuery({ state: [] }).filters.state).toBe('all')
+  })
+
+  it('takes any source by name, trimmed and capped (the options come from the data)', () => {
+    expect(parseLeadQuery({ source: '  Referral — Dave ' }).filters.source).toBe('Referral — Dave')
+    expect(parseLeadQuery({ source: 'x'.repeat(300) }).filters.source).toHaveLength(100)
+    expect(parseLeadQuery({ source: '   ' }).filters.source).toBe('all')
+  })
+
+  it('ignores the old stage param: each stage has its own screen', () => {
+    expect(parseLeadQuery({ stage: 'prospect' }).filters).toEqual({ ...EMPTY_FILTERS, view: 'leads' })
   })
 
   it('caps the search term', () => {
@@ -128,9 +137,9 @@ describe('buildLeadQuery', () => {
   it('round-trips every filter', () => {
     const original = filters({
       search: 'whitlock',
-      stage: 'prospect',
+      view: 'prospects',
       state: 'QLD',
-      source: 'website',
+      source: 'Website',
       debtFloor: 250_000,
       dateRange: '7',
       followUpOnly: true,
@@ -153,5 +162,12 @@ describe('leadsHref', () => {
   it('carries the filters into a page link', () => {
     // A page link that drops the filter silently widens the result set.
     expect(leadsHref(filters({ state: 'NSW' }), 3)).toBe('/leads?state=NSW&page=3')
+  })
+
+  it('names the tab in the URL, so it can be bookmarked; Leads needs none', () => {
+    expect(leadsHref(filters({ view: 'clients', state: 'NSW' }), 2)).toBe('/leads?tab=clients&state=NSW&page=2')
+    expect(leadsHref(filters({ view: 'do_not_contact' }), 1)).toBe('/leads?tab=do-not-contact')
+    expect(leadsHref(filters({ view: 'leads' }), 1)).toBe('/leads')
+    expect(parseLeadQuery({ tab: 'non-proceeding' }).filters.view).toBe('non_proceeding')
   })
 })

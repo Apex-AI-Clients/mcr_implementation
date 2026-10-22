@@ -8,7 +8,8 @@ import {
   mightBeInState,
   type LeadFilterState,
 } from '../filter'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadStage } from '@/types/leads'
+import { ALL_STAGES, ALL_VIEWS, LEAD_VIEWS } from '../constants'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z')
 const DAY_MS = 86_400_000
@@ -81,9 +82,8 @@ describe('hasActiveFilters', () => {
 
   it.each([
     ['search', { search: 'marcus' }],
-    ['stage', { stage: 'prospect' as const }],
     ['state', { state: 'NSW' as const }],
-    ['source', { source: 'website' as const }],
+    ['source', { source: 'Website' }],
     ['debtFloor', { debtFloor: 250_000 }],
     ['dateRange', { dateRange: '30' }],
     ['followUpOnly', { followUpOnly: true }],
@@ -156,7 +156,7 @@ describe('filterLeads', () => {
         ids(filterLeads(leads, withFilters({ debtFloor: 100_000, state: 'NSW' }), NOW)),
       ).toEqual(['b'])
       expect(
-        ids(filterLeads(leads, withFilters({ debtFloor: 100_000, stage: 'lead' }), NOW)),
+        ids(filterLeads(leads, withFilters({ debtFloor: 100_000, view: 'leads' }), NOW)),
       ).toEqual([])
     })
   })
@@ -204,9 +204,11 @@ describe('filterLeads', () => {
   })
 
   it.each([
-    [{ stage: 'lead' as const }, ['a', 'c']],
+    [{ view: 'leads' as const }, ['a', 'c']],
+    [{ view: 'prospects' as const }, ['b']],
+    [{ view: 'non_proceeding' as const }, ['d']],
     [{ state: 'NSW' as const }, ['b', 'c']],
-    [{ source: 'website' as const }, ['b', 'd']],
+    [{ source: 'Website' }, ['b', 'd']],
     [{ dateRange: '30' }, ['a', 'b']],
   ])('applies %o', (patch, expected) => {
     expect(ids(filterLeads(leads, withFilters(patch), NOW))).toEqual(expected)
@@ -225,10 +227,10 @@ describe('filterLeads', () => {
 
   it('combines filters additively', () => {
     expect(
-      ids(filterLeads(leads, withFilters({ state: 'NSW', source: 'facebook' }), NOW)),
+      ids(filterLeads(leads, withFilters({ state: 'NSW', source: 'Facebook' }), NOW)),
     ).toEqual(['c'])
     expect(
-      ids(filterLeads(leads, withFilters({ state: 'NSW', source: 'facebook', dateRange: '30' }), NOW)),
+      ids(filterLeads(leads, withFilters({ state: 'NSW', source: 'Facebook', dateRange: '30' }), NOW)),
     ).toEqual([])
   })
 
@@ -363,5 +365,33 @@ describe('filterLeads — debt search', () => {
   it('finds an open-ended range above its floor', () => {
     const found = filterLeads(leads, withFilters({ search: '750,000' }), NOW).map((l) => l.id)
     expect(found).toEqual(['big'])
+  })
+})
+
+describe('filterLeads — source by the name the list shows', () => {
+  const typed = makeLead({ id: 't', source: 'manual', sourceLabel: 'Facebook' })
+  const delivered = makeLead({ id: 'f', source: 'facebook', sourceLabel: null })
+  const referral = makeLead({ id: 'r', source: 'manual', sourceLabel: 'Referral — Dave' })
+
+  it('puts a typed "Facebook" with the delivered Facebook leads, whatever its case', () => {
+    expect(filterLeads([typed, delivered, referral], withFilters({ source: 'facebook' }), NOW).map((l) => l.id).sort()).toEqual(['f', 't'])
+  })
+
+  it('finds a source only staff typed', () => {
+    expect(filterLeads([typed, delivered, referral], withFilters({ source: 'Referral — Dave' }), NOW).map((l) => l.id)).toEqual(['r'])
+  })
+
+  it('does not count a typed source under its delivered one', () => {
+    expect(filterLeads([typed, referral], withFilters({ source: 'Added manually' }), NOW)).toEqual([])
+  })
+})
+
+describe('lead tabs', () => {
+  it('puts every stage in exactly one tab, so no lead can disappear', () => {
+    const stages: LeadStage[] = ['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact']
+    for (const stage of stages) {
+      expect(ALL_VIEWS.filter((view) => LEAD_VIEWS[view].stages.includes(stage))).toHaveLength(1)
+    }
+    expect(ALL_VIEWS.flatMap((view) => LEAD_VIEWS[view].stages).sort()).toEqual([...ALL_STAGES].sort())
   })
 })

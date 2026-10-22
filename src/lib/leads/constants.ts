@@ -58,6 +58,39 @@ export const STAGE_PATH: LeadStage[] = ['lead', 'prospect', 'client', 'converted
 export const OFF_RAMP_STAGES: LeadStage[] = ['non_proceeding', 'do_not_contact']
 
 // ============================================================
+// Screens
+// ============================================================
+
+/**
+ * The tabs in the Leads page header, one table and one count each (Gabby,
+ * 21–22 Oct). The page opens on Leads, which holds only the working stage;
+ * a lead moves to its tab when its stage changes. Every stage is in exactly
+ * one tab (a test holds this). `tab` is the URL value, so a tab can be
+ * bookmarked; Leads has none.
+ */
+export type LeadView = 'leads' | 'prospects' | 'clients' | 'non_proceeding' | 'do_not_contact'
+
+export const LEAD_VIEWS: Record<LeadView, { label: string; tab: string; stages: LeadStage[] }> = {
+  leads: { label: 'Leads', tab: 'leads', stages: ['lead'] },
+  prospects: { label: 'Prospects', tab: 'prospects', stages: ['prospect'] },
+  clients: { label: 'Clients', tab: 'clients', stages: ['client', 'converted'] },
+  non_proceeding: { label: 'Non-proceeding', tab: 'non-proceeding', stages: ['non_proceeding'] },
+  do_not_contact: { label: 'Do not contact', tab: 'do-not-contact', stages: ['do_not_contact'] },
+}
+
+/** The tab a URL names, or null for none or an unknown one. */
+export function viewForTab(tab: string | null): LeadView | null {
+  return (Object.keys(LEAD_VIEWS) as LeadView[]).find((view) => LEAD_VIEWS[view].tab === tab) ?? null
+}
+
+export const ALL_VIEWS = Object.keys(LEAD_VIEWS) as LeadView[]
+
+/** The screen a lead in this stage is listed on. */
+export function viewForStage(stage: LeadStage): LeadView {
+  return ALL_VIEWS.find((view) => LEAD_VIEWS[view].stages.includes(stage)) ?? 'leads'
+}
+
+// ============================================================
 // Sources
 // ============================================================
 
@@ -71,17 +104,20 @@ export const SOURCE_META: Record<LeadSource, { label: string; short: string }> =
 export const ALL_SOURCES = Object.keys(SOURCE_META) as LeadSource[]
 
 /**
- * Sources offered in the list filter.
- *
- * Google Form is deliberately absent: no live form posts as that source, so
- * offering it is a filter that can only ever return nothing. It stays in
- * SOURCE_META and in the webhook's accepted sources — the column still has to
- * render a label for any historical row, and the endpoint still has to accept
- * one if a form is wired up again.
+ * A lead's source as the Source filter lists it: what staff typed when they
+ * typed one, else the delivered source's label. The filter's options are
+ * built from the data (queries.ts), so a typed "Referral" is offered, and a
+ * typed "Facebook" sits with the Facebook leads.
  */
-export const FILTERABLE_SOURCES: LeadSource[] = ALL_SOURCES.filter(
-  (source) => source !== 'google_form',
-)
+export function sourceName(lead: { source: LeadSource; sourceLabel?: string | null }): string {
+  return lead.sourceLabel?.trim() || SOURCE_META[lead.source].label
+}
+
+/** Delivered sources whose label is this name (case-insensitive). */
+export function sourcesNamed(name: string): LeadSource[] {
+  const wanted = name.trim().toLowerCase()
+  return ALL_SOURCES.filter((source) => SOURCE_META[source].label.toLowerCase() === wanted)
+}
 
 // ============================================================
 // Lead-gen partners

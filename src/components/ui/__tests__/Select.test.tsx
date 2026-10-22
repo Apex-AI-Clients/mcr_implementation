@@ -71,7 +71,6 @@ describe('Select', () => {
 
 describe('LeadFilters layout', () => {
   const LABELS = [
-    'Filter by stage',
     'Filter by state',
     'Filter by source',
     'Filter by date added',
@@ -91,11 +90,11 @@ describe('LeadFilters layout', () => {
   it('keeps every control in one flex row', () => {
     render(<LeadFilters filters={EMPTY_FILTERS} onChange={() => {}} onReset={() => {}} />)
 
-    const row = screen.getByLabelText('Filter by stage').closest('div')?.parentElement
+    const row = screen.getByLabelText('Filter by state').closest('div')?.parentElement
       ?.parentElement
     expect(row?.className).toContain('flex')
 
-    // All four selects are siblings on that row. The follow-up toggle used to
+    // The selects are siblings on that row (no stage filter: each stage has its own screen). The follow-up toggle used to
     // be asserted here too — it is commented out in LeadFilters for now.
     for (const label of LABELS) {
       expect(screen.getByLabelText(label).closest('div')?.parentElement?.parentElement).toBe(row)

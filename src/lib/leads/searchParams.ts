@@ -1,6 +1,6 @@
-import { ALL_SOURCES, ALL_STAGES, AU_STATES, DATE_RANGES, DEBT_FLOORS } from './constants'
+import { AU_STATES, DATE_RANGES, DEBT_FLOORS, LEAD_VIEWS, viewForTab } from './constants'
 import { EMPTY_FILTERS, type LeadFilterState } from './filter'
-import type { AuState, LeadSource, LeadStage } from '@/types/leads'
+import type { AuState } from '@/types/leads'
 
 /**
  * The list's state, carried in the URL.
@@ -11,7 +11,7 @@ import type { AuState, LeadSource, LeadStage } from '@/types/leads'
  * lives in React state except the search box's own keystrokes.
  *
  * Every value is validated on the way in. These params are typed by hand and
- * arrive from bookmarks, so an unknown stage has to fall back to "all" rather
+ * arrive from bookmarks, so an unknown state has to fall back to "all" rather
  * than reach a query builder.
  */
 
@@ -25,7 +25,8 @@ export interface LeadQuery {
 
 const PARAM = {
   search: 'q',
-  stage: 'stage',
+  // The header tab. None is Leads, where the page opens.
+  view: 'tab',
   state: 'state',
   source: 'source',
   debtFloor: 'debt',
@@ -35,7 +36,7 @@ const PARAM = {
   page: 'page',
 } as const
 
-/** A repeated param (`?stage=a&stage=b`) keeps its first value rather than failing. */
+/** A repeated param (`?state=a&state=b`) keeps its first value rather than failing. */
 function one(raw: string | string[] | undefined): string | null {
   if (Array.isArray(raw)) return raw.length ? raw[0] : null
   return raw ?? null
@@ -63,9 +64,10 @@ export function parseLeadQuery(params: RawSearchParams): LeadQuery {
   return {
     filters: {
       search: (one(params[PARAM.search]) ?? '').slice(0, 200),
-      stage: oneOf<LeadStage>(params[PARAM.stage], ALL_STAGES) ?? 'all',
+      view: viewForTab(one(params[PARAM.view])) ?? 'leads',
       state: oneOf<AuState>(params[PARAM.state], AU_STATES) ?? 'all',
-      source: oneOf<LeadSource>(params[PARAM.source], ALL_SOURCES) ?? 'all',
+      // Any source in the data, typed by staff included: matched by name, never built into SQL unescaped.
+      source: (one(params[PARAM.source]) ?? '').trim().slice(0, 100) || 'all',
       debtFloor,
       dateRange:
         oneOf(
@@ -90,7 +92,7 @@ export function buildLeadQuery(filters: LeadFilterState, page: number = 1): stri
   const search = filters.search.trim()
 
   if (search) params.set(PARAM.search, search)
-  if (filters.stage !== 'all') params.set(PARAM.stage, filters.stage)
+  if (filters.view !== 'all' && filters.view !== 'leads') params.set(PARAM.view, LEAD_VIEWS[filters.view].tab)
   if (filters.state !== 'all') params.set(PARAM.state, filters.state)
   if (filters.source !== 'all') params.set(PARAM.source, filters.source)
   if (filters.debtFloor !== null) params.set(PARAM.debtFloor, String(filters.debtFloor))
@@ -102,7 +104,7 @@ export function buildLeadQuery(filters: LeadFilterState, page: number = 1): stri
   return params.toString()
 }
 
-/** `/leads`, `/leads?page=3`, … — what the pagination links and filters point at. */
+/** `/leads`, `/leads?tab=prospects&page=3`, … — what the tabs, pagination links and filters point at. */
 export function leadsHref(filters: LeadFilterState, page: number = 1): string {
   const query = buildLeadQuery(filters, page)
   return query ? `/leads?${query}` : '/leads'
