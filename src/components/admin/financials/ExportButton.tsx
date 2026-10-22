@@ -10,6 +10,8 @@ interface Props {
   comparison: FinancialsComparison
   aiSummary: string | null
   clientName: string
+  /** Locked, with the reason as its tooltip (a comparison that needs review). */
+  lockedReason?: string | null
 }
 
 function csvCell(v: string | number | null | undefined): string {
@@ -164,7 +166,7 @@ function downloadCsv(content: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function ExportButton({ comparison, aiSummary, clientName }: Props) {
+export function ExportButton({ comparison, aiSummary, clientName, lockedReason = null }: Props) {
   function handleExport() {
     const csv = buildCsv(comparison, aiSummary, clientName)
     const safeName = clientName.replace(/[^a-z0-9-]+/gi, '_')
@@ -172,7 +174,7 @@ export function ExportButton({ comparison, aiSummary, clientName }: Props) {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleExport}>
+    <Button variant="ghost" size="sm" onClick={handleExport} disabled={lockedReason !== null} title={lockedReason ?? undefined}>
       <Download className="h-3.5 w-3.5" />
       Export CSV
     </Button>

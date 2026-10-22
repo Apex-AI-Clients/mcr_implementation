@@ -40,6 +40,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     slots,
     failures,
     { data: company },
+    { data: figuresChecked },
   ] = await Promise.all([
     supabase
       .from('documents')
@@ -77,6 +78,13 @@ export default async function FinancialsComparisonPage({ params }: Props) {
     loadColumnFailures(supabase, id),
     // "The company" / "The trust" in the financial points.
     supabase.from('company_details').select('entity_type').eq('client_id', id).maybeSingle(),
+    // The "I've checked these figures" tick (hardChecks.ts).
+    supabase
+      .from('sbr_readiness_reviews')
+      .select('fingerprint, reviewed_by, reviewed_at')
+      .eq('client_id', id)
+      .eq('item', 'financials')
+      .maybeSingle(),
   ])
 
   // A job that outlived its function is dead: close it rather than resume it.
@@ -135,6 +143,11 @@ export default async function FinancialsComparisonPage({ params }: Props) {
         overrideYears={overrideYearOptions()}
         initialStaleSince={comparisonRow?.stale_since ?? null}
         entityType={company?.entity_type ?? null}
+        initialFiguresChecked={
+          figuresChecked
+            ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at }
+            : null
+        }
         showDiagnostics={financialsDiagnosticsEnabled()}
       />
     </div>

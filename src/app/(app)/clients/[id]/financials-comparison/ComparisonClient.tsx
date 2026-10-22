@@ -23,7 +23,8 @@ import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { StatementCoverageTable } from '@/components/admin/financials/StatementCoverageTable'
 import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
 import { FinancialPointsPanel } from '@/components/admin/financials/FinancialPointsPanel'
-import { ProfitReviewNotice } from '@/components/admin/financials/ProfitReviewNotice'
+import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBanner'
+import { exportsLocked, hardCheckFailures, type FiguresChecked } from '@/lib/financials/hardChecks'
 import { financialPoints } from '@/lib/sbr/financialPoints'
 import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
@@ -63,6 +64,8 @@ interface Props {
   showDiagnostics: boolean
   /** company_details.entity_type, for "The company" / "The trust" in the financial points. */
   entityType: string | null
+  /** The stored "I've checked these figures" tick, whatever build it covers (hardChecks.ts). */
+  initialFiguresChecked?: FiguresChecked | null
 }
 
 interface ExtractError {
@@ -105,11 +108,13 @@ export function ComparisonClient({
   initialStaleSince,
   showDiagnostics,
   entityType,
+  initialFiguresChecked = null,
 }: Props) {
   const router = useRouter()
   const [comparison, setComparison] = useState<FinancialsComparison | null>(initialComparison)
   const [aiSummary, setAiSummary] = useState<string | null>(initialAiSummary)
   const [generatedAt, setGeneratedAt] = useState<string | null>(initialGeneratedAt)
+  const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [extraction, setExtraction] = useState<ExtractionState>(initialExtraction)
   const [errors, setErrors] = useState<ExtractError[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -299,6 +304,12 @@ export function ComparisonClient({
 
   const running = phase === 'pending' || phase === 'processing'
   const hasComparison = comparison !== null
+  // A failed hard check locks the PDF and CSV until a staff member ticks that
+  // they checked the figures (hardChecks.ts); the tick covers this build only.
+  const failures = hardCheckFailures(comparison?.checks)
+  const exportLock = exportsLocked(failures, generatedAt, figuresChecked)
+    ? `Needs review: tick "I've checked these figures against the source documents" first.`
+    : null
   const periodRangeLabel = comparison
     ? `${formatIso(comparison.periodRange.start)} to ${formatIso(comparison.periodRange.end)}`
     : null
@@ -380,11 +391,13 @@ export function ComparisonClient({
               <ExportPdfButton
                 targetId="financials-export-root"
                 fileName={`${clientName}_financials_comparison`}
+                lockedReason={exportLock}
               />
               <ExportButton
                 comparison={comparison}
                 aiSummary={aiSummary}
                 clientName={clientName}
+                lockedReason={exportLock}
               />
               <Button variant="ghost" size="sm" onClick={runFull} loading={running} disabled={running}>
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -531,7 +544,13 @@ export function ComparisonClient({
             </div>
           )}
 
-          <ProfitReviewNotice checks={comparison.checks ?? []} />
+          <NeedsReviewBanner
+            clientId={clientId}
+            failures={failures}
+            generatedAt={generatedAt}
+            checked={figuresChecked}
+            onChecked={setFiguresChecked}
+          />
 
           <ScorecardTiles comparison={comparison} />
 

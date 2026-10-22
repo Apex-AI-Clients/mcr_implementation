@@ -26,9 +26,11 @@ interface Props {
   targetId: string
   /** Base filename (without extension); sanitised before use. */
   fileName: string
+  /** Locked, with the reason as its tooltip (e.g. a comparison that needs review). */
+  lockedReason?: string | null
 }
 
-export function ExportPdfButton({ targetId, fileName }: Props) {
+export function ExportPdfButton({ targetId, fileName, lockedReason = null }: Props) {
   const [downloading, setDownloading] = useState(false)
 
   async function handleDownload() {
@@ -171,7 +173,13 @@ export function ExportPdfButton({ targetId, fileName }: Props) {
   }
 
   return (
-    <Button variant="ghost" size="sm" onClick={handleDownload} disabled={downloading}>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={handleDownload}
+      disabled={downloading || lockedReason !== null}
+      title={lockedReason ?? undefined}
+    >
       {downloading ? (
         'Exporting…'
       ) : (
