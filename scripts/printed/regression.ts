@@ -26,8 +26,11 @@ export function readManifest(): Manifest {
 /** <alias>/<documentId>.expected.json: the as-printed rows, written by hand from the PDF. */
 export interface ExpectedDocument {
   documentId: string
-  /** 'unverified': written but not yet checked against the PDF by staff. */
-  status: 'verified' | 'unverified'
+  /**
+   * 'unverified': written but not yet checked by staff. 'verified (cross-checked)':
+   * also agrees with the hand-verified figures:check answer key.
+   */
+  status: 'verified' | 'verified (cross-checked)' | 'unverified'
   checkedBy: string
   statements: {
     kind: string

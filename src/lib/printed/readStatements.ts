@@ -66,6 +66,15 @@ function isHeaderLine(line: PdfLine): boolean {
   return line.cells.length > 0 && line.cells.every((c) => isHeaderCell(c.text)) && line.cells.some((c) => YEAR.test(c.text) || /^total$/i.test(c.text.trim()))
 }
 
+/** A wrapped header line's cells end where the header's columns end. */
+const HEADER_ALIGN = 15
+
+function isHeaderContinuation(line: PdfLine, anchors: Anchor[]): boolean {
+  return line.cells.every(
+    (c) => /[a-z0-9]/i.test(c.text) && isHeaderCell(c.text) && !HEADER_WORD.test(c.text.trim()) && anchors.some((a) => !a.notes && Math.abs(a.right - c.right) <= HEADER_ALIGN),
+  )
+}
+
 function isSentence(text: string): boolean {
   const words = text.trim().split(/\s+/)
   return words.length >= 8 || (words.length >= 2 && /\.$/.test(text.trim()) && !/\d\.$/.test(text.trim()))
@@ -109,6 +118,14 @@ function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated:
       .map((c) => ({ header: c.text.trim(), x: c.x, right: c.right, notes: NOTES_HEADER.test(c.text.trim()) }))
     titleBlock = lines.slice(0, header).map((l) => l.text)
     first = header + 1
+    // A header that wraps ("1 JULY 2025-4 MAY" over "2026"): its next line joins the column above.
+    while (first < lines.length && isHeaderContinuation(lines[first], anchors)) {
+      for (const cell of lines[first].cells) {
+        const anchor = anchors.find((a) => Math.abs(a.right - cell.right) <= HEADER_ALIGN)!
+        anchor.header = `${anchor.header} ${cell.text.trim()}`
+      }
+      first++
+    }
   } else if (previous && previous.kind === title.kind && previous.title === title.title) {
     // A continuation page that does not repeat the header: the previous page's columns.
     anchors = previous.anchors

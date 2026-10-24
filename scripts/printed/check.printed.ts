@@ -97,7 +97,7 @@ it('reads every regression PDF exactly as printed', async () => {
         continue
       }
       const diffs = compare(read, expected)
-      lines.push(`  ${diffs.length ? 'FAIL' : 'pass'}${expected.status === 'unverified' ? ' (unverified)' : ''}  ${summary}`)
+      lines.push(`  ${diffs.length ? 'FAIL' : 'pass'} (${expected.status})  ${summary}`)
       for (const d of diffs) lines.push(`    ${d}`)
       if (diffs.length) failed++
     }

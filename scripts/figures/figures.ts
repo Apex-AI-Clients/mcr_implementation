@@ -28,7 +28,8 @@ export const DIR = path.resolve(process.cwd(), 'verified-figures')
 export interface ClientEntry {
   /** A neutral name, never the client's ("client-a", "trust-test"). */
   alias: string
-  clientId: string
+  /** Null for a client deleted from the database whose PDFs are kept locally (scripts/printed). */
+  clientId: string | null
 }
 
 export interface Snapshot {

@@ -98,6 +98,18 @@ export function titlePeriod(lines: string[]): TitlePeriod {
   return { start: null, end: null, months: null }
 }
 
+/** The last date printed in the text: a header "1 JULY 2025-4 MAY 2026" ends on 4 May 2026. */
+export function findLastDate(text: string): string | null {
+  let last: string | null = null
+  for (let rest = text; rest; ) {
+    const m = DAY_MONTH_YEAR.exec(rest) ?? MONTH_DAY_YEAR.exec(rest)
+    if (!m) break
+    last = findDate(m[0])
+    rest = rest.slice(m.index + m[0].length)
+  }
+  return last ?? findDate(text)
+}
+
 const YEAR_ONLY = /^(?:FY\s?)?(\d{4})$/i
 
 /**
@@ -105,7 +117,7 @@ const YEAR_ONLY = /^(?:FY\s?)?(\d{4})$/i
  * says (the caller reports the header as unread).
  */
 export function columnPeriod(header: string, title: TitlePeriod, kind: PrintedStatementKind): PrintedColumn | null {
-  let end: string | null = findDate(header)
+  let end: string | null = findLastDate(header)
   let start: string | null = null
   const year = YEAR_ONLY.exec(header.trim())
   if (!end && year) {

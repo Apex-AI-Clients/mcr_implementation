@@ -59,6 +59,15 @@ describe('periods', () => {
     expect(columnPeriod('30 JUNE 2023', titlePeriod(['As at 30 June 2024']), 'balance_sheet')).toMatchObject({ periodEnd: '2023-06-30', financialYear: 2023 })
   })
 
+  it('ends a ranged header on its last date', () => {
+    expect(columnPeriod('1 JULY 2025-4 MAY 2026', titlePeriod(['For the period 1 July 2025 to 4 May 2026']), 'profit_and_loss')).toMatchObject({
+      periodStart: '2025-07-01',
+      periodEnd: '2026-05-04',
+      kind: 'current_period',
+      financialYear: 2026,
+    })
+  })
+
   it('reads anything shorter than 12 months to 30 June as the current period', () => {
     expect(columnPeriod('JULY-SEPT 2026', titlePeriod(['For the 3 months ended 30 September 2026']), 'profit_and_loss')).toMatchObject({
       periodStart: '2026-07-01',
@@ -196,6 +205,25 @@ describe('readStatements', () => {
     pages[0][17] = row(25, 'Total expenses', R2, '25,000', '30,000')
     const failures = verifyStatements(readStatements(pages).statements).filter((c) => c.status !== 'ok' && c.status !== 'rounding')
     expect(failures.find((c) => c.label === 'Total expenses' && c.column === 0)?.status).toBe('wrong_column')
+  })
+
+  it('joins a header that wraps onto a second line to its column', () => {
+    const read = readStatements([
+      [
+        line([57, 200, 'Profit and Loss']),
+        line([57, 300, 'For the period 1 July 2025 to 4 May 2026']),
+        line([483, 539, '1 JULY 2025-4 MAY']),
+        line([524, 539, '2026']),
+        line([57, 120, 'Trading Income']),
+        row(64, 'Sales', [539], '1,000.50'),
+        row(64, 'Total Trading Income', [539], '1,000.50'),
+      ],
+    ])
+    expect(read.issues).toEqual([])
+    expect(read.statements[0].columns).toEqual([
+      { header: '1 JULY 2025-4 MAY 2026', periodStart: '2025-07-01', periodEnd: '2026-05-04', kind: 'current_period', financialYear: 2026 },
+    ])
+    expect(read.statements[0].rows.map((r) => r.label)).toEqual(['Trading Income', 'Sales', 'Total Trading Income'])
   })
 
   it('leaves out cover, contents, cash flow and notes pages', () => {

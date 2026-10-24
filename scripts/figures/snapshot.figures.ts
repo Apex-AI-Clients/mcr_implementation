@@ -22,7 +22,8 @@ it('snapshots the stored statements of the test clients', async () => {
   const supabase = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
   const only = process.env.FIGURES_ALIAS?.trim()
-  const clients = readClients().filter((c) => !only || c.alias === only)
+  // A client deleted from the database has no rows to copy: its PDFs are checked locally (scripts/printed).
+  const clients = readClients().filter((c): c is { alias: string; clientId: string } => c.clientId !== null && (!only || c.alias === only))
   if (only && clients.length === 0) throw new Error(`No client "${only}" in verified-figures/clients.json`)
   for (const { alias, clientId } of clients) {
     const [slots, records, company, lodgement, dpnDocuments, dpnNotices] = await Promise.all([
