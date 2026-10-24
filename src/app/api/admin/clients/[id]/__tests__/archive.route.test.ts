@@ -29,7 +29,12 @@ function req(method: string) {
   return new NextRequest('http://localhost/api/admin/clients/cl_1', { method })
 }
 
-function mockDb(client: { id: string; archived_at: string | null; auth_user_id?: string | null } | null) {
+function mockDb(
+  client: { id: string; archived_at: string | null; auth_user_id?: string | null } | null,
+  convertedLeads: { id: string; activities: { type: string; body: string; created_at: string }[] }[] = [],
+) {
+  const leadUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
+  const activityInsert = vi.fn(() => Promise.resolve({ error: null }))
   const update = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
     eq: () => Promise.resolve({ error: null }),
   }))
@@ -47,13 +52,25 @@ function mockDb(client: { id: string; archived_at: string | null; auth_user_id?:
     documents: {
       select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/a.pdf' }] }) }),
     },
+    leads: {
+      select: () => ({ eq: () => Promise.resolve({ data: convertedLeads.map(({ id }) => ({ id })), error: null }) }),
+      update: leadUpdate,
+    },
+    lead_activities: {
+      select: () => ({
+        eq: (_: string, leadId: string) => ({
+          eq: () => Promise.resolve({ data: convertedLeads.find((l) => l.id === leadId)?.activities ?? [], error: null }),
+        }),
+      }),
+      insert: activityInsert,
+    },
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => tables[table],
     storage: { from: () => ({ remove: storageRemove }) },
     auth: { admin: { deleteUser } },
   } as never)
-  return { update, remove, storageRemove, deleteUser }
+  return { update, remove, storageRemove, deleteUser, leadUpdate, activityInsert }
 }
 
 beforeEach(() => {
@@ -145,5 +162,22 @@ describe('DELETE — permanent, from the Archive only', () => {
     expect(response.status).toBe(200)
     expect(storageRemove).toHaveBeenCalledWith(['cl_1/a.pdf'])
     expect(remove).toHaveBeenCalled()
+  })
+
+  it('sets the converted lead back to its stage before conversion, with a note, before the file goes', async () => {
+    const { remove, leadUpdate, activityInsert } = mockDb({ id: 'cl_1', archived_at: '2026-09-30T00:00:00.000Z', auth_user_id: null }, [
+      {
+        id: 'lead-1',
+        activities: [{ type: 'stage_change', body: 'Converted to a client file in the restructuring workspace. Stage before: Prospect.', created_at: '2026-09-01T00:00:00Z' }],
+      },
+    ])
+    const response = await DELETE(req('DELETE'), PARAMS)
+
+    expect(response.status).toBe(200)
+    expect(leadUpdate).toHaveBeenCalledWith(expect.objectContaining({ stage: 'prospect', converted_client_id: null }))
+    expect(activityInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ lead_id: 'lead-1', type: 'stage_change', body: expect.stringMatching(/^Client file deleted on .+\. Stage set back to Prospect\.$/) }),
+    )
+    expect(leadUpdate.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0])
   })
 })

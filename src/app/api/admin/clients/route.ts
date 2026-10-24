@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { normaliseClientPhone } from '@/lib/clients/phone'
 import { CompanyDetailsSchema, companyDetailsInsert } from '@/lib/clients/companyDetails'
 import { staffAuthorName } from '@/lib/auth/staff'
-import { CONVERSION_ACTIVITY_BODY } from '@/lib/leads/constants'
+import { conversionBody } from '@/lib/leads/clientDeleted'
+import type { LeadStage } from '@/types/leads'
 
 /**
  * Step 2 of the intake, optionally supplied at creation.
@@ -164,7 +165,8 @@ export async function POST(req: NextRequest) {
         id: crypto.randomUUID(),
         leadId,
         type: 'stage_change' as const,
-        body: CONVERSION_ACTIVITY_BODY,
+        // With the stage it came from: a deleted client file sets the lead back to it.
+        body: conversionBody(leadStage as LeadStage | null),
         // From the session, so a request cannot claim to be somebody else.
         author: staffAuthorName(staff),
         createdAt: at,

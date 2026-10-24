@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { normaliseClientPhone } from '@/lib/clients/phone'
+import { staffAuthorName } from '@/lib/auth/staff'
+import { releaseLeadsOfDeletedClient } from '@/lib/leads/clientDeleted'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -127,12 +129,18 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       }
     }
 
-    // 2. Delete the clients row. FK CASCADE handles documents, accountant_details,
+    // 2. The lead converted into this file goes back to its stage before
+    // conversion, with a note of when and by whom. Before the row goes:
+    // converted_client_id is ON DELETE SET NULL, and the link is the only way
+    // to find it. If this fails, nothing is deleted.
+    await releaseLeadsOfDeletedClient(supabase, id, staffAuthorName(admin))
+
+    // 3. Delete the clients row. FK CASCADE handles documents, accountant_details,
     // company_details, and document_chunks.
     const { error: deleteError } = await supabase.from('clients').delete().eq('id', id)
     if (deleteError) throw deleteError
 
-    // 3. Remove the auth user so the email can be reused. ON DELETE SET NULL on
+    // 4. Remove the auth user so the email can be reused. ON DELETE SET NULL on
     // clients.auth_user_id means this can also be done before step 2; doing it
     // last keeps the auth user around if the DB delete fails.
     if (client.auth_user_id) {

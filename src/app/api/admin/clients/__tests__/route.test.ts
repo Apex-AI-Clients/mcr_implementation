@@ -199,7 +199,8 @@ describe('POST /api/admin/clients — converting a lead', () => {
       expect.objectContaining({
         lead_id: LEAD_ID,
         type: 'stage_change',
-        body: 'Converted to a client file in the restructuring workspace.',
+        // With the stage it came from, to go back to if the file is ever deleted.
+        body: 'Converted to a client file in the restructuring workspace. Stage before: Prospect.',
         // From the session, not the request.
         author: 'gabby',
       }),
