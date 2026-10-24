@@ -9,8 +9,10 @@ import { noticeTypeLabel } from '@/lib/dpn/stored'
  *
  * "Predict SBR outcome" opens once every item has finished: Ready, or Failed
  * (the work ran and could not produce a result, which no amount of waiting
- * changes). There is no review step: staff asked for the checklist to report
- * status only, not hand them things to sign off.
+ * changes). One review step: financial statements whose comparison fails a
+ * hard check (hardChecks.ts) are Needs review until a staff member ticks "I've
+ * checked these figures against the source documents" on the comparison page
+ * — the same tick that unlocks its PDF and CSV.
  */
 
 export type ReadinessKey = 'financials' | 'lodgement' | 'dpn'
@@ -19,7 +21,7 @@ export type ReadinessKey = 'financials' | 'lodgement' | 'dpn'
  * work to do (files never read, a comparison out of date) and nothing is
  * running — offered as "Run now".
  */
-export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed'
+export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed' | 'needs_review'
 
 export const READINESS_LABEL: Record<ReadinessKey, string> = {
   financials: 'Financial statements',
@@ -33,6 +35,7 @@ export const STATUS_LABEL: Record<ReadinessStatus, string> = {
   processing: 'Processing',
   ready: 'Ready',
   failed: 'Failed',
+  needs_review: 'Needs review',
 }
 
 export interface ReadinessItem {
@@ -56,6 +59,8 @@ export interface ReadinessInput {
     comparison: { generatedAt: string; staleSince: string | null } | null
     /** Files never read (or overridden since), or a comparison out of date. */
     outOfDate: boolean
+    /** Failed hard checks on the comparison no staff tick covers (hardChecks.ts exportsLocked). */
+    unreviewedFailures: number
   }
   lodgement: {
     /** CSVs uploaded under the integrated client account. */
@@ -112,6 +117,15 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   if (f.outOfDate) return item(input, 'financials', 'not_started', null, href)
   // Read, but fewer than two annual statements came out: nothing to compare.
   if (!f.comparison) return item(input, 'financials', 'failed', null, href)
+  if (f.unreviewedFailures > 0) {
+    return item(
+      input,
+      'financials',
+      'needs_review',
+      `${f.unreviewedFailures === 1 ? 'A figure does' : `${f.unreviewedFailures} figures do`} not reconcile. Check them against the source documents and tick the box on the comparison page.`,
+      href,
+    )
+  }
   return item(input, 'financials', 'ready', null, href)
 }
 

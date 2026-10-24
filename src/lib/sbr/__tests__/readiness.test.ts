@@ -65,6 +65,7 @@ function input(over: {
       files: [file()],
       comparison: { generatedAt: '2026-10-17T00:00:00Z', staleSince: null },
       outOfDate: false,
+      unreviewedFailures: 0,
       ...over.financials,
     },
     lodgement: {
@@ -122,7 +123,15 @@ describe('financial statements', () => {
     expect(r.canPredict).toBe(true)
   })
 
-  it('never has a line under the heading, in any state', () => {
+  it('is Needs review, holding the prediction up, while a failed hard check is not ticked', () => {
+    const r = computeReadiness(input({ financials: { unreviewedFailures: 2 } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', canRunNow: false })
+    expect(statusOf(r, 'financials').detail).toMatch(/2 figures do not reconcile/)
+    expect(r.canPredict).toBe(false)
+    expect(r.waitingFor).toContain('Financial statements: needs review')
+  })
+
+  it('never has a line under the heading, in any state but Needs review', () => {
     for (const over of [{ files: [] }, { outOfDate: true }, { comparison: null }, {}]) {
       expect(statusOf(computeReadiness(input({ financials: over })), 'financials').detail).toBeNull()
     }

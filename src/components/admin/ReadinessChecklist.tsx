@@ -22,13 +22,14 @@ const BADGE: Record<ReadinessStatus, 'muted' | 'accent' | 'success' | 'destructi
   processing: 'accent',
   ready: 'success',
   failed: 'destructive',
+  needs_review: 'destructive',
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {
   if (status === 'ready') return <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
   if (status === 'processing') return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden="true" />
   if (status === 'not_started') return <Clock className="h-4 w-4 shrink-0 text-foreground/40" aria-hidden="true" />
-  if (status === 'failed') return <XCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+  if (status === 'failed' || status === 'needs_review') return <XCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
   return <Circle className="h-4 w-4 shrink-0 text-foreground/25" aria-hidden="true" />
 }
 

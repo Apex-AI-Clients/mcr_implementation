@@ -2,11 +2,12 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
+import { exportsLocked, hardCheckFailures } from '@/lib/financials/hardChecks'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { periodOverrideOf } from '@/lib/financials/periodOverride'
 import { lastReadAt } from '@/lib/financials/readState'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { FinancialDocumentKind, StoredStatementSlot } from '@/lib/financials/types'
+import type { FinancialDocumentKind, FinancialsComparison, StoredStatementSlot } from '@/lib/financials/types'
 import { decideWork } from '@/lib/analysis/autoRun'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
@@ -32,6 +33,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     { data: analyses },
     { data: noticeRows },
     { data: company },
+    { data: figuresChecked },
     liveJob,
   ] = await Promise.all([
     supabase
@@ -46,7 +48,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .order('uploaded_at', { ascending: false }),
     loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
     supabase.from('financial_document_extractions').select('document_id, kind, extracted_at, warnings').eq('client_id', clientId),
-    supabase.from('financial_comparisons').select('generated_at, stale_since').eq('client_id', clientId).maybeSingle(),
+    supabase.from('financial_comparisons').select('generated_at, stale_since, computed').eq('client_id', clientId).maybeSingle(),
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, analysed_at')
@@ -54,6 +56,12 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .order('analysed_at', { ascending: false }),
     supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
     supabase.from('company_details').select('acn_number, directors').eq('client_id', clientId).maybeSingle(),
+    supabase
+      .from('sbr_readiness_reviews')
+      .select('fingerprint, reviewed_by, reviewed_at')
+      .eq('client_id', clientId)
+      .eq('item', 'financials')
+      .maybeSingle(),
     findLiveComparisonJob(supabase, clientId).catch(() => null),
   ])
 
@@ -92,6 +100,16 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     })),
   })
 
+  // A failed hard check nobody has ticked: the same rule as the export lock.
+  const failures = hardCheckFailures((comparison?.computed as unknown as FinancialsComparison | null)?.checks)
+  const unreviewedFailures = exportsLocked(
+    failures,
+    comparison?.generated_at ?? null,
+    figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null,
+  )
+    ? failures.length
+    : 0
+
   // ── ATO activity statement ──────────────────────────────────────────────
   const csvs = all.filter(
     (d) =>
@@ -129,6 +147,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       // whose read failed is recorded as read-and-failed, and a comparison
       // that could not be built at all is Failed: neither is waiting work.
       outOfDate: work.extract.length > 0 || comparison?.stale_since != null,
+      unreviewedFailures,
     },
     lodgement: {
       csvCount: csvs.length,
