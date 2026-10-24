@@ -6,6 +6,7 @@ import {
   PROFIT_IDENTITY,
   documentChecks,
   entityChecks,
+  netProfitFinding,
   restatementChecks,
   rollForwardChecks,
   runChecks,
@@ -578,5 +579,43 @@ describe('roll-forward with distributions read from the P&L', () => {
     const [low] = rollForwardChecks(years(500_000 + profit - 70_000, 40_000), [2025])
     expect(low).toMatchObject({ severity: 'warning' })
     expect(low.message).toMatch(/distributions and dividends \$40,000/)
+  })
+})
+
+describe('net profit identity: income − all expense sections = the printed net profit line', () => {
+  type L = import('../types').StatementLine
+  const line = (section: L['section'], rawLabel: string, value: number, canonicalKey: string | null = null, isTotal = false): L => ({ section, rawLabel, value, canonicalKey, isTotal })
+  const base = [
+    line('income', 'Sales', 500_000.5),
+    line('cogs', 'Purchases', 100_000),
+    line('expenses', 'Wages', 150_000.25),
+    line('expenses', 'Total Expenses', 150_000.25, 'totals.totalExpenses', true),
+    line('expenses', 'Depreciation', 20_000),
+  ]
+
+  it('passes when the printed net profit is income less every expense section (cents kept)', () => {
+    expect(netProfitFinding([...base, line('incomeTotals', 'Net Profit', 230_000.25, 'totals.profitBeforeTax', true)])).toBeNull()
+  })
+
+  it('passes on a net profit printed after tax', () => {
+    const lines = [...base, line('incomeTax', 'Income tax expense', 30_000), line('incomeTotals', 'NET PROFIT AFTER TAX', 200_000.25, 'totals.netProfitAfterTax', true)]
+    expect(netProfitFinding(lines)).toBeNull()
+  })
+
+  it('fails when an expense section was read as income (a misread "Other Expenses" block)', () => {
+    const misread = base.map((l) => (l.rawLabel === 'Depreciation' ? { ...l, section: 'otherIncome' as const } : l))
+    const finding = netProfitFinding([...misread, line('incomeTotals', 'NET EARNINGS', 230_000.25, 'totals.netProfitAfterTax', true)])
+    expect(finding?.group).toBe(PROFIT_IDENTITY)
+    expect(finding?.message).toContain('"NET EARNINGS" is $230,000')
+  })
+
+  it('checks nothing when no net profit line is printed', () => {
+    expect(netProfitFinding([...base, line('incomeTotals', 'Profit before income tax', 1, 'totals.profitBeforeTax', true)])).toBeNull()
+    expect(netProfitFinding(base)).toBeNull()
+  })
+
+  it('tolerates $5, not more', () => {
+    expect(netProfitFinding([...base, line('incomeTotals', 'Net Profit', 230_005, 'totals.profitBeforeTax', true)])).toBeNull()
+    expect(netProfitFinding([...base, line('incomeTotals', 'Net Profit', 230_006, 'totals.profitBeforeTax', true)])).not.toBeNull()
   })
 })

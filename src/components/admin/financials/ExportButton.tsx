@@ -4,7 +4,7 @@ import { currentPeriodLabel, yearSpan } from '@/lib/financials/periodLabels'
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ATO_LIABILITY_KEYS } from '@/lib/financials/schema'
-import type { FinancialsComparison } from '@/lib/financials/types'
+import type { FinancialCheck, FinancialsComparison } from '@/lib/financials/types'
 
 interface Props {
   comparison: FinancialsComparison
@@ -12,6 +12,10 @@ interface Props {
   clientName: string
   /** Locked, with the reason as its tooltip (a comparison that needs review). */
   lockedReason?: string | null
+  /** The failed hard checks (hardChecks.ts), listed under NEEDS REVIEW. */
+  failures?: FinancialCheck[]
+  /** "Reviewed by X on <date>" once a staff member ticked the failures. */
+  reviewedBy?: string | null
 }
 
 function csvCell(v: string | number | null | undefined): string {
@@ -33,7 +37,13 @@ function fmtCurrency(v: number | null | undefined): string {
   return v < 0 ? `($${abs})` : `$${abs}`
 }
 
-function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, clientName: string): string {
+function buildCsv(
+  comparison: FinancialsComparison,
+  aiSummary: string | null,
+  clientName: string,
+  failures: FinancialCheck[],
+  reviewedBy: string | null,
+): string {
   const lines: string[] = []
   const years = comparison.years
   const cp = comparison.currentPeriod ?? null
@@ -46,6 +56,15 @@ function buildCsv(comparison: FinancialsComparison, aiSummary: string | null, cl
     lines.push(csvRow('Current period', currentPeriodLabel(cp)))
   }
   lines.push('')
+
+  if (failures.length > 0) {
+    lines.push(csvRow('NEEDS REVIEW'))
+    for (const c of failures) {
+      lines.push(csvRow(c.financialYear === null ? '' : c.currentPeriod ? 'Current period' : `FY${c.financialYear}`, c.message))
+    }
+    if (reviewedBy) lines.push(csvRow(`${reviewedBy}: checked against the source documents`))
+    lines.push('')
+  }
 
   // Headlines
   lines.push(csvRow('HEADLINES'))
@@ -166,9 +185,9 @@ function downloadCsv(content: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-export function ExportButton({ comparison, aiSummary, clientName, lockedReason = null }: Props) {
+export function ExportButton({ comparison, aiSummary, clientName, lockedReason = null, failures = [], reviewedBy = null }: Props) {
   function handleExport() {
-    const csv = buildCsv(comparison, aiSummary, clientName)
+    const csv = buildCsv(comparison, aiSummary, clientName, failures, reviewedBy)
     const safeName = clientName.replace(/[^a-z0-9-]+/gi, '_')
     downloadCsv(csv, `${safeName}_financials_comparison.csv`)
   }

@@ -112,6 +112,9 @@ export function arithmeticFindings(
     }
   }
 
+  const netProfit = netProfitFinding(s.incomeStatement.lines ?? [])
+  if (netProfit) out.push(netProfit)
+
   // Net profit after distributions = profit − distributions (±$5).
   const ap = s.incomeStatement.appropriations
   const [after, distributions] = [ap?.netProfitAfterDistributions, ap?.distributions].map(num)
@@ -183,6 +186,39 @@ export function arithmeticFindings(
     })
   }
   return out
+}
+
+/** A printed bottom line: "Net profit", "Net loss", "NET EARNINGS", "Net income (loss)"… */
+const NET_PROFIT_LABEL = /\bnet\b.*\b(profit|loss|earnings|income|surplus|deficit)\b/i
+const NET_PROFIT_KEYS = new Set(['totals.profitBeforeTax', 'totals.netProfitAfterTax'])
+
+/**
+ * Income − expenses (every expense section: cost of sales, expenses, other
+ * expenses) = the printed net profit line (±$5), from the lines as read.
+ * Only when a net profit line is printed; nothing is checked against a
+ * computed profit. The income tax lines are tried both ways, as the printed
+ * line may be before or after tax.
+ */
+export function netProfitFinding(lines: StatementLine[]): ArithmeticFinding | null {
+  const printed = [...lines]
+    .reverse()
+    .find((l) => l.isTotal && typeof l.value === 'number' && NET_PROFIT_KEYS.has(l.canonicalKey ?? '') && NET_PROFIT_LABEL.test(l.rawLabel))
+  if (!printed || lines.every((l) => l.isTotal)) return null
+  const sum = (sections: string[]) =>
+    lines
+      .filter((l) => !l.isTotal && sections.includes(l.section) && typeof l.value === 'number')
+      .reduce((total, l) => total + (l.value as number), 0)
+  const income = sum(['income', 'otherIncome'])
+  const expenses = sum(['cogs', 'expenses'])
+  const tax = sum(['incomeTax'])
+  const net = printed.value as number
+  if ([income - expenses, income - expenses - tax].some((r) => Math.abs(r - net) <= PROFIT_TOLERANCE)) return null
+  return {
+    statement: 'income_statement',
+    kind: 'totals_reconciliation',
+    group: PROFIT_IDENTITY,
+    message: `Income ${money(income)} − expenses ${money(expenses)} (all expense sections)${tax ? ` − income tax ${money(tax)}` : ''} = ${money(income - expenses - tax)}, but the printed "${printed.rawLabel}" is ${money(net)}.`,
+  }
 }
 
 function documentIdsOf(m: MergedStatement, half?: StatementHalfKey): string[] {

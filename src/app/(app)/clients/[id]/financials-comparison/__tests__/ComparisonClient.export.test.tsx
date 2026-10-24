@@ -137,11 +137,11 @@ describe('Needs review banner and export lock', () => {
     expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('shows neither in production (no SHOW_FINANCIALS_DIAGNOSTICS)', () => {
+  it('shows both in production too (no SHOW_FINANCIALS_DIAGNOSTICS): not a diagnostic', () => {
     renderPage({ showDiagnostics: false, initial: withHardFailure })
-    expect(screen.queryByText(/Needs review/)).toBeNull()
-    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(false)
-    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText(/Needs review: a figure does not reconcile/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
 

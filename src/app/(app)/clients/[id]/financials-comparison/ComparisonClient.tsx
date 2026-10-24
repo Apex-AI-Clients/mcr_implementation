@@ -23,7 +23,7 @@ import { StatementCoverageTable } from '@/components/admin/financials/StatementC
 import { ComparisonChecksPanel } from '@/components/admin/financials/ComparisonChecksPanel'
 import { FinancialPointsPanel } from '@/components/admin/financials/FinancialPointsPanel'
 import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBanner'
-import { exportsLocked, hardCheckFailures, type FiguresChecked } from '@/lib/financials/hardChecks'
+import { exportsLocked, hardCheckFailures, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
 import { financialPoints } from '@/lib/sbr/financialPoints'
 import type { StatementCoverage } from '@/lib/financials/coverage'
 import type { FinancialFileRow } from '@/lib/financials/financialFiles'
@@ -305,13 +305,13 @@ export function ComparisonClient({
   const hasComparison = comparison !== null
   // A failed hard check locks the PDF and CSV until a staff member ticks that
   // they checked the figures (hardChecks.ts); the tick covers this build only.
-  // Like the checks panel, development and test deployments only
-  // (SHOW_FINANCIALS_DIAGNOSTICS): without the banner there is no tick, so
-  // production never locks.
-  const failures = showDiagnostics ? hardCheckFailures(comparison?.checks) : []
+  // Every deployment: unlike the checks panel, this is not a diagnostic.
+  const failures = hardCheckFailures(comparison?.checks)
   const exportLock = exportsLocked(failures, generatedAt, figuresChecked)
     ? `Needs review: tick "I've checked these figures against the source documents" first.`
     : null
+  // Printed on the PDF (the banner) and the CSV once ticked.
+  const reviewedBy = reviewLine(failures, generatedAt, figuresChecked)
   const periodRangeLabel = comparison
     ? `${formatIso(comparison.periodRange.start)} to ${formatIso(comparison.periodRange.end)}`
     : null
@@ -400,6 +400,8 @@ export function ComparisonClient({
                 aiSummary={aiSummary}
                 clientName={clientName}
                 lockedReason={exportLock}
+                failures={failures}
+                reviewedBy={reviewedBy}
               />
               <Button variant="ghost" size="sm" onClick={runFull} loading={running} disabled={running}>
                 <RefreshCw className="h-3.5 w-3.5" />

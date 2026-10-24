@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { hardChecksFingerprint, type FiguresChecked } from '@/lib/financials/hardChecks'
+import { hardChecksFingerprint, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
 import type { FinancialCheck } from '@/lib/financials/types'
 
 interface Props {
@@ -17,17 +17,16 @@ interface Props {
 /**
  * Red "Needs review" when a hard check fails — a total, the balance-sheet
  * equation, a profit identity (±$5) or the retained-earnings roll-forward —
- * on development and test deployments only, like the statement checks panel
- * (the page passes no failures otherwise). The PDF
- * and CSV stay locked until a staff member ticks that they checked the
- * figures against the source documents; the tick covers this build only.
+ * in every deployment. The PDF and CSV stay locked until a staff member ticks
+ * that they checked the figures against the source documents; the tick covers
+ * this build only. Once ticked, "Reviewed by X on <date>" prints on the PDF.
  */
 export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, onChecked }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fingerprint = hardChecksFingerprint(generatedAt, failures)
   if (!fingerprint) return null
-  const done = checked?.fingerprint === fingerprint ? checked : null
+  const done = reviewLine(failures, generatedAt, checked)
 
   async function tick() {
     setSaving(true)
@@ -58,11 +57,12 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
           </li>
         ))}
       </ul>
-      <div className="no-print mt-3 border-t border-destructive/20 pt-2">
+      {/* The reviewed line prints on the PDF; the tick itself does not. */}
+      <div className={`mt-3 border-t border-destructive/20 pt-2 ${done ? '' : 'no-print'}`}>
         {done ? (
           <p className="flex items-center gap-1.5 text-xs text-foreground/70">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
-            Checked against the source documents by {done.by}, {new Date(done.at).toLocaleDateString('en-AU')}.
+            {done}: checked against the source documents.
           </p>
         ) : (
           <>

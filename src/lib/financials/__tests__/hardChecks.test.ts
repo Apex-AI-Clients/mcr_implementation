@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { exportsLocked, hardCheckFailures, hardChecksFingerprint } from '../hardChecks'
+import { exportsLocked, hardCheckFailures, hardChecksFingerprint, reviewLine } from '../hardChecks'
 import type { FinancialCheck } from '../types'
 
 /** The "Needs review" lock. Synthetic checks only. */
@@ -53,5 +53,20 @@ describe('hard checks', () => {
     const a = check()
     const b = check({ kind: 'balance_sheet_equation', message: 'Net assets do not equal total equity.' })
     expect(hardChecksFingerprint(BUILT, [a, b])).toBe(hardChecksFingerprint(BUILT, [b, a]))
+  })
+})
+
+describe('reviewLine', () => {
+  const failures = [check()]
+  const fingerprint = hardChecksFingerprint(BUILT, failures)!
+
+  it('names the reviewer and the Sydney date once the tick covers these failures', () => {
+    expect(reviewLine(failures, BUILT, { fingerprint, by: 'Staff Member', at: '2026-10-23T22:30:00.000Z' })).toBe('Reviewed by Staff Member on 24/10/2026')
+  })
+
+  it('is null when nothing failed, nothing was ticked, or the tick covers a different build', () => {
+    expect(reviewLine([], BUILT, { fingerprint, by: 'Staff Member', at: '2026-10-23T22:30:00.000Z' })).toBeNull()
+    expect(reviewLine(failures, BUILT, null)).toBeNull()
+    expect(reviewLine(failures, '2026-10-22T00:00:00.000Z', { fingerprint, by: 'Staff Member', at: '2026-10-23T22:30:00.000Z' })).toBeNull()
   })
 })

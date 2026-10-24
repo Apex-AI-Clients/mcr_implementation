@@ -5,9 +5,8 @@ import type { FinancialCheck, FinancialCheckKind } from './types'
  * equation, the profit identities) and the retained-earnings roll-forward.
  * When one fails, the comparison shows "Needs review" and its PDF and CSV stay
  * locked until a staff member ticks that they checked the figures against the
- * source documents — on development and test deployments only
- * (SHOW_FINANCIALS_DIAGNOSTICS, diagnostics.ts); production shows neither.
- * Pure; shared by the page, the tick route and the tests.
+ * source documents, in every deployment. The exports then carry "Reviewed by
+ * X on <date>". Pure; shared by the page, the tick route and the tests.
  *
  * The tick is stored in sbr_readiness_reviews (item 'financials', migration
  * 0030) with the fingerprint below: it covers exactly the comparison and the
@@ -50,4 +49,12 @@ export interface FiguresChecked {
 export function exportsLocked(failures: FinancialCheck[], generatedAt: string | null, checked: FiguresChecked | null): boolean {
   const fingerprint = hardChecksFingerprint(generatedAt, failures)
   return fingerprint !== null && checked?.fingerprint !== fingerprint
+}
+
+/** "Reviewed by X on 24/10/2026" when a tick covers the failures shown now; else null. */
+export function reviewLine(failures: FinancialCheck[], generatedAt: string | null, checked: FiguresChecked | null): string | null {
+  const fingerprint = hardChecksFingerprint(generatedAt, failures)
+  if (fingerprint === null || checked?.fingerprint !== fingerprint) return null
+  const date = new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }).format(new Date(checked.at))
+  return `Reviewed by ${checked.by} on ${date}`
 }
