@@ -18,6 +18,8 @@
     "figures:snapshot": "vitest run --config vitest.figures.config.ts snapshot",
     "figures:check": "vitest run --config vitest.figures.config.ts check",
     "figures:dpn": "vitest run --config vitest.figures.config.ts dpn",
+    "printed:dump": "vitest run --config vitest.printed.config.ts dump",
+    "printed:check": "vitest run --config vitest.printed.config.ts check",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },
