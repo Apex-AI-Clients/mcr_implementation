@@ -74,7 +74,7 @@ describe('PrintedComparisonClient', () => {
     expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('shows a suggested tile with "Suggested — check", which opens the picker and saves the mapping', async () => {
+  it('shows a suggested tile naming the printed line it is taken from, and "Check this match" opens the picker and saves', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
@@ -83,9 +83,12 @@ describe('PrintedComparisonClient', () => {
       <PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt={null} initialFiguresChecked={null} mapping={[]} suggestions={suggestMapping(c)} />,
     )
     const tile = screen.getByText('Loan account — owed TO the company').parentElement!
-    // The suggested line's figure, with the prompt to check it.
-    expect(tile.textContent).toContain('50')
-    await user.click(within(tile).getByRole('button', { name: 'Suggested — check' }))
+    // Says it is not confirmed, names the printed line the amount is on, then the amount.
+    expect(tile.textContent).toContain('Not confirmed yet — suggested match:')
+    expect(tile.textContent).toContain('“Loan - Director”')
+    expect(tile.textContent).toContain('Balance sheet › Assets')
+    expect(tile.textContent).toMatch(/Amount on that line, FY2025\s*50/)
+    await user.click(within(tile).getByRole('button', { name: 'Check this match' }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByRole('checkbox', { name: /“Loan - Director”.*current/ })).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Use this line' }))

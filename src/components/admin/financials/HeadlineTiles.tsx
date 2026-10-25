@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
 import { KEY_FIGURES, MEANINGS, type Meaning } from '@/lib/printed/meanings'
 import { resolveMeaning, type MappingEntry } from '@/lib/printed/mapping'
-import type { PrintedComparison } from '@/lib/printed/compare'
+import type { ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
+import { describeLine } from '@/lib/printed/picker'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { KeyFigureCard, keyFigureStatus, type KeyFigureStatus } from './keyFigures/KeyFigureCard'
 
@@ -42,6 +43,7 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
   const statusOf = (m: Meaning) => keyFigureStatus(entriesOf(m), suggestions[m])
   const confirmed = KEY_FIGURES.filter((m) => statusOf(m.key) === 'confirmed').length
   const allConfirmed = confirmed === KEY_FIGURES.length
+  const allRows = comparison.tables.flatMap((t) => t.rows)
 
   return (
     <section>
@@ -119,6 +121,12 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
           const resolved = resolveMeaning(comparison, used, info.key)
           const shown = resolved.years.filter((y) => y.value !== null)
           const latest = shown[shown.length - 1]
+          // The printed line(s) the figure is taken from: named first, so nobody wonders where it came from.
+          const sources = used
+            .filter((e) => !e.nonePrinted)
+            .map((e) => allRows.find((r) => r.key === e.rowKey))
+            .filter((r): r is ComparisonRow => !!r)
+            .map((r) => describeLine(r, info.key))
           return (
             <div
               key={info.key}
@@ -135,43 +143,57 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
                 <Icon className={cn('h-4 w-4', look.iconClass)} aria-hidden />
               </button>
               <p className="pr-6 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">{info.label}</p>
+
+              {/* Where the figure comes from, before the figure. */}
               {status === 'not_found' ? (
-                <p className="mt-2 text-xs text-foreground/60">
-                  Not identified —{' '}
-                  <button type="button" onClick={() => setOpen(info.key)} className="no-print text-accent hover:underline">
-                    choose the line
+                <div className="mt-2 rounded-md border border-dashed border-destructive/50 bg-destructive/5 p-2 text-xs">
+                  <p className="font-medium text-destructive">No printed line matched this figure.</p>
+                  <p className="mt-0.5 text-foreground/60">The statements don&apos;t print a line with this name. Pick the line that holds it, or say it isn&apos;t printed.</p>
+                  <button type="button" onClick={() => setOpen(info.key)} className="no-print mt-1.5 font-medium text-accent hover:underline">
+                    Choose the line
                   </button>
-                </p>
+                </div>
+              ) : status === 'suggested' ? (
+                <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+                  <p className="font-medium text-warning">Not confirmed yet — suggested match:</p>
+                  <SourceLines sources={sources} />
+                  <button
+                    type="button"
+                    onClick={() => setOpen(info.key)}
+                    className="no-print mt-1.5 inline-flex items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/30"
+                  >
+                    <AlertCircle className="h-3 w-3" aria-hidden />
+                    Check this match
+                  </button>
+                </div>
               ) : resolved.status === 'none' ? (
-                <p className="mt-2 text-xs text-foreground/60">Not printed in the statements.</p>
-              ) : !latest ? (
-                <p className="mt-2 text-xs text-foreground/60">The chosen line is not printed for these years.</p>
+                <p className="mt-2 text-xs text-foreground/60">Confirmed: the statements don&apos;t print this.</p>
               ) : (
-                <>
-                  <p className={cn('mt-1 text-lg font-semibold tabular-nums', status === 'confirmed' ? 'text-foreground' : 'text-foreground/70')}>{formatPrinted(latest.value)}</p>
-                  <p className="text-[10px] text-foreground/45">{columnTitle(latest.column).title}</p>
-                  <ul className="mt-2 space-y-0.5 text-[11px] tabular-nums text-foreground/65">
-                    {resolved.years.map((y) => (
-                      <li key={y.column.key} className="flex justify-between gap-2">
-                        <span>{columnTitle(y.column).title}</span>
-                        <span>{y.value === null ? '' : formatPrinted(y.value)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-[10px] leading-snug text-foreground/45">
-                    {latest.lines.length === 1 ? 'Printed as' : 'Printed lines added up'}: {latest.lines.map((l) => `“${l.label}”`).join(' + ')}
-                  </p>
-                </>
+                <div className="mt-2 text-xs">
+                  <p className="text-success">{sources.length > 1 ? `From ${sources.length} printed lines, added up:` : 'From the printed line:'}</p>
+                  <SourceLines sources={sources} />
+                </div>
               )}
-              {status === 'suggested' && (
-                <button
-                  type="button"
-                  onClick={() => setOpen(info.key)}
-                  className="no-print mt-2 inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/25"
-                >
-                  <AlertCircle className="h-3 w-3" aria-hidden />
-                  Suggested — check
-                </button>
+
+              {status !== 'not_found' && resolved.status !== 'none' && (
+                latest ? (
+                  <>
+                    <p className="mt-3 text-[10px] uppercase tracking-wide text-foreground/45">
+                      {status === 'suggested' ? (sources.length > 1 ? 'Amount on those lines' : 'Amount on that line') : 'Amount'}, {columnTitle(latest.column).title}
+                    </p>
+                    <p className={cn('text-lg font-semibold tabular-nums', status === 'confirmed' ? 'text-foreground' : 'text-foreground/70')}>{formatPrinted(latest.value)}</p>
+                    <ul className="mt-2 space-y-0.5 text-[11px] tabular-nums text-foreground/65">
+                      {resolved.years.map((y) => (
+                        <li key={y.column.key} className="flex justify-between gap-2">
+                          <span>{columnTitle(y.column).title}</span>
+                          <span>{y.value === null ? '—' : formatPrinted(y.value)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="mt-3 text-xs text-foreground/60">That line has no amount printed for these years.</p>
+                )
               )}
             </div>
           )
@@ -194,5 +216,19 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
         )}
       </Dialog>
     </section>
+  )
+}
+
+/** The printed line(s) a figure is taken from: “label”, and where it sits. */
+function SourceLines({ sources }: { sources: { label: string; where: string }[] }) {
+  return (
+    <ul className="mt-1 space-y-1">
+      {sources.map((s, i) => (
+        <li key={i}>
+          <span className="font-medium text-foreground">“{s.label}”</span>
+          <span className="block text-[10px] text-foreground/50">{s.where}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
