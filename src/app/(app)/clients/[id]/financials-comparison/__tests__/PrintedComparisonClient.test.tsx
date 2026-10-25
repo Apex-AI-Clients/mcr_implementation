@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
 import { MEANINGS } from '@/lib/printed/meanings'
 import { suggestMapping, type Suggestions } from '@/lib/printed/dictionary'
+import type { MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '@/lib/printed/types'
 
 /** The as-printed comparison page. Synthetic reports only. */
@@ -90,6 +91,29 @@ describe('PrintedComparisonClient', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Use this line' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/clients/client-1/line-mapping', expect.objectContaining({ method: 'PUT' }))
     vi.unstubAllGlobals()
+  })
+
+  it('shows the review bar, and each tile marked by its state, until the key figures are confirmed', () => {
+    const c = comparison()
+    const suggestions = suggestMapping(c)
+    const page = (mapping: MappingEntry[]) =>
+      render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt={null} initialFiguresChecked={null} mapping={mapping} suggestions={suggestions} />)
+    page([])
+    const bar = screen.getByRole('status', { name: 'Key figures to review' })
+    expect(bar.textContent).toContain('0/7')
+    expect(within(bar).getByRole('link', { name: /Review key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
+    const loanTile = screen.getByText('Loan account — owed TO the company').closest('[data-status]')!
+    expect(loanTile.getAttribute('data-status')).toBe('suggested')
+    expect(screen.getByText('Loan account — owed BY the company').closest('[data-status]')!.getAttribute('data-status')).toBe('not_found')
+    cleanup()
+
+    // Every key figure confirmed: the bar gives way to a green pill.
+    const at = '2026-10-25T00:00:00Z'
+    const all: MappingEntry[] = MEANINGS.filter((m) => m.required).map((m) => ({ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: 'Test Staff', confirmedAt: at }))
+    page(all)
+    expect(screen.queryByRole('status', { name: 'Key figures to review' })).toBeNull()
+    expect(screen.getByRole('link', { name: /All key figures confirmed/ })).toBeTruthy()
+    expect(screen.getByText('Revenue').closest('[data-status]')!.getAttribute('data-status')).toBe('confirmed')
   })
 
   it('opens the exports when every printed total adds up', () => {

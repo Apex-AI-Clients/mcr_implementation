@@ -2,13 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { AlertCircle, CheckCircle2, ClipboardCheck, HelpCircle } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
+import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
-import { MEANINGS, type Meaning } from '@/lib/printed/meanings'
+import { KEY_FIGURES, MEANINGS, type Meaning } from '@/lib/printed/meanings'
 import { resolveMeaning, type MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedComparison } from '@/lib/printed/compare'
 import type { Suggestions } from '@/lib/printed/dictionary'
-import { KeyFigureCard, keyFigureStatus } from './keyFigures/KeyFigureCard'
+import { KeyFigureCard, keyFigureStatus, type KeyFigureStatus } from './keyFigures/KeyFigureCard'
 
 interface Props {
   clientId: string
@@ -17,31 +19,99 @@ interface Props {
   suggestions: Suggestions
 }
 
+/** Per status: the tile's top edge, its corner icon, and the review bar's segment. */
+const LOOK: Record<KeyFigureStatus, { edge: string; segment: string; icon: typeof CheckCircle2; iconClass: string; label: string }> = {
+  confirmed: { edge: 'border-t-success', segment: 'bg-success', icon: CheckCircle2, iconClass: 'text-success', label: 'Confirmed' },
+  suggested: { edge: 'border-t-warning', segment: 'bg-warning', icon: AlertCircle, iconClass: 'text-warning', label: 'Suggested — check' },
+  not_found: { edge: 'border-t-destructive border-dashed', segment: 'bg-destructive', icon: HelpCircle, iconClass: 'text-destructive', label: 'Not found — choose the line' },
+}
+
 /**
  * The headline figures. A confirmed figure is its printed line (or lines,
- * added up, each named). A suggested one shows the suggested line's figure
- * with "Suggested — check", which opens the same card as "Confirm key
- * figures"; confirming there saves the mapping. The SBR prediction uses only
- * confirmed lines.
+ * added up, each named). A suggested one shows the suggested line's figure,
+ * marked amber until staff check it; one not found is marked red. While any
+ * key figure is unconfirmed, a review bar shows each one's state at a glance
+ * and leads to "Confirm key figures". The SBR prediction uses only confirmed
+ * lines.
  */
 export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Props) {
   const [open, setOpen] = useState<Meaning | null>(null)
   const tiles = MEANINGS.filter((m) => m.tile)
   const keyFigures = `/clients/${clientId}/financials-comparison/mapping`
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
+  const statusOf = (m: Meaning) => keyFigureStatus(entriesOf(m), suggestions[m])
+  const confirmed = KEY_FIGURES.filter((m) => statusOf(m.key) === 'confirmed').length
+  const allConfirmed = confirmed === KEY_FIGURES.length
 
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-foreground">Headline figures</h2>
-        <Link href={keyFigures} className="no-print text-xs text-accent hover:underline">
-          Confirm key figures
-        </Link>
+        {allConfirmed && (
+          <Link href={keyFigures} className="no-print inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success hover:bg-success/25">
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+            All key figures confirmed
+          </Link>
+        )}
       </div>
+
+      {!allConfirmed && (
+        <div role="status" aria-label="Key figures to review" className="no-print mb-4 flex flex-wrap items-center gap-4 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/20 text-warning">
+            <ClipboardCheck className="h-5 w-5" aria-hidden />
+          </span>
+          <div className="min-w-[14rem] flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-semibold tabular-nums text-foreground">
+                {confirmed}
+                <span className="text-base text-foreground/45">/{KEY_FIGURES.length}</span>
+              </span>
+              <span className="text-xs font-medium text-foreground/70">key figures confirmed</span>
+            </div>
+            {/* One segment per key figure, coloured by its state; click one to check it. */}
+            <div className="mt-2 flex gap-1" aria-hidden>
+              {KEY_FIGURES.map((m) => {
+                const s = statusOf(m.key)
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    tabIndex={-1}
+                    title={`${m.label}: ${LOOK[s].label}`}
+                    onClick={() => setOpen(m.key)}
+                    className={cn('h-2 flex-1 rounded-full transition-opacity hover:opacity-80', LOOK[s].segment, s !== 'confirmed' && 'opacity-90')}
+                  />
+                )
+              })}
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-foreground/55">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-success" aria-hidden /> Confirmed
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-warning" aria-hidden /> To check
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-destructive" aria-hidden /> Not found
+              </span>
+            </div>
+          </div>
+          <Link
+            href={keyFigures}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-xs font-semibold text-white hover:bg-accent/90"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" aria-hidden />
+            Review key figures
+          </Link>
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((info) => {
           const entries = entriesOf(info.key)
-          const status = keyFigureStatus(entries, suggestions[info.key])
+          const status = statusOf(info.key)
+          const look = LOOK[status]
+          const Icon = look.icon
           const used: MappingEntry[] =
             status === 'confirmed'
               ? entries
@@ -50,8 +120,21 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
           const shown = resolved.years.filter((y) => y.value !== null)
           const latest = shown[shown.length - 1]
           return (
-            <div key={info.key} className="rounded-lg border border-border/60 bg-card p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/55">{info.label}</p>
+            <div
+              key={info.key}
+              data-status={status}
+              className={cn('relative rounded-lg border border-border/60 border-t-4 bg-card p-3', look.edge)}
+            >
+              <button
+                type="button"
+                onClick={() => setOpen(info.key)}
+                title={look.label}
+                aria-label={`${info.label}: ${look.label}`}
+                className="no-print absolute right-2 top-2 rounded-full p-0.5 hover:bg-surface/60"
+              >
+                <Icon className={cn('h-4 w-4', look.iconClass)} aria-hidden />
+              </button>
+              <p className="pr-6 text-[11px] font-semibold uppercase tracking-wide text-foreground/55">{info.label}</p>
               {status === 'not_found' ? (
                 <p className="mt-2 text-xs text-foreground/60">
                   Not identified —{' '}
@@ -65,7 +148,7 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
                 <p className="mt-2 text-xs text-foreground/60">The chosen line is not printed for these years.</p>
               ) : (
                 <>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{formatPrinted(latest.value)}</p>
+                  <p className={cn('mt-1 text-lg font-semibold tabular-nums', status === 'confirmed' ? 'text-foreground' : 'text-foreground/70')}>{formatPrinted(latest.value)}</p>
                   <p className="text-[10px] text-foreground/45">{columnTitle(latest.column).title}</p>
                   <ul className="mt-2 space-y-0.5 text-[11px] tabular-nums text-foreground/65">
                     {resolved.years.map((y) => (
@@ -81,7 +164,12 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
                 </>
               )}
               {status === 'suggested' && (
-                <button type="button" onClick={() => setOpen(info.key)} className="no-print mt-2 text-[11px] font-medium text-warning hover:underline">
+                <button
+                  type="button"
+                  onClick={() => setOpen(info.key)}
+                  className="no-print mt-2 inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning hover:bg-warning/25"
+                >
+                  <AlertCircle className="h-3 w-3" aria-hidden />
                   Suggested — check
                 </button>
               )}
