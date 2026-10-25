@@ -1,13 +1,13 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
-import { latestBalanceSheet } from '@/lib/financials/statementSelection'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { StoredStatementSlot } from '@/lib/financials/types'
+import { loadPrintedComparison } from '@/lib/printed/store'
+import { loadMapping } from '@/lib/printed/mappingStore'
+import { predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
-import { creditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
+import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
@@ -33,7 +33,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [lodgement, slots, cached, imports] = await Promise.all([
+  const [lodgement, printed, mapping, cached, imports] = await Promise.all([
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
@@ -41,8 +41,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
       .order('analysed_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    // Read as halves: a year may have a P&L but no balance sheet.
-    loadStoredSlots(supabase, id).catch(() => [] as StoredStatementSlot[]),
+    // The figures: the printed lines staff confirmed, and nothing else (printed/mapping.ts).
+    loadPrintedComparison(supabase, id),
+    loadMapping(supabase, id),
     supabase
       .from('sbr_outcome_predictions')
       .select('*')
@@ -58,8 +59,8 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const readiness = await loadReadiness(supabase, id)
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
-  const statement = latestBalanceSheet(slots)
-  const balanceSheet = statement?.balanceSheet ?? null
+  const financials = predictionFinancials(printed.comparison, mapping)
+  const bsColumn = financials.balanceSheet?.column ?? null
 
   // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
   // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
@@ -67,24 +68,24 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const icaRows = (ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
   const debt = creditorDebt({
     icaRows,
-    balanceSheet,
-    balanceSheetDate: statement?.slot.periodEndDate ?? null,
-    balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
+    mappedAto: financials.atoDebt ? { amount: financials.atoDebt.amount, lines: financials.atoDebt.lines.map((l) => l.label) } : null,
+    balanceSheetDate: bsColumn?.periodEnd ?? null,
+    balanceSheetLabel: financials.balanceSheet?.label ?? null,
   })
   console.log(`[creditor-debt] page client=${id} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
-  // Auto-detect the director loan at appointment from the latest balance sheet
-  // so the manual checkbox pre-fills on first load. The operator can override.
-  const directorLoanValue =
-    Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
-  const directorLoanDetected: boolean | null = balanceSheet ? directorLoanValue > 0 : null
-  const directorLoanReasoning: string | null = !balanceSheet
-    ? null
+  // The director loan at appointment, from the loan lines staff confirmed on the
+  // latest balance sheet, to pre-fill the checkbox. The operator can override.
+  const loan = financials.loanReceivable
+  const directorLoanValue = Math.max(0, loan?.amount ?? 0)
+  const directorLoanDetected: boolean | null = loan ? directorLoanValue > 0 : null
+  const directorLoanReasoning: string | null = !loan
+    ? financials.confirmed
+      ? null
+      : 'Confirm which printed lines are the loan accounts first.'
     : directorLoanValue > 0
-      ? `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${
-          statement ? `FY${statement.slot.financialYear} balance sheet` : 'most recent balance sheet'
-        }.`
-      : 'No director loan line item found on most recent balance sheet.'
+      ? `Loan owed to the company of $${Math.round(directorLoanValue).toLocaleString('en-AU')} on the ${loan.source}: ${loan.lines.map((l) => `“${l.label}”`).join(' + ')}.`
+      : `No loan owed to the company on the ${loan.source}.`
 
   const late = lodgement.data
     ? storedLateLodgements(lodgement.data.rows, {
@@ -109,11 +110,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     creditorAmount: debt.amount,
     creditorSource: debt.description,
     creditorMissing: debt.missing,
-    latestFinancialYear: statement?.slot.financialYear ?? null,
+    latestFinancialYear: bsColumn?.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
-    hasFinancials: slots.length > 0,
-    // Creditors in the SBR: balance-sheet hints (current period first), and the rows saved last time.
-    creditorHints: creditorHints(slots),
+    hasFinancials: printed.comparison.tables.length > 0,
+    // Creditors in the SBR: hints from the confirmed lines (latest balance sheet), and the rows saved last time.
+    creditorHints: mappedCreditorHints(financials),
     savedCreditors: readSavedCreditors((cached.data as { creditors?: unknown } | null)?.creditors ?? null),
   }
 

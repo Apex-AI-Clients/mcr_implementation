@@ -5,9 +5,9 @@
  * using:
  *   - Auto features from lodgement_analyses (cumulative days late, late
  *     lodgement count, days since last cash payment).
- *   - Auto feature from the latest stored balance sheet
- *     (director-related loans receivable). Read as halves: a year may have a
- *     P&L but no balance sheet, and such a year is skipped.
+ *   - Auto feature from the latest balance sheet as printed: the loan
+ *     account owed to the company, from the lines staff confirmed
+ *     (printed/mapping.ts) — the prediction's only source of figures.
  *   - Manual features supplied in the request body.
  *
  * Returns 422 with a structured "PREREQUISITES_MISSING" payload when an auto
@@ -52,7 +52,9 @@ import {
   type CreditorDebt,
   type IcaRow,
 } from '@/lib/sbr/creditorDebt'
-import { latestBalanceSheet } from '@/lib/financials/statementSelection'
+import { loadPrintedComparison } from '@/lib/printed/store'
+import { loadMapping } from '@/lib/printed/mappingStore'
+import { predictionFinancials, type PredictionFinancials } from '@/lib/printed/mapping'
 import {
   CREDITOR_KINDS,
   CREDITOR_LABEL_MAX,
@@ -62,8 +64,6 @@ import {
   type CreditorRow,
   type SavedCreditors,
 } from '@/lib/sbr/creditors'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { StoredStatementSlot } from '@/lib/financials/types'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -114,38 +114,23 @@ interface AutoDetectedDirectorLoan {
 }
 
 /**
- * Auto-detect whether a director loan was on the balance sheet at appointment.
- * Prefers the current-period BS if extracted; falls back to the latest annual
- * balance sheet. Returns null when no balance sheet is available.
+ * Whether a director loan was on the balance sheet at appointment: the loan
+ * lines staff confirmed, on the latest balance sheet as printed (the current
+ * period when there is one). Null when they are not identified.
  *
- * The detected value is returned alongside the prediction so the UI can
- * pre-fill the checkbox with an "Auto-detected from <source>" caption. The
+ * Returned alongside the prediction so the UI can pre-fill the checkbox. The
  * operator can still override before clicking Generate.
  */
-function autoDetectDirectorLoanAtAppointment(slots: StoredStatementSlot[]): AutoDetectedDirectorLoan {
-  const source = latestBalanceSheet(slots, { preferCurrentPeriod: true })
-  if (!source) {
-    return { detected: null, reasoning: null }
-  }
-
-  const bs = source.balanceSheet
-  const directorLoanValue = Number(bs?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
-
-  if (directorLoanValue > 0) {
-    const sourceLabel =
-      source.slot.sourceColumn === 'current_period'
-        ? `current period (${source.slot.periodLabel ?? `FY${source.slot.financialYear}`})`
-        : `FY${source.slot.financialYear} balance sheet`
+function autoDetectDirectorLoanAtAppointment(financials: PredictionFinancials): AutoDetectedDirectorLoan {
+  const loan = financials.loanReceivable
+  if (!loan) return { detected: null, reasoning: null }
+  if (loan.amount > 0) {
     return {
       detected: true,
-      reasoning: `Director-related loan of $${Math.round(directorLoanValue).toLocaleString('en-AU')} detected on ${sourceLabel}.`,
+      reasoning: `Loan owed to the company of $${Math.round(loan.amount).toLocaleString('en-AU')} on the ${loan.source}: ${loan.lines.map((l) => `“${l.label}”`).join(' + ')}.`,
     }
   }
-
-  return {
-    detected: false,
-    reasoning: 'No director loan line item found on most recent balance sheet.',
-  }
+  return { detected: false, reasoning: `No loan owed to the company on the ${loan.source}.` }
 }
 
 interface MissingPrerequisite {
@@ -218,15 +203,10 @@ export async function POST(req: NextRequest, { params }: Params) {
       .limit(1)
       .maybeSingle()
 
-    // Most recent balance sheet — gives us director loan receivable and the
-    // ATO liability that we use as a creditor-amount proxy.
-    // A failed read is tolerated as "no financials", as it always was: the
-    // prediction still runs, without the director loan and creditor amount.
-    const slots = await loadStoredSlots(supabase, clientId).catch((err) => {
-      console.error('[POST predict-outcome] statements read failed', err)
-      return [] as StoredStatementSlot[]
-    })
-    const statement = latestBalanceSheet(slots)
+    // The financial figures: the printed lines staff confirmed (the readiness
+    // gate above has made sure they did), on the latest balance sheet.
+    const [{ comparison }, mapping] = await Promise.all([loadPrintedComparison(supabase, clientId), loadMapping(supabase, clientId)])
+    const financials = predictionFinancials(comparison, mapping)
 
     const missing: MissingPrerequisite[] = []
     if (!lodgement) {
@@ -259,20 +239,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     const icaRows: IcaRow[] = ica.rows ?? (lodgement!.rows as unknown as IcaRow[])
     const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows)
 
-    // Director loan receivable — null financial_statements is tolerated; we
-    // fall back to 0 and signal it as a soft prerequisite via the absence of
-    // suggestedOfferAmount on the response.
-    const balanceSheet = statement?.balanceSheet ?? null
-    const directorLoanReceivableAmount =
-      Number(balanceSheet?.nonCurrentAssets?.directorRelatedLoansReceivable ?? 0) || 0
+    // The loan account owed to the company: 0 when staff confirmed none is printed.
+    const directorLoanReceivableAmount = Math.max(0, financials.loanReceivable?.amount ?? 0)
 
     // The creditor debt: staff's figure, else the integrated client account,
     // else the balance sheet's ATO-related liabilities — never two added up.
     const debt = creditorDebt({
       icaRows,
-      balanceSheet,
-      balanceSheetDate: statement?.slot.periodEndDate ?? null,
-      balanceSheetLabel: statement ? `FY${statement.slot.financialYear}` : null,
+      mappedAto: financials.atoDebt ? { amount: financials.atoDebt.amount, lines: financials.atoDebt.lines.map((l) => l.label) } : null,
+      balanceSheetDate: financials.balanceSheet?.column.periodEnd ?? null,
+      balanceSheetLabel: financials.balanceSheet?.label ?? null,
       staffAmount: body.creditorAmount ?? null,
     })
     const atoDebt = debt.amount
@@ -290,7 +266,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Auto-detect the director loan at appointment from the latest balance
     // sheet. The UI pre-fills the checkbox from this, but the operator's body
     // value is what actually drives the prediction (they can override).
-    const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(slots)
+    const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(financials)
 
     const inputFeatures: SbrPredictionInput = {
       dpn: readiness.dpn ?? body.dpn ?? false,

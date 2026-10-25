@@ -113,6 +113,8 @@ function fromFixedRows(rows: CreditorRow[]): CreditorRow[] {
 
 // ─── Balance-sheet hints ──────────────────────────────────────────────────────
 
+import type { MappedFigure, PredictionFinancials } from '@/lib/printed/mapping'
+
 export interface CreditorHint {
   amount: number
   /** "at 30 Sep 2026 (current period)" or "FY2026 balance sheet". */
@@ -184,4 +186,21 @@ export function creditorHints(slots: StoredStatementSlot[]): CreditorHints {
   hints.bankOverdraft = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
   hints.tradeSuppliers = hint(sumLines(lines, TRADE_CREDITORS))
   return hints
+}
+
+/**
+ * The same hints from the printed lines staff confirmed (printed/mapping.ts):
+ * credit cards, bank loans and finance, overdraft and trade suppliers, each
+ * the mapped lines added up as printed. A meaning with no confirmed line gives
+ * no hint. Finance lines (chattel, hire purchase…) keep the caution.
+ */
+export function mappedCreditorHints(financials: PredictionFinancials): CreditorHints {
+  const hint = (f: MappedFigure | null, caution: string | null = null): CreditorHint | null => (f ? { amount: f.amount, source: f.source, caution } : null)
+  const secured = financials.cashLoans?.lines.some((l) => EQUIPMENT_FINANCE.test(l.label) || /\b(chattel|hire purchase|finance|unexpired interest|hp loan)\b/i.test(l.label))
+  return {
+    creditCards: hint(financials.creditCards),
+    cashLoans: hint(financials.cashLoans, secured ? `Includes chattel, hire-purchase, vehicle or equipment finance. ${SECURED}` : null),
+    bankOverdraft: hint(financials.bankOverdraft),
+    tradeSuppliers: hint(financials.tradeSuppliers),
+  }
 }

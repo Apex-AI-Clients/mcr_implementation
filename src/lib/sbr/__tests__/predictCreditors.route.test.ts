@@ -9,7 +9,11 @@ vi.mock('@/lib/supabase/server', () => ({
   })),
 }))
 vi.mock('@/lib/sbr/loadReadiness', () => ({ loadReadiness: vi.fn() }))
-vi.mock('@/lib/financials/storedStatements', () => ({ loadStoredSlots: vi.fn(async () => []) }))
+// No statements on file: the figures come only from the confirmed line mapping (printed/mapping.ts).
+vi.mock('@/lib/printed/store', () => ({
+  loadPrintedComparison: vi.fn(async () => ({ comparison: { columns: [], tables: [], failures: [], documents: [], annualYears: 0 }, builtAt: null, unread: 0 })),
+}))
+vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []) }))
 vi.mock('@/lib/sbr/icaRows', () => ({ loadIcaRows: vi.fn() }))
 vi.mock('@/lib/sbr/accuracy', () => ({ cachedLeaveOneOut: vi.fn(() => null) }))
 vi.mock('@/lib/sbr/historicalCases', () => ({

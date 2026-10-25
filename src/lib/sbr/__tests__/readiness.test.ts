@@ -66,6 +66,7 @@ function input(over: {
       comparison: { generatedAt: '2026-10-17T00:00:00Z', staleSince: null },
       outOfDate: false,
       unreviewedFailures: 0,
+      mappingConfirmed: true,
       ...over.financials,
     },
     lodgement: {
@@ -129,6 +130,12 @@ describe('financial statements', () => {
     expect(statusOf(r, 'financials').detail).toMatch(/2 figures do not reconcile/)
     expect(r.canPredict).toBe(false)
     expect(r.waitingFor).toContain('Financial statements: needs review')
+  })
+
+  it('is Needs review, pointing at the mapping screen, until staff confirm which lines mean what', () => {
+    const r = computeReadiness(input({ financials: { mappingConfirmed: false } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', href: '/clients/c1/financials-comparison/mapping' })
+    expect(r.canPredict).toBe(false)
   })
 
   it('never has a line under the heading, in any state but Needs review', () => {

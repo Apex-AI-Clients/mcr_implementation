@@ -4,6 +4,8 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { printedExportsLocked, printedHardChecks } from '@/lib/printed/review'
+import { loadMapping } from '@/lib/printed/mappingStore'
+import { mappingConfirmed } from '@/lib/printed/mapping'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { periodOverrideOf } from '@/lib/financials/periodOverride'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
@@ -62,7 +64,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     findLiveComparisonJob(supabase, clientId).catch(() => null),
   ])
   // The as-printed comparison, from the stored reads only: reading PDFs is the page's or the run's job.
-  const printed = await loadPrintedComparison(supabase, clientId)
+  const [printed, mapping] = await Promise.all([loadPrintedComparison(supabase, clientId), loadMapping(supabase, clientId)])
 
   const all = docs ?? []
   const isFinancial = (c: string) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(c)
@@ -133,6 +135,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       // read is a read too (with why): not waiting work.
       outOfDate: printed.unread > 0,
       unreviewedFailures,
+      mappingConfirmed: mappingConfirmed(mapping),
     },
     lodgement: {
       csvCount: csvs.length,

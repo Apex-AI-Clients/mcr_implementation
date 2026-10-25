@@ -61,6 +61,8 @@ export interface ReadinessInput {
     outOfDate: boolean
     /** Failed hard checks on the comparison no staff tick covers (hardChecks.ts exportsLocked). */
     unreviewedFailures: number
+    /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
+    mappingConfirmed: boolean
   }
   lodgement: {
     /** CSVs uploaded under the integrated client account. */
@@ -124,6 +126,15 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       'needs_review',
       `${f.unreviewedFailures === 1 ? 'A figure does' : `${f.unreviewedFailures} figures do`} not reconcile. Check them against the source documents and tick the box on the comparison page.`,
       href,
+    )
+  }
+  if (!f.mappingConfirmed) {
+    return item(
+      input,
+      'financials',
+      'needs_review',
+      'Confirm which printed lines are the revenue, net profit, net assets, ATO debt and loan accounts.',
+      `/clients/${input.clientId}/financials-comparison/mapping`,
     )
   }
   return item(input, 'financials', 'ready', null, href)

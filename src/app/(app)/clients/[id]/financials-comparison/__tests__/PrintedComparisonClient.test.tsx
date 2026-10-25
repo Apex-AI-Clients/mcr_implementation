@@ -39,7 +39,7 @@ function comparison({ broken = false } = {}) {
 }
 
 function renderPage(c = comparison()) {
-  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt="2026-10-24T00:00:00.000Z" initialFiguresChecked={null} />)
+  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt="2026-10-24T00:00:00.000Z" initialFiguresChecked={null} meanings={[]} />)
 }
 
 describe('PrintedComparisonClient', () => {

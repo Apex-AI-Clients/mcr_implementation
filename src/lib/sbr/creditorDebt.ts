@@ -170,9 +170,15 @@ export function creditorDebt(input: {
   balanceSheet?: ExtractedBalanceSheet | null
   balanceSheetDate?: string | null
   balanceSheetLabel?: string | null
+  /**
+   * The ATO-related lines staff confirmed (printed/mapping.ts), added up, and
+   * their printed names. Used instead of `balanceSheet` when given; null when
+   * not identified.
+   */
+  mappedAto?: { amount: number; lines: string[] } | null
   staffAmount?: number | null
 }): CreditorDebt {
-  const { icaRows, balanceSheet, balanceSheetDate, balanceSheetLabel, staffAmount } = input
+  const { icaRows, balanceSheet, balanceSheetDate, balanceSheetLabel, staffAmount, mappedAto } = input
 
   if (typeof staffAmount === 'number' && Number.isFinite(staffAmount) && staffAmount >= 0) {
     return { amount: staffAmount, source: 'staff', asOf: null, description: 'Entered by staff', missing: null, icaNotUsed: 'staff entered the amount' }
@@ -192,7 +198,8 @@ export function creditorDebt(input: {
     }
   }
 
-  const fromBalanceSheet = balanceSheetAtoTotal(balanceSheet)
+  const fromBalanceSheet = mappedAto !== undefined ? (mappedAto?.amount ?? null) : balanceSheetAtoTotal(balanceSheet)
+  const which = mappedAto?.lines.length ? mappedAto.lines.map((l) => `“${l}”`).join(' + ') : 'ATO, GST and PAYG'
   if (fromBalanceSheet !== null) {
     // An analysis whose rows carry no balance was read before the CSV
     // line-ending fix: re-running it gives the account balance.
@@ -202,7 +209,7 @@ export function creditorDebt(input: {
       source: 'balance_sheet',
       asOf: balanceSheetDate ?? null,
       description: [
-        `Balance sheet${balanceSheetLabel ? ` (${balanceSheetLabel})` : ''}${balanceSheetDate ? `, as at ${longDate(balanceSheetDate)}` : ''}: ATO, GST and PAYG`,
+        `Balance sheet${balanceSheetLabel ? ` (${balanceSheetLabel})` : ''}${balanceSheetDate ? `, as at ${longDate(balanceSheetDate)}` : ''}: ${which}`,
         stale ? '. Re-run the lodgement analysis to use the ATO account balance' : '',
       ].join(''),
       missing: null,

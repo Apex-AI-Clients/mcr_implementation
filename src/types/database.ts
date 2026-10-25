@@ -55,6 +55,91 @@ export type Database = {
           },
         ]
       }
+      client_line_mapping_changes: {
+        Row: {
+          action: string
+          changed_at: string
+          changed_by: string
+          client_id: string
+          id: string
+          label: string | null
+          meaning: string
+          row_key: string
+        }
+        Insert: {
+          action: string
+          changed_at?: string
+          changed_by: string
+          client_id: string
+          id?: string
+          label?: string | null
+          meaning: string
+          row_key: string
+        }
+        Update: {
+          action?: string
+          changed_at?: string
+          changed_by?: string
+          client_id?: string
+          id?: string
+          label?: string | null
+          meaning?: string
+          row_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_line_mapping_changes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_line_mappings: {
+        Row: {
+          client_id: string
+          confirmed_at: string
+          confirmed_by: string
+          label: string | null
+          meaning: string
+          none_printed: boolean
+          row_key: string
+          section_path: string[]
+          statement: string | null
+        }
+        Insert: {
+          client_id: string
+          confirmed_at?: string
+          confirmed_by: string
+          label?: string | null
+          meaning: string
+          none_printed?: boolean
+          row_key: string
+          section_path?: string[]
+          statement?: string | null
+        }
+        Update: {
+          client_id?: string
+          confirmed_at?: string
+          confirmed_by?: string
+          label?: string | null
+          meaning?: string
+          none_printed?: boolean
+          row_key?: string
+          section_path?: string[]
+          statement?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_line_mappings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           archived_at: string | null
