@@ -9,7 +9,8 @@ import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBanner'
 import { PrintedComparisonTable, type SelectedFigure } from '@/components/admin/financials/PrintedComparisonTable'
 import { HeadlineTiles } from '@/components/admin/financials/HeadlineTiles'
-import type { ResolvedMeaning } from '@/lib/printed/mapping'
+import type { MappingEntry } from '@/lib/printed/mapping'
+import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
 import { columnTitle, comparisonCsv, formatPrinted } from '@/lib/printed/csv'
 import { printedHardChecks } from '@/lib/printed/review'
@@ -22,8 +23,9 @@ interface Props {
   /** The latest read: what the "I've checked these figures" tick covers. */
   builtAt: string | null
   initialFiguresChecked: FiguresChecked | null
-  /** The headline meanings, from the lines staff confirmed (mapping.ts). */
-  meanings: ResolvedMeaning[]
+  /** The lines staff confirmed (mapping.ts), and the suggestions shown until they do. */
+  mapping: MappingEntry[]
+  suggestions: Suggestions
   /** Showing the years printed only as a comparative column. */
   earlierYears?: boolean
 }
@@ -34,7 +36,7 @@ interface Props {
  * guessed; a printed total that does not add up shows Needs review and locks
  * the PDF and CSV until a staff member ticks that they checked it.
  */
-export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, meanings, earlierYears = false }: Props) {
+export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false }: Props) {
   const router = useRouter()
   const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [selected, setSelected] = useState<SelectedFigure | null>(null)
@@ -122,7 +124,7 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
           {comparison.annualYears < 2 && (
             <p className="text-xs text-foreground/60">Only one financial year is on file so far: upload the earlier years to compare.</p>
           )}
-          <HeadlineTiles clientId={clientId} meanings={meanings} />
+          <HeadlineTiles clientId={clientId} comparison={comparison} mapping={mapping} suggestions={suggestions} />
           {(earlierYears || comparison.hiddenComparativeYears.length > 0) && (
             <label className="no-print flex items-center gap-2 text-xs text-foreground/70">
               <input

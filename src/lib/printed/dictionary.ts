@@ -96,11 +96,12 @@ export function suggestMapping(comparison: PrintedComparison): Suggestions {
   const trade = pick(lines.filter((r) => isLiability(r) && TRADE.test(r.label)))
 
   return {
-    revenue: bestPerLayout(revenueRows, REVENUE, n),
-    net_profit: bestPerLayout(pl, NET_PROFIT, n),
-    net_assets: bestPerLayout(bs, NET_ASSETS, n),
+    // One printed line each: the best match.
+    revenue: bestPerLayout(revenueRows, REVENUE, n).slice(0, 1),
+    net_profit: bestPerLayout(pl, NET_PROFIT, n).slice(0, 1),
+    net_assets: bestPerLayout(bs, NET_ASSETS, n).slice(0, 1),
     ato_debt: ato,
-    income_tax_payable: incomeTax,
+    income_tax_payable: incomeTax.slice(0, 1),
     loan_receivable: loanReceivable,
     loan_payable: loanPayable,
     credit_cards: creditCards,

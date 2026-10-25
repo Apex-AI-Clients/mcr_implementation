@@ -2,15 +2,19 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
+import { MEANINGS } from '@/lib/printed/meanings'
+import { suggestMapping, type Suggestions } from '@/lib/printed/dictionary'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '@/lib/printed/types'
 
 /** The as-printed comparison page. Synthetic reports only. */
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 
 const { PrintedComparisonClient } = await import('../PrintedComparisonClient')
 
 afterEach(cleanup)
+
+const NO_SUGGESTIONS = Object.fromEntries(MEANINGS.map((m) => [m.key, []])) as unknown as Suggestions
 
 const fy = (y: number): PrintedColumn => ({ header: String(y), periodStart: `${y - 1}-07-01`, periodEnd: `${y}-06-30`, kind: 'annual', financialYear: y })
 const r = (path: string[], label: string, style: PrintedRow['style'], ...amounts: (number | null)[]): PrintedRow => ({
@@ -39,7 +43,7 @@ function comparison({ broken = false } = {}) {
 }
 
 function renderPage(c = comparison()) {
-  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt="2026-10-24T00:00:00.000Z" initialFiguresChecked={null} meanings={[]} />)
+  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt="2026-10-24T00:00:00.000Z" initialFiguresChecked={null} mapping={[]} suggestions={NO_SUGGESTIONS} />)
 }
 
 describe('PrintedComparisonClient', () => {
@@ -67,6 +71,25 @@ describe('PrintedComparisonClient', () => {
     expect(screen.getByText(/Needs review: a figure does not reconcile/)).toBeTruthy()
     expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows a suggested tile with "Suggested — check", which opens the picker and saves the mapping', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const c = comparison()
+    render(
+      <PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt={null} initialFiguresChecked={null} mapping={[]} suggestions={suggestMapping(c)} />,
+    )
+    const tile = screen.getByText('Loan account — owed TO the company').parentElement!
+    // The suggested line's figure, with the prompt to check it.
+    expect(tile.textContent).toContain('50')
+    await user.click(within(tile).getByRole('button', { name: 'Suggested — check' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('checkbox', { name: /“Loan - Director”.*current/ })).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Use this line' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/clients/client-1/line-mapping', expect.objectContaining({ method: 'PUT' }))
+    vi.unstubAllGlobals()
   })
 
   it('opens the exports when every printed total adds up', () => {

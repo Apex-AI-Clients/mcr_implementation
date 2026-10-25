@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { loadMapping } from '@/lib/printed/mappingStore'
-import { resolveAll } from '@/lib/printed/mapping'
+import { suggestMapping } from '@/lib/printed/dictionary'
 import { PrintedComparisonClient } from './PrintedComparisonClient'
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +44,8 @@ export default async function FinancialsComparisonPage({ params, searchParams }:
         comparison={comparison}
         builtAt={builtAt}
         earlierYears={earlierYears}
-        meanings={resolveAll(comparison, mapping)}
+        mapping={mapping}
+        suggestions={suggestMapping(comparison)}
         initialFiguresChecked={
           figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null
         }

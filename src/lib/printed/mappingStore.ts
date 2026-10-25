@@ -59,9 +59,10 @@ export type MappingSelection = Partial<Record<Meaning, { rowKeys: string[] } | {
 export class MappingError extends Error {}
 
 /**
- * Saves the whole mapping as staff confirmed it. Every meaning must be
- * answered (lines, or none printed); each line must be a row of the
- * comparison, on the right statement. What changed is logged.
+ * Saves the meanings staff confirmed (one, several, or "confirm all"), each
+ * with who and when; meanings not in the selection keep what they had. Each
+ * line must be a row of the comparison, on the right statement; a one-line
+ * meaning takes exactly one. What changed is logged.
  */
 export async function saveMapping(
   supabase: ServerClient,
@@ -72,15 +73,19 @@ export async function saveMapping(
 ): Promise<MappingEntry[]> {
   const rows = new Map(comparison.tables.flatMap((t) => t.rows.map((r) => [r.key, { row: r, kind: t.kind }] as const)))
   const at = new Date().toISOString()
-  const next: MappingEntry[] = []
-  for (const m of MEANINGS) {
-    const answer = selection[m.key]
-    if (!answer) throw new MappingError(`Choose the line for "${m.label}", or say it is not printed.`)
+  const previous = await loadMapping(supabase, clientId)
+  const answered = MEANINGS.filter((m) => selection[m.key])
+  if (answered.length === 0) throw new MappingError('Nothing to confirm.')
+  // Meanings not answered now keep their confirmed lines.
+  const next: MappingEntry[] = previous.filter((e) => !selection[e.meaning])
+  for (const m of answered) {
+    const answer = selection[m.key]!
     if ('none' in answer) {
       next.push({ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: by, confirmedAt: at })
       continue
     }
     if (answer.rowKeys.length === 0) throw new MappingError(`Choose the line for "${m.label}", or say it is not printed.`)
+    if (!m.multiple && new Set(answer.rowKeys).size > 1) throw new MappingError(`"${m.label}" is one printed line: choose one.`)
     for (const key of new Set(answer.rowKeys)) {
       const found = rows.get(key)
       if (!found || found.kind !== MEANING[m.key].statement || found.row.style === 'heading') {
@@ -90,7 +95,6 @@ export async function saveMapping(
     }
   }
 
-  const previous = await loadMapping(supabase, clientId)
   const id = (e: MappingEntry) => `${e.meaning}|${e.rowKey}`
   const before = new Set(previous.map(id))
   const after = new Set(next.map(id))
@@ -112,8 +116,9 @@ export async function saveMapping(
         label: e.label,
         section_path: found?.row.path ?? [],
         none_printed: e.nonePrinted,
-        confirmed_by: by,
-        confirmed_at: at,
+        // Kept meanings keep who confirmed them, and when.
+        confirmed_by: e.confirmedBy,
+        confirmed_at: e.confirmedAt,
       }
     }),
   )

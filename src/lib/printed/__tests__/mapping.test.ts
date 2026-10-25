@@ -161,13 +161,27 @@ describe('saveMapping', () => {
     expect(inserted.client_line_mapping_changes).toContainEqual(expect.objectContaining({ meaning: 'revenue', action: 'added', label: 'Total Income', changed_by: 'Test Staff' }))
   })
 
-  it('refuses a meaning left unanswered, or a line from the wrong statement', async () => {
+  it('saves one meaning at a time, the others keeping who confirmed them', async () => {
+    const c = comparison()
+    const kept = { meaning: 'net_profit', row_key: c.tables[0].rows.find((x) => x.label === 'Net Profit')!.key, label: 'Net Profit', none_printed: false, confirmed_by: 'Earlier Staff', confirmed_at: '2026-10-01T00:00:00Z' }
+    const { supabase, inserted } = db([kept])
+    const key = c.tables[0].rows.find((x) => x.label === 'Total Income')!.key
+    await saveMapping(supabase, 'client-1', 'Test Staff', { revenue: { rowKeys: [key] } }, c)
+    expect(inserted.client_line_mappings).toEqual([
+      expect.objectContaining({ meaning: 'net_profit', confirmed_by: 'Earlier Staff', confirmed_at: '2026-10-01T00:00:00Z' }),
+      expect.objectContaining({ meaning: 'revenue', confirmed_by: 'Test Staff' }),
+    ])
+    expect(inserted.client_line_mapping_changes).toEqual([expect.objectContaining({ meaning: 'revenue', action: 'added' })])
+  })
+
+  it('refuses nothing to confirm, two lines for a one-line figure, or a line from the wrong statement', async () => {
     const c = comparison()
     const { supabase } = db()
-    const partial = answerAll(c)
-    delete partial.net_profit
-    await expect(saveMapping(supabase, 'client-1', 'Test Staff', partial, c)).rejects.toThrow(MappingError)
-    const wrong = { ...answerAll(c), revenue: { rowKeys: [c.tables[1].rows.find((x) => x.label === 'Cash')!.key] } }
+    await expect(saveMapping(supabase, 'client-1', 'Test Staff', {}, c)).rejects.toThrow(MappingError)
+    const pl = c.tables[0].rows
+    const two = { revenue: { rowKeys: [pl.find((x) => x.label === 'Sales')!.key, pl.find((x) => x.label === 'Total Income')!.key] } }
+    await expect(saveMapping(supabase, 'client-1', 'Test Staff', two, c)).rejects.toThrow(/one printed line/)
+    const wrong = { revenue: { rowKeys: [c.tables[1].rows.find((x) => x.label === 'Cash')!.key] } }
     await expect(saveMapping(supabase, 'client-1', 'Test Staff', wrong, c)).rejects.toThrow(/not on the profit and loss/)
   })
 })

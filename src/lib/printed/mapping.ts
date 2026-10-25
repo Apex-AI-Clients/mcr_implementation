@@ -1,5 +1,5 @@
 import type { ComparisonColumn, ComparisonRow, PrintedComparison } from './compare'
-import { MEANINGS, type Meaning } from './meanings'
+import { KEY_FIGURES, MEANINGS, type Meaning } from './meanings'
 
 /**
  * A client's confirmed mapping (migration 0034) applied to the as-printed
@@ -64,9 +64,9 @@ export function resolveAll(comparison: PrintedComparison, mapping: MappingEntry[
   return MEANINGS.map((m) => resolveMeaning(comparison, mapping, m.key))
 }
 
-/** Every meaning confirmed: mapped to lines, or confirmed as not printed. */
+/** The seven key figures confirmed: mapped to lines, or confirmed as not printed. */
 export function mappingConfirmed(mapping: MappingEntry[]): boolean {
-  return MEANINGS.every((m) => mapping.some((e) => e.meaning === m.key))
+  return KEY_FIGURES.every((m) => mapping.some((e) => e.meaning === m.key))
 }
 
 // ─── The SBR prediction's financial inputs ────────────────────────────────────
