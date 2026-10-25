@@ -9,14 +9,16 @@ import { staffAuthorName } from '@/lib/auth/staff'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await getSupabaseAuthClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // The proxy has already checked the session; this reads the same verified
+  // token locally (getClaims) rather than asking the auth server again.
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
 
   // No user (e.g. login page) — render children without sidebar
-  if (!user) {
+  if (!claims) {
     return <>{children}</>
   }
+  const user = { email: claims.email, user_metadata: claims.user_metadata ?? {} }
 
   async function signOut() {
     'use server'

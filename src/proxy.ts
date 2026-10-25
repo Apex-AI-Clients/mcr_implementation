@@ -30,11 +30,12 @@ export async function proxy(request: NextRequest) {
     },
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Verified locally against the project's signing keys (ES256): no round trip
+  // to Supabase on every page. It also refreshes an expired session. API
+  // routes, which change data, still check with the auth server (getUser).
+  const { data } = await supabase.auth.getClaims()
 
-  if (!user) {
+  if (!data?.claims) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)

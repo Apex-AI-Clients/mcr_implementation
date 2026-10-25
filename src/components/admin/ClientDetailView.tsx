@@ -75,6 +75,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
     supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
+  let runningJob: { id: string; created_at: string } | null = comparisonJob
   // What the prediction still needs. Archived files are read-only: no checklist.
   let readiness = archived ? null : await loadReadiness(supabase, id)
   // Work waiting with nothing running (a file a run had no time left for, or
@@ -84,8 +85,10 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   // retried here. Read again so the checklist shows it running.
   if (readiness?.items.some((item) => item.status === 'not_started')) {
     try {
-      const { started } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
+      const { started, jobId } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
       if (started) readiness = await loadReadiness(supabase, id)
+      // The run just started shows its banner too, not only one found running.
+      if (started && jobId) runningJob = { id: jobId, created_at: new Date().toISOString() }
     } catch (err) {
       console.error('[client page] starting the waiting analysis failed', err instanceof Error ? err.name : 'unknown')
     }
@@ -226,14 +229,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         </div>
       )}
 
-      {comparisonJob && (
-        <ComparisonJobStatus
-          clientId={client.id}
-          jobId={comparisonJob.id}
-          mode={comparisonJob.mode === 'compare' ? 'compare' : 'full'}
-          startedAt={comparisonJob.created_at}
-        />
-      )}
+      {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} jobId={runningJob.id} startedAt={runningJob.created_at} />}
 
       <Card className="mb-4">
         <CompletenessBar documents={documents} />

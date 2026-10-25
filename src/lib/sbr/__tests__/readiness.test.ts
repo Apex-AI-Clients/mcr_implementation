@@ -95,6 +95,11 @@ describe('financial statements', () => {
     expect(r.waitingFor).toEqual(['Financial statements: processing'])
   })
 
+  it('stays ready while a run reads only other files (a notice, the ATO export)', () => {
+    const r = computeReadiness(input({ jobRunning: true }))
+    expect(statusOf(r, 'financials').status).toBe('ready')
+  })
+
   it('is ready once compared, whatever gaps the comparison has', () => {
     const item = statusOf(computeReadiness(input({ financials: { fileCount: 2 } })), 'financials')
     expect(item.status).toBe('ready')

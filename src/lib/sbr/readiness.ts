@@ -115,8 +115,9 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   const f = input.financials
   const href = `/clients/${input.clientId}/financials-comparison`
   if (f.fileCount === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
-  if (input.jobRunning) return item(input, 'financials', 'processing', null, href)
-  if (f.outOfDate) return item(input, 'financials', 'not_started', null, href)
+  // Processing only while the run has PDFs of its own to read: a run reading a
+  // notice or the ATO export leaves statements already read as they are.
+  if (f.outOfDate) return item(input, 'financials', input.jobRunning ? 'processing' : 'not_started', null, href)
   // Read, but fewer than two annual statements came out: nothing to compare.
   if (!f.comparison) return item(input, 'financials', 'failed', null, href)
   if (f.unreviewedFailures > 0) {
