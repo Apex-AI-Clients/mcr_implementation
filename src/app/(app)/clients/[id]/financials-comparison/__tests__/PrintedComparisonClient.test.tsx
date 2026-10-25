@@ -35,7 +35,7 @@ function comparison({ broken = false } = {}) {
         r(['Assets'], 'Total Assets', 'subtotal', broken ? 1300 : 1250, 1025.5),
       ]),
     ]),
-  ])
+  ], { comparativeYears: true })
 }
 
 function renderPage(c = comparison()) {

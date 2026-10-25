@@ -128,7 +128,7 @@ export interface LoadedComparison {
 export async function loadPrintedComparison(
   supabase: ServerClient,
   clientId: string,
-  { readMissing = false, force = false }: { readMissing?: boolean; force?: boolean } = {},
+  { readMissing = false, force = false, comparativeYears = false }: { readMissing?: boolean; force?: boolean; comparativeYears?: boolean } = {},
 ): Promise<LoadedComparison> {
   const [docs, stored] = await Promise.all([loadFinancialDocuments(supabase, clientId), loadStoredReads(supabase, clientId)])
   const reads = new Map(stored)
@@ -144,5 +144,5 @@ export async function loadPrintedComparison(
     read: reads.get(d.id)?.read ?? null,
   }))
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
-  return { comparison: buildPrintedComparison(input), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length }
+  return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length }
 }

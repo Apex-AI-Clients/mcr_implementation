@@ -40,9 +40,19 @@ function reports() {
   return [fy25, fy24]
 }
 
+/** FY2023 is printed only as the FY2024 report's comparative: shown on request. */
+const EARLIER = { comparativeYears: true }
+
 describe('buildPrintedComparison', () => {
-  it('orders the years, oldest first, and takes each from its own report', () => {
+  it('shows only years with a report of their own by default, naming the years left out', () => {
     const c = buildPrintedComparison(reports())
+    expect(c.columns.map((col) => col.key)).toEqual(['FY2024', 'FY2025'])
+    expect(c.hiddenComparativeYears).toEqual([2023])
+    expect(buildPrintedComparison(reports(), EARLIER).hiddenComparativeYears).toEqual([])
+  })
+
+  it('orders the years, oldest first, and takes each from its own report', () => {
+    const c = buildPrintedComparison(reports(), EARLIER)
     expect(c.columns.map((col) => col.key)).toEqual(['FY2023', 'FY2024', 'FY2025'])
     const [table] = c.tables
     const total = table.rows.find((x) => x.label === 'Total Assets')!
@@ -51,7 +61,7 @@ describe('buildPrintedComparison', () => {
   })
 
   it('keeps the latest report order, with lines only an earlier year prints after the line they follow, nothing dropped', () => {
-    const [table] = buildPrintedComparison(reports()).tables
+    const [table] = buildPrintedComparison(reports(), EARLIER).tables
     expect(table.rows.map((x) => x.label)).toEqual(['Assets', 'Cash', 'Old line', 'Loan - Director', 'Total Assets'])
     const loan = table.rows.find((x) => x.label === 'Loan - Director')!
     // FY2024's own report does not print it: blank, never a number from elsewhere.
@@ -59,7 +69,7 @@ describe('buildPrintedComparison', () => {
   })
 
   it('shows the own report figure, noting what a later report prints instead', () => {
-    const [table] = buildPrintedComparison(reports()).tables
+    const [table] = buildPrintedComparison(reports(), EARLIER).tables
     const total = table.rows.find((x) => x.label === 'Total Assets')!
     expect(total.cells[1].restated).toEqual([expect.objectContaining({ value: 120, report: 'the FY2025 report' })])
     const loan = table.rows.find((x) => x.label === 'Loan - Director')!
@@ -70,7 +80,7 @@ describe('buildPrintedComparison', () => {
 
   it('reports a printed total that does not add up as a hard check, on its cell', () => {
     const bad = doc('bad', '2026-03-01', bs([fy(2026)], [r([], 'Assets', 'heading', null), r(['Assets'], 'Cash', 'line', 10), r(['Assets'], 'Total Assets', 'subtotal', 15)]))
-    const c = buildPrintedComparison([...reports(), bad])
+    const c = buildPrintedComparison([...reports(), bad], EARLIER)
     expect(c.failures).toEqual([expect.objectContaining({ kind: 'totals_reconciliation', column: 'FY2026', documentId: 'bad' })])
     const total = c.tables[0].rows.find((x) => x.label === 'Total Assets')!
     expect(total.cells.at(-1)!.check).toBe('mismatch')
@@ -78,7 +88,7 @@ describe('buildPrintedComparison', () => {
 
   it('tells staff why a file is not used or not read', () => {
     const scan: ComparisonDocument = { documentId: 'scan', filename: 'scan.pdf', uploadedAt: '', read: { status: 'no_text_layer', pageCount: 3, statements: [], issues: [] } }
-    const c = buildPrintedComparison([...reports(), scan])
+    const c = buildPrintedComparison([...reports(), scan], EARLIER)
     expect(c.documents.find((d) => d.documentId === 'scan')?.message).toBe(
       'This PDF has no readable text. Please ask the accountant for the PDF exported from their accounting software.',
     )
@@ -87,7 +97,7 @@ describe('buildPrintedComparison', () => {
 
 describe('comparisonCsv', () => {
   it('writes every figure as printed, blanks for lines not printed, notes, and the reviewer', () => {
-    const csv = comparisonCsv({ clientName: 'Example Pty Ltd', comparison: buildPrintedComparison(reports()), reviewedBy: null })
+    const csv = comparisonCsv({ clientName: 'Example Pty Ltd', comparison: buildPrintedComparison(reports(), EARLIER), reviewedBy: null })
     expect(csv).toContain('Line,FY2023 (1 Jul 2022 – 30 Jun 2023),FY2024 (1 Jul 2023 – 30 Jun 2024),FY2025 (1 Jul 2024 – 30 Jun 2025),Notes')
     expect(csv).toContain('  Loan - Director,,,30,FY2024: restated in FY2025 report: 20')
     expect(formatPrinted(-1234.5)).toBe('(1,234.50)')

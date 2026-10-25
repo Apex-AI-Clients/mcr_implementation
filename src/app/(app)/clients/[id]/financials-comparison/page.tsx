@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+  /** earlier=1: also the years printed only as a comparative column. */
+  searchParams: Promise<{ earlier?: string }>
 }
 
 /**
@@ -16,8 +18,9 @@ interface Props {
  * PDFs without a read by the current reader are read now (well under a
  * second each, on our own server, no model), so the page is always current.
  */
-export default async function FinancialsComparisonPage({ params }: Props) {
+export default async function FinancialsComparisonPage({ params, searchParams }: Props) {
   const { id } = await params
+  const earlierYears = (await searchParams).earlier === '1'
   const supabase = getSupabaseServerClient()
 
   const { data: client } = await supabase.from('clients').select('id, name, archived_at').eq('id', id).maybeSingle()
@@ -26,7 +29,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
   const [{ comparison, builtAt }, { data: figuresChecked }, mapping] = await Promise.all([
-    loadPrintedComparison(supabase, id, { readMissing: true }),
+    loadPrintedComparison(supabase, id, { readMissing: true, comparativeYears: earlierYears }),
     // The "I've checked these figures" tick (hardChecks.ts).
     supabase.from('sbr_readiness_reviews').select('fingerprint, reviewed_by, reviewed_at').eq('client_id', id).eq('item', 'financials').maybeSingle(),
     // Which printed lines mean what, as staff confirmed (migration 0034).
@@ -40,6 +43,7 @@ export default async function FinancialsComparisonPage({ params }: Props) {
         clientName={client.name}
         comparison={comparison}
         builtAt={builtAt}
+        earlierYears={earlierYears}
         meanings={resolveAll(comparison, mapping)}
         initialFiguresChecked={
           figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null

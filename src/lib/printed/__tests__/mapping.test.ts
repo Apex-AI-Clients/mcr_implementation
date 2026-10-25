@@ -53,7 +53,8 @@ function comparison() {
       ],
     },
   }
-  return buildPrintedComparison([doc])
+  // Both years shown: the FY2024 column is this report's comparative.
+  return buildPrintedComparison([doc], { comparativeYears: true })
 }
 
 const labelOf = (c: ReturnType<typeof comparison>, key: string) => c.tables.flatMap((t) => t.rows).find((x) => x.key === key)?.label

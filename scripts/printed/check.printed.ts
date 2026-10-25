@@ -154,7 +154,8 @@ it('shows every printed figure in the comparison, years in order', async () => {
     const started = performance.now()
     const comparison = buildPrintedComparison(docs)
     const ms = Math.round(performance.now() - started)
-    const gaps = comparisonGaps(docs, comparison)
+    // The default view, and with "Show earlier years from comparative columns".
+    const gaps = [...comparisonGaps(docs, comparison), ...comparisonGaps(docs, buildPrintedComparison(docs, { comparativeYears: true })).map((g) => `(with earlier years) ${g}`)]
     const ends = comparison.columns.map((c) => c.periodEnd)
     const ordered = ends.every((e, i) => i === 0 || e > ends[i - 1])
     const restated = comparison.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c) => c.restated.length))).length

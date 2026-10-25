@@ -7,8 +7,10 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  * invented: every figure is a printed figure, with the file, page and line it
  * came from.
  *
- *   Columns   every financial year uploaded, oldest first, then the current
- *             period (when it ends after the latest year).
+ *   Columns   every financial year with a report of its own, oldest first,
+ *             then the current period (when it ends after the latest year).
+ *             Years printed only as an older report's comparative column on
+ *             request (comparativeYears).
  *   Sources   each year from its own report; a comparative column of a later
  *             report only when the year has no report of its own.
  *   Rows      the latest report's printed order. A line only an earlier year
@@ -109,6 +111,8 @@ export interface PrintedComparison {
   documents: DocumentUse[]
   /** Annual years shown: fewer than two is not yet a comparison. */
   annualYears: number
+  /** Years printed only as a comparative column, left out (unless asked for). */
+  hiddenComparativeYears: number[]
 }
 
 export const NO_TEXT_LAYER_FOR_STAFF =
@@ -145,18 +149,22 @@ function reportLabel(inst: Instance): string {
   return own.kind === 'annual' ? `the ${fyLabel(own.financialYear)} report` : 'the current period report'
 }
 
-function chooseColumns(instances: Instance[]): ComparisonColumn[] {
+function chooseColumns(instances: Instance[], comparativeYears: boolean): { columns: ComparisonColumn[]; hiddenYears: number[] } {
   const annual = new Map<number, PrintedColumn>()
+  const ownYears = new Set<number>()
   let current: PrintedColumn | null = null
   for (const inst of instances) {
     const c = inst.statement.columns[inst.column]
     if (c.kind === 'annual') {
       if (!annual.has(c.financialYear) || inst.own) annual.set(c.financialYear, c)
+      if (inst.own) ownYears.add(c.financialYear)
     } else if (!current || c.periodEnd > current.periodEnd) {
       current = c
     }
   }
-  const years = [...annual.keys()].sort((a, b) => a - b)
+  // A year printed only as another report's comparative column: shown on request.
+  const hiddenYears = [...annual.keys()].filter((fy) => !ownYears.has(fy)).sort((a, b) => a - b)
+  const years = [...annual.keys()].filter((fy) => comparativeYears || ownYears.has(fy)).sort((a, b) => a - b)
   const columns: ComparisonColumn[] = years.map((fy) => {
     const c = annual.get(fy)!
     return { key: fyLabel(fy), kind: 'annual', financialYear: fy, periodStart: c.periodStart, periodEnd: c.periodEnd }
@@ -165,7 +173,7 @@ function chooseColumns(instances: Instance[]): ComparisonColumn[] {
   if (current && current.periodEnd > lastEnd) {
     columns.push({ key: 'current', kind: 'current_period', financialYear: current.financialYear, periodStart: current.periodStart, periodEnd: current.periodEnd })
   }
-  return columns
+  return { columns, hiddenYears: comparativeYears ? [] : hiddenYears }
 }
 
 function matches(inst: Instance, col: ComparisonColumn): boolean {
@@ -245,9 +253,14 @@ function sourceOf(doc: ComparisonDocument, b: BlockRow): CellSource {
 
 const KINDS: PrintedStatementKind[] = ['profit_and_loss', 'balance_sheet']
 
-export function buildPrintedComparison(docs: ComparisonDocument[]): PrintedComparison {
+export interface ComparisonOptions {
+  /** Also show years printed only as a later report's comparative column ("Show earlier years…"). */
+  comparativeYears?: boolean
+}
+
+export function buildPrintedComparison(docs: ComparisonDocument[], { comparativeYears = false }: ComparisonOptions = {}): PrintedComparison {
   const instances = instancesOf(docs)
-  const columns = chooseColumns(instances)
+  const { columns, hiddenYears } = chooseColumns(instances, comparativeYears)
   const tables: ComparisonTable[] = []
   const failures: ComparisonFailure[] = []
   const usedDocs = new Set<string>()
@@ -342,7 +355,7 @@ export function buildPrintedComparison(docs: ComparisonDocument[]): PrintedCompa
     tables.push({ kind, title: titleSource?.statement.title ?? (kind === 'profit_and_loss' ? 'Profit and Loss' : 'Balance Sheet'), rows })
   }
 
-  return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length }
+  return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length, hiddenComparativeYears: hiddenYears }
 }
 
 function describeDocuments(docs: ComparisonDocument[], used: Set<string>): DocumentUse[] {

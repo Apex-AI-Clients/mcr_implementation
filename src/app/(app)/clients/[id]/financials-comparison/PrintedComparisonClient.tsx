@@ -24,6 +24,8 @@ interface Props {
   initialFiguresChecked: FiguresChecked | null
   /** The headline meanings, from the lines staff confirmed (mapping.ts). */
   meanings: ResolvedMeaning[]
+  /** Showing the years printed only as a comparative column. */
+  earlierYears?: boolean
 }
 
 /**
@@ -32,7 +34,7 @@ interface Props {
  * guessed; a printed total that does not add up shows Needs review and locks
  * the PDF and CSV until a staff member ticks that they checked it.
  */
-export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, meanings }: Props) {
+export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, meanings, earlierYears = false }: Props) {
   const router = useRouter()
   const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [selected, setSelected] = useState<SelectedFigure | null>(null)
@@ -121,6 +123,20 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
             <p className="text-xs text-foreground/60">Only one financial year is on file so far: upload the earlier years to compare.</p>
           )}
           <HeadlineTiles clientId={clientId} meanings={meanings} />
+          {(earlierYears || comparison.hiddenComparativeYears.length > 0) && (
+            <label className="no-print flex items-center gap-2 text-xs text-foreground/70">
+              <input
+                type="checkbox"
+                checked={earlierYears}
+                onChange={(e) => router.push(e.target.checked ? `?earlier=1` : '?')}
+                className="accent-accent"
+              />
+              Show earlier years from comparative columns
+              {!earlierYears && (
+                <span className="text-foreground/45">({comparison.hiddenComparativeYears.map((y) => `FY${y}`).join(', ')}: printed only as the previous year in a later report)</span>
+              )}
+            </label>
+          )}
           {selected && <SourcePanel figure={selected} onClose={() => setSelected(null)} />}
           {comparison.tables.map((table) => (
             <PrintedComparisonTable key={table.kind} table={table} columns={comparison.columns} selected={selected} onSelect={setSelected} />
