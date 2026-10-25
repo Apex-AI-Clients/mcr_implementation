@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { loadMapping } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
+import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { PrintedComparisonClient } from './PrintedComparisonClient'
 
 export const dynamic = 'force-dynamic'
@@ -44,6 +45,7 @@ export default async function FinancialsComparisonPage({ params, searchParams }:
         comparison={comparison}
         builtAt={builtAt}
         earlierYears={earlierYears}
+        aiSummaryEnabled={aiSummariesEnabled()}
         mapping={mapping}
         suggestions={suggestMapping(comparison)}
         initialFiguresChecked={

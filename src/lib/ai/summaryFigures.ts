@@ -1,13 +1,11 @@
-import type { FinancialsComparison } from '@/lib/financials/types'
-
 /**
- * Checks on the AI summary's figures. Pure.
+ * Checks on an AI summary's figures. Pure.
  *
- * Every dollar figure the summary states must be one of the figures it was
- * given, or the difference between two of them, within 1% (or within the
- * rounding the summary itself used, e.g. "$1.2 million"). A figure that is
- * none of those — like a sum of three years' profits presented as retained
- * earnings — fails the summary.
+ * Every dollar figure the summary states must be one of the dollar figures it
+ * was given (the ones in its prompt), or the difference between two of them,
+ * within 1% (or within the rounding the summary itself used, e.g. "$1.2
+ * million"). A figure that is none of those — a sum of three years' profits
+ * presented as retained earnings, a number made up — fails the summary.
  */
 
 export interface StatedFigure {
@@ -45,22 +43,9 @@ export function statedFigures(text: string): StatedFigure[] {
   return out
 }
 
-/** The dollar figures the summary was given, as magnitudes. */
-export function inputFigures(comparison: FinancialsComparison): number[] {
-  const values: Array<number | null | undefined> = []
-  const h = comparison.headlines
-  for (const key of ['revenue', 'netProfit', 'netAssets', 'atoDebtTrajectory', 'directorLoansReceivable'] as const) {
-    values.push(...h[key].trend, h[key].latestValue, h[key].currentPeriodValue)
-  }
-  for (const year of comparison.years) {
-    values.push(comparison.atoLiabilityByYear[year]?.total)
-    const equity = comparison.equityByYear?.[year]
-    values.push(equity?.retainedEarnings, equity?.distributions, equity?.dividends)
-  }
-  // The sum of profits is deliberately NOT an input: the summary is not given
-  // it, so a stated sum of profits fails the check.
-  values.push(comparison.currentPeriod?.atoLiabilityTotal)
-  return [...new Set(values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).map(Math.abs))]
+/** The dollar figures a prompt gives the model: the only ones its answer may state. */
+export function promptFigures(prompt: string): number[] {
+  return [...new Set(statedFigures(prompt).map((f) => f.value))]
 }
 
 /** A stated figure that is an input, or the difference between two inputs. */
@@ -76,37 +61,9 @@ function supported(figure: StatedFigure, inputs: number[]): boolean {
   return false
 }
 
-/** The summary's figures that are not in, or directly derived from, its input. */
-export function unsupportedFigures(text: string, comparison: FinancialsComparison): string[] {
-  const inputs = inputFigures(comparison)
+/** The summary's figures that are not in, or the difference of two of, its inputs. */
+export function unsupportedFigures(text: string, inputs: number[]): string[] {
   return statedFigures(text)
     .filter((f) => !supported(f, inputs))
     .map((f) => f.text)
-}
-
-/**
- * The summary used when the model's will not check out twice: direction only,
- * no figures, so it cannot state a wrong one.
- */
-export function summaryWithoutFigures(comparison: FinancialsComparison): string {
-  const h = comparison.headlines
-  const first = comparison.years[0]
-  const last = comparison.years[comparison.years.length - 1]
-  const trendWord = (d: string) => (d === 'up' ? 'rose' : d === 'down' ? 'fell' : 'was broadly flat')
-  const profits = h.netProfit.trend.filter((v): v is number => v !== null)
-  const profitable = profits.filter((v) => v > 0).length
-  const losses = profits.filter((v) => v < 0).length
-  const netAssets = h.netAssets.latestValue
-  const sentences = [
-    `Between FY${first} and FY${last}, revenue ${trendWord(h.revenue.direction)}.`,
-    profits.length
-      ? `The business recorded ${profitable} profitable year${profitable === 1 ? '' : 's'} and ${losses} loss year${losses === 1 ? '' : 's'}.`
-      : null,
-    `ATO-related debt ${trendWord(h.atoDebtTrajectory.direction)} over the period.`,
-    netAssets !== null
-      ? `Net assets were ${netAssets >= 0 ? 'positive' : 'negative'} in the latest year.`
-      : null,
-    'The automated summary could not be confirmed against the figures, so the figures are in the tables below.',
-  ]
-  return sentences.filter(Boolean).join(' ')
 }

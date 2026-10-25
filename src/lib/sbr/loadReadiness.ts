@@ -1,15 +1,11 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readDirectors } from '@/lib/clients/companyDetails'
-import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { printedExportsLocked, printedHardChecks } from '@/lib/printed/review'
 import { loadMapping } from '@/lib/printed/mappingStore'
 import { mappingConfirmed } from '@/lib/printed/mapping'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
-import { periodOverrideOf } from '@/lib/financials/periodOverride'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { FinancialDocumentKind, StoredStatementSlot } from '@/lib/financials/types'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { computeReadiness, type Readiness } from './readiness'
@@ -28,8 +24,6 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
   const [
     { data: client },
     { data: docs },
-    slots,
-    { data: extractions },
     { data: analyses },
     { data: noticeRows },
     { data: company },
@@ -43,11 +37,9 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .maybeSingle(),
     supabase
       .from('documents')
-      .select('id, doc_category, original_filename, uploaded_at, file_type, fs_override_kind, fs_override_fy, fs_override_by, fs_override_at')
+      .select('id, doc_category, original_filename, uploaded_at, file_type')
       .eq('client_id', clientId)
       .order('uploaded_at', { ascending: false }),
-    loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
-    supabase.from('financial_document_extractions').select('document_id, kind, extracted_at, warnings').eq('client_id', clientId),
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, analysed_at')
@@ -70,23 +62,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
   const isFinancial = (c: string) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(c)
 
   // ── Financial statements ────────────────────────────────────────────────
-  const financialDocs = all.filter((d) => isFinancial(d.doc_category)).reverse()
-  const files = describeFinancialFiles({
-    documents: financialDocs.map((d) => ({
-      id: d.id,
-      filename: d.original_filename,
-      override: periodOverrideOf(d),
-      overrideBy: d.fs_override_by,
-      overrideAt: d.fs_override_at,
-    })),
-    slots,
-    extractions: (extractions ?? []).map((e) => ({
-      documentId: e.document_id,
-      kind: e.kind as FinancialDocumentKind,
-      extractedAt: e.extracted_at,
-      failure: failureOf(e.warnings),
-    })),
-  })
+  const financialFileCount = all.filter((d) => isFinancial(d.doc_category)).length
 
   // A printed total that does not add up and nobody has ticked: the same rule as the export lock.
   const unreviewedFailures = printedExportsLocked(
@@ -128,7 +104,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     clientId,
     jobRunning: liveJob !== null,
     financials: {
-      files,
+      fileCount: financialFileCount,
       // Two years printed side by side is a comparison (as before); fewer is Failed.
       comparison: printed.comparison.annualYears >= 2 && printed.builtAt ? { generatedAt: printed.builtAt, staleSince: null } : null,
       // PDFs not yet read by the current reader. A file that could not be

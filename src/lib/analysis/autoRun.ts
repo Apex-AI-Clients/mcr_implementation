@@ -2,8 +2,7 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv, type ActivityStatementFile } from './lodgementStore'
-import type { ExtractError } from '@/lib/financials/comparisonJob'
-import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
+import { findLiveComparisonJob, type ExtractError } from '@/lib/financials/jobLiveness'
 import { READER_VERSION, readAndStore, type FinancialDocumentRow } from '@/lib/printed/store'
 
 /**

@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { loadMapping, loadMappingChanges } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
+import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { LineMappingClient } from './LineMappingClient'
 
 export const dynamic = 'force-dynamic'
@@ -38,6 +39,7 @@ export default async function LineMappingPage({ params }: Props) {
         mapping={mapping}
         suggestions={suggestMapping(comparison)}
         changes={changes}
+        aiEnabled={aiSummariesEnabled()}
       />
     </div>
   )

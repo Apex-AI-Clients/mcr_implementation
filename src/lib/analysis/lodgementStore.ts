@@ -3,7 +3,8 @@ import { DOCUMENT_CATEGORIES } from '@/lib/constants'
 import { isActivityStatementCsv, parseActivityStatementCsv } from './parseActivityStatement'
 import { computeLateLodgement, reanalyseStoredRows } from './computeLateLodgement'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
-import { generateLodgementAiSummary } from '@/lib/ai/lodgementSummary'
+import { generateLodgementAiSummary, isClaudeSummary } from '@/lib/ai/lodgementSummary'
+import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import type { Database } from '@/types/database'
 
 /**
@@ -12,8 +13,9 @@ import type { Database } from '@/types/database'
  *
  * The analysis itself is arithmetic. The AI summary is separate and optional:
  * automatic runs (on upload or delete) store the figures only, and the summary
- * is generated when staff open the page. OpenRouter's retention of ATO data is
- * not yet confirmed (README), so as little as possible is sent to it.
+ * is generated when staff open the page, by Claude via OpenRouter (Anthropic
+ * only, no data retained), from the computed figures only — never the CSV.
+ * Off unless AI_SUMMARIES_ENABLED.
  */
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
@@ -89,7 +91,7 @@ export async function analyseAndStoreLodgement(
 
   let aiText: string | null = null
   let aiModel: string | null = null
-  if (options.aiSummary && needsSummary(result)) {
+  if (options.aiSummary && aiSummariesEnabled() && needsSummary(result)) {
     try {
       const ai = await generateLodgementAiSummary({
         dpnRisk: result.dpnRisk,
@@ -101,7 +103,7 @@ export async function analyseAndStoreLodgement(
       aiText = ai.text
       aiModel = ai.model
     } catch (err) {
-      console.error('[lodgement] AI summary failed', err instanceof Error ? err.message : 'unknown')
+      console.error('[lodgement] AI summary failed', err instanceof Error ? err.name : 'unknown')
     }
   }
 
@@ -153,13 +155,14 @@ export type SummaryOutcome =
 export async function ensureLodgementSummary(supabase: ServerClient, clientId: string): Promise<SummaryOutcome> {
   const { data: row } = await supabase
     .from('lodgement_analyses')
-    .select('id, ai_summary, ai_summary_generated_at, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late')
+    .select('id, ai_summary, ai_summary_generated_at, ai_summary_model, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late')
     .eq('client_id', clientId)
     .order('analysed_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (!row) return { kind: 'none' }
-  if (row.ai_summary && row.ai_summary_generated_at) {
+  // A summary written before the switch to Claude did not pass the figure check: not shown, written again.
+  if (row.ai_summary && row.ai_summary_generated_at && isClaudeSummary(row.ai_summary_model)) {
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }
   }
 
@@ -172,6 +175,7 @@ export async function ensureLodgementSummary(supabase: ServerClient, clientId: s
     cumulativeDaysLate: row.cumulative_days_late,
   }
   if (!(dpnRisk?.totalGrossLate > 0) && !(summary.numberOfLateLodgements > 0)) return { kind: 'not_needed' }
+  if (!aiSummariesEnabled()) return { kind: 'not_needed' }
 
   try {
     const ai = await generateLodgementAiSummary({
@@ -188,7 +192,7 @@ export async function ensureLodgementSummary(supabase: ServerClient, clientId: s
       .eq('id', row.id)
     return { kind: 'generated', text: ai.text, generatedAt: now }
   } catch (err) {
-    console.error('[lodgement] AI summary failed', err instanceof Error ? err.message : 'unknown')
+    console.error('[lodgement] AI summary failed', err instanceof Error ? err.name : 'unknown')
     return { kind: 'failed' }
   }
 }

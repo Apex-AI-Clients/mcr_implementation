@@ -61,6 +61,8 @@ interface Props {
   entries: MappingEntry[]
   /** The dictionary's suggestion, used until staff confirm. */
   suggestion: string[]
+  /** The suggestion is Claude's, from the label only (labelSuggestions.ts), not the dictionary's. */
+  aiSuggested?: boolean
   /** Open with the picker showing (from a tile's "Suggested — check"). */
   choosing?: boolean
   onDone?: () => void
@@ -72,7 +74,7 @@ interface Props {
  * staff say "Yes, that's right" or choose another; then Confirmed, by whom
  * and when, with "Change".
  */
-export function KeyFigureCard({ clientId, comparison, meaning, entries, suggestion, choosing = false, onDone }: Props) {
+export function KeyFigureCard({ clientId, comparison, meaning, entries, suggestion, aiSuggested = false, choosing = false, onDone }: Props) {
   const info = MEANING[meaning]
   const { confirm, saving, error } = useConfirmKeyFigures(clientId)
   const [picking, setPicking] = useState(choosing)
@@ -109,7 +111,7 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
               Confirmed by {confirmedBy.confirmedBy}, {shortDate(confirmedBy.confirmedAt)}
             </Badge>
           ) : status === 'suggested' ? (
-            <Badge variant="warning">Suggested</Badge>
+            <Badge variant="warning">{aiSuggested ? 'Suggested by AI' : 'Suggested'}</Badge>
           ) : (
             <Badge variant="destructive">Not found</Badge>
           )}
@@ -142,6 +144,9 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
           </div>
         )}
         {missing > 0 && <p className="text-xs text-warning">A chosen line is no longer printed. Choose again.</p>}
+        {status === 'suggested' && aiSuggested && (
+          <p className="text-xs text-foreground/60">Suggested by Claude from the printed label and headings only. Check the figures before confirming.</p>
+        )}
       </div>
 
       {!picking && (

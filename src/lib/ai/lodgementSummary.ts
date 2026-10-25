@@ -1,16 +1,18 @@
 /**
- * Server-only. Calls Gemini 2.5 Flash via OpenRouter to write a 3-5 sentence
+ * Server-only. Claude (openrouterClient.ts) writes a 3-5 sentence
  * plain-language summary covering compliance, director penalty notices, and
- * debt composition. Must only be imported from API routes.
+ * debt composition, from the analysis's computed figures only (no CSV).
  *
  * The DPN figures are the ATO's notices' own when any are on file
  * (dpn/noticeFigures.ts); otherwise the estimate from the ATO account
- * (computeDpnRisk), labelled as an estimate. A summary that uses a banned
- * word (wording.ts) is asked for once more; then those sentences are removed.
+ * (computeDpnRisk), labelled as an estimate. The same checks as every summary
+ * (checkedSummary.ts): every dollar figure must be one given or the
+ * difference of two, and no banned word; written again once, then a summary
+ * without figures.
  */
-import { OPENROUTER_NARRATIVE_MODEL, LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from './prompts'
-import { getOpenRouterClient } from './openrouterClient'
-import { BANNED_WORDS_INSTRUCTION, bannedWordsIn, withoutBannedSentences } from './wording'
+import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from './prompts'
+import { writeCheckedSummary } from './checkedSummary'
+import { BANNED_WORDS_INSTRUCTION } from './wording'
 import type { DpnRiskBreakdown, DebtBreakdown } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 
@@ -71,6 +73,28 @@ export function lodgementSummaryPrompt(input: {
     )
 }
 
+/** No figures: used when the model's figures do not check out twice. */
+export function lodgementSummaryWithoutFigures(input: {
+  dpnRisk: DpnRiskBreakdown
+  summary: { numberOfLateLodgements: number; cumulativeDaysLate: number }
+  notices?: DpnNoticeFigures | null
+}): string {
+  const { dpnRisk, summary } = input
+  const n = summary.numberOfLateLodgements
+  return [
+    `Between ${formatMonthYear(dpnRisk.periodStart)} and ${formatMonthYear(dpnRisk.periodEnd)}, ${n} BAS lodgement${n === 1 ? ' was' : 's were'} filed late, ${summary.cumulativeDaysLate} days late in total.`,
+    input.notices
+      ? `Director penalty notices are on file; their figures are shown below.`
+      : `No director penalty notices are on file; the estimate from the ATO account is shown below.`,
+    'The automated summary could not be confirmed against the figures, so the debt figures are in the tables below.',
+  ].join(' ')
+}
+
+/** True when a stored summary was written under the current rules (Claude, checked figures). */
+export function isClaudeSummary(model: string | null | undefined): boolean {
+  return !!model && model.startsWith('anthropic/')
+}
+
 export async function generateLodgementAiSummary(input: {
   dpnRisk: DpnRiskBreakdown
   debtBreakdown: DebtBreakdown
@@ -78,33 +102,10 @@ export async function generateLodgementAiSummary(input: {
   /** The ATO's director penalty notices' figures, when any are on file. */
   notices?: DpnNoticeFigures | null
 }): Promise<{ text: string; model: string }> {
-  const prompt = lodgementSummaryPrompt(input)
-
-  // Narrative generation is short — drop the SDK timeout to 60s.
-  const client = getOpenRouterClient({ timeoutMs: 60_000 })
-  const ask = async (content: string) => {
-    const response = await client.chat.completions.create({
-      model: OPENROUTER_NARRATIVE_MODEL,
-      max_tokens: 250,
-      messages: [{ role: 'user', content }],
-      // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
-      provider: {
-        order: ['google-ai-studio', 'google-vertex'],
-        allow_fallbacks: false,
-      },
-    })
-    const text = response.choices[0]?.message?.content?.trim() ?? ''
-    if (!text) {
-      throw new Error('generateLodgementAiSummary: OpenRouter returned empty content.')
-    }
-    return { text, model: response.model }
-  }
-
-  const first = await ask(prompt)
-  const banned = bannedWordsIn(first.text)
-  if (banned.length === 0) return first
-  const second = await ask(
-    `${prompt}\n\nYour previous summary used ${banned.map((w) => `"${w}"`).join(', ')}, which you must never use. Write it again.`,
-  )
-  return bannedWordsIn(second.text).length === 0 ? second : { ...second, text: withoutBannedSentences(second.text) }
+  return writeCheckedSummary({
+    prompt: lodgementSummaryPrompt(input),
+    label: 'lodgement-summary',
+    maxTokens: 250,
+    withoutFigures: () => lodgementSummaryWithoutFigures(input),
+  })
 }

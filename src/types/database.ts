@@ -55,6 +55,41 @@ export type Database = {
           },
         ]
       }
+      ai_summaries: {
+        Row: {
+          client_id: string
+          generated_at: string
+          input_fingerprint: string
+          kind: string
+          model: string
+          summary: string
+        }
+        Insert: {
+          client_id: string
+          generated_at?: string
+          input_fingerprint: string
+          kind: string
+          model: string
+          summary: string
+        }
+        Update: {
+          client_id?: string
+          generated_at?: string
+          input_fingerprint?: string
+          kind?: string
+          model?: string
+          summary?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_summaries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_deletions: {
         Row: {
           archived_at: string | null

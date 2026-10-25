@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { balanceSheetAtoTotal, creditorDebt, daysSinceLastPayment, icaPosition, type IcaRow } from '../creditorDebt'
-import type { ExtractedBalanceSheet } from '@/lib/financials/types'
+import { creditorDebt, daysSinceLastPayment, icaPosition, type IcaRow } from '../creditorDebt'
 
 /** The creditor (ATO) debt and the payment gap. SYNTHETIC account rows. */
 
@@ -14,14 +13,7 @@ const ICA: IcaRow[] = [
   { rowIndex: 3, processedDate: '2026-04-01T00:00:00.000Z', balance: 125_000, lodgementType: 'GIC' },
 ]
 
-const bs = (cl: Record<string, number>): ExtractedBalanceSheet => ({
-  currentAssets: {},
-  nonCurrentAssets: {},
-  currentLiabilities: cl,
-  nonCurrentLiabilities: {},
-  equity: {},
-  totals: {},
-})
+const ato = (amount: number, lines = ['GST Payable']) => ({ amount, lines })
 
 describe('icaPosition', () => {
   it("takes the ATO's own running balance on the newest row, and the latest date as the statement date", () => {
@@ -35,7 +27,7 @@ describe('icaPosition', () => {
 
 describe('creditorDebt', () => {
   it('uses the ATO account statement first, as at its statement date', () => {
-    const debt = creditorDebt({ icaRows: ICA, balanceSheet: bs({ atoLiability: 50_000, gstPayable: 9_000 }) })
+    const debt = creditorDebt({ icaRows: ICA, mappedAto: ato(59_000) })
     expect(debt).toMatchObject({ amount: 120_500.25, source: 'ica', asOf: '2026-04-20' })
     expect(debt.description).toBe('ATO account statement, 20 Apr 2026')
   })
@@ -46,24 +38,24 @@ describe('creditorDebt', () => {
   })
 
   it('never adds the balance sheet on top: GST and PAYG are already in the account balance', () => {
-    expect(creditorDebt({ icaRows: ICA, balanceSheet: bs({ gstPayable: 9_000 }) }).amount).toBe(120_500.25)
+    expect(creditorDebt({ icaRows: ICA, mappedAto: ato(9_000) }).amount).toBe(120_500.25)
   })
 
-  it('falls back to the balance sheet ATO liability, GST and PAYG — never super, which is owed to super funds', () => {
+  it('falls back to the ATO-related balance sheet lines staff confirmed, naming them', () => {
     const debt = creditorDebt({
       icaRows: null,
-      balanceSheet: bs({ gstPayable: 42_000, paygWithholdingPayable: 8_000, superannuationPayable: 5_000 }),
+      mappedAto: ato(50_000, ['GST Payable', 'PAYG Withholding Payable']),
       balanceSheetDate: '2025-06-30',
       balanceSheetLabel: 'FY2025',
     })
     expect(debt).toMatchObject({ amount: 50_000, source: 'balance_sheet', asOf: '2025-06-30', missing: null })
-    expect(debt.description).toBe('Balance sheet (FY2025), as at 30 Jun 2025: ATO, GST and PAYG')
+    expect(debt.description).toBe('Balance sheet (FY2025), as at 30 Jun 2025: “GST Payable” + “PAYG Withholding Payable”')
   })
 
   it('asks for the lodgement analysis to be re-run when its rows carry no balance', () => {
     const debt = creditorDebt({
       icaRows: ICA.map((r) => ({ ...r, balance: null })),
-      balanceSheet: bs({ gstPayable: 42_000 }),
+      mappedAto: ato(42_000),
     })
     expect(debt.source).toBe('balance_sheet')
     expect(debt.description).toMatch(/Re-run the lodgement analysis/)
@@ -78,16 +70,10 @@ describe('creditorDebt', () => {
   })
 
   it('names the missing input instead of "run financials extraction"', () => {
-    const debt = creditorDebt({ icaRows: null, balanceSheet: bs({}) })
+    const debt = creditorDebt({ icaRows: null, mappedAto: null })
     expect(debt.amount).toBeNull()
     expect(debt.missing).toMatch(/ATO integrated client account CSV/)
     expect(debt.missing).not.toMatch(/financials extraction/)
-  })
-
-  it('reads the balance sheet total from the ATO liability, GST and PAYG lines only', () => {
-    expect(balanceSheetAtoTotal(bs({ atoLiability: 1, gstPayable: 2, paygWithholdingPayable: 3, superannuationPayable: 4, bankOverdraft: 100 }))).toBe(6)
-    expect(balanceSheetAtoTotal(bs({ superannuationPayable: 4 }))).toBeNull()
-    expect(balanceSheetAtoTotal(bs({ bankOverdraft: 100 }))).toBeNull()
   })
 })
 

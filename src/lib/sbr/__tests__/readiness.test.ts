@@ -1,26 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { computeReadiness, type ReadinessInput } from '../readiness'
-import type { FinancialFileRow } from '@/lib/financials/financialFiles'
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
 
 /** The readiness checklist's rules. Synthetic data only. */
-
-function file(over: Partial<FinancialFileRow> = {}): FinancialFileRow {
-  return {
-    documentId: 'fs-1',
-    filename: 'fy2026.pdf',
-    annualYears: [2026],
-    comparativeYears: [2025],
-    currentPeriodYear: null,
-    currentPeriodLabel: null,
-    usage: 'used',
-    note: 'Annual, compared for FY2026.',
-    override: null,
-    overridePending: false,
-    ...over,
-  }
-}
 
 function notice(over: Partial<StoredNotice> = {}): StoredNotice {
   return {
@@ -62,7 +45,7 @@ function input(over: {
     clientId: 'c1',
     jobRunning: over.jobRunning ?? false,
     financials: {
-      files: [file()],
+      fileCount: 1,
       comparison: { generatedAt: '2026-10-17T00:00:00Z', staleSince: null },
       outOfDate: false,
       unreviewedFailures: 0,
@@ -92,7 +75,7 @@ describe('computeReadiness — all in', () => {
 
 describe('financial statements', () => {
   it('is not uploaded with no files', () => {
-    const r = computeReadiness(input({ financials: { files: [] } }))
+    const r = computeReadiness(input({ financials: { fileCount: 0 } }))
     expect(statusOf(r, 'financials').status).toBe('not_uploaded')
     expect(r.canPredict).toBe(false)
     expect(r.waitingFor).toEqual(['Financial statements: not uploaded'])
@@ -113,8 +96,7 @@ describe('financial statements', () => {
   })
 
   it('is ready once compared, whatever gaps the comparison has', () => {
-    const failed = file({ documentId: 'scan', filename: 'scan.pdf', annualYears: [], comparativeYears: [], usage: 'nothing_read' })
-    const item = statusOf(computeReadiness(input({ financials: { files: [file(), failed] } })), 'financials')
+    const item = statusOf(computeReadiness(input({ financials: { fileCount: 2 } })), 'financials')
     expect(item.status).toBe('ready')
   })
 
@@ -139,7 +121,7 @@ describe('financial statements', () => {
   })
 
   it('never has a line under the heading, in any state but Needs review', () => {
-    for (const over of [{ files: [] }, { outOfDate: true }, { comparison: null }, {}]) {
+    for (const over of [{ fileCount: 0 }, { outOfDate: true }, { comparison: null }, {}]) {
       expect(statusOf(computeReadiness(input({ financials: over })), 'financials').detail).toBeNull()
     }
     expect(statusOf(computeReadiness(input({ jobRunning: true })), 'financials').detail).toBeNull()

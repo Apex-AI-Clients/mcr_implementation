@@ -1,4 +1,3 @@
-import type { FinancialFileRow } from '@/lib/financials/financialFiles'
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import { noticeTypeLabel } from '@/lib/dpn/stored'
 
@@ -55,7 +54,8 @@ export interface ReadinessInput {
   /** An analysis run (automatic or from the comparison page) is going now. */
   jobRunning: boolean
   financials: {
-    files: FinancialFileRow[]
+    /** Financial statement files uploaded. */
+    fileCount: number
     comparison: { generatedAt: string; staleSince: string | null } | null
     /** Files never read (or overridden since), or a comparison out of date. */
     outOfDate: boolean
@@ -114,7 +114,7 @@ function item(input: ReadinessInput, key: ReadinessKey, status: ReadinessStatus,
 function financialsItem(input: ReadinessInput): ReadinessItem {
   const f = input.financials
   const href = `/clients/${input.clientId}/financials-comparison`
-  if (f.files.length === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
+  if (f.fileCount === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
   if (input.jobRunning) return item(input, 'financials', 'processing', null, href)
   if (f.outOfDate) return item(input, 'financials', 'not_started', null, href)
   // Read, but fewer than two annual statements came out: nothing to compare.

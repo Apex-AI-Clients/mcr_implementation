@@ -45,21 +45,29 @@ npx supabase gen types typescript --linked | Out-File -Encoding utf8 src/types/d
   upgrade: `npm install --save-exact https://cdn.sheetjs.com/xlsx-<version>/xlsx-<version>.tgz`,
   then `npm run test -- src/lib/sbr/import`.
 
-## Open reminder: OpenRouter and ATO data
+## AI: Claude via OpenRouter
 
-**Unconfirmed (17 Oct 2026):** whether OpenRouter, or the model provider behind
-it, retains or trains on what we send has not yet been confirmed with the
-company's AI team for ATO data. Until it is, keep what goes to it to a minimum:
+All AI calls go through `src/lib/ai/openrouterClient.ts` (`askClaude`). Every
+request asks OpenRouter for Anthropic only, with no fallbacks, data
+collection denied and zero data retention required; an answer from any other
+provider is rejected, and the feature shows no AI text instead. Off unless
+`AI_SUMMARIES_ENABLED=true` and `OPENROUTER_API_KEY` are set (Vercel only,
+by the account owner).
 
-- The AI summaries (lodgement analysis, financials comparison) are generated
-  only when staff open those pages, never in an automatic run.
-- Director penalty notices are never sent to any AI model. They are read with
-  deterministic text parsing (`src/lib/dpn/`), in memory, on our own server.
-- The financial statement extraction still sends statement PDFs to OpenRouter,
-  as before.
+What is sent, and only when staff open the page:
 
-Remove this section once the AI team has confirmed the terms, and record what
-they confirmed.
+- Comparison summary: the confirmed key figures, as printed, per year. Not
+  written while a total that does not add up is unticked (Needs review).
+- Lodgement summary: the computed lodgement, DPN and debt figures (no CSV).
+- Label suggestions: printed labels and their headings for the key figures
+  the dictionary found no line for. No figures.
+
+No PDF is sent to any model. Financial statements are read by our own code
+(`src/lib/printed/`); director penalty notices too (`src/lib/dpn/`).
+
+**Open (17 Oct 2026):** confirm OpenRouter's own terms (as the intermediary)
+for ATO-derived figures with the company's AI team, and record what they
+confirmed here.
 
 ## Learn More
 

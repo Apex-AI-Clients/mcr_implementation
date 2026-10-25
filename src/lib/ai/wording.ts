@@ -1,8 +1,7 @@
 /**
  * Words no summary may use: legal conclusions about the client that the
- * figures cannot support and the practitioner has not drawn. One list for the
- * AI summaries (financial comparison, lodgement) and the prediction page's
- * rule-based points (financialPoints.ts).
+ * figures cannot support and the practitioner has not drawn. One list for
+ * every AI summary (financial comparison, lodgement; checkedSummary.ts).
  *
  * "solven…" covers solvent, solvency; "insolven…" covers insolvent,
  * insolvency.

@@ -1,21 +1,18 @@
 import { it } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
-import { loadCompanyDetails, loadDocumentRecords } from '@/lib/financials/comparisonJob'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { out, readClients, writeJson, type Snapshot } from './figures'
 
 /**
  * `npm run figures:snapshot` — READ-ONLY. Copies each listed test client's
- * stored statements, document records and company details into
- * verified-figures/<alias>.snapshot.json (gitignored). Run it after
- * re-extracting a test client. SELECTs only; nothing is written to the
+ * ATO account rows and director penalty notices into
+ * verified-figures/<alias>.snapshot.json (gitignored). SELECTs only; nothing is written to the
  * database. Prints aliases and counts, never names or figures.
  *
  * FIGURES_ALIAS=client-c snapshots only that client, leaving the others'
  * snapshots (the baseline for figures:check) as they are.
  */
-it('snapshots the stored statements of the test clients', async () => {
+it('snapshots the ATO account rows and notices of the test clients', async () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env')
@@ -26,10 +23,7 @@ it('snapshots the stored statements of the test clients', async () => {
   const clients = readClients().filter((c): c is { alias: string; clientId: string } => c.clientId !== null && (!only || c.alias === only))
   if (only && clients.length === 0) throw new Error(`No client "${only}" in verified-figures/clients.json`)
   for (const { alias, clientId } of clients) {
-    const [slots, records, company, lodgement, dpnDocuments, dpnNotices] = await Promise.all([
-      loadStoredSlots(supabase as never, clientId),
-      loadDocumentRecords(supabase as never, clientId),
-      loadCompanyDetails(supabase as never, clientId),
+    const [lodgement, dpnDocuments, dpnNotices] = await Promise.all([
       supabase
         .from('lodgement_analyses')
         .select('document_id, rows')
@@ -45,9 +39,6 @@ it('snapshots the stored statements of the test clients', async () => {
     const ica = await loadIcaRows(supabase as never, (lodgement.data as never) ?? null)
     const snapshot: Snapshot = {
       takenAt: new Date().toISOString(),
-      slots,
-      records,
-      company,
       icaRows: ica.rows,
       dpn: {
         documents: (dpnDocuments.data ?? []).map((d) => ({ id: d.id, originalFilename: d.original_filename })),
@@ -55,6 +46,6 @@ it('snapshots the stored statements of the test clients', async () => {
       },
     }
     writeJson(`${alias}.snapshot.json`, snapshot)
-    out(`${alias}: ${slots.length} statement slots, ${records.length} documents, ATO account rows from ${ica.from} — snapshot written`)
+    out(`${alias}: ATO account rows from ${ica.from}, ${(dpnNotices.data ?? []).length} notices — snapshot written`)
   }
 })

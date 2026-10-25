@@ -1,18 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE, OPENROUTER_NARRATIVE_MODEL } from '../prompts'
+import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from '../prompts'
 import type { DpnRiskBreakdown, DebtBreakdown } from '@/lib/analysis/types'
 
-// Track the mock create function so we can configure it per test
-const mockCreate = vi.fn()
+/** The lodgement summary, with Claude mocked. Synthetic figures only. */
 
-vi.mock('../openrouterClient', () => ({
-  getOpenRouterClient: () => ({
-    chat: { completions: { create: mockCreate } },
-  }),
-}))
+const askClaude = vi.fn()
+vi.mock('../openrouterClient', () => ({ askClaude: (...args: unknown[]) => askClaude(...args) }))
 
 // Import AFTER mock registration
-const { generateLodgementAiSummary, lodgementSummaryPrompt } = await import('../lodgementSummary')
+const { generateLodgementAiSummary, isClaudeSummary, lodgementSummaryPrompt, lodgementSummaryWithoutFigures } = await import('../lodgementSummary')
+
+const MODEL = 'anthropic/claude-sonnet-5.5'
+const reply = (text: string) => ({ text, model: MODEL, generationId: 'gen-1' })
 
 function makeDpnRisk(overrides: Partial<DpnRiskBreakdown> = {}): DpnRiskBreakdown {
   return {
@@ -59,9 +58,17 @@ function makeDebtBreakdown(overrides: Partial<DebtBreakdown> = {}): DebtBreakdow
   }
 }
 
+const input = {
+  dpnRisk: makeDpnRisk(),
+  debtBreakdown: makeDebtBreakdown(),
+  summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
+}
+
+beforeEach(() => askClaude.mockReset())
+
 describe('LODGEMENT_SUMMARY_PROMPT_TEMPLATE', () => {
   it('contains all expected placeholders', () => {
-    const placeholders = [
+    for (const p of [
       '{periodStart}',
       '{periodEnd}',
       '{numberOfLateLodgements}',
@@ -73,89 +80,56 @@ describe('LODGEMENT_SUMMARY_PROMPT_TEMPLATE', () => {
       '{interestNet}',
       '{penaltyNet}',
       '{paymentsReceived}',
-    ]
-    for (const p of placeholders) {
+    ]) {
       expect(LODGEMENT_SUMMARY_PROMPT_TEMPLATE).toContain(p)
     }
+  })
+
+  it('leaves no placeholder unfilled, and formats amounts with commas, no decimals', () => {
+    const prompt = lodgementSummaryPrompt({ ...input, dpnRisk: makeDpnRisk({ totalGrossLate: 12345, totalNetAtRisk: 0 }) })
+    expect(prompt).not.toMatch(/\{[a-zA-Z]+\}/)
+    expect(prompt).toContain('12,345')
+    expect(prompt).not.toContain('12345.00')
   })
 })
 
 describe('generateLodgementAiSummary', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  it('asks Claude for a summary from the computed figures, and keeps one that checks out', async () => {
+    askClaude.mockResolvedValueOnce(reply('Six lodgements were late. Payments of $350,000 were received.'))
+    const result = await generateLodgementAiSummary(input)
+    expect(result).toEqual({ text: 'Six lodgements were late. Payments of $350,000 were received.', model: MODEL })
+    expect(askClaude.mock.calls[0][0]).toMatchObject({ purpose: 'summary', label: 'lodgement-summary' })
   })
 
-  it('returns { text, model } on success', async () => {
-    mockCreate.mockResolvedValueOnce({
-      choices: [{ message: { content: 'This is the AI summary.' } }],
-      model: OPENROUTER_NARRATIVE_MODEL,
-    })
-
-    const result = await generateLodgementAiSummary({
-      dpnRisk: makeDpnRisk(),
-      debtBreakdown: makeDebtBreakdown(),
-      summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-    })
-
-    expect(result.text).toBe('This is the AI summary.')
-    expect(result.model).toBe(OPENROUTER_NARRATIVE_MODEL)
+  it('lets an AI failure through, so the caller stores none', async () => {
+    askClaude.mockRejectedValueOnce(new Error('AI unavailable'))
+    await expect(generateLodgementAiSummary(input)).rejects.toThrow('AI unavailable')
   })
 
-  it('throws on API error so caller can handle it', async () => {
-    mockCreate.mockRejectedValueOnce(new Error('API rate limit'))
-
-    await expect(
-      generateLodgementAiSummary({
-        dpnRisk: makeDpnRisk(),
-        debtBreakdown: makeDebtBreakdown(),
-        summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-      }),
-    ).rejects.toThrow('API rate limit')
+  it('writes again once when a figure is not one given, then without figures', async () => {
+    askClaude.mockResolvedValue(reply('The ATO is owed $999,999.'))
+    const result = await generateLodgementAiSummary(input)
+    expect(askClaude).toHaveBeenCalledTimes(2)
+    expect(askClaude.mock.calls[1][0].prompt).toContain('$999,999')
+    expect(result.text).not.toMatch(/\$/)
+    expect(result.text).toContain('6 BAS lodgements were filed late, 1320 days late in total.')
+    expect(result.model).toBe(`${MODEL} (figures withheld)`)
   })
 
-  it('prompt substitution replaces all placeholders — no {var} strings leak through', async () => {
-    let capturedPrompt = ''
-    mockCreate.mockImplementationOnce(
-      async ({ messages }: { messages: Array<{ content: string }> }) => {
-        capturedPrompt = messages[0].content
-        return {
-          choices: [{ message: { content: 'ok' } }],
-          model: OPENROUTER_NARRATIVE_MODEL,
-        }
-      },
-    )
-
-    await generateLodgementAiSummary({
-      dpnRisk: makeDpnRisk(),
-      debtBreakdown: makeDebtBreakdown(),
-      summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-    })
-
-    // No unreplaced placeholders
-    expect(capturedPrompt).not.toMatch(/\{[a-zA-Z]+\}/)
+  it('asks again when the summary uses "solvency", and keeps the clean rewrite', async () => {
+    askClaude
+      .mockResolvedValueOnce(reply('Six lodgements were late, implying ongoing solvency concerns.'))
+      .mockResolvedValueOnce(reply('Six lodgements were late.'))
+    const result = await generateLodgementAiSummary(input)
+    expect(result.text).toBe('Six lodgements were late.')
+    expect(askClaude.mock.calls[1][0].prompt).toContain('"solvency"')
   })
 
-  it('currency values in prompt use comma-formatted integers (no decimals)', async () => {
-    let capturedPrompt = ''
-    mockCreate.mockImplementationOnce(
-      async ({ messages }: { messages: Array<{ content: string }> }) => {
-        capturedPrompt = messages[0].content
-        return {
-          choices: [{ message: { content: 'ok' } }],
-          model: OPENROUTER_NARRATIVE_MODEL,
-        }
-      },
-    )
-
-    await generateLodgementAiSummary({
-      dpnRisk: makeDpnRisk({ totalGrossLate: 12345, totalNetAtRisk: 0 }),
-      debtBreakdown: makeDebtBreakdown({ principalNet: 10000 }),
-      summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-    })
-
-    // Should contain comma-formatted value like "12,345" not "12345.00"
-    expect(capturedPrompt).toContain('12,345')
-    expect(capturedPrompt).not.toContain('12345.00')
+  it('removes the offending sentences when the rewrite still uses one', async () => {
+    askClaude
+      .mockResolvedValueOnce(reply('The business is insolvent.'))
+      .mockResolvedValueOnce(reply('Six lodgements were late. The company appears solvent. Interest was charged.'))
+    expect((await generateLodgementAiSummary(input)).text).toBe('Six lodgements were late. Interest was charged.')
   })
 })
 
@@ -173,9 +147,8 @@ describe('DPN figures in the prompt', () => {
 
   it("uses the notices' own figures when notices are on file, not the estimate", () => {
     const prompt = lodgementSummaryPrompt({
+      ...input,
       dpnRisk: makeDpnRisk({ totalGrossLate: 90_000, totalReducedByAmendments: 90_000, totalNetAtRisk: 0 }),
-      debtBreakdown: makeDebtBreakdown(),
-      summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
       notices,
     })
     expect(prompt).toContain("source: the ATO's director penalty notices")
@@ -187,42 +160,24 @@ describe('DPN figures in the prompt', () => {
   })
 
   it('labels the estimate as one, and never calls an amendment a payment', () => {
-    const prompt = lodgementSummaryPrompt({
-      dpnRisk: makeDpnRisk(),
-      debtBreakdown: makeDebtBreakdown({ paymentsReceived: 0, paymentsCount: 0 }),
-      summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-    })
+    const prompt = lodgementSummaryPrompt({ ...input, debtBreakdown: makeDebtBreakdown({ paymentsReceived: 0, paymentsCount: 0 }) })
     expect(prompt).toContain("Estimate from the ATO account (not the ATO's figures)")
     expect(prompt).toContain('Reduced by later amendments for the same periods: $2,150')
     expect(prompt).toContain('Payments received: none (no payments found in the ATO account)')
     expect(prompt).not.toMatch(/paid since|reversed/i)
   })
+
+  it('the summary without figures says where the DPN figures are', () => {
+    expect(lodgementSummaryWithoutFigures({ ...input, notices })).toMatch(/Director penalty notices are on file/)
+    expect(lodgementSummaryWithoutFigures(input)).toMatch(/No director penalty notices are on file/)
+  })
 })
 
-describe('banned words in the summary', () => {
-  beforeEach(() => vi.clearAllMocks())
-  const input = {
-    dpnRisk: makeDpnRisk(),
-    debtBreakdown: makeDebtBreakdown(),
-    summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
-  }
-  const reply = (content: string) => ({ choices: [{ message: { content } }], model: OPENROUTER_NARRATIVE_MODEL })
-
-  it('asks again when the summary uses "solvency", and keeps the clean rewrite', async () => {
-    mockCreate
-      .mockResolvedValueOnce(reply('Six lodgements were late, implying ongoing solvency concerns.'))
-      .mockResolvedValueOnce(reply('Six lodgements were late.'))
-    const result = await generateLodgementAiSummary(input)
-    expect(result.text).toBe('Six lodgements were late.')
-    const retry = (mockCreate.mock.calls[1][0] as { messages: { content: string }[] }).messages[0].content
-    expect(retry).toContain('"solvency"')
-  })
-
-  it('removes the offending sentences when the rewrite still uses one', async () => {
-    mockCreate
-      .mockResolvedValueOnce(reply('The business is insolvent.'))
-      .mockResolvedValueOnce(reply('Six lodgements were late. The company appears solvent. Interest was charged.'))
-    const result = await generateLodgementAiSummary(input)
-    expect(result.text).toBe('Six lodgements were late. Interest was charged.')
+describe('isClaudeSummary', () => {
+  it('only a summary written by Claude under the checks', () => {
+    expect(isClaudeSummary('anthropic/claude-sonnet-5.5')).toBe(true)
+    expect(isClaudeSummary('anthropic/claude-sonnet-5.5 (figures withheld)')).toBe(true)
+    expect(isClaudeSummary('google/gemini-2.5-flash')).toBe(false)
+    expect(isClaudeSummary(null)).toBe(false)
   })
 })

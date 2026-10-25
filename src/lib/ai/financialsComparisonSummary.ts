@@ -1,152 +1,94 @@
 /**
- * Server-only. Calls Gemini 2.5 Flash via OpenRouter to write a 4-6 sentence
- * narrative summary of the multi-year financial comparison. Mirrors
- * lodgementSummary.ts.
+ * Server-only. The comparison summary: Claude (openrouterClient.ts) writes 4–6
+ * sentences from the as-printed figures of the key figures staff confirmed
+ * (printed/mapping.ts), and nothing else. No PDF, no unconfirmed suggestion,
+ * no figure a person has not confirmed the line of.
  *
- * Every dollar figure in the summary is checked against the figures it was
- * given (summaryFigures.ts). A summary with a figure that is not one of them,
- * or the difference between two, is regenerated once with the stray figures
- * named; if that fails too, a summary without figures is used instead.
- *
- * Must only be imported from API routes.
+ * Not written while the AI features are off, while a printed total that does
+ * not add up is unticked (Needs review), or before two years and at least one
+ * confirmed figure are on file (summaryBlock). Every dollar figure in the
+ * answer must be one of the figures given, or the difference between two
+ * (checkedSummary.ts); otherwise it is written again once, then a summary
+ * without figures is used.
  */
-import { BANNED_WORDS_INSTRUCTION, bannedWordsIn, withoutBannedSentences } from './wording'
-import {
-  OPENROUTER_NARRATIVE_MODEL,
-  FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE,
-} from './prompts'
-import { getOpenRouterClient } from './openrouterClient'
-import { summaryWithoutFigures, unsupportedFigures } from './summaryFigures'
-import { currentPeriodLabel, currentPeriodName, shortDate } from '@/lib/financials/periodLabels'
-import type { FinancialsComparison } from '@/lib/financials/types'
+import { aiSummariesEnabled } from './openrouterClient'
+import { BANNED_WORDS_INSTRUCTION } from './wording'
+import { COMPARISON_SUMMARY_PROMPT_TEMPLATE } from './prompts'
+import { writeCheckedSummary } from './checkedSummary'
+import { columnTitle } from '@/lib/printed/csv'
+import { resolveMeaning, type MappingEntry, type ResolvedMeaning } from '@/lib/printed/mapping'
+import { KEY_FIGURES, MEANING } from '@/lib/printed/meanings'
+import { printedExportsLocked } from '@/lib/printed/review'
+import type { PrintedComparison } from '@/lib/printed/compare'
+import type { FiguresChecked } from '@/lib/financials/hardChecks'
 
-function formatNum(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'N/A'
-  return value.toLocaleString('en-AU', { maximumFractionDigits: 0 })
+export type SummaryBlock = 'ai_off' | 'needs_review' | 'too_few_years' | 'no_confirmed_figures'
+
+export const SUMMARY_BLOCK_MESSAGE: Record<SummaryBlock, string> = {
+  ai_off: 'The AI summary is off.',
+  needs_review: 'The summary is written once the figures that do not add up have been checked.',
+  too_few_years: 'The summary is written once two years are on file.',
+  no_confirmed_figures: 'The summary is written from the confirmed key figures: confirm them first.',
 }
 
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'N/A'
-  return `${value.toFixed(1)}%`
+/** The confirmed key figures, as printed: the only figures a summary is written from. */
+export function confirmedFigures(comparison: PrintedComparison, mapping: MappingEntry[]): ResolvedMeaning[] {
+  return KEY_FIGURES.map((m) => resolveMeaning(comparison, mapping, m.key)).filter((r) => r.status === 'mapped' && r.years.some((y) => y.value !== null))
 }
 
-/** Optional addendum to the comparison prompt when a current-period snapshot
- *  is present. Returns an empty string when no current-period data exists so
- *  the placeholders are never sent unfilled. */
-function buildCurrentPeriodPromptSection(comparison: FinancialsComparison): string {
-  const cp = comparison.currentPeriod
-  if (!cp) return ''
+const money = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('en-AU', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })}`
 
-  const revenue = comparison.headlines.revenue.currentPeriodValue ?? null
-  const netProfit = comparison.headlines.netProfit.currentPeriodValue ?? null
-  const directorLoans = comparison.headlines.directorLoansReceivable.currentPeriodValue ?? null
-
-  // Named as everywhere else (periodLabels.ts): "FY2027 to date (1 Jul – 15 Oct 2026)".
-  const label = currentPeriodLabel(cp)
-  const at = shortDate(cp.periodEndDate)
-  return `\n\nA current partial period, ${label}, is also available for this client. Call it "${label}" if you mention it.\nFigures for ${currentPeriodName(cp)}:\n - Revenue: $${formatNum(revenue)}\n - Net profit: $${formatNum(netProfit)}\n - ATO debt at ${at}: $${formatNum(cp.atoLiabilityTotal)}\n - Director loans receivable at ${at}: $${formatNum(directorLoans)}\n\nIf material, mention briefly how the current period is tracking vs FY${comparison.years[comparison.years.length - 1] ?? ''} — but flag explicitly that this is a partial period not a full year. Do NOT include current-period figures in your year-over-year growth statements. Keep the rest of your narrative focused on the four-year annual trajectory.`
+/** The prompt, from the confirmed figures. Null when there is nothing confirmed to summarise. */
+export function comparisonSummaryPrompt(comparison: PrintedComparison, mapping: MappingEntry[]): string | null {
+  const figures = confirmedFigures(comparison, mapping)
+  if (figures.length === 0) return null
+  const rows = comparison.columns.flatMap((column, i) => {
+    const parts = figures.flatMap((f) => (f.years[i].value === null ? [] : [`${MEANING[f.meaning].label}: ${money(f.years[i].value as number)}`]))
+    if (parts.length === 0) return []
+    const { title, period } = columnTitle(column)
+    const name = column.kind === 'annual' ? `${title} (${period})` : `Current period, partial year (${period})`
+    return [`- ${name}: ${parts.join('; ')}`]
+  })
+  const none = KEY_FIGURES.filter((m) => mapping.some((e) => e.meaning === m.key && e.nonePrinted)).map((m) => m.label)
+  return COMPARISON_SUMMARY_PROMPT_TEMPLATE.replaceAll('{bannedWordsInstruction}', BANNED_WORDS_INSTRUCTION)
+    .replaceAll('{figuresTable}', rows.join('\n'))
+    .replaceAll('{notPrinted}', none.length ? `\nNot printed in these statements: ${none.join('; ')}.\n` : '')
 }
 
-function buildYearByYearTable(comparison: FinancialsComparison): string {
-  const lines: string[] = []
-  for (const fy of comparison.years) {
-    const ratios = comparison.ratiosByYear[fy]
-    const atoTotal = comparison.atoLiabilityByYear[fy]?.total ?? 0
-    const revenueTrend = comparison.headlines.revenue.trend
-    const idx = comparison.years.indexOf(fy)
-    const revenue = revenueTrend[idx] ?? null
-    const netProfit = comparison.headlines.netProfit.trend[idx] ?? null
-    const netAssets = comparison.headlines.netAssets.trend[idx] ?? null
-    const dirLoans = comparison.headlines.directorLoansReceivable.trend[idx] ?? null
-    const equity = comparison.equityByYear?.[fy]
-    const paidOut = [
-      equity?.distributions != null ? `distributions paid $${formatNum(equity.distributions)}` : null,
-      equity?.dividends != null ? `dividends paid $${formatNum(equity.dividends)}` : null,
-    ].filter(Boolean)
-
-    lines.push(
-      `- FY${fy}: Revenue $${formatNum(revenue)}, Net profit/(loss) $${formatNum(
-        netProfit,
-      )}, ATO-related debt $${formatNum(atoTotal)} (${formatPercent(
-        ratios.atoDebtAsPercentOfRevenue,
-      )} of revenue), Director loans receivable $${formatNum(dirLoans)} (${formatPercent(
-        ratios.directorLoansAsPercentOfAssets,
-      )} of assets), Net assets $${formatNum(netAssets)}, Retained earnings at year end $${formatNum(
-        equity?.retainedEarnings ?? null,
-      )}${paidOut.length ? `, ${paidOut.join(', ')}` : ''}`,
-    )
-  }
-  return lines.join('\n')
+/** Why no summary may be written now, or null. */
+export function summaryBlock(input: { comparison: PrintedComparison; mapping: MappingEntry[]; builtAt: string | null; checked: FiguresChecked | null }): SummaryBlock | null {
+  if (!aiSummariesEnabled()) return 'ai_off'
+  if (printedExportsLocked(input.comparison, input.builtAt, input.checked)) return 'needs_review'
+  if (input.comparison.annualYears < 2) return 'too_few_years'
+  if (confirmedFigures(input.comparison, input.mapping).length === 0) return 'no_confirmed_figures'
+  return null
 }
 
-export async function generateFinancialsComparisonSummary(input: {
-  comparison: FinancialsComparison
-}): Promise<{ text: string; model: string }> {
-  const { comparison } = input
-
-  if (comparison.years.length < 2) {
-    throw new Error(
-      'generateFinancialsComparisonSummary: need at least 2 years of data to produce a comparison summary.',
-    )
+/** Direction only, no figures: used when the model's figures do not check out twice. */
+export function summaryWithoutFigures(comparison: PrintedComparison, mapping: MappingEntry[]): string {
+  const sentences: string[] = []
+  const annual = comparison.columns.map((c, i) => [c, i] as const).filter(([c]) => c.kind === 'annual')
+  for (const f of confirmedFigures(comparison, mapping)) {
+    const shown = annual.filter(([, i]) => f.years[i].value !== null)
+    if (shown.length < 2) continue
+    const [first, firstI] = shown[0]
+    const [last, lastI] = shown[shown.length - 1]
+    const a = f.years[firstI].value as number
+    const b = f.years[lastI].value as number
+    const word = b > a ? 'rose' : b < a ? 'fell' : 'was unchanged'
+    sentences.push(`${MEANING[f.meaning].label} ${word} between ${first.key} and ${last.key}.`)
   }
+  sentences.push('The automated summary could not be confirmed against the figures, so the figures are in the tables below.')
+  return sentences.join(' ')
+}
 
-  const latestYear = comparison.years[comparison.years.length - 1]
-  const latestRatios = comparison.ratiosByYear[latestYear]
-
-  const prompt =
-    FINANCIALS_COMPARISON_SUMMARY_PROMPT_TEMPLATE
-      .replaceAll('{bannedWordsInstruction}', BANNED_WORDS_INSTRUCTION)
-      .replaceAll('{yearByYearTable}', buildYearByYearTable(comparison))
-      .replaceAll(
-        '{atoDebtPctRevenueLatest}',
-        formatPercent(latestRatios?.atoDebtAsPercentOfRevenue ?? null),
-      )
-      .replaceAll(
-        '{directorLoansPctAssetsLatest}',
-        formatPercent(latestRatios?.directorLoansAsPercentOfAssets ?? null),
-      )
-      .replaceAll(
-        '{netAssetsLatest}',
-        formatNum(comparison.headlines.netAssets.latestValue),
-      ) +
-    // No sum of profits is given: it was being reported as retained earnings.
-    // The real retained earnings are in the year table.
-    buildCurrentPeriodPromptSection(comparison)
-
-  const client = getOpenRouterClient({ timeoutMs: 60_000 })
-  const ask = async (content: string) => {
-    const response = await client.chat.completions.create({
-      model: OPENROUTER_NARRATIVE_MODEL,
-      max_tokens: 350,
-      messages: [{ role: 'user', content }],
-      // @ts-expect-error — OpenRouter `provider` extension not in OpenAI's types.
-      provider: {
-        order: ['google-ai-studio', 'google-vertex'],
-        allow_fallbacks: false,
-      },
-    })
-    const text = response.choices[0]?.message?.content?.trim() ?? ''
-    if (!text) {
-      throw new Error('generateFinancialsComparisonSummary: OpenRouter returned empty content.')
-    }
-    return { text, model: response.model }
-  }
-
-  const first = await ask(prompt)
-  const stray = unsupportedFigures(first.text, comparison)
-  const banned = bannedWordsIn(first.text)
-  if (stray.length === 0 && banned.length === 0) return first
-
-  const problems = [
-    stray.length
-      ? `stated ${stray.join(', ')}, which ${stray.length === 1 ? 'is' : 'are'} not in the figures above or the difference between two of them`
-      : null,
-    banned.length ? `used ${banned.map((w) => `"${w}"`).join(', ')}, which you must never use` : null,
-  ].filter(Boolean)
-  const second = await ask(`${prompt}\n\nYour previous summary ${problems.join(', and ')}. Write it again using only those figures.`)
-  if (unsupportedFigures(second.text, comparison).length > 0) {
-    return { text: summaryWithoutFigures(comparison), model: `${second.model} (figures withheld)` }
-  }
-  // Still a banned word: those sentences are taken out.
-  return bannedWordsIn(second.text).length === 0 ? second : { ...second, text: withoutBannedSentences(second.text) }
+export async function generateComparisonSummary(comparison: PrintedComparison, mapping: MappingEntry[]): Promise<{ text: string; model: string }> {
+  const prompt = comparisonSummaryPrompt(comparison, mapping)
+  if (!prompt) throw new Error('No confirmed key figures to summarise.')
+  return writeCheckedSummary({
+    prompt,
+    label: 'comparison-summary',
+    maxTokens: 350,
+    withoutFigures: () => summaryWithoutFigures(comparison, mapping),
+  })
 }

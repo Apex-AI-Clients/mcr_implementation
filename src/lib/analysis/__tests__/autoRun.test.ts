@@ -3,17 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/dpn/store', () => ({ readAndStoreNotice: vi.fn() }))
 vi.mock('../lodgementStore', () => ({ analyseAndStoreLodgement: vi.fn(), findActivityStatementCsv: vi.fn() }))
-vi.mock('@/lib/financials/comparisonJob', () => ({
-  EXTRACTION_PHASE_BUDGET_MS: 640_000,
-  extractAllFinancials: vi.fn(),
-  buildAndPersistComparison: vi.fn(),
-}))
 vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn() }))
 vi.mock('@/lib/printed/store', () => ({ READER_VERSION: 'v1', readAndStore: vi.fn() }))
 
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '../lodgementStore'
-import { buildAndPersistComparison, extractAllFinancials } from '@/lib/financials/comparisonJob'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { readAndStore } from '@/lib/printed/store'
 import {
@@ -239,11 +233,9 @@ describe('runAutoAnalysis', () => {
 
     expect(readAndStoreNotice).toHaveBeenCalledTimes(1)
     expect(analyseAndStoreLodgement).toHaveBeenCalledWith(supabase, 'client-1', expect.anything(), { aiSummary: false })
-    // Read as printed, by our own code: the AI reader and the stored comparison are not used.
+    // Read as printed, by our own code (the AI reader no longer exists).
     expect(readAndStore).toHaveBeenCalledTimes(1)
     expect(vi.mocked(readAndStore).mock.calls[0][2]).toMatchObject({ id: 'fs-1' })
-    expect(extractAllFinancials).not.toHaveBeenCalled()
-    expect(buildAndPersistComparison).not.toHaveBeenCalled()
     expect(summary).toMatchObject({ dpnRead: 1, lodgementAnalysed: true, extracted: 1 })
     expect(jobUpdates.at(-1)).toMatchObject({ status: 'done' })
   })

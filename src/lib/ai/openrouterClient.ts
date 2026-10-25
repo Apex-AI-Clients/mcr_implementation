@@ -1,43 +1,112 @@
 /**
- * Server-only. Returns an OpenAI SDK client configured for OpenRouter's
- * OpenAI-compatible endpoint. OpenRouter routes our requests to underlying
- * providers (Gemini 2.5 Flash by default for this project) and bills via the
- * one OpenRouter account.
+ * Server-only. The one way this app talks to an AI model: Claude, through
+ * OpenRouter (MCR's account), for the comparison and lodgement summaries and
+ * for suggesting what an unknown printed label means. No figure is ever read
+ * by a model: the financial statements are read by code (src/lib/printed).
  *
- * Why OpenRouter rather than calling Google directly:
- *   - Unified billing / single API key across providers
- *   - Native PDF input support via the file-parser plugin
- *   - Trivial provider swap later (change the model string only)
- *   - OpenAI-compatible — uses the same `openai` SDK we'd use for any
- *     OpenAI-compatible provider, no special Google SDK to learn
+ * Every request is pinned to Anthropic with OpenRouter's provider preferences
+ * (CLAUDE_ONLY): only Anthropic, no fallback to any other provider, no
+ * provider that collects data, and Zero Data Retention endpoints only. If
+ * OpenRouter cannot honour all of that it refuses the request, and the call
+ * fails: the feature degrades (no summary, no AI suggestion) rather than the
+ * data going anywhere else. An answer reported as served by anyone but
+ * Anthropic is thrown away.
  *
- * Must only be imported from API routes (extract-financials,
- * financials-comparison, analyse-lodgements) — never from a component.
+ * Off unless AI_SUMMARIES_ENABLED is "true" and OPENROUTER_API_KEY is set.
+ * Logs the generation id, model and token counts only, never the content.
+ *
+ * OPENROUTER_API_KEY is read here and nowhere else.
  */
 import OpenAI from 'openai'
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
-export interface OpenRouterClientOptions {
-  /** Per-request timeout in ms. Default 300_000 (5 min) for PDF extraction;
-   *  callers doing short narrative generation can drop to 60_000. */
-  timeoutMs?: number
-  /** SDK-level automatic retries. Default 2. */
-  maxRetries?: number
+/** The current Claude models on OpenRouter (checked 25 Oct 2026); overridable by env. */
+export const DEFAULT_SUMMARY_MODEL = 'anthropic/claude-sonnet-5.5'
+export const DEFAULT_LABEL_MODEL = 'anthropic/claude-haiku-5.5'
+
+export type ClaudePurpose = 'summary' | 'labels'
+
+/**
+ * OpenRouter provider preferences sent with every request
+ * (https://openrouter.ai/docs/features/provider-routing).
+ */
+export const CLAUDE_ONLY = {
+  only: ['anthropic'],
+  allow_fallbacks: false,
+  data_collection: 'deny',
+  zdr: true,
+} as const
+
+/** The AI features are off (flag or key missing), or the call could not be made safely. */
+export class AiUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AiUnavailableError'
+  }
 }
 
-export function getOpenRouterClient(opts: OpenRouterClientOptions = {}): OpenAI {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set.')
+export function aiSummariesEnabled(): boolean {
+  return process.env.AI_SUMMARIES_ENABLED === 'true' && !!process.env.OPENROUTER_API_KEY
+}
 
+/** The model for a purpose: env OPENROUTER_SUMMARY_MODEL / OPENROUTER_LABEL_MODEL, else the default. Claude only. */
+export function claudeModel(purpose: ClaudePurpose): string {
+  const configured = (purpose === 'summary' ? process.env.OPENROUTER_SUMMARY_MODEL : process.env.OPENROUTER_LABEL_MODEL)?.trim()
+  const model = configured || (purpose === 'summary' ? DEFAULT_SUMMARY_MODEL : DEFAULT_LABEL_MODEL)
+  if (!model.startsWith('anthropic/')) throw new AiUnavailableError(`Only Claude models may be used: "${model}" is not one.`)
+  return model
+}
+
+export interface ClaudeAnswer {
+  text: string
+  model: string
+  generationId: string
+}
+
+export interface AskOptions {
+  purpose: ClaudePurpose
+  prompt: string
+  maxTokens: number
+  /** Names the call in the log ("comparison-summary"). Never content. */
+  label: string
+  timeoutMs?: number
+}
+
+function client(timeoutMs: number): OpenAI {
   return new OpenAI({
-    apiKey,
+    apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: OPENROUTER_BASE_URL,
-    timeout: opts.timeoutMs ?? 300_000,
-    maxRetries: opts.maxRetries ?? 2,
+    timeout: timeoutMs,
+    maxRetries: 2,
     defaultHeaders: {
       'HTTP-Referer': process.env.PUBLIC_APP_URL ?? 'https://mcr-partners.local',
       'X-Title': 'MCR Partners SBR Portal',
     },
   })
+}
+
+/** One prompt to Claude via OpenRouter, Anthropic only, no data retained. Throws when off or unsafe. */
+export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs = 60_000 }: AskOptions): Promise<ClaudeAnswer> {
+  if (!aiSummariesEnabled()) throw new AiUnavailableError('AI features are off (AI_SUMMARIES_ENABLED or OPENROUTER_API_KEY).')
+  const model = claudeModel(purpose)
+  const response = await client(timeoutMs).chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
+    // OpenRouter's extension: not in the OpenAI SDK's types.
+    ...({ provider: CLAUDE_ONLY } as object),
+  })
+
+  const served = (response as unknown as { provider?: string }).provider
+  if ((served && !/anthropic/i.test(served)) || !response.model?.startsWith('anthropic/')) {
+    console.error(`[ai] ${label} generation=${response.id} refused: not served by Anthropic (${served ?? 'unknown'}, ${response.model})`)
+    throw new AiUnavailableError('The answer did not come from Anthropic, so it was not used.')
+  }
+  const usage = response.usage
+  console.log(`[ai] ${label} generation=${response.id} model=${response.model} tokens_in=${usage?.prompt_tokens ?? '?'} tokens_out=${usage?.completion_tokens ?? '?'}`)
+
+  const text = response.choices[0]?.message?.content?.trim() ?? ''
+  if (!text) throw new Error(`${label}: the model returned no text.`)
+  return { text, model: response.model, generationId: response.id }
 }

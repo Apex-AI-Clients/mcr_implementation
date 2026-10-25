@@ -65,12 +65,12 @@ describe('loadIcaRows', () => {
 
 describe('the logged decision', () => {
   it('says why the ATO account was not used', () => {
-    const bs = { currentAssets: {}, nonCurrentAssets: {}, currentLiabilities: { gstPayable: 70_000 }, nonCurrentLiabilities: {}, equity: {}, totals: {} }
-    const stale = creditorDebt({ icaRows: STALE, balanceSheet: bs, balanceSheetDate: '2025-06-30' })
+    const bs = { amount: 70_000, lines: ['GST Payable'] }
+    const stale = creditorDebt({ icaRows: STALE, mappedAto: bs, balanceSheetDate: '2025-06-30' })
     expect(describeDecision(stale)).toBe(
       'source=balance_sheet amount=70000 asOf=2025-06-30 icaNotUsed="the lodgement analysis rows carry no balance owing (re-run the lodgement analysis)"',
     )
-    expect(creditorDebt({ icaRows: null, balanceSheet: bs }).icaNotUsed).toMatch(/no lodgement analysis/)
+    expect(creditorDebt({ icaRows: null, mappedAto: bs }).icaNotUsed).toMatch(/no lodgement analysis/)
     expect(creditorDebt({ icaRows: STALE, staffAmount: 1 }).icaNotUsed).toBe('staff entered the amount')
   })
 })

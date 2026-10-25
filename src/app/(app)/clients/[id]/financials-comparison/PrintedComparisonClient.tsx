@@ -9,6 +9,7 @@ import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBanner'
 import { PrintedComparisonTable, type SelectedFigure } from '@/components/admin/financials/PrintedComparisonTable'
 import { HeadlineTiles } from '@/components/admin/financials/HeadlineTiles'
+import { ComparisonSummaryCard } from '@/components/admin/financials/ComparisonSummaryCard'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
@@ -28,6 +29,8 @@ interface Props {
   suggestions: Suggestions
   /** Showing the years printed only as a comparative column. */
   earlierYears?: boolean
+  /** The AI summary is on (AI_SUMMARIES_ENABLED and a key): show its card. */
+  aiSummaryEnabled?: boolean
 }
 
 /**
@@ -36,7 +39,7 @@ interface Props {
  * guessed; a printed total that does not add up shows Needs review and locks
  * the PDF and CSV until a staff member ticks that they checked it.
  */
-export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false }: Props) {
+export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false, aiSummaryEnabled = false }: Props) {
   const router = useRouter()
   const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [selected, setSelected] = useState<SelectedFigure | null>(null)
@@ -125,6 +128,12 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
             <p className="text-xs text-foreground/60">Only one financial year is on file so far: upload the earlier years to compare.</p>
           )}
           <HeadlineTiles clientId={clientId} comparison={comparison} mapping={mapping} suggestions={suggestions} />
+          {aiSummaryEnabled && (
+            <ComparisonSummaryCard
+              clientId={clientId}
+              inputsKey={`${builtAt ?? ''}|${figuresChecked?.fingerprint ?? ''}|${mapping.map((m) => `${m.meaning}:${m.rowKey}:${m.confirmedAt}`).join(',')}`}
+            />
+          )}
           {(earlierYears || comparison.hiddenComparativeYears.length > 0) && (
             <label className="no-print flex items-center gap-2 text-xs text-foreground/70">
               <input

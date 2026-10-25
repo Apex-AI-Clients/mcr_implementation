@@ -5,13 +5,11 @@
  * frontend polls this every few seconds until status is 'done' or 'failed'.
  *
  * Returns:
- *   { status, mode, error, result, extractErrors, startedAt, finishedAt, updatedAt }
- *   - result is the ComparisonPayload (only populated when status='done').
+ *   { status, mode, error, extractErrors, startedAt, finishedAt, updatedAt }
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
-import type { ComparisonPayload, ExtractError } from '@/lib/financials/comparisonJob'
-import { closeDeadJob, DEAD_JOB_MESSAGE, isJobDead } from '@/lib/financials/jobLiveness'
+import { closeDeadJob, DEAD_JOB_MESSAGE, isJobDead, type ExtractError } from '@/lib/financials/jobLiveness'
 
 interface Params {
   params: Promise<{ id: string; jobId: string }>
@@ -33,7 +31,6 @@ export interface JobStatusResponse {
   status: 'pending' | 'processing' | 'done' | 'failed'
   mode: 'full' | 'compare'
   error: string | null
-  result: ComparisonPayload | null
   extractErrors: ExtractError[]
   startedAt: string | null
   finishedAt: string | null
@@ -72,7 +69,6 @@ export async function GET(_req: NextRequest, { params }: Params) {
       status: dead ? 'failed' : (job.status as JobStatusResponse['status']),
       mode: job.mode as JobStatusResponse['mode'],
       error: dead ? DEAD_JOB_MESSAGE : job.error,
-      result: (job.result as unknown as ComparisonPayload | null) ?? null,
       extractErrors: (job.extract_errors as unknown as ExtractError[]) ?? [],
       startedAt: job.started_at,
       finishedAt: job.finished_at,

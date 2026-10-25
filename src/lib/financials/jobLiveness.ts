@@ -12,6 +12,13 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 
 type SupabaseClient = ReturnType<typeof getSupabaseServerClient>
 
+/** A file a run could not process, with why (financial_comparison_jobs.extract_errors). */
+export interface ExtractError {
+  documentId: string
+  filename: string
+  error: string
+}
+
 /** maxDuration (800s) plus a margin for the row being written just before the run. */
 export const JOB_MAX_AGE_MS = 14 * 60 * 1000
 

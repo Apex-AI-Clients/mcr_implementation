@@ -1,13 +1,15 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/ai/lodgementSummary', () => ({ generateLodgementAiSummary: vi.fn() }))
-vi.mock('@/lib/ai/financialsComparisonSummary', () => ({ generateFinancialsComparisonSummary: vi.fn() }))
+vi.mock('@/lib/ai/lodgementSummary', () => ({
+  generateLodgementAiSummary: vi.fn(),
+  isClaudeSummary: (model: string | null) => !!model && model.startsWith('anthropic/'),
+}))
+vi.mock('@/lib/ai/openrouterClient', () => ({ aiSummariesEnabled: vi.fn(() => true) }))
 
 import { generateLodgementAiSummary } from '@/lib/ai/lodgementSummary'
-import { generateFinancialsComparisonSummary } from '@/lib/ai/financialsComparisonSummary'
+import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { analyseAndStoreLodgement, ensureLodgementSummary, findActivityStatementCsv } from '../lodgementStore'
-import { ensureComparisonSummary } from '@/lib/financials/comparisonSummary'
 
 /**
  * The lodgement analysis store and the on-demand summaries, against a mocked
@@ -21,6 +23,7 @@ const LATE_ROW =
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(aiSummariesEnabled).mockReturnValue(true)
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
@@ -79,6 +82,14 @@ describe('analyseAndStoreLodgement', () => {
     expect(upsert.mock.calls[0][0]).toMatchObject({ ai_summary: 'Summary.', ai_summary_model: 'm' })
   })
 
+  it('writes no summary while the AI features are off', async () => {
+    vi.mocked(aiSummariesEnabled).mockReturnValue(false)
+    const { supabase, upsert } = mockUpsert()
+    await analyseAndStoreLodgement(supabase, 'client-1', FILE, { aiSummary: true })
+    expect(generateLodgementAiSummary).not.toHaveBeenCalled()
+    expect(upsert.mock.calls[0][0]).toMatchObject({ ai_summary: null })
+  })
+
   it('reports a CSV it cannot read', async () => {
     const { supabase } = mockUpsert()
     const outcome = await analyseAndStoreLodgement(supabase, 'client-1', { ...FILE, text: 'nonsense' }, { aiSummary: false })
@@ -96,9 +107,31 @@ describe('ensureLodgementSummary', () => {
     return { supabase: { from: () => chain } as never, update }
   }
 
-  it('returns a summary already written, without calling the AI', async () => {
-    const { supabase } = mockRow({ id: 'la-1', ai_summary: 'Old.', ai_summary_generated_at: '2026-10-01' })
+  it('returns a summary Claude already wrote, without calling the AI', async () => {
+    const { supabase } = mockRow({ id: 'la-1', ai_summary: 'Old.', ai_summary_generated_at: '2026-10-01', ai_summary_model: 'anthropic/claude-sonnet-5.5' })
     expect(await ensureLodgementSummary(supabase, 'c')).toEqual({ kind: 'generated', text: 'Old.', generatedAt: '2026-10-01' })
+    expect(generateLodgementAiSummary).not.toHaveBeenCalled()
+  })
+
+  it('writes again a summary from before the switch to Claude (no figure check)', async () => {
+    vi.mocked(generateLodgementAiSummary).mockResolvedValue({ text: 'New.', model: 'anthropic/claude-sonnet-5.5' } as never)
+    const { supabase } = mockRow({
+      id: 'la-1',
+      ai_summary: 'Old.',
+      ai_summary_generated_at: '2026-10-01',
+      ai_summary_model: 'google/gemini-2.5-flash',
+      dpn_risk: { totalGrossLate: 0 },
+      debt_breakdown: {},
+      number_of_late_lodgements: 2,
+      cumulative_days_late: 40,
+    })
+    expect(await ensureLodgementSummary(supabase, 'c')).toMatchObject({ kind: 'generated', text: 'New.' })
+  })
+
+  it('writes none while the AI features are off', async () => {
+    vi.mocked(aiSummariesEnabled).mockReturnValue(false)
+    const { supabase } = mockRow({ id: 'la-1', ai_summary: null, ai_summary_generated_at: null, dpn_risk: { totalGrossLate: 0 }, number_of_late_lodgements: 2, cumulative_days_late: 40 })
+    expect(await ensureLodgementSummary(supabase, 'c')).toEqual({ kind: 'not_needed' })
     expect(generateLodgementAiSummary).not.toHaveBeenCalled()
   })
 
@@ -129,34 +162,5 @@ describe('ensureLodgementSummary', () => {
     })
     expect(await ensureLodgementSummary(supabase, 'c')).toEqual({ kind: 'not_needed' })
     expect(generateLodgementAiSummary).not.toHaveBeenCalled()
-  })
-})
-
-describe('ensureComparisonSummary', () => {
-  function mockComparison(row: Record<string, unknown> | null) {
-    const chain: Record<string, unknown> = {}
-    chain.select = () => chain
-    chain.eq = () => chain
-    chain.maybeSingle = async () => ({ data: row })
-    chain.update = () => ({ eq: async () => ({ error: null }) })
-    return { from: () => chain } as never
-  }
-
-  it('summarises a current comparison that has none', async () => {
-    vi.mocked(generateFinancialsComparisonSummary).mockResolvedValue({ text: 'Fin.', model: 'm' } as never)
-    const outcome = await ensureComparisonSummary(
-      mockComparison({ id: 'fc-1', computed: {}, ai_summary: null, ai_summary_generated_at: null, stale_since: null }),
-      'c',
-    )
-    expect(outcome).toMatchObject({ kind: 'generated', text: 'Fin.' })
-  })
-
-  it('does not summarise a comparison that is out of date', async () => {
-    const outcome = await ensureComparisonSummary(
-      mockComparison({ id: 'fc-1', computed: {}, ai_summary: null, ai_summary_generated_at: null, stale_since: '2026-10-17' }),
-      'c',
-    )
-    expect(outcome).toEqual({ kind: 'none' })
-    expect(generateFinancialsComparisonSummary).not.toHaveBeenCalled()
   })
 })

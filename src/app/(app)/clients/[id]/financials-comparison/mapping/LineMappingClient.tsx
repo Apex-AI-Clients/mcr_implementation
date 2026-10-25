@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +18,8 @@ interface Props {
   mapping: MappingEntry[]
   suggestions: Suggestions
   changes: MappingChange[]
+  /** Ask Claude about the key figures the dictionary found no line for (AI_SUMMARIES_ENABLED). */
+  aiEnabled?: boolean
 }
 
 /**
@@ -25,11 +28,32 @@ interface Props {
  * one, or confirm all the suggestions at once. Each confirmation records who
  * and when.
  */
-export function LineMappingClient({ clientId, clientName, comparison, mapping, suggestions, changes }: Props) {
+export function LineMappingClient({ clientId, clientName, comparison, mapping, suggestions, changes, aiEnabled = false }: Props) {
   const { confirm, saving, error } = useConfirmKeyFigures(clientId)
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
   const confirmedCount = KEY_FIGURES.filter((m) => entriesOf(m.key).length > 0).length
+  // Confirm all takes the dictionary's suggestions only: an AI suggestion is confirmed on its own card.
   const toConfirm = MEANINGS.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'suggested')
+  const unknown = MEANINGS.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'not_found').length
+  const [aiSuggestions, setAiSuggestions] = useState<Partial<Record<Meaning, string[]>>>({})
+
+  useEffect(() => {
+    if (!aiEnabled || unknown === 0) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/clients/${clientId}/line-mapping/ai-suggestions`, { method: 'POST' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { suggestions?: Partial<Record<Meaning, string[]>> }
+        if (!cancelled) setAiSuggestions(data.suggestions ?? {})
+      } catch {
+        // Staff choose the line themselves, as without AI.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [aiEnabled, clientId, unknown])
   const optional = MEANINGS.filter((m) => !m.required)
 
   function confirmAll() {
@@ -37,9 +61,20 @@ export function LineMappingClient({ clientId, clientName, comparison, mapping, s
     void confirm(selection)
   }
 
-  const card = (m: Meaning) => (
-    <KeyFigureCard key={m} clientId={clientId} comparison={comparison} meaning={m} entries={entriesOf(m)} suggestion={suggestions[m]} />
-  )
+  const card = (m: Meaning) => {
+    const ai = suggestions[m].length === 0 ? (aiSuggestions[m] ?? []) : []
+    return (
+      <KeyFigureCard
+        key={m}
+        clientId={clientId}
+        comparison={comparison}
+        meaning={m}
+        entries={entriesOf(m)}
+        suggestion={ai.length ? ai : suggestions[m]}
+        aiSuggested={ai.length > 0}
+      />
+    )
+  }
 
   return (
     <div className="space-y-6">

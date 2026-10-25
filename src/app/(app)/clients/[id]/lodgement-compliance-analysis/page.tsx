@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
+import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,8 +77,9 @@ export default async function LodgementAnalysisPage({ params }: Props) {
           if (!raw || typeof raw['principalDebits'] !== 'number') return null
           return raw as unknown as LodgementAnalysisPayload['debtBreakdown']
         })(),
-        aiSummary: rawAnalysis.ai_summary ?? null,
-        aiSummaryGeneratedAt: rawAnalysis.ai_summary_generated_at ?? null,
+        // Only a summary written by Claude under the figure check (lodgementSummary.ts); an older one is written again.
+        aiSummary: isClaudeSummary(rawAnalysis.ai_summary_model) ? (rawAnalysis.ai_summary ?? null) : null,
+        aiSummaryGeneratedAt: isClaudeSummary(rawAnalysis.ai_summary_model) ? (rawAnalysis.ai_summary_generated_at ?? null) : null,
         rows: (current?.rows ?? rawAnalysis.rows) as LodgementAnalysisPayload['rows'],
         warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
         analysedAt: rawAnalysis.analysed_at,

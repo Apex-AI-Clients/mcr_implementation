@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { BANNED_WORDS, bannedWordsIn, withoutBannedSentences } from '../wording'
-import { BANNED_WORDS as POINTS_BANNED_WORDS } from '@/lib/sbr/financialPoints'
 
 /** One banned-word list for every summary. */
 
@@ -15,10 +14,6 @@ describe('banned words', () => {
 
   it('lists each word once, lower case', () => {
     expect(bannedWordsIn('Solvency, solvency and an insolvent company.')).toEqual(['solvency', 'insolvent'])
-  })
-
-  it('is the same list the prediction points use', () => {
-    expect(POINTS_BANNED_WORDS).toBe(BANNED_WORDS)
   })
 
   it('removes only the sentences that use one', () => {

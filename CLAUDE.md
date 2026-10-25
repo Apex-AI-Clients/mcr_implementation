@@ -133,7 +133,10 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= # anon/public key (browser-safe)
 SUPABASE_SERVICE_ROLE_KEY=           # service_role key — SERVER ONLY
 
 # AI
-OPENROUTER_API_KEY=                  # sk-or-v1-... SERVER ONLY, only in src/lib/ai/openrouterClient.ts
+OPENROUTER_API_KEY=                  # SERVER ONLY, only in src/lib/ai/openrouterClient.ts; set in Vercel by the account owner
+AI_SUMMARIES_ENABLED=                # "true" turns the AI summaries + label suggestions on; default off
+OPENROUTER_SUMMARY_MODEL=            # optional, anthropic/… (default anthropic/claude-sonnet-5.5)
+OPENROUTER_LABEL_MODEL=              # optional, anthropic/… (default anthropic/claude-haiku-5.5)
 
 # App
 NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no trailing slash)
@@ -210,7 +213,7 @@ Source of truth: `src/lib/constants.ts` (`DOCUMENT_CATEGORIES` / `CATEGORY_META`
 
 ### Security
 1. `SUPABASE_SERVICE_ROLE_KEY` — server-only. Zero tolerance elsewhere.
-2. `OPENROUTER_API_KEY` — only in `src/lib/ai/openrouterClient.ts`. All AI helpers import `getOpenRouterClient()` from that module.
+2. `OPENROUTER_API_KEY` — only in `src/lib/ai/openrouterClient.ts`. All AI calls go through its `askClaude()`.
 3. File downloads: always `createSignedUrl()`, expiry ≤ 300s. Never `getPublicUrl()`.
 4. Portal API routes resolve the client via `getPortalClient()` — they never accept a `client_id` from the request.
 5. RLS enabled on every table.
@@ -223,8 +226,8 @@ Source of truth: `src/lib/constants.ts` (`DOCUMENT_CATEGORIES` / `CATEGORY_META`
 10. File uploads stored at `documents/{client_id}/{uuid}.{ext}` in Supabase Storage.
 
 ### AI Integration
-11. Claude model: `claude-sonnet-4-20250514`. Hardcode only in `lib/ai/prompts.ts` as `CLAUDE_MODEL` constant.
-12. Store raw Claude response in `ai_raw_response jsonb` column for cost auditing.
+11. Claude via OpenRouter only (`askClaude()` in `lib/ai/openrouterClient.ts`): provider routing restricted to Anthropic, `data_collection: 'deny'`, `zdr: true`, no fallbacks — an answer from any other provider is rejected. Models come from `OPENROUTER_SUMMARY_MODEL` / `OPENROUTER_LABEL_MODEL` (defaults in that file); every prompt lives in `lib/ai/prompts.ts`.
+12. No PDF or statement text is sent to a model. Summaries are written only from confirmed, as-printed figures and checked by `lib/ai/checkedSummary.ts` (every dollar figure an input or the difference of two; no banned words); label suggestions send labels and headings only. Log generation id, model and token counts — never content.
 
 ### AI Confidence Thresholds
 | Confidence | Action | UI Badge |

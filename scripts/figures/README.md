@@ -12,23 +12,21 @@ A regression check against the real test clients, kept entirely outside git.
    ]
    ```
 
-2. After re-extracting a test client, run `npm run figures:snapshot`. This only
-   reads the database (SELECT queries) and writes
-   `verified-figures/<alias>.snapshot.json`.
+2. Run `npm run figures:snapshot`. This only reads the database (SELECT
+   queries) and writes `verified-figures/<alias>.snapshot.json`: the ATO
+   account rows and the stored director penalty notices.
 
-3. Run `npm run figures:check`. It needs no database. It rebuilds each
-   comparison with the current code: the extraction-time line corrections are
-   replayed over the stored lines, then the comparison is assembled. It then
-   prints every figure that differs from `verified-figures/<alias>.expected.json`.
-   The first run writes `<alias>.draft.json` instead. Check the draft against
-   the statements, keep the keys you have verified, and save it as
-   `<alias>.expected.json`.
+3. Run `npm run figures:check`. It needs no database. It reruns the lodgement
+   analysis with the current code (from `<alias>.ica.csv` or the snapshot's
+   rows), the ATO debt the prediction takes from the ATO account, and the DPN
+   totals, and prints every figure that differs from the `lodgement`,
+   `prediction` and `dpnNotices` keys of `verified-figures/<alias>.expected.json`.
 
-The output shows aliases, schema keys and figures only. It never shows client
-names, filenames or free-text line labels.
+The output shows aliases, keys and figures only. It never shows client names,
+filenames or free-text line labels.
 
-The replay doesn't include the AI read or the text-layer check, so differences
-that come from those only show after a re-extraction and a new snapshot.
+The financial statements are checked by `npm run printed:check`
+(`scripts/printed`), from the PDFs as printed.
 
 ## Director penalty notices
 

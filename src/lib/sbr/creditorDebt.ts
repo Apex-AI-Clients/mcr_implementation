@@ -1,5 +1,4 @@
 import { differenceInCalendarDays } from 'date-fns'
-import type { ExtractedBalanceSheet } from '@/lib/financials/types'
 
 /**
  * The creditor debt an SBR offer is sized against, and the dates the
@@ -135,20 +134,6 @@ function whyNotIca(icaRows: readonly IcaRow[] | null | undefined): string {
   return 'the lodgement analysis rows carry no balance owing (re-run the lodgement analysis)'
 }
 
-/**
- * What a balance sheet says is owed to the ATO: ATO liability, GST and PAYG
- * withholding. NOT superannuation payable — that is owed to super funds, not
- * the ATO. Null when the balance sheet shows none of them.
- */
-export const BALANCE_SHEET_ATO_KEYS = ['atoLiability', 'gstPayable', 'paygWithholdingPayable'] as const
-
-export function balanceSheetAtoTotal(bs: ExtractedBalanceSheet | null | undefined): number | null {
-  if (!bs) return null
-  const cl = (bs.currentLiabilities ?? {}) as Record<string, unknown>
-  const values = BALANCE_SHEET_ATO_KEYS.map((k) => cl[k]).filter((v): v is number => typeof v === 'number')
-  return values.length ? values.reduce((a, b) => a + b, 0) : null
-}
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "26 Sep 2026" — fixed three-letter months (the en-AU locale gives "Sept", "June"). */
@@ -163,22 +148,20 @@ export const longDate = (iso: string) => {
  * that a balance sheet lists separately):
  *   1. an amount staff entered;
  *   2. the ATO account statement's balance owing, as at the statement date;
- *   3. the balance sheet's ATO liability, GST and PAYG (not super).
+ *   3. the balance sheet's ATO-related lines staff confirmed (not super).
  */
 export function creditorDebt(input: {
   icaRows?: readonly IcaRow[] | null
-  balanceSheet?: ExtractedBalanceSheet | null
   balanceSheetDate?: string | null
   balanceSheetLabel?: string | null
   /**
    * The ATO-related lines staff confirmed (printed/mapping.ts), added up, and
-   * their printed names. Used instead of `balanceSheet` when given; null when
-   * not identified.
+   * their printed names; null when not identified.
    */
   mappedAto?: { amount: number; lines: string[] } | null
   staffAmount?: number | null
 }): CreditorDebt {
-  const { icaRows, balanceSheet, balanceSheetDate, balanceSheetLabel, staffAmount, mappedAto } = input
+  const { icaRows, balanceSheetDate, balanceSheetLabel, staffAmount, mappedAto } = input
 
   if (typeof staffAmount === 'number' && Number.isFinite(staffAmount) && staffAmount >= 0) {
     return { amount: staffAmount, source: 'staff', asOf: null, description: 'Entered by staff', missing: null, icaNotUsed: 'staff entered the amount' }
@@ -198,7 +181,7 @@ export function creditorDebt(input: {
     }
   }
 
-  const fromBalanceSheet = mappedAto !== undefined ? (mappedAto?.amount ?? null) : balanceSheetAtoTotal(balanceSheet)
+  const fromBalanceSheet = mappedAto?.amount ?? null
   const which = mappedAto?.lines.length ? mappedAto.lines.map((l) => `“${l}”`).join(' + ') : 'ATO, GST and PAYG'
   if (fromBalanceSheet !== null) {
     // An analysis whose rows carry no balance was read before the CSV

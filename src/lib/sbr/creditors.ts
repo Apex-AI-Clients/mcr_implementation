@@ -1,6 +1,3 @@
-import { latestBalanceSheet } from '@/lib/financials/statementSelection'
-import type { StatementLine, StoredStatementSlot } from '@/lib/financials/types'
-import { currentPeriodAt } from '@/lib/financials/periodLabels'
 
 /**
  * "Creditors in the SBR": the ATO debt (creditorDebt.ts) plus the other
@@ -125,71 +122,12 @@ export interface CreditorHint {
 
 export const SECURED = 'Usually secured — check before including'
 
-const dollars = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`
-
-const LIABILITY_SECTIONS = new Set(['currentLiabilities', 'nonCurrentLiabilities'])
-const NOT_A_CREDITOR = /\b(ato|tax|taxation|gst|payg|super|superannuation|director|directors|shareholder|related|associate|beneficiar|unitholder)/i
-
-const CREDIT_CARD = /\b(credit cards?|amex|american express|visa|mastercard)\b/i
-const CASH_LOAN = /\b((bank|business|term|cash|unsecured|short[- ]term) loans?|loans? (from|with|-|–)? ?(the )?(bank|nab|cba|commonwealth|westpac|anz))\b/i
-const TRADE_CREDITORS = /\b(trade creditors|accounts payable|trade payables|sundry creditors|creditors)\b/i
-const EQUIPMENT_FINANCE = /\b(chattel|hire purchase|equipment (loan|finance)|vehicle (loan|finance)|car loan|motor vehicle loan|lease liabilit)/i
-
-function sumLines(lines: readonly StatementLine[], pattern: RegExp): number | null {
-  const matched = lines.filter(
-    (l) =>
-      LIABILITY_SECTIONS.has(l.section) &&
-      !l.isTotal &&
-      typeof l.value === 'number' &&
-      pattern.test(l.rawLabel) &&
-      !NOT_A_CREDITOR.test(l.rawLabel),
-  )
-  return matched.length ? matched.reduce((sum, l) => sum + Math.abs(l.value as number), 0) : null
-}
+const EQUIPMENT_FINANCE = /(chattel|hire purchase|equipment (loan|finance)|vehicle (loan|finance)|car loan|motor vehicle loan|lease liabilit)/i
 
 export type CreditorHints = Record<CreditorKind, CreditorHint | null>
 
 /**
- * A hint per kind of creditor (credit cards, cash loans, overdraft, trade
- * suppliers), from the current-period balance sheet when there is one, else
- * the latest year's.
- * A $0 overdraft in the current period is shown: it was repaid.
- *
- * Chattel, hire-purchase, vehicle or equipment finance is added to the Cash
- * loans hint with the caution that it is usually secured.
- */
-export function creditorHints(slots: StoredStatementSlot[]): CreditorHints {
-  const hints: CreditorHints = { creditCards: null, cashLoans: null, bankOverdraft: null, tradeSuppliers: null }
-  const statement = latestBalanceSheet(slots, { preferCurrentPeriod: true })
-  if (!statement) return hints
-  const { slot, balanceSheet } = statement
-  const source =
-    slot.sourceColumn === 'current_period'
-      ? `at ${currentPeriodAt({ financialYear: slot.financialYear, periodStartDate: slot.periodStartDate, periodEndDate: slot.periodEndDate })}`
-      : `FY${slot.financialYear} balance sheet`
-  const lines = (balanceSheet as { lines?: StatementLine[] }).lines ?? []
-  const hint = (amount: number | null, caution: string | null = null): CreditorHint | null =>
-    amount === null ? null : { amount, source, caution }
-
-  const overdraft = (balanceSheet.currentLiabilities as Record<string, unknown>)?.bankOverdraft
-  const chattel = (balanceSheet.nonCurrentLiabilities as Record<string, unknown>)?.chattelMortgages
-
-  const loans = sumLines(lines, CASH_LOAN)
-  const finance = typeof chattel === 'number' ? Math.abs(chattel) : sumLines(lines, EQUIPMENT_FINANCE)
-  const withFinance = finance !== null && finance > 0
-
-  hints.creditCards = hint(sumLines(lines, CREDIT_CARD))
-  hints.cashLoans = hint(
-    loans === null && !withFinance ? null : (loans ?? 0) + (withFinance ? finance : 0),
-    withFinance ? `Includes ${dollars(finance)} of chattel, hire-purchase, vehicle or equipment finance. ${SECURED}` : null,
-  )
-  hints.bankOverdraft = hint(typeof overdraft === 'number' ? Math.abs(overdraft) : null)
-  hints.tradeSuppliers = hint(sumLines(lines, TRADE_CREDITORS))
-  return hints
-}
-
-/**
- * The same hints from the printed lines staff confirmed (printed/mapping.ts):
+ * A hint per kind of creditor, from the printed lines staff confirmed (printed/mapping.ts):
  * credit cards, bank loans and finance, overdraft and trade suppliers, each
  * the mapped lines added up as printed. A meaning with no confirmed line gives
  * no hint. Finance lines (chattel, hire purchase…) keep the caution.

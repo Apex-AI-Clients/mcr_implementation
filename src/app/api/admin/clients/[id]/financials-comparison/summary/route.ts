@@ -4,9 +4,10 @@ import { requireStaffUser } from '@/lib/auth/staff'
 import { ensureComparisonSummary } from '@/lib/financials/comparisonSummary'
 
 /**
- * POST — the AI summary of the client's stored comparison, written now if it
- * has none. Called when staff open the comparison page after an automatic
- * run, which stores the figures only.
+ * POST — the comparison summary: the stored one while the confirmed figures
+ * are unchanged, else written now by Claude from those figures. Says why
+ * there is none when it may not be written (AI off, Needs review, fewer than
+ * two years, no confirmed key figure).
  */
 
 interface Params {
@@ -21,9 +22,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const outcome = await ensureComparisonSummary(getSupabaseServerClient(), id)
   switch (outcome.kind) {
     case 'generated':
-      return NextResponse.json({ aiSummary: outcome.text, aiSummaryGeneratedAt: outcome.generatedAt })
-    case 'none':
-      return NextResponse.json({ error: 'No up-to-date comparison to summarise.' }, { status: 404 })
+      return NextResponse.json({ aiSummary: outcome.text, aiSummaryGeneratedAt: outcome.generatedAt, model: outcome.model })
+    case 'blocked':
+      return NextResponse.json({ aiSummary: null, blocked: outcome.reason, message: outcome.message })
     case 'failed':
       return NextResponse.json({ error: 'The summary could not be written. Try again.' }, { status: 502 })
   }
