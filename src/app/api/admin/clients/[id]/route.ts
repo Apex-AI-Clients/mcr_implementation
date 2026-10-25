@@ -96,7 +96,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
     const { data: client, error: lookupError } = await supabase
       .from('clients')
-      .select('id, auth_user_id, archived_at')
+      .select('id, name, auth_user_id, archived_at, archived_by, archived_reason')
       .eq('id', id)
       .maybeSingle()
 
@@ -111,6 +111,22 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
         { error: 'Archive this client before deleting it permanently.' },
         { status: 409 },
       )
+    }
+
+    // 0. Who deleted which client, when, and why it was archived (migration
+    // 0035): written first, so nothing is deleted without the record.
+    const by = staffAuthorName(admin)
+    const { error: logError } = await supabase.from('client_deletions').insert({
+      client_id: client.id,
+      client_name: client.name,
+      deleted_by: by,
+      archived_at: client.archived_at,
+      archived_by: client.archived_by,
+      archived_reason: client.archived_reason,
+    })
+    if (logError) {
+      console.error('[DELETE /api/admin/clients/[id]] client_deletions', logError.message)
+      return NextResponse.json({ error: 'Could not record the deletion, so nothing was deleted.' }, { status: 500 })
     }
 
     // 1. Remove storage objects. Files live at documents/{client_id}/{uuid}.{ext}.
@@ -133,7 +149,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     // conversion, with a note of when and by whom. Before the row goes:
     // converted_client_id is ON DELETE SET NULL, and the link is the only way
     // to find it. If this fails, nothing is deleted.
-    await releaseLeadsOfDeletedClient(supabase, id, staffAuthorName(admin))
+    await releaseLeadsOfDeletedClient(supabase, id, by)
 
     // 3. Delete the clients row. FK CASCADE handles documents, accountant_details,
     // company_details, and document_chunks.

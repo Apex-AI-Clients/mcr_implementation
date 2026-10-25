@@ -55,6 +55,39 @@ export type Database = {
           },
         ]
       }
+      client_deletions: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          archived_reason: string | null
+          client_id: string
+          client_name: string
+          deleted_at: string
+          deleted_by: string
+          id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
+          client_id: string
+          client_name: string
+          deleted_at?: string
+          deleted_by: string
+          id?: string
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          archived_reason?: string | null
+          client_id?: string
+          client_name?: string
+          deleted_at?: string
+          deleted_by?: string
+          id?: string
+        }
+        Relationships: []
+      }
       client_line_mapping_changes: {
         Row: {
           action: string

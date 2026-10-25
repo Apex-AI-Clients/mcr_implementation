@@ -30,11 +30,12 @@ function req(method: string) {
 }
 
 function mockDb(
-  client: { id: string; archived_at: string | null; auth_user_id?: string | null } | null,
+  client: { id: string; archived_at: string | null; auth_user_id?: string | null; name?: string; archived_by?: string | null; archived_reason?: string | null } | null,
   convertedLeads: { id: string; activities: { type: string; body: string; created_at: string }[] }[] = [],
 ) {
   const leadUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
   const activityInsert = vi.fn(() => Promise.resolve({ error: null }))
+  const deletionInsert = vi.fn<(row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>>(() => Promise.resolve({ error: null }))
   const update = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
     eq: () => Promise.resolve({ error: null }),
   }))
@@ -52,6 +53,7 @@ function mockDb(
     documents: {
       select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/a.pdf' }] }) }),
     },
+    client_deletions: { insert: deletionInsert },
     leads: {
       select: () => ({ eq: () => Promise.resolve({ data: convertedLeads.map(({ id }) => ({ id })), error: null }) }),
       update: leadUpdate,
@@ -70,7 +72,7 @@ function mockDb(
     storage: { from: () => ({ remove: storageRemove }) },
     auth: { admin: { deleteUser } },
   } as never)
-  return { update, remove, storageRemove, deleteUser, leadUpdate, activityInsert }
+  return { update, remove, storageRemove, deleteUser, leadUpdate, activityInsert, deletionInsert }
 }
 
 beforeEach(() => {
@@ -162,6 +164,31 @@ describe('DELETE — permanent, from the Archive only', () => {
     expect(response.status).toBe(200)
     expect(storageRemove).toHaveBeenCalledWith(['cl_1/a.pdf'])
     expect(remove).toHaveBeenCalled()
+  })
+
+  it('records who deleted which client, and its archive stamp, before anything is deleted', async () => {
+    const { remove, storageRemove, deletionInsert } = mockDb({
+      id: 'cl_1',
+      name: 'Example Pty Ltd',
+      archived_at: '2026-09-30T00:00:00.000Z',
+      archived_by: 'Test Staff',
+      archived_reason: 'client_deleted',
+      auth_user_id: null,
+    })
+    expect((await DELETE(req('DELETE'), PARAMS)).status).toBe(200)
+    expect(deletionInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ client_id: 'cl_1', client_name: 'Example Pty Ltd', archived_reason: 'client_deleted', archived_by: 'Test Staff', deleted_by: expect.any(String) }),
+    )
+    expect(deletionInsert.mock.invocationCallOrder[0]).toBeLessThan(storageRemove.mock.invocationCallOrder[0])
+    expect(remove).toHaveBeenCalled()
+  })
+
+  it('deletes nothing when the record cannot be written', async () => {
+    const { remove, storageRemove, deletionInsert } = mockDb({ id: 'cl_1', name: 'Example Pty Ltd', archived_at: '2026-09-30T00:00:00.000Z', auth_user_id: null })
+    deletionInsert.mockResolvedValueOnce({ error: { message: 'relation does not exist' } })
+    expect((await DELETE(req('DELETE'), PARAMS)).status).toBe(500)
+    expect(storageRemove).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
   })
 
   it('sets the converted lead back to its stage before conversion, with a note, before the file goes', async () => {

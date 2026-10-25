@@ -58,7 +58,7 @@ function comparison() {
 
 const labelOf = (c: ReturnType<typeof comparison>, key: string) => c.tables.flatMap((t) => t.rows).find((x) => x.key === key)?.label
 const entries = (c: ReturnType<typeof comparison>, picks: Partial<Record<string, string[] | 'none'>>): MappingEntry[] =>
-  MEANINGS.flatMap((m) => {
+  MEANINGS.flatMap((m): MappingEntry[] => {
     const p = picks[m.key]
     if (p === undefined) return []
     if (p === 'none') return [{ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: 'Test Staff', confirmedAt: '2026-10-25T00:00:00Z' }]

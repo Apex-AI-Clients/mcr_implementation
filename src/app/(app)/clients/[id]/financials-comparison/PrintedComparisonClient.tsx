@@ -97,9 +97,10 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
                 </Button>
               </>
             )}
-            <Button variant="ghost" size="sm" onClick={reread} loading={rereading} disabled={rereading}>
+            {/* Re-reads every PDF and rebuilds the comparison (seconds). Uploads and deletes do this on their own. */}
+            <Button variant="ghost" size="sm" onClick={reread} loading={rereading} disabled={rereading} title="Read the PDFs again and rebuild the comparison">
               <RefreshCw className="h-3.5 w-3.5" />
-              Read the PDFs again
+              Refresh
             </Button>
           </div>
         </div>

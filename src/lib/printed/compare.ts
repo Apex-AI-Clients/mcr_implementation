@@ -7,8 +7,8 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  * invented: every figure is a printed figure, with the file, page and line it
  * came from.
  *
- *   Columns   the latest YEAR_WINDOW financial years, oldest first, then the
- *             current period (when it ends after the latest year).
+ *   Columns   every financial year uploaded, oldest first, then the current
+ *             period (when it ends after the latest year).
  *   Sources   each year from its own report; a comparative column of a later
  *             report only when the year has no report of its own.
  *   Rows      the latest report's printed order. A line only an earlier year
@@ -19,8 +19,6 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  *   Checks    every printed total of every report used, against its lines
  *             (verify.ts). A failure is a hard check: Needs review.
  */
-
-export const YEAR_WINDOW = 4
 
 export interface ComparisonDocument {
   documentId: string
@@ -158,7 +156,7 @@ function chooseColumns(instances: Instance[]): ComparisonColumn[] {
       current = c
     }
   }
-  const years = [...annual.keys()].sort((a, b) => a - b).slice(-YEAR_WINDOW)
+  const years = [...annual.keys()].sort((a, b) => a - b)
   const columns: ComparisonColumn[] = years.map((fy) => {
     const c = annual.get(fy)!
     return { key: fyLabel(fy), kind: 'annual', financialYear: fy, periodStart: c.periodStart, periodEnd: c.periodEnd }
@@ -344,10 +342,10 @@ export function buildPrintedComparison(docs: ComparisonDocument[]): PrintedCompa
     tables.push({ kind, title: titleSource?.statement.title ?? (kind === 'profit_and_loss' ? 'Profit and Loss' : 'Balance Sheet'), rows })
   }
 
-  return { columns, tables, failures, documents: describeDocuments(docs, usedDocs, new Set(columns.filter((c) => c.kind === 'annual').map((c) => c.financialYear))), annualYears: columns.filter((c) => c.kind === 'annual').length }
+  return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length }
 }
 
-function describeDocuments(docs: ComparisonDocument[], used: Set<string>, shownYears: Set<number>): DocumentUse[] {
+function describeDocuments(docs: ComparisonDocument[], used: Set<string>): DocumentUse[] {
   return docs.map((doc) => {
     const read = doc.read
     if (!read) return { documentId: doc.documentId, filename: doc.filename, status: 'not_read', found: null, used: false, message: 'Not read yet.', issues: [] }
@@ -365,9 +363,7 @@ function describeDocuments(docs: ComparisonDocument[], used: Set<string>, shownY
             ? `Some of it could not be read: ${read.issues.map((i) => i.message).join(' ')}`
             : used.has(doc.documentId)
               ? null
-              : shownYears.size && read.statements.every((s) => s.columns.every((c) => c.kind === 'annual' && c.financialYear < Math.min(...shownYears)))
-                ? `Not used: older than the latest ${YEAR_WINDOW} years.`
-                : 'Not used: each year it prints comes from another report.'
+              : 'Not used: each year it prints comes from another report.'
     return { documentId: doc.documentId, filename: doc.filename, status: read.status, found, used: used.has(doc.documentId), message, issues: read.issues }
   })
 }
