@@ -4,7 +4,7 @@
  *   "1,234"  "1,234.56"  "$1,234"  "A$1,234"  "AUD 1,234"   1234 / 1234.56
  *   "-1,234"  "(1,234)"  "1,234 -"  "1,234-"  "1,234 CR"    -1234
  *   "1,234 DR"                                              1234
- *   "-"  "–"  "—"  "nil"  ""                                null (nil)
+ *   "-"  "--"  "–"  "—"  "nil"  ""                          null (nil)
  *   "88%"                                                   a ratio, kept as text
  *
  * Anything else is not an amount (undefined): a label, a note reference
@@ -13,7 +13,7 @@
 
 export type ParsedAmount = { kind: 'amount'; value: number | null; cents: boolean } | { kind: 'ratio'; text: string }
 
-const NIL = /^(-|–|—|nil)$/i
+const NIL = /^(-|--|–|—|nil)$/i
 const RATIO = /^-?\(?\d{1,3}(\.\d+)?\)?\s?%$/
 const BODY = /^(\d{1,3}(,\d{3})*|\d+)(\.\d{1,2})?$/
 

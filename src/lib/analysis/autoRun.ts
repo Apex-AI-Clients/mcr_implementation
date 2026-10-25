@@ -2,27 +2,21 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv, type ActivityStatementFile } from './lodgementStore'
-import {
-  EXTRACTION_PHASE_BUDGET_MS,
-  buildAndPersistComparison,
-  extractAllFinancials,
-  type ExtractError,
-} from '@/lib/financials/comparisonJob'
+import type { ExtractError } from '@/lib/financials/comparisonJob'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
-import { lastReadAt } from '@/lib/financials/readState'
-import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { StoredStatementSlot } from '@/lib/financials/types'
+import { READER_VERSION, readAndStore, type FinancialDocumentRow } from '@/lib/printed/store'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
  * uploaded or deleted, so that by the time staff open the SBR pages
  * everything is already worked out.
  *
- * Only the non-AI work runs here: reading director penalty notices, the
- * lodgement arithmetic, and the financial statement extraction and comparison
- * figures. The AI summaries are written when staff open those pages
- * (OpenRouter's retention of ATO data is not yet confirmed — README). The
- * statement extraction itself does use the model, as it always has.
+ * Only non-AI work runs here: reading director penalty notices, the
+ * lodgement arithmetic, and reading the financial statement PDFs as printed
+ * (src/lib/printed, no model). The AI summaries are written when staff open
+ * those pages (OpenRouter's retention of ATO data is not yet confirmed —
+ * README). The AI statement reader is off (Stage 2b): the comparison is built
+ * from the printed reads when its page opens.
  *
  * One job per client (migration 0027): it shares financial_comparison_jobs
  * with the comparison page, so the page shows and follows it, and a second
@@ -108,18 +102,16 @@ async function loadSnapshot(
   supabase: ServerClient,
   clientId: string,
 ): Promise<{ snapshot: AnalysisSnapshot; activityStatement: ActivityStatementFile | null }> {
-  const [{ data: docs }, { data: notices }, { data: analyses }, { data: extractions }, { data: comparison }, slots] =
-    await Promise.all([
-      supabase
-        .from('documents')
-        .select('id, doc_category, fs_override_at')
-        .eq('client_id', clientId),
-      supabase.from('director_penalty_notices').select('document_id').eq('client_id', clientId),
-      supabase.from('lodgement_analyses').select('document_id').eq('client_id', clientId),
-      supabase.from('financial_document_extractions').select('document_id, extracted_at').eq('client_id', clientId),
-      supabase.from('financial_comparisons').select('stale_since').eq('client_id', clientId).maybeSingle(),
-      loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
-    ])
+  const [{ data: docs }, { data: notices }, { data: analyses }, { data: reads }] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('id, doc_category, fs_override_at')
+      .eq('client_id', clientId),
+    supabase.from('director_penalty_notices').select('document_id').eq('client_id', clientId),
+    supabase.from('lodgement_analyses').select('document_id').eq('client_id', clientId),
+    // Before migration 0033 there is no table: every PDF reads as unread, and is read (but not kept).
+    supabase.from('printed_reads').select('document_id, reader_version, read_at').eq('client_id', clientId),
+  ])
 
   const all = docs ?? []
   const hasAccountFiles = all.some((d) => d.doc_category === DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT)
@@ -135,10 +127,10 @@ async function loadSnapshot(
       financialDocuments: all
         .filter((d) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(d.doc_category))
         .map((d) => ({ id: d.id, overrideAt: d.fs_override_at })),
-      // Files read before migration 0026 have no extraction record but supply
-      // statements: read, not to be sent to the model again (readState.ts).
-      extractedAt: lastReadAt(extractions ?? [], slots),
-      comparison: { exists: comparison !== null, staleSince: comparison?.stale_since ?? null },
+      // Read by the current printed reader (a newer reader reads again).
+      extractedAt: new Map((reads ?? []).filter((r) => r.reader_version === READER_VERSION).map((r) => [r.document_id, r.read_at])),
+      // Nothing to build or keep: the comparison is built from the reads when its page opens.
+      comparison: { exists: true, staleSince: null },
     },
   }
 }
@@ -170,7 +162,6 @@ export async function runAutoAnalysis(params: {
   supabase: ServerClient
 }): Promise<AutoRunSummary> {
   const { jobId, clientId, supabase } = params
-  const start = Date.now()
   const attempted = newAttempted()
   const summary: AutoRunSummary = {
     attempted,
@@ -189,7 +180,6 @@ export async function runAutoAnalysis(params: {
     .eq('id', jobId)
 
   try {
-    let comparisonPayload: unknown = null
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const { snapshot, activityStatement } = await loadSnapshot(supabase, clientId)
       const work = decideWork(snapshot, attempted)
@@ -219,27 +209,18 @@ export async function runAutoAnalysis(params: {
         else summary.notes.push(`Lodgement analysis: ${outcome.error}`)
       }
 
-      // 3. Financial statements: only the files that need it, then the
-      // comparison figures. No AI summary here.
+      // 3. Financial statements: each new PDF read as printed (well under a
+      // second each, no model). The comparison is built when its page opens.
       if (work.extract.length > 0) {
         work.extract.forEach((id) => attempted.extract.add(id))
-        const result = await extractAllFinancials(clientId, supabase, {
-          documentIds: work.extract,
-          interDocumentDelayMs: 2_000,
-          deadline: start + EXTRACTION_PHASE_BUDGET_MS,
-        })
-        summary.extracted += work.extract.length - result.errors.length
-        summary.errors.push(...result.errors)
-      }
-      if (work.compare) {
-        attempted.compare = true
-        const built = await buildAndPersistComparison(clientId, supabase, { aiSummary: false })
-        if (built.ok) {
-          summary.compared = true
-          comparisonPayload = built.payload
-        } else {
-          // Fewer than two annual statements is normal early on: not a failure.
-          summary.notes.push(built.error)
+        const { data: rows } = await supabase
+          .from('documents')
+          .select('id, original_filename, uploaded_at, file_path')
+          .in('id', work.extract)
+        for (const doc of (rows ?? []) as FinancialDocumentRow[]) {
+          const { read } = await readAndStore(supabase, clientId, doc)
+          if (read.status === 'read') summary.extracted++
+          else summary.notes.push(`${doc.original_filename}: ${read.issues.map((i) => i.message).join(' ') || read.status}`)
         }
       }
     }
@@ -248,7 +229,8 @@ export async function runAutoAnalysis(params: {
       .from('financial_comparison_jobs')
       .update({
         status: 'done',
-        result: (comparisonPayload ?? null) as Record<string, unknown> | null,
+        // No stored comparison any more: it is built from the printed reads when its page opens.
+        result: null,
         extract_errors: summary.errors as unknown as Record<string, unknown>[],
         error: null,
         updated_at: stamp(),

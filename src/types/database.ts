@@ -1019,6 +1019,54 @@ export type Database = {
           },
         ]
       }
+      printed_reads: {
+        Row: {
+          client_id: string
+          document_id: string
+          issues: Json
+          page_count: number | null
+          read_at: string
+          reader_version: string
+          statements: Json
+          status: string
+        }
+        Insert: {
+          client_id: string
+          document_id: string
+          issues?: Json
+          page_count?: number | null
+          read_at?: string
+          reader_version: string
+          statements?: Json
+          status: string
+        }
+        Update: {
+          client_id?: string
+          document_id?: string
+          issues?: Json
+          page_count?: number | null
+          read_at?: string
+          reader_version?: string
+          statements?: Json
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "printed_reads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "printed_reads_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sbr_case_import_corrections: {
         Row: {
           applied: Json

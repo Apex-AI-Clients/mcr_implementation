@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
-import { hardCheckFailures, hardChecksFingerprint } from '@/lib/financials/hardChecks'
-import type { FinancialsComparison } from '@/lib/financials/types'
+import { loadPrintedComparison } from '@/lib/printed/store'
+import { printedFingerprint } from '@/lib/printed/review'
 
 /**
  * POST — staff ticking "I've checked these figures against the source
  * documents" on a comparison with a failed hard check (hardChecks.ts). That
  * unlocks its PDF and CSV.
  *
- * What was checked is worked out here, from the stored comparison as it is
- * now (its fingerprint), never taken from the request. The tick counts only
+ * What was checked is worked out here, from the as-printed comparison as it
+ * is now (its fingerprint), never taken from the request. The tick counts only
  * while that comparison and its failures are unchanged.
  */
 
@@ -25,15 +25,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     const { id: clientId } = await params
     const supabase = getSupabaseServerClient()
-    const { data: row, error: readError } = await supabase
-      .from('financial_comparisons')
-      .select('computed, generated_at')
-      .eq('client_id', clientId)
-      .maybeSingle()
-    if (readError) throw readError
-
-    const comparison = (row?.computed ?? null) as unknown as FinancialsComparison | null
-    const fingerprint = hardChecksFingerprint(row?.generated_at ?? null, hardCheckFailures(comparison?.checks))
+    const { comparison, builtAt } = await loadPrintedComparison(supabase, clientId)
+    const fingerprint = printedFingerprint(comparison, builtAt)
     if (!fingerprint) {
       return NextResponse.json({ error: 'There is nothing to check here now.' }, { status: 409 })
     }

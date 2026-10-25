@@ -9,11 +9,13 @@ vi.mock('@/lib/financials/comparisonJob', () => ({
   buildAndPersistComparison: vi.fn(),
 }))
 vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn() }))
+vi.mock('@/lib/printed/store', () => ({ READER_VERSION: 'v1', readAndStore: vi.fn() }))
 
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '../lodgementStore'
 import { buildAndPersistComparison, extractAllFinancials } from '@/lib/financials/comparisonJob'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
+import { readAndStore } from '@/lib/printed/store'
 import {
   categoryTriggersAnalysis,
   decideWork,
@@ -171,6 +173,8 @@ function mockDb(state: {
           return { data: state.analyses.map((document_id) => ({ document_id })) }
         case 'financial_document_extractions':
           return { data: state.extractions }
+        case 'printed_reads':
+          return { data: state.extractions.map((e) => ({ document_id: e.document_id, reader_version: 'v1', read_at: e.extracted_at })) }
         default:
           return { data: null }
       }
@@ -226,26 +230,25 @@ describe('runAutoAnalysis', () => {
       state.analyses.push('csv-1')
       return { ok: true } as never
     })
-    vi.mocked(extractAllFinancials).mockImplementation(async () => {
-      state.extractions.push({ document_id: 'fs-1', extracted_at: '2026-10-17T00:00:00Z' })
-      return { extracted: 2, skipped: 0, errors: [] }
-    })
-    vi.mocked(buildAndPersistComparison).mockImplementation(async () => {
-      state.comparison = { stale_since: null }
-      return { ok: true, payload: { comparison: {} } } as never
+    vi.mocked(readAndStore).mockImplementation(async (_s, _c, doc) => {
+      state.extractions.push({ document_id: doc.id, extracted_at: '2026-10-17T00:00:00Z' })
+      return { documentId: doc.id, readAt: '2026-10-17T00:00:00Z', read: { status: 'read', pageCount: 3, statements: [], issues: [] } }
     })
 
     const summary = await runAutoAnalysis({ jobId: 'job-1', clientId: 'client-1', supabase })
 
     expect(readAndStoreNotice).toHaveBeenCalledTimes(1)
     expect(analyseAndStoreLodgement).toHaveBeenCalledWith(supabase, 'client-1', expect.anything(), { aiSummary: false })
-    expect(extractAllFinancials).toHaveBeenCalledWith('client-1', supabase, expect.objectContaining({ documentIds: ['fs-1'] }))
-    expect(buildAndPersistComparison).toHaveBeenCalledWith('client-1', supabase, { aiSummary: false })
-    expect(summary).toMatchObject({ dpnRead: 1, lodgementAnalysed: true, extracted: 1, compared: true })
+    // Read as printed, by our own code: the AI reader and the stored comparison are not used.
+    expect(readAndStore).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(readAndStore).mock.calls[0][2]).toMatchObject({ id: 'fs-1' })
+    expect(extractAllFinancials).not.toHaveBeenCalled()
+    expect(buildAndPersistComparison).not.toHaveBeenCalled()
+    expect(summary).toMatchObject({ dpnRead: 1, lodgementAnalysed: true, extracted: 1 })
     expect(jobUpdates.at(-1)).toMatchObject({ status: 'done' })
   })
 
-  it('does not loop on a file whose extraction keeps failing', async () => {
+  it('does not loop on a file that cannot be read, and says why', async () => {
     const state = {
       docs: [{ id: 'bad', doc_category: 'financial_statements', fs_override_at: null }],
       notices: [],
@@ -255,18 +258,17 @@ describe('runAutoAnalysis', () => {
     }
     const { supabase } = mockDb(state)
     vi.mocked(findActivityStatementCsv).mockResolvedValue(null)
-    vi.mocked(extractAllFinancials).mockResolvedValue({
-      extracted: 0,
-      skipped: 0,
-      errors: [{ documentId: 'bad', filename: 'bad.pdf', error: 'unreadable' }],
+    vi.mocked(readAndStore).mockResolvedValue({
+      documentId: 'bad',
+      readAt: '2026-10-17T00:00:00Z',
+      read: { status: 'no_text_layer', pageCount: 2, statements: [], issues: [{ kind: 'no_text_layer', page: null, text: null, message: 'This PDF has no readable text.' }] },
     })
-    vi.mocked(buildAndPersistComparison).mockResolvedValue({ ok: false, status: 400, error: 'Need at least 2', extractedCount: 0 })
 
     const summary = await runAutoAnalysis({ jobId: 'job-1', clientId: 'client-1', supabase })
-    expect(extractAllFinancials).toHaveBeenCalledTimes(1)
-    expect(summary.errors).toHaveLength(1)
-    // Too few statements to compare is noted, not a failure.
-    expect(summary.notes).toEqual(['Need at least 2'])
+    // Not kept (the mock stores nothing), yet tried once per run.
+    expect(readAndStore).toHaveBeenCalledTimes(1)
+    expect(summary.extracted).toBe(0)
+    expect(summary.notes).toEqual([expect.stringContaining('This PDF has no readable text.')])
   })
 })
 

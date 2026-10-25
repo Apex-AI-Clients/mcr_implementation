@@ -69,6 +69,7 @@ export interface ReadIssue {
     | 'unknown_period'
     | 'unplaced_cell'
     | 'unparsed_amount'
+    | 'unreadable_file'
   page: number | null
   /** The printed line or header, verbatim. */
   text: string | null
@@ -76,7 +77,8 @@ export interface ReadIssue {
 }
 
 export interface PrintedRead {
-  status: 'read' | 'no_text_layer' | 'no_statements'
+  /** 'failed': the file could not be downloaded or opened (store.ts). */
+  status: 'read' | 'no_text_layer' | 'no_statements' | 'failed'
   pageCount: number
   statements: PrintedStatement[]
   issues: ReadIssue[]

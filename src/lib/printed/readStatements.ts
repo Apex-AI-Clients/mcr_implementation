@@ -66,6 +66,9 @@ function isHeaderLine(line: PdfLine): boolean {
   return line.cells.length > 0 && line.cells.every((c) => isHeaderCell(c.text)) && line.cells.some((c) => YEAR.test(c.text) || /^total$/i.test(c.text.trim()))
 }
 
+/** A label ending mid-phrase continues on the next line. */
+const WRAPS = /\b(the|of|and|to|for|at|in|on|from|by|with)$|[&,-]$/i
+
 /** A wrapped header line's cells end where the header's columns end. */
 const HEADER_ALIGN = 15
 
@@ -155,9 +158,20 @@ function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated:
     if (CURRENCY_ONLY.test(line.text) || isHeaderLine(line) || PAGE_NUMBER.test(line.text)) continue
     const labelCells = line.cells.filter((c) => c.x < zoneStart)
     const amountCells = line.cells.filter((c) => c.x >= zoneStart)
+    // Text across the figure columns with no label and no figure: an e-signature
+    // stamp ("Doc ID: …"), a watermark. Not a row. A line with any figure is read
+    // (and its unreadable cells reported).
+    if (labelCells.length === 0 && !amountCells.some((c) => parseAmount(c.text) || isLoneMinus(c.text))) continue
     if (amountCells.length === 0) {
       // Furniture: page numbers, lines on every page, the accountant's sentences.
       if (repeated.has(line.text) || isSentence(line.text)) continue
+      // A label that wraps ("Add Retained Profits B/Fwd at The" / "Beginning Of Year"): one line.
+      const previous = rows[rows.length - 1]
+      if (previous?.hasAmounts && Math.abs(previous.x - line.cells[0].x) <= 1 && WRAPS.test(previous.label)) {
+        previous.label = `${previous.label} ${line.text}`
+        previous.text = `${previous.text} / ${line.text}`
+        continue
+      }
     }
     const row = readRow(page, line, labelCells, amountCells, anchors, columns, issues)
     if (row) rows.push(row)

@@ -249,6 +249,19 @@ describe('readStatements', () => {
     ])
   })
 
+  it('reads "--" as nil, joins a wrapped label, and skips a signature stamp across the columns', () => {
+    const pages = flatProfitAndLoss()
+    pages[0][16] = line([25, 50, 'Wages'], [395, 400, '--'], [465, 470, '--'])
+    pages[0].splice(20, 0, line([25, 200, 'Add retained profits brought forward at the'], [370, 400, '1,000'], [440, 470, '2,000']), line([25, 120, 'Beginning of year']))
+    pages[0].splice(19, 0, line([380, 600, 'Doc ID: 630aba8d238797e67e2973490876c06a']))
+    const read = readStatements(pages)
+    expect(read.issues).toEqual([])
+    const rows = read.statements[0].rows
+    expect(rows.find((r) => r.label === 'Wages')?.amounts).toEqual([null, null])
+    expect(rows.map((r) => r.label)).toContain('Add retained profits brought forward at the Beginning of year')
+    expect(rows.some((r) => r.text.includes('Doc ID'))).toBe(false)
+  })
+
   it('does not read a PDF with no text layer', () => {
     const read = readStatements([[], []])
     expect(read.status).toBe('no_text_layer')

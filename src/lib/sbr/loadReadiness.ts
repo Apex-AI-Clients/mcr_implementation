@@ -2,13 +2,12 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { describeFinancialFiles, failureOf } from '@/lib/financials/financialFiles'
-import { exportsLocked, hardCheckFailures } from '@/lib/financials/hardChecks'
+import { loadPrintedComparison } from '@/lib/printed/store'
+import { printedExportsLocked, printedHardChecks } from '@/lib/printed/review'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { periodOverrideOf } from '@/lib/financials/periodOverride'
-import { lastReadAt } from '@/lib/financials/readState'
 import { loadStoredSlots } from '@/lib/financials/storedStatements'
-import type { FinancialDocumentKind, FinancialsComparison, StoredStatementSlot } from '@/lib/financials/types'
-import { decideWork } from '@/lib/analysis/autoRun'
+import type { FinancialDocumentKind, StoredStatementSlot } from '@/lib/financials/types'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { computeReadiness, type Readiness } from './readiness'
@@ -29,7 +28,6 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     { data: docs },
     slots,
     { data: extractions },
-    { data: comparison },
     { data: analyses },
     { data: noticeRows },
     { data: company },
@@ -48,7 +46,6 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .order('uploaded_at', { ascending: false }),
     loadStoredSlots(supabase, clientId).catch(() => [] as StoredStatementSlot[]),
     supabase.from('financial_document_extractions').select('document_id, kind, extracted_at, warnings').eq('client_id', clientId),
-    supabase.from('financial_comparisons').select('generated_at, stale_since, computed').eq('client_id', clientId).maybeSingle(),
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, analysed_at')
@@ -64,25 +61,14 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .maybeSingle(),
     findLiveComparisonJob(supabase, clientId).catch(() => null),
   ])
+  // The as-printed comparison, from the stored reads only: reading PDFs is the page's or the run's job.
+  const printed = await loadPrintedComparison(supabase, clientId)
 
   const all = docs ?? []
   const isFinancial = (c: string) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(c)
 
   // ── Financial statements ────────────────────────────────────────────────
   const financialDocs = all.filter((d) => isFinancial(d.doc_category)).reverse()
-  // A file read before migration 0026 has no extraction record but supplies
-  // statements: that counts as read (readState.ts).
-  const extractedAt = lastReadAt(extractions ?? [], slots)
-
-  const work = decideWork({
-    dpnDocumentIds: [],
-    readNoticeDocumentIds: new Set(),
-    activityStatementDocumentId: null,
-    analysedDocumentIds: new Set(),
-    financialDocuments: financialDocs.map((d) => ({ id: d.id, overrideAt: d.fs_override_at })),
-    extractedAt,
-    comparison: { exists: comparison !== null, staleSince: comparison?.stale_since ?? null },
-  })
   const files = describeFinancialFiles({
     documents: financialDocs.map((d) => ({
       id: d.id,
@@ -100,14 +86,13 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     })),
   })
 
-  // A failed hard check nobody has ticked: the same rule as the export lock.
-  const failures = hardCheckFailures((comparison?.computed as unknown as FinancialsComparison | null)?.checks)
-  const unreviewedFailures = exportsLocked(
-    failures,
-    comparison?.generated_at ?? null,
+  // A printed total that does not add up and nobody has ticked: the same rule as the export lock.
+  const unreviewedFailures = printedExportsLocked(
+    printed.comparison,
+    printed.builtAt,
     figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null,
   )
-    ? failures.length
+    ? printedHardChecks(printed.comparison).length
     : 0
 
   // ── ATO activity statement ──────────────────────────────────────────────
@@ -142,11 +127,11 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     jobRunning: liveJob !== null,
     financials: {
       files,
-      comparison: comparison ? { generatedAt: comparison.generated_at, staleSince: comparison.stale_since } : null,
-      // Files never read, or a comparison made stale by a change. A file
-      // whose read failed is recorded as read-and-failed, and a comparison
-      // that could not be built at all is Failed: neither is waiting work.
-      outOfDate: work.extract.length > 0 || comparison?.stale_since != null,
+      // Two years printed side by side is a comparison (as before); fewer is Failed.
+      comparison: printed.comparison.annualYears >= 2 && printed.builtAt ? { generatedAt: printed.builtAt, staleSince: null } : null,
+      // PDFs not yet read by the current reader. A file that could not be
+      // read is a read too (with why): not waiting work.
+      outOfDate: printed.unread > 0,
       unreviewedFailures,
     },
     lodgement: {

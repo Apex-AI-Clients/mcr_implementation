@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { readPrintedStatements } from '@/lib/printed/readPdf'
 import { verifyStatements } from '@/lib/printed/verify'
+import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from '@/lib/printed/compare'
 import type { PrintedRead } from '@/lib/printed/types'
 import { PDF_DIR, PRINTED_DIR, readExpected, readManifest, type ExpectedDocument } from './regression'
 
@@ -105,4 +106,67 @@ it('reads every regression PDF exactly as printed', async () => {
   // Straight to stdout: vitest shows console output only for failing tests.
   process.stdout.write(`${lines.join('\n')}\n`)
   if (failed) throw new Error(`${failed} document(s) differ from their expected as-printed rows`)
+})
+
+/**
+ * Every figure each report prints for a year shown in the comparison is in
+ * that year's column: as the figure, or as a "restated" note when the year's
+ * own report prints another. Returns what is missing, with page and line.
+ */
+function comparisonGaps(docs: ComparisonDocument[], comparison: PrintedComparison): string[] {
+  const gaps: string[] = []
+  for (const doc of docs) {
+    for (const st of doc.read?.statements ?? []) {
+      st.columns.forEach((col, ci) => {
+        const ci2 = comparison.columns.findIndex((c) => (col.kind === 'annual' ? c.kind === 'annual' && c.financialYear === col.financialYear : c.kind === 'current_period' && c.periodEnd === col.periodEnd))
+        if (ci2 < 0) return
+        const table = comparison.tables.find((t) => t.kind === st.kind)
+        for (const row of st.rows) {
+          const v = row.amounts[ci]
+          if (row.style === 'heading' || v === null) continue
+          const shown = table?.rows.some((r) => {
+            const cell = r.cells[ci2]
+            // The column's own source: this exact printed line.
+            if (cell.source?.documentId === doc.documentId) return cell.value === v && cell.source.page === row.page && cell.source.text === row.text
+            // Another report printing the same year: the same figure on the same line, or a "restated" note.
+            const sameLine = r.label === row.label && r.path.join('>') === row.path.join('>')
+            return (sameLine && cell.value === v) || cell.restated.some((rs) => rs.value === v && rs.source.documentId === doc.documentId && rs.source.page === row.page && rs.source.text === row.text)
+          })
+          if (!shown) gaps.push(`${col.header} p${row.page}: "${row.text}" is not in the comparison`)
+        }
+      })
+    }
+  }
+  return gaps
+}
+
+it('shows every printed figure in the comparison, years in order', async () => {
+  const only = process.env.PRINTED_ALIAS?.trim()
+  const lines: string[] = []
+  let failed = 0
+  for (const [alias, entry] of Object.entries(readManifest())) {
+    if (only && alias !== only) continue
+    const docs: ComparisonDocument[] = []
+    for (const doc of entry.documents) {
+      const read = await readPrintedStatements(new Uint8Array(readFileSync(path.join(PDF_DIR, alias, doc.file))))
+      docs.push({ documentId: doc.documentId, filename: doc.documentId.slice(0, 8), uploadedAt: '', read })
+    }
+    const started = performance.now()
+    const comparison = buildPrintedComparison(docs)
+    const ms = Math.round(performance.now() - started)
+    const gaps = comparisonGaps(docs, comparison)
+    const ends = comparison.columns.map((c) => c.periodEnd)
+    const ordered = ends.every((e, i) => i === 0 || e > ends[i - 1])
+    const restated = comparison.tables.flatMap((t) => t.rows.flatMap((r) => r.cells.filter((c) => c.restated.length))).length
+    const unused = comparison.documents.filter((d) => !d.used).length
+    lines.push(
+      `  ${gaps.length || !ordered ? 'FAIL' : 'pass'}  ${alias}  ${ms}ms  ${comparison.columns.map((c) => c.key).join(' ')}  ${comparison.tables.map((t) => `${t.kind === 'profit_and_loss' ? 'P&L' : 'BS'} ${t.rows.length} rows`).join(', ')}  ${restated} restated  ${comparison.failures.length} totals failing  ${unused} files not used`,
+    )
+    if (!ordered) lines.push(`    columns not in date order: ${ends.join(', ')}`)
+    for (const g of gaps.slice(0, MAX_DIFFS)) lines.push(`    ${g}`)
+    for (const f of comparison.failures) lines.push(`    total: ${f.column} ${f.message}`)
+    if (gaps.length || !ordered) failed++
+  }
+  process.stdout.write(['── comparison ──', ...lines, ''].join('\n'))
+  if (failed) throw new Error(`${failed} client comparison(s) leave out printed figures or misorder years`)
 })

@@ -114,8 +114,16 @@ interface ExtractOptions {
 }
 
 /**
+ * The AI statement reader is off: the as-printed reader (src/lib/printed)
+ * replaced it in Stage 2b, and no financial statement goes to a model. This
+ * code is removed in Stage 4; until then nothing can switch it back on.
+ */
+export const AI_FINANCIALS_READER_ENABLED = false
+
+/**
  * Extract every (or a named subset of) historical/current financials PDF for a
  * client and persist the canonical line-item data into financial_statements.
+ * Off (AI_FINANCIALS_READER_ENABLED): extracts nothing.
  * Documents are processed sequentially; per-document failures are collected and
  * returned rather than aborting the whole batch.
  */
@@ -124,6 +132,7 @@ export async function extractAllFinancials(
   supabase: SupabaseClient,
   options: ExtractOptions = {},
 ): Promise<ExtractResult> {
+  if (!AI_FINANCIALS_READER_ENABLED) return { extracted: 0, skipped: 0, errors: [] }
   const interDocumentDelayMs = options.interDocumentDelayMs ?? DEFAULT_INTER_DOCUMENT_DELAY_MS
   const requestStart = Date.now()
 
