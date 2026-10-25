@@ -15,7 +15,7 @@ import type { PrintedRead } from './types'
  */
 
 /** Bump when the reader changes what it reads: every PDF is then read again. */
-export const READER_VERSION = '2026-10-24.2'
+export const READER_VERSION = '2026-10-25.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 

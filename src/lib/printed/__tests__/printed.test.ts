@@ -262,6 +262,20 @@ describe('readStatements', () => {
     expect(rows.some((r) => r.text.includes('Doc ID'))).toBe(false)
   })
 
+  it('continues a statement onto an untitled page, with or without its header, but not onto a cash flow page', () => {
+    const R = [446, 545]
+    const head = line([50, 200, 'Financial Statements | 30 June 2026'], [365, 545, 'EXAMPLE PTY LTD'])
+    const read = readStatements([
+      [head, line([50, 300, 'Statement of Financial Position']), line([50, 200, 'As at 30 June 2026']), line([426, 446, '2026'], [525, 545, '2025']), line([50, 80, 'Assets']), row(58, 'Cash', R, '100', '90')],
+      [head, line([426, 446, '2026'], [525, 545, '2025']), row(58, 'Debtors', R, '20', '10'), row(50, 'Total Assets', R, '120', '100')],
+      [head, row(50, 'Net Assets', R, '120', '100')],
+      [head, line([50, 300, 'Statement of Cash Flows']), line([426, 446, '2026'], [525, 545, '2025']), row(50, 'Net cash from operating activities', R, '5', '6')],
+    ])
+    expect(read.issues).toEqual([])
+    expect(read.statements.map((s) => [s.title, s.pages])).toEqual([['Statement of Financial Position', [1, 2, 3]]])
+    expect(read.statements[0].rows.map((r) => r.label)).toEqual(['Assets', 'Cash', 'Debtors', 'Total Assets', 'Net Assets'])
+  })
+
   it('does not read a PDF with no text layer', () => {
     const read = readStatements([[], []])
     expect(read.status).toBe('no_text_layer')

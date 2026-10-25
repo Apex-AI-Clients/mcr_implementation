@@ -26,6 +26,8 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedStatement, Print
 const PL_TITLE =
   /^(detailed\s+)?(profit\s*(and|&)\s*loss(\s+statement|\s+account)?|income\s+statement|trading\s+statement|statement\s+of\s+profit\s+or\s+loss(\s+and\s+other\s+comprehensive\s+income)?|statement\s+of\s+comprehensive\s+income|operating\s+statement|trading\s*(and|&)\s*profit\s*(and|&)\s*loss(\s+statement|\s+account)?)$/i
 const BS_TITLE = /^(detailed\s+)?(balance\s+sheet|statement\s+of\s+financial\s+position)$/i
+/** A title of anything but a P&L or balance sheet: such a page never continues one. */
+const OTHER_TITLE = /\b(statement|notes?|schedule|report|declaration|reconciliation|worksheet|return|summary)\b/i
 /** The title is printed within the first lines of the page. */
 const TITLE_WITHIN = 8
 
@@ -99,8 +101,33 @@ interface PageRead {
   rows: (UnstructuredRow & { text: string; page: number; cents: boolean })[]
 }
 
+/**
+ * A page with no title straight after a statement page continues it when it
+ * repeats that page's column header ("2026  2025") near its top. The header
+ * is found as on any page; index -1 stands for the (unprinted) title.
+ */
+function continuationOf(lines: PdfLine[], previous: PageRead | null): { index: number; kind: PrintedStatementKind; title: string } | null {
+  if (!previous) return null
+  const wanted = previous.anchors.filter((a) => !a.notes).map((a) => a.header.split(' ')[0])
+  for (let i = 0; i < Math.min(lines.length, TITLE_WITHIN); i++) {
+    // Another statement's title (cash flows, notes, appropriation…): a page of its own.
+    if (lines[i].cells.length === 1 && OTHER_TITLE.test(lines[i].text)) return null
+    if (!isHeaderLine(lines[i])) continue
+    const found = lines[i].cells.filter((c) => !HEADER_WORD.test(c.text.trim()) || /^total$/i.test(c.text.trim())).map((c) => c.text.trim().split(' ')[0])
+    if (found.length === wanted.length && found.every((f, j) => f === wanted[j])) return { index: i - 1, kind: previous.kind, title: previous.title }
+  }
+  // No header either: the first figures sit under the previous page's columns.
+  const columns = previous.anchors.filter((a) => !a.notes)
+  const firstFigures = lines.slice(0, TITLE_WITHIN).find((l) => l.cells.some((c) => /\d/.test(c.text) && parseAmount(c.text)?.kind === 'amount'))
+  const figures = firstFigures?.cells.filter((c) => parseAmount(c.text)) ?? []
+  if (figures.length && figures.every((c) => columns.some((a) => Math.abs(a.right - c.right) <= MAX_COLUMN_DISTANCE / 2))) {
+    return { index: -1, kind: previous.kind, title: previous.title }
+  }
+  return null
+}
+
 function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated: Set<string>, previous: PageRead | null): PageRead | null {
-  const title = findTitle(lines)
+  const title = findTitle(lines) ?? continuationOf(lines, previous?.page === page - 1 ? previous : null)
   if (!title) return null
 
   let header = -1
@@ -155,7 +182,8 @@ function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated:
   for (let i = first; i < lines.length; i++) {
     const line = lines[i]
     // Page numbers print wherever the footer is, in the figure columns too ("3/5", "Page 3 of 10").
-    if (CURRENCY_ONLY.test(line.text) || isHeaderLine(line) || PAGE_NUMBER.test(line.text)) continue
+    // Running headers and footers print on every page, across the columns too.
+    if (CURRENCY_ONLY.test(line.text) || isHeaderLine(line) || PAGE_NUMBER.test(line.text) || repeated.has(line.text)) continue
     const labelCells = line.cells.filter((c) => c.x < zoneStart)
     const amountCells = line.cells.filter((c) => c.x >= zoneStart)
     // Text across the figure columns with no label and no figure: an e-signature
@@ -252,16 +280,20 @@ function readRow(
 /** Lines a page's footer is drawn from. */
 const FOOTER_LINES = 3
 
+/** Lines a page's running header is drawn from. */
+const HEADER_LINES = 2
+
 /**
- * Running footers: a line with no figures among the last lines of two or
- * more pages ("ZAUK Enterprises Pty Ltd" under every statement). A heading
- * that happens to end one page ("Equity", continued overleaf) is not one.
+ * Running headers and footers: a line with no figures among the first or last
+ * lines of two or more pages ("ZAUK Enterprises Pty Ltd" under every
+ * statement, "Financial Statements | 30 June 2023 | <entity>" over it). A
+ * heading that happens to end one page ("Equity", continued overleaf) is not one.
  */
 function repeatedLines(pages: PdfLine[][]): Set<string> {
   const bottoms = new Map<string, number>()
   for (const lines of pages) {
     const seen = new Set<string>()
-    for (const line of lines.slice(-FOOTER_LINES)) {
+    for (const line of [...lines.slice(0, HEADER_LINES), ...lines.slice(-FOOTER_LINES)]) {
       if (line.cells.some((c) => /\d/.test(c.text) && parseAmount(c.text))) continue
       if (!seen.has(line.text)) bottoms.set(line.text, (bottoms.get(line.text) ?? 0) + 1)
       seen.add(line.text)
