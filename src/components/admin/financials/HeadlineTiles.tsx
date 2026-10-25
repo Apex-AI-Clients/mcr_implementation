@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Dialog } from '@/components/ui/Dialog'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
-import { MEANING, MEANINGS, type Meaning } from '@/lib/printed/meanings'
+import { MEANINGS, type Meaning } from '@/lib/printed/meanings'
 import { resolveMeaning, type MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedComparison } from '@/lib/printed/compare'
 import type { Suggestions } from '@/lib/printed/dictionary'
@@ -90,7 +90,7 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
         })}
       </div>
 
-      <Dialog open={open !== null} onClose={() => setOpen(null)} title={open ? MEANING[open].label : ''} className="max-w-2xl">
+      <Dialog open={open !== null} onClose={() => setOpen(null)} title="Check this key figure" className="max-w-2xl">
         {open && (
           <ul>
             <KeyFigureCard

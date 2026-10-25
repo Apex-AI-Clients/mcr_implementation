@@ -4,6 +4,7 @@ import { suggestMapping } from '../dictionary'
 import { mappingConfirmed, predictionFinancials, resolveMeaning, type MappingEntry } from '../mapping'
 import { MappingError, saveMapping, type MappingSelection } from '../mappingStore'
 import { MEANINGS } from '../meanings'
+import { describeLine, pickerRows } from '../picker'
 import { mappedCreditorHints } from '@/lib/sbr/creditors'
 import { creditorDebt } from '@/lib/sbr/creditorDebt'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '../types'
@@ -131,6 +132,15 @@ describe('the confirmed mapping', () => {
     const c = comparison()
     expect(predictionFinancials(c, []).loanReceivable).toBeNull()
     expect(creditorDebt({ icaRows: null, mappedAto: null }).amount).toBeNull()
+  })
+})
+
+describe('pickerRows', () => {
+  it('offers printed loan lines only: never a total or an equity line', () => {
+    const c = comparison()
+    const labels = pickerRows(c, 'loan_receivable', []).map((r) => r.label)
+    expect(labels).toEqual(['Loan - Related Parties', 'Loan - Hino Truck'])
+    expect(describeLine(c.tables[0].rows.find((r) => r.label === 'Net Profit')!, 'net_profit')).toEqual({ label: 'Net Profit', where: 'Profit and loss' })
   })
 })
 

@@ -20,14 +20,19 @@ export const STATEMENT_NAME = { profit_and_loss: 'Profit and loss', balance_shee
 const path = (r: ComparisonRow) => r.path.join(' > ').toLowerCase()
 const isLiability = (r: ComparisonRow) => /liabilit/.test(path(r)) && !/equity|capital|funds|reserves/.test((r.path[r.path.length - 1] ?? '').toLowerCase())
 const isExpenseSection = (r: ComparisonRow) => /expense|cost|outgoing|overhead/.test(path(r))
+/** A loan account is a printed line, not a total, and never equity ("Total shareholders' equity"). */
+const isLoanLine = (r: ComparisonRow) =>
+  r.style === 'line' &&
+  !/equity|capital|reserves/.test((r.path[r.path.length - 1] ?? '').toLowerCase()) &&
+  /\b(loans?|directors?|shareholders?|related|associates?|associated|beneficiar(y|ies))\b/i.test(r.label)
 
 const PLAUSIBLE: Record<Meaning, (r: ComparisonRow) => boolean> = {
   revenue: (r) => !isExpenseSection(r) && /\b(income|sales?|revenue|turnover|fees?)\b/i.test(`${r.label} ${r.path.join(' ')}`) && !/\b(profit|loss|tax)\b/i.test(r.label),
   net_profit: (r) => r.style === 'total' || /\b(profit|loss|earnings|surplus|deficit)\b/i.test(r.label) || /^net income\b/i.test(r.label),
   net_assets: (r) => /\bnet assets\b|\bequity\b|\btrust funds\b|\bnet liabilities\b/i.test(r.label),
   income_tax_payable: (r) => isLiability(r) && /\btax(ation)?\b/i.test(r.label),
-  loan_receivable: (r) => /\b(loans?|directors?|shareholders?|related|associates?|associated|beneficiar(y|ies))\b/i.test(r.label),
-  loan_payable: (r) => /\b(loans?|directors?|shareholders?|related|associates?|associated|beneficiar(y|ies))\b/i.test(r.label),
+  loan_receivable: (r) => isLoanLine(r),
+  loan_payable: (r) => isLoanLine(r),
   ato_debt: (r) => isLiability(r) && /\b(ato|bas|gst|payg|tax(ation)?|activity statement)\b/i.test(r.label),
   credit_cards: (r) => isLiability(r) && /\b(credit cards?|amex|visa|mastercard)\b/i.test(r.label),
   cash_loans: (r) => isLiability(r) && /\b(loans?|chattel|hire purchase|finance|unexpired interest|mortgage|borrowings?)\b/i.test(r.label),

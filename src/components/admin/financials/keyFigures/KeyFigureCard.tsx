@@ -93,24 +93,27 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
 
   return (
     <li className="rounded-lg border border-border/60 bg-card p-4" aria-label={info.label}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">{info.label}</h3>
             {info.prediction && <Badge variant="accent">Used in the SBR prediction</Badge>}
           </div>
           <p className="mt-0.5 text-xs text-foreground/60">{info.hint}</p>
         </div>
-        {status === 'confirmed' ? (
-          <Badge variant="success">
-            <CheckCircle2 className="h-3 w-3" aria-hidden />
-            Confirmed by {confirmedBy.confirmedBy}, {shortDate(confirmedBy.confirmedAt)}
-          </Badge>
-        ) : status === 'suggested' ? (
-          <Badge variant="warning">Suggested</Badge>
-        ) : (
-          <Badge variant="destructive">Not found</Badge>
-        )}
+        {/* The status stays top-right, beside the title, however long the explanation. */}
+        <div className="shrink-0">
+          {status === 'confirmed' ? (
+            <Badge variant="success">
+              <CheckCircle2 className="h-3 w-3" aria-hidden />
+              Confirmed by {confirmedBy.confirmedBy}, {shortDate(confirmedBy.confirmedAt)}
+            </Badge>
+          ) : status === 'suggested' ? (
+            <Badge variant="warning">Suggested</Badge>
+          ) : (
+            <Badge variant="destructive">Not found</Badge>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 space-y-2">
