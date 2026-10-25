@@ -133,8 +133,8 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       input,
       'financials',
       'needs_review',
-      'Confirm which printed lines are the revenue, net profit, net assets, ATO debt and loan accounts.',
-      `/clients/${input.clientId}/financials-comparison/mapping`,
+      'Confirm the key figures (revenue, net profit, net assets, ATO debt, loan accounts) on the comparison page.',
+      href,
     )
   }
   return item(input, 'financials', 'ready', null, href)

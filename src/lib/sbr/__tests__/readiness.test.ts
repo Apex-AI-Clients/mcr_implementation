@@ -132,9 +132,9 @@ describe('financial statements', () => {
     expect(r.waitingFor).toContain('Financial statements: needs review')
   })
 
-  it('is Needs review, pointing at the mapping screen, until staff confirm which lines mean what', () => {
+  it('is Needs review, pointing at the comparison page, until staff confirm the key figures', () => {
     const r = computeReadiness(input({ financials: { mappingConfirmed: false } }))
-    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', href: '/clients/c1/financials-comparison/mapping' })
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', href: '/clients/c1/financials-comparison' })
     expect(r.canPredict).toBe(false)
   })
 

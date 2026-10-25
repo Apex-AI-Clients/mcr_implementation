@@ -68,6 +68,14 @@ describe('ReadinessChecklist', () => {
     await waitFor(() => expect(readinessCalls()).toHaveLength(1))
   })
 
+  it('gives a Needs review item an Open button to the comparison page', () => {
+    const shown = readiness([item({ status: 'needs_review', detail: 'Confirm the key figures on the comparison page.' })])
+    serverSays(shown)
+    render(<ReadinessChecklist clientId="c1" readiness={shown} />)
+    expect(screen.getByText('Needs review')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Open/ }).getAttribute('href')).toBe('/clients/c1/financials-comparison')
+  })
+
   it('makes the heading the link, except where it would point at this page', () => {
     const shown = readiness([item({}), item({ key: 'dpn', label: 'Director penalty notices', status: 'not_uploaded', href: '/clients/c1' })])
     serverSays(shown)

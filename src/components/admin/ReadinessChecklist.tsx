@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Circle, Clock, Loader2, XCircle } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Circle, Clock, Loader2, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { STATUS_LABEL, type Readiness, type ReadinessItem, type ReadinessStatus } from '@/lib/sbr/readiness'
@@ -196,6 +196,16 @@ function ChecklistRow({
           <Button type="button" size="sm" variant="accent" loading={busy} onClick={runNow} className="shrink-0">
             Run now
           </Button>
+        )}
+        {/* Needs review: straight to what needs doing (confirming the key figures, or checking a total). */}
+        {item.status === 'needs_review' && links && (
+          <Link
+            href={item.href}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent/90"
+          >
+            Open
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
         )}
       </div>
     </li>
