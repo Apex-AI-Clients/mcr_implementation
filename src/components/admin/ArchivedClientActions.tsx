@@ -6,6 +6,7 @@ import { RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 
 interface ArchivedClientActionsProps {
   clientId: string
@@ -137,6 +138,10 @@ export function ArchivedClientActions({
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       </Dialog>
+
+      {/* Both stay up through the navigation that follows: each flag is only cleared on a failure. */}
+      {restoring && <LoadingOverlay label="Making client again…" />}
+      {deleting && <LoadingOverlay label="Deleting client…" />}
     </>
   )
 }

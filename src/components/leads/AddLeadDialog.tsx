@@ -1,20 +1,23 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { MultiSelect } from '@/components/ui/MultiSelect'
 import { useToast } from '@/components/ui/Toast'
-import { useLeads } from '@/components/leads/LeadsStore'
+import { useLeads, type ExistingLead } from '@/components/leads/LeadsStore'
 import {
   ALL_ENTITY_TYPES,
   AU_STATES,
   DEBT_PRESETS,
   ENTITY_TYPE_META,
   SOURCE_META,
+  STAGE_META,
 } from '@/lib/leads/constants'
 import { isValidEmail, isValidPhone } from '@/lib/leads/format'
 import type { AuState, EntityType } from '@/types/leads'
@@ -73,17 +76,38 @@ const ENTITY_OPTIONS = ALL_ENTITY_TYPES.map((type) => ({
  * There is deliberately no company field — it was cut from the public capture
  * form to reduce friction on the ad, and this mirrors that form. Company can be
  * added on the record afterwards.
+ *
+ * An email that already has a lead is checked before anything is sent, and
+ * staff are asked first. One email is one lead (migration 0020), so going
+ * ahead does not make a second lead: the server adds it as a new enquiry on
+ * the existing one, which takes the new details.
  */
 export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
   const router = useRouter()
-  const { addLead } = useLeads()
+  const { addLead, findLeadByEmail } = useLeads()
   const { toast } = useToast()
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<FieldErrors>({})
+  const [checking, setChecking] = useState(false)
+  // Set when the email already has a lead: the dialog asks before adding.
+  const [existing, setExisting] = useState<ExistingLead | null>(null)
+  const [checkError, setCheckError] = useState<string | null>(null)
+  const warningRef = useRef<HTMLDivElement>(null)
+
+  // The warning sits above the form, which may be scrolled past by the time
+  // Add lead is pressed.
+  useEffect(() => {
+    if (existing) warningRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [existing])
 
   function set(field: TextField, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
     setErrors((prev) => ({ ...prev, [field]: undefined }))
+    // A different email needs checking again.
+    if (field === 'email') {
+      setExisting(null)
+      setCheckError(null)
+    }
   }
 
   function setStates(states: string[]) {
@@ -107,14 +131,43 @@ export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
     return next
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
+    if (checking) return
+    // Enter pressed on the warning means "Add anyway".
+    if (existing) {
+      save()
+      return
+    }
+
     const found = validate()
     if (Object.keys(found).length > 0) {
       setErrors(found)
       return
     }
 
+    setChecking(true)
+    setCheckError(null)
+    let match: ExistingLead | null
+    try {
+      match = await findLeadByEmail(form.email)
+    } catch {
+      // Not added unchecked: a silent merge into someone else's lead is the
+      // thing this check is here to prevent.
+      setCheckError('Could not check whether this email already has a lead. Please try again.')
+      return
+    } finally {
+      setChecking(false)
+    }
+
+    if (match) {
+      setExisting(match)
+      return
+    }
+    save()
+  }
+
+  function save() {
     const preset = DEBT_PRESETS[Number(form.debt)]
     const saved = new Promise<void>((resolve, reject) =>
       addLead(
@@ -151,6 +204,8 @@ export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
   function handleClose() {
     setForm(EMPTY)
     setErrors({})
+    setExisting(null)
+    setCheckError(null)
     onClose()
   }
 
@@ -161,16 +216,53 @@ export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
       title="Add lead"
       description="Name, email, phone, debt and state are required."
       footer={
-        <>
-          <Button type="button" variant="ghost" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button type="submit" form="add-lead-form">
-            Add lead
-          </Button>
-        </>
+        existing ? (
+          <>
+            {/* Back to the form, details kept, to change the email or close. */}
+            <Button type="button" variant="ghost" onClick={() => setExisting(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-lead-form">
+              Add anyway
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button type="button" variant="ghost" onClick={handleClose} disabled={checking}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-lead-form" loading={checking}>
+              Add lead
+            </Button>
+          </>
+        )
       }
     >
+      {existing && (
+        <div
+          ref={warningRef}
+          role="alert"
+          className="mb-4 flex gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <div className="space-y-1.5">
+            <p className="font-medium">A lead with this email already exists.</p>
+            <p>
+              {existing.name} ({STAGE_META[existing.stage].label}) uses {form.email.trim()}. Adding
+              anyway does not make a second lead: this is saved as a new enquiry on {existing.name},
+              their details change to what you entered, and the earlier ones stay in Lead history.
+            </p>
+            <Link href={`/leads/${existing.id}`} className="inline-block underline underline-offset-2">
+              Open their lead
+            </Link>
+          </div>
+        </div>
+      )}
+      {checkError && (
+        <p role="alert" className="mb-4 text-sm text-destructive">
+          {checkError}
+        </p>
+      )}
       <form id="add-lead-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
         <Input
           id="lead-name"

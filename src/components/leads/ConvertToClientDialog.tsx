@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
@@ -22,7 +23,7 @@ interface ConvertToClientDialogProps {
 
 type Phase =
   | { kind: 'form' }
-  | { kind: 'working' }
+  | { kind: 'working'; label: string }
   /** 409 — the email already belongs to a client file. Offer to link instead. */
   | { kind: 'duplicate'; clientId: string; archived: boolean }
   /** The file was created but the lead could not be updated. Never retry. */
@@ -64,7 +65,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
 
   async function link(clientId: string) {
     if (!lead) return
-    setPhase({ kind: 'working' })
+    setPhase({ kind: 'working', label: 'Linking to client file…' })
     try {
       await markConverted(lead.id, clientId)
       toast('Lead linked to client file.', {
@@ -80,7 +81,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   async function handleConvert() {
     if (!lead) return
 
-    setPhase({ kind: 'working' })
+    setPhase({ kind: 'working', label: 'Creating client file…' })
     // No checks: the client row only needs a name and an email, and the lead
     // always has both.
     const result = await createClientFromLead(
@@ -123,169 +124,172 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   const showForm = phase.kind === 'form' || working || phase.kind === 'failed'
 
   return (
-    <Dialog
-      open={lead !== null}
-      onClose={working ? () => {} : onClose}
-      title={
-        phase.kind === 'duplicate'
-          ? phase.archived
-            ? 'This email has an archived client file'
-            : 'This email already has a client file'
-          : 'Convert to client'
-      }
-      description={
-        lead && showForm
-          ? `These details start ${lead.name}'s intake. Everything here can be changed later on the intake form.`
-          : undefined
-      }
-      className="max-w-2xl"
-      footer={<Footer phase={phase} onConvert={handleConvert} onLink={link} onClose={onClose} />}
-    >
-      {lead && (
-        <div className="space-y-4">
-          {showForm && (
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void handleConvert()
-              }}
-            >
-              {/* First thing in the form, because it is the quickest way to
-                  fill it: the company name, ACN and ABN where empty, the two
-                  addresses and the directors. Never the lead's own name, and
-                  never the trust — trusts are not registered with ASIC. */}
-              <AsicExtractUpload
-                id="convert-asic-extract"
-                layout="centered"
-                acnNumber={form.acnNumber}
-                fill={form.asicFill}
-                disabled={working}
-                onFill={(extract, mode) =>
-                  setForm(commitChange(withExtract(form, extract, mode), 'no_abn'))
-                }
-                onUndo={() => setForm(withoutExtract(form))}
-              />
-
-              <Fieldset legend="Client">
-                <Input
-                  id="convert-name"
-                  label="Lead name"
-                  value={form.name}
-                  disabled={working}
-                  onChange={(event) => patch({ name: event.target.value })}
-                />
-                <Input
-                  id="convert-email"
-                  label="Email"
-                  type="email"
-                  value={form.email}
-                  disabled={working}
-                  onChange={(event) => patch({ email: event.target.value })}
-                />
-                <Input
-                  id="convert-client-phone"
-                  label="Phone (optional)"
-                  type="tel"
-                  autoComplete="tel"
-                  value={form.phone}
-                  disabled={working}
-                  onChange={(event) => patch({ phone: event.target.value })}
-                />
-              </Fieldset>
-
-              {/* The company, and the trust when it is a trustee. The lead's
-                  own name above is never overwritten by a director or a
-                  register pick: the lead is the person who enquired. */}
-              <CompanyTrustSections
-                idPrefix="convert"
-                value={form}
-                errors={NO_ERRORS}
-                showDirectorErrors={false}
-                disabled={working}
-                onChange={(next) => setForm(next)}
-                companyExtras={
-                  <>
-                    <Input
-                      id="convert-phone"
-                      label="Company phone (optional)"
-                      value={form.phoneNumber}
-                      disabled={working}
-                      onChange={(event) => patch({ phoneNumber: event.target.value })}
-                    />
-                    <Input
-                      id="convert-entity-email"
-                      label="Company email (optional)"
-                      type="email"
-                      value={form.emailAddress}
-                      disabled={working}
-                      onChange={(event) => patch({ emailAddress: event.target.value })}
-                    />
-                  </>
-                }
-              />
-            </form>
-          )}
-
-          {phase.kind === 'duplicate' && !phase.archived && (
-            <>
-              <p className="text-sm leading-relaxed text-foreground/70">
-                {lead.email} already belongs to a client file. Rather than create a second one,
-                link {lead.name} to the existing file.
-              </p>
-              <Link
-                href={`/clients/${phase.clientId}`}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+    <>
+      <Dialog
+        open={lead !== null}
+        onClose={working ? () => {} : onClose}
+        title={
+          phase.kind === 'duplicate'
+            ? phase.archived
+              ? 'This email has an archived client file'
+              : 'This email already has a client file'
+            : 'Convert to client'
+        }
+        description={
+          lead && showForm
+            ? `These details start ${lead.name}'s intake. Everything here can be changed later on the intake form.`
+            : undefined
+        }
+        className="max-w-2xl"
+        footer={<Footer phase={phase} onConvert={handleConvert} onLink={link} onClose={onClose} />}
+      >
+        {lead && (
+          <div className="space-y-4">
+            {showForm && (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void handleConvert()
+                }}
               >
-                Look at the existing file first
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            </>
-          )}
+                {/* First thing in the form, because it is the quickest way to
+                    fill it: the company name, ACN and ABN where empty, the two
+                    addresses and the directors. Never the lead's own name, and
+                    never the trust — trusts are not registered with ASIC. */}
+                <AsicExtractUpload
+                  id="convert-asic-extract"
+                  layout="centered"
+                  acnNumber={form.acnNumber}
+                  fill={form.asicFill}
+                  disabled={working}
+                  onFill={(extract, mode) =>
+                    setForm(commitChange(withExtract(form, extract, mode), 'no_abn'))
+                  }
+                  onUndo={() => setForm(withoutExtract(form))}
+                />
 
-          {phase.kind === 'duplicate' && phase.archived && (
-            <>
-              <p className="text-sm leading-relaxed text-foreground/70">
-                {lead.email} belongs to a client file in the Archive. Make it a client again from
-                the Archive and link {lead.name} to it, or delete it permanently there and convert
-                again.
+                <Fieldset legend="Client">
+                  <Input
+                    id="convert-name"
+                    label="Lead name"
+                    value={form.name}
+                    disabled={working}
+                    onChange={(event) => patch({ name: event.target.value })}
+                  />
+                  <Input
+                    id="convert-email"
+                    label="Email"
+                    type="email"
+                    value={form.email}
+                    disabled={working}
+                    onChange={(event) => patch({ email: event.target.value })}
+                  />
+                  <Input
+                    id="convert-client-phone"
+                    label="Phone (optional)"
+                    type="tel"
+                    autoComplete="tel"
+                    value={form.phone}
+                    disabled={working}
+                    onChange={(event) => patch({ phone: event.target.value })}
+                  />
+                </Fieldset>
+
+                {/* The company, and the trust when it is a trustee. The lead's
+                    own name above is never overwritten by a director or a
+                    register pick: the lead is the person who enquired. */}
+                <CompanyTrustSections
+                  idPrefix="convert"
+                  value={form}
+                  errors={NO_ERRORS}
+                  showDirectorErrors={false}
+                  disabled={working}
+                  onChange={(next) => setForm(next)}
+                  companyExtras={
+                    <>
+                      <Input
+                        id="convert-phone"
+                        label="Company phone (optional)"
+                        value={form.phoneNumber}
+                        disabled={working}
+                        onChange={(event) => patch({ phoneNumber: event.target.value })}
+                      />
+                      <Input
+                        id="convert-entity-email"
+                        label="Company email (optional)"
+                        type="email"
+                        value={form.emailAddress}
+                        disabled={working}
+                        onChange={(event) => patch({ emailAddress: event.target.value })}
+                      />
+                    </>
+                  }
+                />
+              </form>
+            )}
+
+            {phase.kind === 'duplicate' && !phase.archived && (
+              <>
+                <p className="text-sm leading-relaxed text-foreground/70">
+                  {lead.email} already belongs to a client file. Rather than create a second one,
+                  link {lead.name} to the existing file.
+                </p>
+                <Link
+                  href={`/clients/${phase.clientId}`}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+                >
+                  Look at the existing file first
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </>
+            )}
+
+            {phase.kind === 'duplicate' && phase.archived && (
+              <>
+                <p className="text-sm leading-relaxed text-foreground/70">
+                  {lead.email} belongs to a client file in the Archive. Make it a client again from
+                  the Archive and link {lead.name} to it, or delete it permanently there and convert
+                  again.
+                </p>
+                <Link
+                  href={`/sbr/archive/${phase.clientId}`}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+                >
+                  Open the archived file
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </>
+            )}
+
+            {phase.kind === 'orphaned' && (
+              <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
+                <p className="flex items-start gap-2 text-sm leading-relaxed text-foreground/80">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+                  Client file created, but this lead wasn&rsquo;t updated.
+                </p>
+                <Link
+                  href={`/clients/${phase.clientId}`}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
+                >
+                  Open the client file
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </div>
+            )}
+
+            {phase.kind === 'failed' && (
+              <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {phase.message}
               </p>
-              <Link
-                href={`/sbr/archive/${phase.clientId}`}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
-              >
-                Open the archived file
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            </>
-          )}
+            )}
+          </div>
+        )}
+      </Dialog>
 
-          {phase.kind === 'orphaned' && (
-            <div className="space-y-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
-              <p className="flex items-start gap-2 text-sm leading-relaxed text-foreground/80">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
-                Client file created, but this lead wasn&rsquo;t updated.
-              </p>
-              <Link
-                href={`/clients/${phase.clientId}`}
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
-              >
-                Open the client file
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            </div>
-          )}
-
-          {phase.kind === 'failed' && (
-            <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              {phase.message}
-            </p>
-          )}
-        </div>
-      )}
-      {working && <span className="sr-only">Creating the client file…</span>}
-    </Dialog>
+      {lead !== null && phase.kind === 'working' && <LoadingOverlay label={phase.label} />}
+    </>
   )
 }
 

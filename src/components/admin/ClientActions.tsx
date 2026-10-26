@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Archive } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 
 interface ClientActionsProps {
   clientId: string
@@ -82,6 +83,9 @@ export function ClientActions({ clientId, clientName }: ClientActionsProps) {
       >
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
       </Dialog>
+
+      {/* Stays up through the move to the Archive: working is only cleared on a failure. */}
+      {working && <LoadingOverlay label="Archiving client…" />}
     </>
   )
 }

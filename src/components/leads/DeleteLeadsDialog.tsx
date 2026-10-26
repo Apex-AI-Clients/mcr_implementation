@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import type { Lead } from '@/types/leads'
@@ -67,64 +68,70 @@ export function DeleteLeadsDialog({ leads, onClose, onDeleted }: DeleteLeadsDial
   }
 
   return (
-    <Dialog
-      open={open}
-      onClose={working ? () => {} : onClose}
-      title={count === 1 ? 'Delete this lead?' : `Delete ${count} leads?`}
-      description="This cannot be undone."
-      footer={
-        <>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={working}>
-            Cancel
-          </Button>
-          <Button type="button" variant="destructive" onClick={handleDelete} loading={working}>
-            {count === 1 ? 'Delete lead' : `Delete ${count} leads`}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3 text-sm text-foreground/70">
-        {count <= NAMES_SHOWN ? (
-          <ul className="space-y-1">
-            {(leads ?? []).map((lead) => (
-              <li key={lead.id} className="truncate">
-                <span className="font-medium text-foreground">{lead.name}</span>
-                <span className="text-foreground/50"> · {lead.email}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>
-            <span className="font-medium text-foreground">{count} leads</span> will be removed,
-            including {(leads ?? [])[0]?.name} and {count - 1} others.
-          </p>
-        )}
-
-        <p>
-          Their full history — every note, call and stage change — goes with them, and so does
-          the Facebook attribution, which cannot be fetched again.
-        </p>
-
-        {converted.length > 0 && (
-          <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+    <>
+      <Dialog
+        open={open}
+        onClose={working ? () => {} : onClose}
+        title={count === 1 ? 'Delete this lead?' : `Delete ${count} leads?`}
+        description="This cannot be undone."
+        footer={
+          <>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={working}>
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDelete} loading={working}>
+              {count === 1 ? 'Delete lead' : `Delete ${count} leads`}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-foreground/70">
+          {count <= NAMES_SHOWN ? (
+            <ul className="space-y-1">
+              {(leads ?? []).map((lead) => (
+                <li key={lead.id} className="truncate">
+                  <span className="font-medium text-foreground">{lead.name}</span>
+                  <span className="text-foreground/50"> · {lead.email}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
             <p>
-              {converted.length === 1
-                ? 'One of these has a client file in the restructuring workspace.'
-                : `${converted.length} of these have client files in the restructuring workspace.`}{' '}
-              {converted.length === 1 ? 'It moves' : 'They move'} to the Archive, off the client
-              list. From there {converted.length === 1 ? 'it' : 'they'} can be made a client again
-              — without the link back to the lead — or deleted permanently.
+              <span className="font-medium text-foreground">{count} leads</span> will be removed,
+              including {(leads ?? [])[0]?.name} and {count - 1} others.
             </p>
-          </div>
-        )}
+          )}
 
-        {error && (
-          <p role="alert" className="text-destructive">
-            {error}
+          <p>
+            Their full history — every note, call and stage change — goes with them, and so does
+            the Facebook attribution, which cannot be fetched again.
           </p>
-        )}
-      </div>
-    </Dialog>
+
+          {converted.length > 0 && (
+            <div className="flex gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p>
+                {converted.length === 1
+                  ? 'One of these has a client file in the restructuring workspace.'
+                  : `${converted.length} of these have client files in the restructuring workspace.`}{' '}
+                {converted.length === 1 ? 'It moves' : 'They move'} to the Archive, off the client
+                list. From there {converted.length === 1 ? 'it' : 'they'} can be made a client again
+                — without the link back to the lead — or deleted permanently.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <p role="alert" className="text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+      </Dialog>
+
+      {open && working && (
+        <LoadingOverlay label={count === 1 ? 'Deleting lead…' : `Deleting ${count} leads…`} />
+      )}
+    </>
   )
 }

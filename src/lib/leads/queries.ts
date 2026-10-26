@@ -187,6 +187,10 @@ export interface LeadsPage {
  * An out-of-range page serves the last real page rather than an empty table:
  * `?page=9` outlives the filter that made nine pages, and an empty screen
  * reads as "no leads" when it means "no page nine".
+ *
+ * The page size is the list's "per page" choice unless one is passed. "All"
+ * is one page of every matching row, read in chunks like the export, since
+ * PostgREST would otherwise stop at its max-rows cap without saying so.
  */
 export async function getLeadsPage(input: {
   filters: LeadFilterState
@@ -194,8 +198,15 @@ export async function getLeadsPage(input: {
   pageSize?: number
   now?: Date
 }): Promise<LeadsPage> {
-  const pageSize = input.pageSize ?? LEADS_PAGE_SIZE
+  const perPage = input.pageSize ?? input.filters.perPage ?? LEADS_PAGE_SIZE
   const now = input.now ?? new Date()
+
+  if (perPage === 'all') {
+    const leads = await withLatestEnquirySources(await getLeadsForExport(input.filters, { now }))
+    return { leads, total: leads.length, page: 1, pageCount: 1, pageSize: Math.max(leads.length, 1) }
+  }
+
+  const pageSize = perPage
   const supabase = getSupabaseServerClient()
 
   const labels = await sourceLabelsNamed(input.filters.source)
@@ -247,20 +258,25 @@ export async function withLatestEnquirySources(leads: Lead[]): Promise<Lead[]> {
   if (ids.length === 0) return leads
 
   const supabase = getSupabaseServerClient()
-  const { data, error } = await supabase
-    .from('lead_submissions')
-    .select('lead_id, source')
-    .in('lead_id', ids)
-    .order('received_at', { ascending: false })
-
-  if (error) {
-    console.error('[withLatestEnquirySources]', error.message)
-    return leads
-  }
-
   const latest = new Map<string, LeadSource>()
-  for (const row of data ?? []) {
-    if (!latest.has(row.lead_id)) latest.set(row.lead_id, row.source as LeadSource)
+
+  // Batched: with "All" per page the id list can run to thousands, and an
+  // in.(...) that long is a URL no server will accept.
+  for (let start = 0; start < ids.length; start += 100) {
+    const { data, error } = await supabase
+      .from('lead_submissions')
+      .select('lead_id, source')
+      .in('lead_id', ids.slice(start, start + 100))
+      .order('received_at', { ascending: false })
+
+    if (error) {
+      console.error('[withLatestEnquirySources]', error.message)
+      return leads
+    }
+
+    for (const row of data ?? []) {
+      if (!latest.has(row.lead_id)) latest.set(row.lead_id, row.source as LeadSource)
+    }
   }
   return leads.map((lead) =>
     latest.has(lead.id) ? { ...lead, latestEnquirySource: latest.get(lead.id)! } : lead,

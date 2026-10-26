@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { useToast } from '@/components/ui/Toast'
 import type { ImportHistoryEntry } from '@/lib/sbr/import/store'
 import type { PredictionData } from '@/lib/sbr/predictionData'
@@ -34,6 +35,8 @@ export function PredictionDataClient({ data }: { data: PredictionData }) {
   const [caseId, setCaseId] = useState<string | null>(null)
   const [undoTarget, setUndoTarget] = useState<ImportHistoryEntry | null>(null)
   const [undoing, setUndoing] = useState<string | null>(null)
+  // The re-read after an undo; the wait screen stays up until the figures have moved.
+  const [refreshing, startRefresh] = useTransition()
   const [undoError, setUndoError] = useState<string | null>(null)
 
   // Shared by the chart (highlight) and the list.
@@ -85,7 +88,7 @@ export function PredictionDataClient({ data }: { data: PredictionData }) {
       const { deleted, restored } = (await res.json()) as { deleted: number; restored: number }
       setUndoTarget(null)
       toast(`Upload undone: ${deleted} ${deleted === 1 ? 'case' : 'cases'} removed${restored ? `, ${restored} put back` : ''}.`)
-      router.refresh()
+      startRefresh(() => router.refresh())
     } catch {
       setUndoError('The upload could not be undone. Nothing was changed.')
     } finally {
@@ -260,6 +263,7 @@ export function PredictionDataClient({ data }: { data: PredictionData }) {
         onClose={() => setUndoTarget(null)}
         onConfirm={() => void undo()}
       />
+      {(undoing !== null || refreshing) && <LoadingOverlay label="Undoing upload…" />}
     </div>
   )
 }

@@ -10,7 +10,7 @@ vi.mock('@/lib/auth/staff', () => ({
 
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
-import { POST } from '../route'
+import { GET, POST } from '../route'
 
 /**
  * POST /api/admin/leads — the one-lead-per-email rule from migration 0020, as
@@ -135,5 +135,54 @@ describe('POST /api/admin/leads', () => {
     mockLeads({ error: null })
     const response = await POST(request(BODY))
     expect(response.status).toBe(401)
+  })
+})
+
+describe('GET /api/admin/leads?email= — the lead already on an email', () => {
+  function lookup(email: string) {
+    return new NextRequest(`http://localhost/api/admin/leads?email=${encodeURIComponent(email)}`)
+  }
+
+  function mockLookup(result: Result) {
+    const chain = {
+      select: vi.fn(() => chain),
+      ilike: vi.fn(() => chain),
+      limit: vi.fn(() => chain),
+      maybeSingle: vi.fn(() => Promise.resolve(result)),
+    }
+    vi.mocked(getSupabaseServerClient).mockReturnValue({ from: () => chain } as never)
+    return chain
+  }
+
+  it('returns the lead, matched without regard to case', async () => {
+    const lead = { id: 'lead-1', name: 'Earlier Person', stage: 'lead' }
+    const chain = mockLookup({ data: lead, error: null })
+
+    const res = await GET(lookup(' Known@Example.test '))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ lead })
+    expect(chain.ilike).toHaveBeenCalledWith('email', 'known@example.test')
+  })
+
+  it('returns null for an email with no lead', async () => {
+    mockLookup({ data: null, error: null })
+    const res = await GET(lookup('new@example.test'))
+    expect(await res.json()).toEqual({ lead: null })
+  })
+
+  it('escapes ilike wildcards so only the exact email matches', async () => {
+    const chain = mockLookup({ data: null, error: null })
+    // `_` is legal in an address and a single-character wildcard to ilike.
+    await GET(lookup('a_b@example.test'))
+    expect(chain.ilike).toHaveBeenCalledWith('email', 'a\\_b@example.test')
+  })
+
+  it('refuses a malformed email and an anonymous caller', async () => {
+    mockLookup({ data: null, error: null })
+    expect((await GET(lookup('not-an-email'))).status).toBe(400)
+
+    vi.mocked(requireStaffUser).mockResolvedValue(null as never)
+    expect((await GET(lookup('new@example.test'))).status).toBe(401)
   })
 })

@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Download, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Pagination } from '@/components/ui/Pagination'
-import { Spinner } from '@/components/ui/Spinner'
+import { Select } from '@/components/ui/Select'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { LeadTable } from '@/components/leads/LeadTable'
 import { LeadFilters } from '@/components/leads/LeadFilters'
 import { AddLeadDialog } from '@/components/leads/AddLeadDialog'
@@ -15,12 +16,17 @@ import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { EMPTY_FILTERS, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
-import { pageRangeLabel } from '@/lib/leads/pagination'
+import { PER_PAGE_OPTIONS, pageRangeLabel, type PerPage } from '@/lib/leads/pagination'
 import { ALL_VIEWS, LEAD_VIEWS, type LeadView } from '@/lib/leads/constants'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/types/leads'
 
 const SEARCH_DEBOUNCE_MS = 250
+
+const PER_PAGE_SELECT = PER_PAGE_OPTIONS.map((option) => ({
+  value: String(option),
+  label: option === 'all' ? 'All' : String(option),
+}))
 
 interface LeadsPageClientProps {
   /** The filters the server just applied, parsed from the URL. */
@@ -112,11 +118,16 @@ export function LeadsPageClient({
 
   function resetFilters() {
     setTerm('')
-    startTransition(() => router.replace(leadsHref({ ...EMPTY_FILTERS, view: view ?? 'all' }), { scroll: false }))
+    // How many rows to show is a preference, not a filter, so it survives Clear.
+    startTransition(() =>
+      router.replace(leadsHref({ ...EMPTY_FILTERS, view: view ?? 'all', perPage: filters.perPage }), {
+        scroll: false,
+      }),
+    )
   }
 
   function handleExport() {
-    // Exports every matching row, not the ten on screen — the server streams
+    // Exports every matching row, not the page on screen — the server streams
     // it, because the browser no longer holds the rest.
     const query = buildLeadQuery(filters, 1)
     window.location.href = query
@@ -267,11 +278,28 @@ export function LeadsPageClient({
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <LeadFilters filters={filters} onChange={navigate} onReset={resetFilters} sources={sources} />
-          {pageCount > 1 && (
-            <p className="shrink-0 text-xs tabular-nums text-foreground/50">
-              {pageRangeLabel(page, pageSize, total)}
-            </p>
-          )}
+          <div className="flex shrink-0 items-center gap-3">
+            {pageCount > 1 && (
+              <p className="text-xs tabular-nums text-foreground/50">
+                {pageRangeLabel(page, pageSize, total)}
+              </p>
+            )}
+            {/* A new size starts again at page 1: page 7 of tens is not page 7 of hundreds. */}
+            <label className="flex items-center gap-2 text-xs text-foreground/50">
+              Per page
+              <Select
+                aria-label="Leads per page"
+                selectSize="sm"
+                wrapperClassName="w-[76px]"
+                options={PER_PAGE_SELECT}
+                value={String(filters.perPage)}
+                onChange={(event) => {
+                  const value = event.target.value
+                  navigate({ perPage: (value === 'all' ? 'all' : Number(value)) as PerPage })
+                }}
+              />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -311,17 +339,7 @@ export function LeadsPageClient({
           gets a spinner: the dialog has closed, but the row only appears once
           the save has landed and the list has been read again. */}
       <div className="relative">
-        {adding && (
-          <div
-            role="status"
-            className="absolute inset-0 z-10 flex items-start justify-center rounded-xl bg-surface/60 pt-24"
-          >
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 shadow-sm">
-              <Spinner size="sm" />
-              <span className="text-sm text-foreground">Adding lead…</span>
-            </div>
-          </div>
-        )}
+        {adding && <LoadingOverlay label="Adding lead…" />}
         <div className={pending || adding ? 'opacity-60 transition-opacity' : undefined}>
           <LeadTable
             leads={rows}

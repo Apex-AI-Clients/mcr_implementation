@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Archive, AlertTriangle, Eye, RotateCcw, Trash2, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 import { Progress } from '@/components/ui/Progress'
 import { formatDate } from '@/lib/utils'
 import { archiveReasonLabel } from '@/lib/clients/archive'
@@ -31,6 +32,8 @@ interface ActionMeta {
   /** The sentence after the names. */
   consequence: (count: number) => string
   failed: string
+  /** The wait screen while it runs. */
+  progress: (count: number) => string
 }
 
 const ACTIONS: Record<Action, ActionMeta> = {
@@ -43,6 +46,7 @@ const ACTIONS: Record<Action, ActionMeta> = {
     consequence: (count) =>
       `${count === 1 ? 'leaves' : 'leave'} the client list and ${count === 1 ? 'moves' : 'move'} to the Archive. Nothing is deleted: from the Archive you can make ${count === 1 ? 'them a client' : 'them clients'} again, or delete permanently.`,
     failed: 'archived',
+    progress: (count) => (count === 1 ? 'Archiving client…' : `Archiving ${count} clients…`),
   },
   restore: {
     verb: 'Make client again',
@@ -53,6 +57,7 @@ const ACTIONS: Record<Action, ActionMeta> = {
     consequence: (count) =>
       `${count === 1 ? 'goes' : 'go'} back on the client list exactly as ${count === 1 ? 'it was' : 'they were'} archived.`,
     failed: 'restored',
+    progress: (count) => (count === 1 ? 'Making client again…' : `Making ${count} clients again…`),
   },
   delete: {
     verb: 'Delete permanently',
@@ -63,6 +68,7 @@ const ACTIONS: Record<Action, ActionMeta> = {
     consequence: () =>
       'will be permanently deleted, along with all uploaded files and their accountant and company details. This cannot be undone.',
     failed: 'deleted',
+    progress: (count) => (count === 1 ? 'Deleting client…' : `Deleting ${count} clients…`),
   },
 }
 
@@ -74,6 +80,10 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
     null,
   )
   const [working, setWorking] = useState(false)
+  // The re-read after an action. The wait screen stays up until it lands, so
+  // the rows that were archived or deleted are gone when it lifts.
+  const [refreshing, startRefresh] = useTransition()
+  const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   function toggle(id: string) {
@@ -104,6 +114,7 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
   async function run(action: Action, targets: ClientSummary[]) {
     const meta = ACTIONS[action]
     setWorking(true)
+    setProgress(meta.progress(targets.length))
     setError(null)
     try {
       const results = await Promise.all(
@@ -124,7 +135,7 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
       }
       setSelected(new Set())
       setConfirm(null)
-      router.refresh()
+      startRefresh(() => router.refresh())
     } catch {
       setError(`Could not be ${meta.failed}. Please try again.`)
     } finally {
@@ -307,6 +318,8 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
           onConfirm={() => run(confirm.action, confirm.targets)}
         />
       )}
+
+      {(working || refreshing) && <LoadingOverlay label={progress} />}
     </div>
   )
 }

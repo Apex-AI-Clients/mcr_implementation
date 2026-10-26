@@ -54,6 +54,36 @@ const BodySchema = z.object({
   activity: ActivitySchema.nullable().optional(),
 })
 
+/**
+ * The lead already on file for an email, if any — Add lead asks before
+ * sending a known email in, because the POST below then merges rather than
+ * creating. `?email=` is matched case-insensitively and exactly.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const staff = await requireStaffUser()
+    if (!staff) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const parsed = z.string().trim().email().safeParse(req.nextUrl.searchParams.get('email') ?? '')
+    if (!parsed.success) return NextResponse.json({ error: 'Invalid email' }, { status: 400 })
+
+    // ilike for case, with its wildcards escaped so it can only match exactly.
+    const pattern = parsed.data.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)
+    const { data, error } = await getSupabaseServerClient()
+      .from('leads')
+      .select('id, name, stage')
+      .ilike('email', pattern)
+      .limit(1)
+      .maybeSingle()
+    if (error) throw error
+
+    return NextResponse.json({ lead: data ?? null })
+  } catch (err) {
+    console.error('[GET /api/admin/leads]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: 'Failed to check email' }, { status: 500 })
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const staff = await requireStaffUser()

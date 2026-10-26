@@ -6,8 +6,13 @@
  * to read off the DOM.
  */
 
-/** Rows per page. One place, so the server range and the UI cannot disagree. */
+/** Rows per page unless the list asks for more. One place, so the server range and the UI cannot disagree. */
 export const LEADS_PAGE_SIZE = 10
+
+/** What the "per page" control offers. 'all' is every matching row on one page. */
+export const PER_PAGE_OPTIONS = [10, 50, 100, 'all'] as const
+
+export type PerPage = (typeof PER_PAGE_OPTIONS)[number]
 
 /** A gap in the run of page numbers, rendered as an ellipsis. */
 export const GAP = 'gap' as const

@@ -1,6 +1,6 @@
 'use client'
 
-import type { LeadsPersistence } from '@/components/leads/LeadsStore'
+import type { ExistingLead, LeadsPersistence } from '@/components/leads/LeadsStore'
 
 /**
  * The Stage 4 adapter: the seams LeadsStoreProvider was built around, wired to
@@ -55,6 +55,18 @@ async function write(
 }
 
 export const leadsPersistence: LeadsPersistence = {
+  findLeadByEmail: async (email) => {
+    let response: Response
+    try {
+      response = await fetch(`/api/admin/leads?email=${encodeURIComponent(email.trim())}`)
+    } catch {
+      throw new Error('Could not reach the server')
+    }
+    if (!response.ok) throw new Error('Could not check that email')
+    const payload = (await response.json()) as { lead?: ExistingLead | null }
+    return payload.lead ?? null
+  },
+
   // A known email is merged onto the existing lead (200, merged: true) rather
   // than refused, so the store learns which lead the details landed on.
   createLead: async ({ lead, activity }) => {

@@ -3,6 +3,7 @@ import { LEAD_VIEWS, sourceName, type LeadView } from './constants'
 import { needsFollowUp } from './followUp'
 import { compareByDebtDesc, normalisePhone, overlapsFloor } from './format'
 import { parseLooseDebt } from './ingest'
+import { LEADS_PAGE_SIZE, type PerPage } from './pagination'
 
 /**
  * List filtering. Pure so it can be tested without mounting the table, and so
@@ -23,6 +24,8 @@ export interface LeadFilterState {
   followUpOnly: boolean
   /** 'recent' (newest added) or 'debt' (largest first, unknown last). */
   sort: 'recent' | 'debt'
+  /** Rows per page. Like sort, not a filter: it changes how many show, not which. */
+  perPage: PerPage
 }
 
 export const EMPTY_FILTERS: LeadFilterState = {
@@ -34,6 +37,7 @@ export const EMPTY_FILTERS: LeadFilterState = {
   dateRange: 'any',
   followUpOnly: false,
   sort: 'recent',
+  perPage: LEADS_PAGE_SIZE,
 }
 
 /**

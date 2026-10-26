@@ -1,5 +1,6 @@
 import { AU_STATES, DATE_RANGES, DEBT_FLOORS, LEAD_VIEWS, viewForTab } from './constants'
 import { EMPTY_FILTERS, type LeadFilterState } from './filter'
+import { PER_PAGE_OPTIONS, type PerPage } from './pagination'
 import type { AuState } from '@/types/leads'
 
 /**
@@ -33,6 +34,7 @@ const PARAM = {
   dateRange: 'added',
   followUpOnly: 'followup',
   sort: 'sort',
+  perPage: 'per',
   page: 'page',
 } as const
 
@@ -60,6 +62,10 @@ export function parseLeadQuery(params: RawSearchParams): LeadQuery {
     : null
 
   const pageRaw = Number.parseInt(one(params[PARAM.page]) ?? '', 10)
+  // Only the sizes the control offers: ?per=100000 is "all" by another name,
+  // and ?per=7 is a page size nobody can pick.
+  const perPageRaw = one(params[PARAM.perPage])
+  const perPage = PER_PAGE_OPTIONS.find((option) => String(option) === perPageRaw)
 
   return {
     filters: {
@@ -76,6 +82,7 @@ export function parseLeadQuery(params: RawSearchParams): LeadQuery {
         ) ?? 'any',
       followUpOnly: one(params[PARAM.followUpOnly]) === '1',
       sort: one(params[PARAM.sort]) === 'debt' ? 'debt' : 'recent',
+      perPage: (perPage ?? EMPTY_FILTERS.perPage) as PerPage,
     },
     // Clamping against the real page count needs a row count, so that happens
     // in the query. Here it is only kept sane.
@@ -99,6 +106,7 @@ export function buildLeadQuery(filters: LeadFilterState, page: number = 1): stri
   if (filters.dateRange !== 'any') params.set(PARAM.dateRange, filters.dateRange)
   if (filters.followUpOnly) params.set(PARAM.followUpOnly, '1')
   if (filters.sort !== EMPTY_FILTERS.sort) params.set(PARAM.sort, filters.sort)
+  if (filters.perPage !== EMPTY_FILTERS.perPage) params.set(PARAM.perPage, String(filters.perPage))
   if (page > 1) params.set(PARAM.page, String(page))
 
   return params.toString()

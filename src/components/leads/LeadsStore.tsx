@@ -42,7 +42,19 @@ import { useToast } from '@/components/ui/Toast'
  * which is why a data correction (no activity) leaves the follow-up clock
  * alone while a stage change (which carries one) resets it.
  */
+/** A lead already on file for an email: enough to name it in a warning. */
+export interface ExistingLead {
+  id: string
+  name: string
+  stage: LeadStage
+}
+
 export interface LeadsPersistence {
+  /**
+   * The lead already holding this email, or null. Add lead asks before
+   * sending a known email, because createLead then merges into that lead.
+   */
+  findLeadByEmail?: (email: string) => Promise<ExistingLead | null>
   /**
    * Resolves with the lead the details were saved on. `merged` means the email
    * already had a lead: it took the new details and `leadId` is that lead.
@@ -295,6 +307,8 @@ interface LeadsContextValue {
     input: NewLeadInput,
     options?: { onSaved?: () => void; onFailed?: () => void },
   ) => Lead
+  /** Null without persistence (tests, demos): there is nothing to collide with. */
+  findLeadByEmail: (email: string) => Promise<ExistingLead | null>
   updateLead: (leadId: string, patch: Partial<Lead>) => void
   logActivity: (leadId: string, type: LeadActivityType, body: string) => void
   /** Optimistic — applies immediately and rolls back if persistence fails. */
@@ -698,6 +712,11 @@ export function LeadsStoreProvider({
     [state.activities, currentNextStep, persistence],
   )
 
+  const findLeadByEmail = useCallback(
+    async (email: string) => (persistence.findLeadByEmail ? persistence.findLeadByEmail(email) : null),
+    [persistence],
+  )
+
   const syncFromServer = useCallback((leads: Lead[], activities: LeadActivity[]) => {
     dispatch({ type: 'SYNC', leads, activities })
   }, [])
@@ -714,6 +733,7 @@ export function LeadsStoreProvider({
       activitiesFor,
       followUpCount,
       addLead,
+      findLeadByEmail,
       updateLead,
       logActivity,
       changeStage,
@@ -731,6 +751,7 @@ export function LeadsStoreProvider({
       activitiesFor,
       followUpCount,
       addLead,
+      findLeadByEmail,
       updateLead,
       logActivity,
       changeStage,

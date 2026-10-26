@@ -25,6 +25,7 @@ describe('parseLeadQuery', () => {
       added: '30',
       followup: '1',
       sort: 'debt',
+      per: '50',
       page: '3',
     })
 
@@ -37,6 +38,7 @@ describe('parseLeadQuery', () => {
       dateRange: '30',
       followUpOnly: true,
       sort: 'debt',
+      perPage: 50,
     })
     expect(page).toBe(3)
   })
@@ -169,5 +171,26 @@ describe('leadsHref', () => {
     expect(leadsHref(filters({ view: 'do_not_contact' }), 1)).toBe('/leads?tab=do-not-contact')
     expect(leadsHref(filters({ view: 'leads' }), 1)).toBe('/leads')
     expect(parseLeadQuery({ tab: 'non-proceeding' }).filters.view).toBe('non_proceeding')
+  })
+})
+
+describe('per page', () => {
+  it('defaults to 10 and leaves it out of the URL', () => {
+    expect(parseLeadQuery({}).filters.perPage).toBe(10)
+    expect(leadsHref(filters({ perPage: 10 }), 1)).toBe('/leads')
+  })
+
+  it('round-trips each size the control offers', () => {
+    for (const perPage of [50, 100, 'all'] as const) {
+      const href = leadsHref(filters({ perPage }), 1)
+      const query = Object.fromEntries(new URLSearchParams(href.split('?')[1]))
+      expect(parseLeadQuery(query).filters.perPage).toBe(perPage)
+    }
+  })
+
+  it('falls back to 10 for a size the control does not offer', () => {
+    for (const per of ['7', '100000', 'ALL', '', '-1']) {
+      expect(parseLeadQuery({ per }).filters.perPage).toBe(10)
+    }
   })
 })
