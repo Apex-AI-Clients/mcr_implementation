@@ -34,6 +34,13 @@ export async function getStoredObjectInfo(
   return { size: data.size ?? 0, contentType: data.contentType ?? '' }
 }
 
+/** A stored object's text, or null when it cannot be read. */
+export async function readStoredText(supabase: SupabaseClient, filePath: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(filePath)
+  if (error || !data) return null
+  return data.text()
+}
+
 export async function removeFromStorage(supabase: SupabaseClient, filePath: string) {
   await supabase.storage.from(BUCKET).remove([filePath])
 }

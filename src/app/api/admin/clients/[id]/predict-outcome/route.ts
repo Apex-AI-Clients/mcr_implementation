@@ -21,6 +21,11 @@
  * The offer is sized on the creditor TOTAL: the ATO debt (creditorDebt.ts)
  * plus the other creditor rows staff entered.
  *
+ * "Director loan at appointment" must agree with the receivable amount (No
+ * with a loan owed to the company, or Yes with $0, is refused with 422
+ * DIRECTOR_LOAN_MISMATCH) unless staff give a reason, which is saved with the
+ * prediction in input_overrides (inputPrecedence.ts, migration 0037).
+ *
  * The training set is the shared one (historicalCases.ts): excluded cases are
  * never used, and a client is never matched with its own past record — a case
  * whose normalised name equals the client's name, company name or trust name
@@ -62,8 +67,16 @@ import {
   creditorTotal,
   normaliseCreditorRows,
   type CreditorRow,
+  readSavedCreditors,
   type SavedCreditors,
 } from '@/lib/sbr/creditors'
+import {
+  OVERRIDE_REASON_MAX,
+  latest,
+  nextDirectorLoanOverride,
+  readDirectorLoanOverride,
+  type DirectorLoanOverride,
+} from '@/lib/sbr/inputPrecedence'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -103,6 +116,8 @@ const BodySchema = z.object({
   dpn: z.boolean().optional(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
+  /** Why staff keep a flag the receivable amount contradicts. Required then; ignored otherwise. */
+  directorLoanOverrideReason: z.string().max(OVERRIDE_REASON_MAX * 2).optional(),
   // REMOVED in v2: the director-loan-sent-to-ATO flag
   /** The practitioner fee for this client, e.g. 0.1; default fees.ts. */
   practitionerFeeRate: z.number().min(0).lt(MAX_PRACTITIONER_FEE_RATE).optional(),
@@ -152,6 +167,10 @@ interface PredictResponse extends SbrPrediction {
   computedAt: string
   cached: false
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
+  /** The balance sheet the director loan inputs come from (ISO), for their labels. */
+  directorLoanAsOf: string | null
+  /** Staff's reason for a flag the amount contradicts, when they gave one. */
+  directorLoanOverride: DirectorLoanOverride | null
   /** Past cases left out because they are this client's own record. */
   selfMatchExcluded: number
 }
@@ -241,6 +260,29 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // The loan account owed to the company: 0 when staff confirmed none is printed.
     const directorLoanReceivableAmount = Math.max(0, financials.loanReceivable?.amount ?? 0)
+    const directorLoanAsOf = financials.loanReceivable?.asOf ?? null
+
+    // What was saved last time: the override's original time and the ATO
+    // debt staff typed are carried over unchanged when they are sent again.
+    const { data: stored } = await supabase
+      .from('sbr_outcome_predictions')
+      .select('creditors, input_overrides, computed_at')
+      .eq('client_id', clientId)
+      .maybeSingle()
+    const now = new Date().toISOString()
+
+    // The flag and the amount must agree, or come with a reason.
+    const loanOverride = nextDirectorLoanOverride({
+      value: body.directorLoanAtAppointment,
+      amount: directorLoanReceivableAmount,
+      asOf: directorLoanAsOf,
+      reason: body.directorLoanOverrideReason,
+      stored: readDirectorLoanOverride(stored?.input_overrides ?? null),
+      now,
+    })
+    if (loanOverride.error) {
+      return NextResponse.json({ error: loanOverride.error, code: 'DIRECTOR_LOAN_MISMATCH' }, { status: 422 })
+    }
 
     // The creditor debt: staff's figure, else the integrated client account,
     // else the balance sheet's ATO-related liabilities — never two added up.
@@ -258,6 +300,12 @@ export async function POST(req: NextRequest, { params }: Params) {
     const savedCreditors: SavedCreditors = {
       atoDebt,
       atoDebtEdited: debt.source === 'staff',
+      ...(debt.source === 'staff' ? staffAtoStamp(readSavedCreditors(stored?.creditors ?? null), stored?.computed_at ?? null, debt.amount, now, () =>
+        creditorDebt({
+          icaRows,
+          mappedAto: financials.atoDebt ? { amount: financials.atoDebt.amount, lines: financials.atoDebt.lines.map((l) => l.label) } : null,
+        }).amount,
+      ) : {}),
       rows: creditorRows,
     }
     // The decision, every time: source, amount, date, and why the ATO account was not used.
@@ -303,8 +351,6 @@ export async function POST(req: NextRequest, { params }: Params) {
       accuracy: cachedLeaveOneOut(inUse),
     })
 
-    const now = new Date().toISOString()
-
     const { error: upsertError } = await supabase
       .from('sbr_outcome_predictions')
       .upsert(
@@ -319,6 +365,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           practitioner_fee_rate: practitionerFeeRate,
           creditors: savedCreditors as unknown as Record<string, unknown>,
           total_creditor_amount: creditorAmount,
+          input_overrides: loanOverride.override
+            ? ({ directorLoanAtAppointment: loanOverride.override } as unknown as Record<string, unknown>)
+            : null,
           computed_at: now,
         },
         { onConflict: 'client_id' },
@@ -339,6 +388,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       computedAt: now,
       cached: false,
       autoDetectedDirectorLoan,
+      directorLoanAsOf,
+      directorLoanOverride: loanOverride.override,
       selfMatchExcluded,
     }
     return NextResponse.json(response)
@@ -346,4 +397,27 @@ export async function POST(req: NextRequest, { params }: Params) {
     console.error('[POST predict-outcome] unexpected', err)
     return NextResponse.json({ error: 'Failed to compute prediction.' }, { status: 500 })
   }
+}
+
+/**
+ * When staff typed the ATO debt, and the automatic figure they typed over
+ * (inputPrecedence.ts). The same amount sent again keeps the original time,
+ * so re-running does not make an old figure look newer than the evidence;
+ * saved before the time was kept, the last prediction's time stands in.
+ */
+function staffAtoStamp(
+  stored: SavedCreditors | null,
+  storedComputedAt: string | null,
+  amount: number | null,
+  now: string,
+  automatic: () => number | null,
+): Pick<SavedCreditors, 'atoDebtEditedAt' | 'atoDebtAuto'> {
+  if (stored?.atoDebtEdited && stored.atoDebt === amount) {
+    const editedAt = latest(stored.atoDebtEditedAt) ?? storedComputedAt
+    return {
+      ...(editedAt ? { atoDebtEditedAt: editedAt } : {}),
+      ...(stored.atoDebtAuto !== undefined ? { atoDebtAuto: stored.atoDebtAuto } : {}),
+    }
+  }
+  return { atoDebtEditedAt: now, atoDebtAuto: automatic() }
 }

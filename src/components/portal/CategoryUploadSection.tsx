@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
+import { AtoFileNotes } from '@/components/admin/AtoFileNotes'
 import { Upload, CheckCircle, FileText, ExternalLink, AlertCircle, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import {
@@ -160,31 +161,31 @@ export function CategoryUploadSection({
       {categoryDocs.length > 0 && (
         <div className="mb-3 space-y-1.5">
           {categoryDocs.map((doc) => (
-            <div
-              key={doc.id}
-              className="flex items-center gap-2.5 rounded-lg bg-primary/40 px-3 py-2"
-            >
-              <FileText className="h-4 w-4 text-foreground/40 shrink-0" />
-              <span className="text-xs text-foreground/70 truncate flex-1">
-                {doc.originalFilename}
-              </span>
-              <span className="text-xs text-foreground/30 shrink-0">
-                {formatBytes(doc.fileSizeBytes)}
-              </span>
-              {deleting === doc.id ? (
-                <Loader2 className="h-3.5 w-3.5 text-accent animate-spin shrink-0" />
-              ) : doc.status === 'ready' ? (
-                <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(doc)}
-                disabled={deleting === doc.id}
-                className="text-foreground/30 hover:text-destructive transition-colors disabled:opacity-50 shrink-0"
-                title="Delete file"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+            <div key={doc.id} className="rounded-lg bg-primary/40 px-3 py-2">
+              <div className="flex items-center gap-2.5">
+                <FileText className="h-4 w-4 text-foreground/40 shrink-0" />
+                <span className="text-xs text-foreground/70 truncate flex-1">
+                  {doc.originalFilename}
+                </span>
+                <span className="text-xs text-foreground/30 shrink-0">
+                  {formatBytes(doc.fileSizeBytes)}
+                </span>
+                {deleting === doc.id ? (
+                  <Loader2 className="h-3.5 w-3.5 text-accent animate-spin shrink-0" />
+                ) : doc.status === 'ready' ? (
+                  <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(doc)}
+                  disabled={deleting === doc.id}
+                  className="text-foreground/30 hover:text-destructive transition-colors disabled:opacity-50 shrink-0"
+                  title="Delete file"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <AtoFileNotes doc={doc} />
             </div>
           ))}
         </div>

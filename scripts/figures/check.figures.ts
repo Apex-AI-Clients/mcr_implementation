@@ -1,8 +1,14 @@
 import { it } from 'vitest'
+import { existsSync, readFileSync } from 'fs'
+import path from 'path'
 import { LATE_LODGEMENT_SCOPE, type LateLodgementScope } from '@/lib/analysis/config'
+import { analyseAtoAccount } from '@/lib/analysis/atoAccount'
 import {
+  ATO_ACCOUNTS_DIR,
   analyseLodgements,
+  atoAccountFigures,
   compareLodgement,
+  readAtoAccounts,
   predictionDebt,
   icaCsvAliases,
   lodgementFigures,
@@ -109,4 +115,39 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
   }
   out('')
   if (failing > 0) throw new Error(`${failing} client(s) differ from their verified figures (see above).`)
+})
+
+/**
+ * The income tax and superannuation guarantee accounts kept in
+ * verified-figures/ato-accounts/ (accounts.json maps an alias to each export):
+ * analysed with the CURRENT code and compared with `<alias>.expected.json`
+ * there. Prints aliases, keys and figures only.
+ */
+it('compares the ATO income tax and super guarantee accounts with the verified figures', () => {
+  const accounts = readAtoAccounts()
+  if (accounts.length === 0) {
+    out('No ATO accounts in verified-figures/ato-accounts/accounts.json.')
+    return
+  }
+  let failing = 0
+  for (const { alias, file } of accounts) {
+    out('')
+    out(`${alias}:`)
+    const figures = atoAccountFigures(analyseAtoAccount(readFileSync(path.join(ATO_ACCOUNTS_DIR, file), 'utf8')))
+    const expectedFile = path.join(ATO_ACCOUNTS_DIR, `${alias}.expected.json`)
+    if (!existsSync(expectedFile)) {
+      out('  not verified yet: the figures now are')
+      for (const [key, value] of Object.entries(figures)) out(`    ${key}: ${value}`)
+      continue
+    }
+    const differences = compareLodgement(JSON.parse(readFileSync(expectedFile, 'utf8')) as LodgementFigures, figures)
+    if (differences.length === 0) out('  all verified figures match')
+    else {
+      failing++
+      out(`  ${differences.length} difference(s):`)
+      for (const d of differences) out(`    ${d.replace(/^lodgement {2}/, '')}`)
+    }
+  }
+  out('')
+  if (failing > 0) throw new Error(`${failing} ATO account(s) differ from their verified figures (see above).`)
 })

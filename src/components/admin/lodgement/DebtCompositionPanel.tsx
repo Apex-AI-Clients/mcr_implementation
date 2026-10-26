@@ -57,7 +57,8 @@ function display(line: CompositionLine): string {
   return fmt(line.amount)
 }
 
-function RowsTable({ line }: { line: CompositionLine }) {
+/** A line's ATO rows, the first ROWS_SHOWN with a "Show all". Shared with the income tax and super guarantee composition. */
+export function RowsTable({ line }: { line: Pick<CompositionLine, 'rows'> }) {
   const [all, setAll] = useState(false)
   const shown = all ? line.rows : line.rows.slice(0, ROWS_SHOWN)
   return (

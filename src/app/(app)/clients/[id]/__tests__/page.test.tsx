@@ -24,6 +24,11 @@ vi.mock('@/components/admin/ReadinessChecklist', () => ({ ReadinessChecklist: ()
 vi.mock('@/lib/sbr/loadReadiness', () => ({
   loadReadiness: vi.fn(async () => ({ items: [], canPredict: false, waitingFor: [], dpn: null })),
 }))
+// The ATO accounts panel's data (atoAccount/store.ts): none, unless a test says otherwise.
+vi.mock('@/lib/analysis/atoAccount/store', () => ({
+  loadAtoAccounts: vi.fn(async () => ({ accounts: [], totalDebt: null })),
+  hasUnanalysedAtoAccounts: vi.fn(async () => false),
+}))
 vi.mock('@/lib/analysis/autoRun', () => ({
   scheduleClientAnalysis: vi.fn(async () => ({ jobId: 'job-1', started: true })),
 }))
@@ -35,6 +40,7 @@ vi.mock('next/server', async (importOriginal) => ({
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
+import { hasUnanalysedAtoAccounts } from '@/lib/analysis/atoAccount/store'
 import ClientDetailPage from '../page'
 import ArchivedClientPage from '@/app/(app)/sbr/archive/[id]/page'
 
@@ -244,6 +250,15 @@ describe('Client detail page — waiting analysis', () => {
     expect(scheduleClientAnalysis).toHaveBeenCalledWith(expect.anything(), 'cl_1', expect.any(Function))
     // Read again, so the checklist shows the run.
     expect(loadReadiness).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts a run for an ATO account CSV with no analysis yet', async () => {
+    vi.mocked(scheduleClientAnalysis).mockClear()
+    mockDb(CLIENT, COMPANY)
+    vi.mocked(loadReadiness).mockResolvedValue(quiet as never)
+    vi.mocked(hasUnanalysedAtoAccounts).mockResolvedValueOnce(true)
+    await renderPage()
+    expect(scheduleClientAnalysis).toHaveBeenCalledWith(expect.anything(), 'cl_1', expect.any(Function))
   })
 
   it('starts nothing when nothing is waiting', async () => {

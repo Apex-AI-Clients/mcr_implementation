@@ -11,7 +11,17 @@ import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
 import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
+import {
+  dpnNote,
+  inputsChanged,
+  latest,
+  readDirectorLoanOverride,
+  resolveAtoDebt,
+  resolveDirectorLoan,
+} from '@/lib/sbr/inputPrecedence'
 import type { Json } from '@/types/database'
+import { loadAtoAccounts, loadFactorsSourceNote } from '@/lib/analysis/atoAccount/store'
+import { ATO_ACCOUNT_CREDITOR_ROWS, atoAccountCreditorRows } from '@/lib/sbr/creditors'
 
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +46,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const [lodgement, printed, mapping, cached, imports] = await Promise.all([
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
@@ -74,6 +84,13 @@ export default async function OutcomePredictionPage({ params }: Props) {
   })
   console.log(`[creditor-debt] page client=${id} rowsFrom=${ica.from} ${describeDecision(debt)}`)
 
+  // When each piece of evidence last changed: the lines confirmed for it, or
+  // the statements read. A saved value older than that gives way (inputPrecedence.ts).
+  const confirmedAt = (meaning: string) => latest(...mapping.filter((m) => m.meaning === meaning).map((m) => m.confirmedAt))
+  const savedRow = cached.data
+  const savedFeatures = (savedRow?.input_features ?? {}) as Record<string, unknown>
+  const savedCreditors = readSavedCreditors(savedRow?.creditors ?? null)
+
   // The director loan at appointment, from the loan lines staff confirmed on the
   // latest balance sheet, to pre-fill the checkbox. The operator can override.
   const loan = financials.loanReceivable
@@ -86,6 +103,23 @@ export default async function OutcomePredictionPage({ params }: Props) {
     : directorLoanValue > 0
       ? `Loan owed to the company of $${Math.round(directorLoanValue).toLocaleString('en-AU')} on the ${loan.source}: ${loan.lines.map((l) => `“${l.label}”`).join(' + ')}.`
       : `No loan owed to the company on the ${loan.source}.`
+
+  const directorLoan = resolveDirectorLoan(
+    savedRow && typeof savedFeatures.directorLoanAtAppointment === 'boolean' ? savedFeatures.directorLoanAtAppointment : null,
+    readDirectorLoanOverride(savedRow?.input_overrides ?? null),
+    {
+      detected: directorLoanDetected,
+      amount: directorLoanValue,
+      asOf: loan?.asOf ?? null,
+      lines: loan?.lines.map((l) => l.label) ?? [],
+      changedAt: latest(confirmedAt('loan_receivable'), printed.builtAt),
+    },
+  )
+  const ato = resolveAtoDebt(savedCreditors, savedRow?.computed_at ?? null, {
+    amount: debt.amount,
+    description: debt.description,
+    changedAt: debt.source === 'ica' ? (lodgement.data?.analysed_at ?? null) : latest(confirmedAt('ato_debt'), printed.builtAt),
+  })
 
   const late = lodgement.data
     ? storedLateLodgements(lodgement.data.rows, {
@@ -107,6 +141,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
+    directorLoanAsOf: loan?.asOf ?? null,
+    // Where the page starts: fresh evidence over a stale saved value, with a note.
+    directorLoanInitial: directorLoan,
+    atoDebtNote: ato.note,
+    dpnNote: dpnNote(savedRow && typeof savedFeatures.dpn === 'boolean' ? savedFeatures.dpn : null, readiness.dpn),
     creditorAmount: debt.amount,
     creditorSource: debt.description,
     creditorMissing: debt.missing,
@@ -115,12 +154,35 @@ export default async function OutcomePredictionPage({ params }: Props) {
     hasFinancials: printed.comparison.tables.length > 0,
     // Creditors in the SBR: hints from the confirmed lines (latest balance sheet), and the rows saved last time.
     creditorHints: mappedCreditorHints(financials),
-    savedCreditors: readSavedCreditors((cached.data as { creditors?: unknown } | null)?.creditors ?? null),
+    // A typed ATO debt only while it still stands.
+    savedCreditors: savedCreditors && !ato.note ? savedCreditors : savedCreditors && { ...savedCreditors, atoDebtEdited: false },
   }
+
+  // The saved prediction ran with inputs the evidence now contradicts: shown
+  // as "Inputs changed — re-run", and not re-run on its own.
+  const changed = savedRow
+    ? inputsChanged(savedFeatures, savedCreditors?.atoDebt, {
+        directorLoanAtAppointment: directorLoan.value,
+        directorLoanReceivableAmount: directorLoanValue,
+        dpn: readiness.dpn,
+        cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
+        numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
+        daysSinceLastPayment: initialAuto.daysSinceLastPayment,
+        atoDebt: ato.staffAmount ?? debt.amount,
+      })
+    : []
+
+  // With two activity statement accounts (001 and 002), which one the factors come from.
+  const factorsSource = await loadFactorsSourceNote(supabase, id, lodgement.data?.statement_label ?? null)
+  // Behind a setting, off until Gabby confirms: a row per other ATO account in "Creditors in the SBR".
+  const atoAccountRows = ATO_ACCOUNT_CREDITOR_ROWS
+    ? atoAccountCreditorRows((await loadAtoAccounts(supabase, id)).accounts, lodgement.data?.statement_label ?? null)
+    : []
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
       <OutcomePredictionClient
+        factorsSource={factorsSource}
         clientId={id}
         clientName={client.name}
         readiness={{
@@ -129,8 +191,8 @@ export default async function OutcomePredictionPage({ params }: Props) {
           dpn: readiness.dpn,
           dpnDetail: dpnItem?.detail ?? '',
         }}
-        initialAuto={initialAuto}
-        initialPrediction={cached.data ? serialiseCachedPrediction(cached.data, changedAt) : null}
+        initialAuto={{ ...initialAuto, atoAccountRows }}
+        initialPrediction={cached.data ? { ...serialiseCachedPrediction(cached.data, changedAt), inputsChanged: changed } : null}
       />
     </div>
   )

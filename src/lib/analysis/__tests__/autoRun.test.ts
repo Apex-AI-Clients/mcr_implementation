@@ -41,7 +41,7 @@ function snapshot(over: Partial<AnalysisSnapshot> = {}): AnalysisSnapshot {
 
 describe('decideWork', () => {
   it('has nothing to do for an empty file', () => {
-    expect(decideWork(snapshot())).toEqual({ dpn: [], lodgement: false, extract: [], compare: false })
+    expect(decideWork(snapshot())).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [] })
   })
 
   it('reads notices not yet read, and analyses an export not yet analysed', () => {
@@ -103,7 +103,7 @@ describe('decideWork', () => {
       }),
       attempted,
     )
-    expect(work).toEqual({ dpn: [], lodgement: false, extract: [], compare: false })
+    expect(work).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [] })
   })
 })
 
@@ -284,5 +284,25 @@ describe('scheduleClientAnalysis', () => {
     expect(await scheduleClientAnalysis(supabase, 'client-1', schedule)).toEqual({ jobId: 'job-1', started: true })
     expect(inserted).toEqual([{ client_id: 'client-1', status: 'pending', mode: 'full' }])
     expect(schedule).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ATO account CSVs (migration 0038)', () => {
+  it('analyses each ATO account CSV once, and never one this run already tried', () => {
+    const s = snapshot({ atoAccountDocumentIds: ['it-1', 'sg-1', 'as-1'], atoAnalysedDocumentIds: new Set(['as-1']) })
+    expect(decideWork(s).atoAccounts).toEqual(['it-1', 'sg-1'])
+    const attempted = newAttempted()
+    attempted.atoAccounts.add('it-1')
+    expect(decideWork(s, attempted).atoAccounts).toEqual(['sg-1'])
+  })
+
+  it('leaves the lodgement decision exactly as it was', () => {
+    const s = snapshot({ activityStatementDocumentId: 'csv-1', atoAccountDocumentIds: ['csv-1'] })
+    expect(decideWork(s)).toEqual({ dpn: [], lodgement: true, extract: [], compare: false, atoAccounts: ['csv-1'] })
+  })
+
+  it('runs on an upload to either new slot', () => {
+    expect(categoryTriggersAnalysis('ato_income_tax_account')).toBe(true)
+    expect(categoryTriggersAnalysis('ato_super_guarantee_account')).toBe(true)
   })
 })

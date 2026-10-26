@@ -12,7 +12,12 @@ export const DOCUMENT_CATEGORIES = {
   CURRENT_FINANCIALS: 'current_financials',
   /** Older: kept for files uploaded before 0031. New uploads use FINANCIAL_STATEMENTS. */
   HISTORICAL_FINANCIALS: 'historical_financials',
+  /** "ATO activity statement": the activity statement account(s). The SBR prediction's lodgement source. */
   INTEGRATED_CLIENT_ACCOUNT: 'integrated_client_account',
+  /** "ATO income tax account" (migration 0038). */
+  ATO_INCOME_TAX_ACCOUNT: 'ato_income_tax_account',
+  /** "ATO superannuation guarantee account" (migration 0038). */
+  ATO_SUPER_GUARANTEE_ACCOUNT: 'ato_super_guarantee_account',
   DIRECTOR_PENALTY_NOTICES: 'director_penalty_notices',
   TRUST_DEED: 'trust_deed',
   COMPANY_LICENCES: 'company_licences',
@@ -115,12 +120,32 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
     multipleFiles: true,
   },
   integrated_client_account: {
-    label: 'Integrated Client Account (ATO Portal)',
+    label: 'ATO activity statement',
     description:
-      'Detailed Integrated Client Account ATO Portal from 01/07/2017 until now (Activity Statement, Income Tax or Super Account). CSV Format.',
+      'The activity statement account transactions from the ATO portal, from 01/07/2017 until now, as CSV. One file per account (e.g. 001 and 002). Income tax and superannuation guarantee accounts have their own slots; a file put in the wrong one is moved automatically.',
     acceptedFormats: [MIME_CSV],
     formatLabel: 'CSV only',
     isOptional: false,
+    multipleFiles: true,
+    externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',
+  },
+  ato_income_tax_account: {
+    label: 'ATO income tax account',
+    description:
+      'The income tax account transactions from the ATO portal, as CSV (if the company has one). A file put in the wrong slot is moved automatically.',
+    acceptedFormats: [MIME_CSV],
+    formatLabel: 'CSV only',
+    isOptional: true,
+    multipleFiles: true,
+    externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',
+  },
+  ato_super_guarantee_account: {
+    label: 'ATO superannuation guarantee account',
+    description:
+      'The superannuation guarantee employer account transactions from the ATO portal, as CSV (if the company has one). A file put in the wrong slot is moved automatically.',
+    acceptedFormats: [MIME_CSV],
+    formatLabel: 'CSV only',
+    isOptional: true,
     multipleFiles: true,
     externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',
   },
@@ -155,6 +180,8 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
 export const CHECKLIST_ORDER: DocCategory[] = [
   DOCUMENT_CATEGORIES.FINANCIAL_STATEMENTS,
   DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT,
+  DOCUMENT_CATEGORIES.ATO_INCOME_TAX_ACCOUNT,
+  DOCUMENT_CATEGORIES.ATO_SUPER_GUARANTEE_ACCOUNT,
   DOCUMENT_CATEGORIES.DIRECTOR_PENALTY_NOTICES,
   DOCUMENT_CATEGORIES.TRUST_DEED,
   DOCUMENT_CATEGORIES.COMPANY_LICENCES,

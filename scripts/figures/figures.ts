@@ -9,6 +9,7 @@ import type { LodgementAnalysisResult } from '@/lib/analysis/types'
 import type { NoticeRow } from '@/lib/dpn/stored'
 import { buildDpnPanel } from '@/lib/dpn/view'
 import { summariseNotices } from '@/lib/dpn/summary'
+import type { AtoAccountAnalysis } from '@/lib/analysis/atoAccount'
 
 /**
  * Shared by the snapshot and check scripts. Nothing here prints a client's
@@ -152,4 +153,69 @@ export function noticeTotals(snapshot: Snapshot): Record<string, [number, number
     out[t.type] = [t.totals.column2, t.totals.column3, t.totals.column4, t.totals.column5].map((c) => c / 100) as [number, number, number, number]
   }
   return out
+}
+
+// ── ATO income tax and superannuation guarantee accounts ─────────────────────
+
+/** verified-figures/ato-accounts/accounts.json: `[{ "alias": "it-001", "file": "<export>.csv" }]`. */
+export interface AtoAccountEntry {
+  alias: string
+  file: string
+}
+
+export const ATO_ACCOUNTS_DIR = path.join(DIR, 'ato-accounts')
+
+export function readAtoAccounts(): AtoAccountEntry[] {
+  const file = path.join(ATO_ACCOUNTS_DIR, 'accounts.json')
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as AtoAccountEntry[]) : []
+}
+
+/** The figures of an income tax or super guarantee analysis, flat, for checking by hand and by `figures:check`. */
+export function atoAccountFigures(a: AtoAccountAnalysis): LodgementFigures {
+  const f: LodgementFigures = {
+    atoBalance: a.balance,
+    atoBalanceDate: a.balanceDate,
+    balanceBroughtForward: a.openingBalance,
+    unexplained: a.unexplainedDifference,
+    payments: a.payments.count,
+    paymentsTotal: a.payments.total,
+    firstPayment: a.payments.first,
+    lastPayment: a.payments.last,
+    gicCharged: a.summary.gic.charged,
+    gicRemittedOrAmended: a.summary.gic.remitted,
+    gicNet: a.summary.gic.net,
+  }
+  if (a.kind === 'income_tax') {
+    f.assessedTotal = a.summary.assessedTotal
+    for (const x of a.summary.assessments) {
+      const key = `assessment ${x.period ? `${x.period.from}..${x.period.to}` : x.rowIndex}`
+      f[`${key} amount`] = x.amount
+      f[`${key} assessedOn`] = x.assessedOn
+      f[`${key} paymentDue`] = x.paymentDue
+      f[`${key} unpaid`] = x.unpaid
+      f[`${key} daysUnpaidPastDue`] = x.daysUnpaidPastDue
+    }
+  } else {
+    const s = a.summary
+    f.sgShortfall = s.totals.shortfall
+    f.sgNominalInterest = s.totals.nominalInterest
+    f.sgAdminFee = s.totals.adminFee
+    f.sgTotal = s.totals.total
+    f.part7Charged = s.part7.charged
+    f.part7Remitted = s.part7.remitted
+    f.part7Net = s.part7.net
+    f.quarters = s.quarters.length
+    for (const [kind, n] of Object.entries(s.quartersRaisedBy)) f[`quarters with ${kind}`] = n
+    f.unattributedRows = s.unattributed
+    for (const q of s.quarters) {
+      const key = `quarter ${q.period.from}..${q.period.to}`
+      f[`${key} shortfall`] = q.shortfall
+      f[`${key} nominalInterest`] = q.nominalInterest
+      f[`${key} adminFee`] = q.adminFee
+      f[`${key} total`] = q.total
+      f[`${key} headline`] = q.headline?.kind ?? null
+      f[`${key} events`] = q.events.map((e) => e.kind).join(',')
+    }
+  }
+  return f
 }

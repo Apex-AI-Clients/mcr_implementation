@@ -59,6 +59,10 @@ What is sent, and only when staff open the page:
 - Comparison summary: the confirmed key figures, as printed, per year. Not
   written while a total that does not add up is unticked (Needs review).
 - Lodgement summary: the computed lodgement, DPN and debt figures (no CSV).
+- Income tax and superannuation guarantee summaries: the computed balance,
+  assessments or quarters, payments, interest and Part 7 figures (no CSV, no
+  names). Not written while the analysis needs review (over $1,000
+  unexplained).
 - Label suggestions: printed labels and their headings for the key figures
   the dictionary found no line for. No figures.
 

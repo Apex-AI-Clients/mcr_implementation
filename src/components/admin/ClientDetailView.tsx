@@ -1,6 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
+import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
+import { hasUnanalysedAtoAccounts, loadAtoAccounts } from '@/lib/analysis/atoAccount/store'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ClientActions } from '@/components/admin/ClientActions'
 import { ArchivedClientActions } from '@/components/admin/ArchivedClientActions'
@@ -23,6 +25,7 @@ import { documentStatusBadge } from '@/lib/clients/status'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
+import { atoFileInfo } from '@/lib/analysis/atoAccountKind'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import Link from 'next/link'
 import { Archive, ArrowLeft, Building, Landmark, Pencil } from 'lucide-react'
@@ -75,6 +78,8 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
     supabase.from('director_penalty_notices').select('*').eq('client_id', id),
   ])
+  // Each ATO account's newest balance, and the total (atoAccount/store.ts).
+  const atoAccounts = await loadAtoAccounts(supabase, id)
   let runningJob: { id: string; created_at: string } | null = comparisonJob
   // What the prediction still needs. Archived files are read-only: no checklist.
   let readiness = archived ? null : await loadReadiness(supabase, id)
@@ -83,7 +88,10 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   // rather than leave it for someone to press Run now. Files already read are
   // never sent again (readState.ts), and a file whose read failed is not
   // retried here. Read again so the checklist shows it running.
-  if (readiness?.items.some((item) => item.status === 'not_started')) {
+  // ATO account CSVs with no analysis yet (uploaded before migration 0038, or
+  // a run that ran out of time) count as waiting work too.
+  const unanalysedAccounts = await hasUnanalysedAtoAccounts(supabase, id)
+  if (!archived && (readiness?.items.some((item) => item.status === 'not_started') || unanalysedAccounts)) {
     try {
       const { started, jobId } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
       if (started) readiness = await loadReadiness(supabase, id)
@@ -104,6 +112,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     docCategory: d.doc_category,
     status: d.status,
     uploadedAt: d.uploaded_at,
+    ...atoFileInfo(d, [client.name, rawCompany?.company_name, rawCompany?.trust_name]),
   }))
 
   const accountantDetails: AccountantDetails | null = rawAccountant
@@ -356,6 +365,8 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         {/* Read-only in the Archive: files can be downloaded, not changed. */}
         <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} dpn={dpn} />
       </div>
+
+      <AtoAccountsPanel clientId={client.id} overview={atoAccounts} />
     </div>
   )
 }

@@ -22,10 +22,10 @@ export const BANNED_WORDS_INSTRUCTION =
  * The text with every sentence that uses a banned word taken out. The last
  * resort, after the model has been asked once to write it again.
  */
-export function withoutBannedSentences(text: string): string {
+export function withoutBannedSentences(text: string, also: readonly RegExp[] = []): string {
   const sentences = text.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? [text]
   return sentences
-    .filter((s) => !BANNED_WORDS.test(s))
+    .filter((s) => !BANNED_WORDS.test(s) && !also.some((pattern) => new RegExp(pattern.source, 'i').test(s)))
     .join('')
     .trim()
 }

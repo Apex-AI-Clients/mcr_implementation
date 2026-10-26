@@ -3,6 +3,7 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
+import { atoFileInfo } from '@/lib/analysis/atoAccountKind'
 
 /**
  * Returns a client's intake profile (documents, accountant details, company
@@ -41,6 +42,12 @@ export async function GET(req: NextRequest) {
       .eq('client_id', client.id)
       .order('uploaded_at', { ascending: false })
 
+    const { data: rawCompany } = await supabase
+      .from('company_details')
+      .select('*')
+      .eq('client_id', client.id)
+      .maybeSingle()
+
     const documents: DocumentRecord[] = (rawDocs ?? []).map((d) => ({
       id: d.id,
       clientId: d.client_id,
@@ -51,6 +58,7 @@ export async function GET(req: NextRequest) {
       docCategory: d.doc_category,
       status: d.status,
       uploadedAt: d.uploaded_at,
+      ...atoFileInfo(d, [client.name, rawCompany?.company_name, rawCompany?.trust_name]),
     }))
 
     const { data: rawAccountant } = await supabase
@@ -69,12 +77,6 @@ export async function GET(req: NextRequest) {
           emailAddress: rawAccountant.email_address,
         }
       : null
-
-    const { data: rawCompany } = await supabase
-      .from('company_details')
-      .select('*')
-      .eq('client_id', client.id)
-      .maybeSingle()
 
     const companyDetails = rawCompany
       ? {

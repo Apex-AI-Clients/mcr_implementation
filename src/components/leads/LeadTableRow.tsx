@@ -7,7 +7,7 @@ import { DebtInput } from '@/components/leads/DebtInput'
 import { SourceInput } from '@/components/leads/SourceInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { Trash2 } from 'lucide-react'
+import { NotebookPen, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
@@ -24,6 +24,7 @@ import {
   formatShortDate,
 } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
+import { notesTooltip, type LeadNote } from '@/lib/leads/notes'
 
 interface LeadRowProps {
   lead: Lead
@@ -39,6 +40,8 @@ interface LeadRowProps {
   selected: boolean
   onToggleSelect: (leadId: string) => void
   onRequestDelete: (lead: Lead) => void
+  /** The lead's notes, newest first; only on the tabs with a notes column (undefined elsewhere). */
+  notes?: LeadNote[]
 }
 
 /**
@@ -60,6 +63,7 @@ export function LeadTableRow({
   selected,
   onToggleSelect,
   onRequestDelete,
+  notes,
 }: LeadRowProps) {
   const router = useRouter()
   const uncertainState = describeUncertainState(lead)
@@ -161,6 +165,12 @@ export function LeadTableRow({
           <span className="text-foreground/25">&mdash;</span>
         )}
       </td>
+      {/* Paired with the Notes header LeadTable adds on the closed tabs. */}
+      {notes && (
+        <td className="w-14 px-3 py-3.5 text-center" onClick={swallow}>
+          <NotesIcon notes={notes} />
+        </td>
+      )}
       {/* "Non-proceeding" and "Do not contact" are 14 characters; with the
           select's own padding and chevron they need ~150px of control, so a
           narrower cell clipped the selected label and forced you to open the
@@ -195,6 +205,7 @@ export function LeadCard({
   selected,
   onToggleSelect,
   onRequestDelete,
+  notes,
 }: LeadRowProps) {
   const router = useRouter()
   const uncertainState = describeUncertainState(lead)
@@ -254,6 +265,12 @@ export function LeadCard({
         <p className="truncate text-xs text-foreground/50" title={lead.message}>
           {lead.message}
         </p>
+      )}
+
+      {notes && notes.length > 0 && (
+        <div onClick={swallow}>
+          <NotesIcon notes={notes} />
+        </div>
       )}
 
       <div className="flex items-center gap-2 text-xs text-foreground/40">
@@ -321,3 +338,24 @@ function ReenquiryMarker({ lead, className }: { lead: Lead; className?: string }
     </div>
   )
 }
+
+/**
+ * The notes column: an icon with the count, the notes themselves (newest
+ * first) on hover or focus, so a long note never stretches the row. A dash
+ * when there are none.
+ */
+function NotesIcon({ notes }: { notes: LeadNote[] }) {
+  if (notes.length === 0) return <span className="text-foreground/25">&mdash;</span>
+  return (
+    <Tooltip content={notesTooltip(notes)} className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <span
+        className="inline-flex items-center gap-1 text-accent"
+        aria-label={`${notes.length} note${notes.length === 1 ? '' : 's'}`}
+      >
+        <NotebookPen className="h-4 w-4" aria-hidden="true" />
+        <span className="text-xs tabular-nums">{notes.length}</span>
+      </span>
+    </Tooltip>
+  )
+}
+

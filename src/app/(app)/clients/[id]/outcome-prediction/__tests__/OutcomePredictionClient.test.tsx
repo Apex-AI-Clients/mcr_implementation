@@ -413,3 +413,131 @@ describe('how the offer figures were calculated', () => {
     expect(r.cents).toBeTruthy()
   })
 })
+
+describe('director loan: fresh balance sheet over a stale saved value', () => {
+  // $120,000 owed to the company on the balance sheet at 30 Jun 2026.
+  const LOAN_AUTO = {
+    ...AUTO,
+    directorLoanReceivableAmount: 120_000,
+    directorLoanDetected: true,
+    directorLoanReasoning: 'Loan owed to the company of $120,000 on the FY2026 balance sheet: “Loan - Related Parties”.',
+    directorLoanAsOf: '2026-06-30',
+  }
+  const NOTE =
+    'Ticked Yes: the balance sheet at 30 Jun 2026 shows “Loan - Related Parties” $120,000 owed to the company (last prediction said No).'
+  const LABEL = 'Director loan at appointment (from the balance sheet at 30 Jun 2026)'
+
+  it('starts at Yes with the note, names the balance sheet, and asks for a re-run instead of running', () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...LOAN_AUTO, directorLoanInitial: { value: true, note: NOTE, override: null } }}
+        initialPrediction={{ ...saved(), inputsChanged: ['Director loan at appointment', 'Director loan receivable amount'] }}
+        readiness={READY}
+      />,
+    )
+    expect((screen.getByRole('checkbox', { name: LABEL }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText(NOTE)).toBeTruthy()
+    expect(screen.getByText('Director loan receivable amount (from the balance sheet at 30 Jun 2026)')).toBeTruthy()
+    expect(screen.getByText('Inputs changed — re-run')).toBeTruthy()
+    expect(screen.getByText(/Director loan at appointment, Director loan receivable amount\. Check the inputs/)).toBeTruthy()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("keeps staff's No and its reason when the override stands", async () => {
+    const fetchMock = mockFetch()
+    const override = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-21T10:00:00Z', amount: 120_000 }
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...LOAN_AUTO, directorLoanInitial: { value: false, note: null, override } }}
+        initialPrediction={{ ...saved(), inputsChanged: [] }}
+        readiness={READY}
+      />,
+    )
+    expect((screen.getByRole('checkbox', { name: LABEL }) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByLabelText(/Reason for keeping No/) as HTMLTextAreaElement).value).toBe('Loan repaid before appointment')
+    // Not contradicted: it runs as before, sending the reason with it.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(bodyOf(fetchMock)).toMatchObject({ directorLoanAtAppointment: false, directorLoanOverrideReason: 'Loan repaid before appointment' })
+  })
+
+  it('warns on No with a loan owed, and will not run until a reason is given', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...LOAN_AUTO, directorLoanInitial: { value: true, note: null, override: null } }}
+        initialPrediction={null}
+        readiness={READY}
+      />,
+    )
+    const generate = screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement
+    expect(generate.disabled).toBe(false)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: LABEL }))
+    expect(
+      screen.getByText(
+        'Director loan at appointment is No, but the balance sheet at 30 Jun 2026 shows $120,000 owed to the company. Tick Yes, or give a reason for keeping No.',
+      ),
+    ).toBeTruthy()
+    expect(generate.disabled).toBe(true)
+
+    await userEvent.type(screen.getByLabelText(/Reason for keeping No/), 'Loan repaid before appointment')
+    expect(generate.disabled).toBe(false)
+    await userEvent.click(generate)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).directorLoanOverrideReason).toBe('Loan repaid before appointment')
+  })
+})
+
+describe('Creditors in the SBR — the other ATO accounts (setting on)', () => {
+  const ATO_ROWS = [
+    { label: 'ATO: Income tax 001, at 1 Oct 2026', amount: 20_100 },
+    { label: 'ATO: Superannuation guarantee employer 005, at 22 Sep 2026', amount: 50_000 },
+  ]
+
+  it('starts a new prediction with a named, dated row per account, sent like any row', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={{ ...AUTO, atoAccountRows: ATO_ROWS }} initialPrediction={null} readiness={READY} />,
+    )
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('ATO: Income tax 001, at 1 Oct 2026')
+    expect((screen.getByRole('textbox', { name: 'Creditor 2 amount' }) as HTMLInputElement).value).toBe('50000')
+    // ATO debt $250,000 + the two accounts.
+    expect(screen.getByTestId('creditor-total').textContent).toBe('$320,100')
+    await userEvent.click(screen.getByRole('button', { name: /Generate Prediction/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(bodyOf(fetchMock).creditors.slice(0, 2)).toEqual([
+      { label: 'ATO: Income tax 001, at 1 Oct 2026', amount: 20_100 },
+      { label: 'ATO: Superannuation guarantee employer 005, at 22 Sep 2026', amount: 50_000 },
+    ])
+  })
+
+  it('offers them, not adds them, when creditors were saved before', async () => {
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{ ...AUTO, atoAccountRows: ATO_ROWS, savedCreditors: { atoDebt: 250_000, atoDebtEdited: false, rows: [{ label: 'Credit cards', amount: 1_000 }] } }}
+        initialPrediction={null}
+        readiness={READY}
+      />,
+    )
+    expect(screen.getAllByRole('textbox', { name: /Creditor \d+ name/ })).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Add the other ATO accounts (2)' }))
+    expect(screen.getAllByRole('textbox', { name: /Creditor \d+ name/ })).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: /Add the other ATO accounts/ })).toBeNull()
+  })
+
+  it('shows nothing of them while the setting is off', () => {
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={{ ...AUTO, atoAccountRows: [] }} initialPrediction={null} readiness={READY} />)
+    expect(screen.queryByRole('button', { name: /Add the other ATO accounts/ })).toBeNull()
+    expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Credit cards')
+  })
+})
+

@@ -8,6 +8,9 @@ import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
+import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
+import { NEEDS_REVIEW_THRESHOLD } from '@/lib/analysis/atoAccount'
+import { loadFactorsSourceNote } from '@/lib/analysis/atoAccount/store'
 
 export const dynamic = 'force-dynamic'
 
@@ -86,6 +89,12 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       }
     : null
 
+  // Activity statement only: a warning, never a lock (the SBR factors come from here).
+  const gap = initialAnalysis?.debtBreakdown ? reconciliationGap(initialAnalysis.debtBreakdown) : null
+  const largeGap = gap !== null && Math.abs(gap) > NEEDS_REVIEW_THRESHOLD ? gap : null
+  // With two activity statement accounts (001 and 002), which one this is.
+  const factorsSource = await loadFactorsSourceNote(supabase, id, rawAnalysis?.statement_label ?? null)
+
   // This page is about the analysis, so its badge is the analysis state. The
   // client's document status ("Missing: …") belongs on the client page.
   const statusBadge = rawAnalysis
@@ -116,6 +125,19 @@ export default async function LodgementAnalysisPage({ params }: Props) {
       {rawAnalysis && !initialAnalysis?.dpnRisk && (
         <div className="mb-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-warning">
           This analysis was generated with an outdated method. Click <strong>Re-analyse</strong> to refresh it.
+        </div>
+      )}
+
+      {factorsSource && (
+        <p className="mb-3 rounded-lg border border-border bg-surface/50 px-4 py-2 text-xs text-foreground/70">{factorsSource}</p>
+      )}
+
+      {largeGap !== null && (
+        <div role="alert" className="mb-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-warning">
+          The rows account for a different balance from the ATO&rsquo;s:{' '}
+          {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(Math.abs(largeGap))} unexplained (over
+          $1,000). Check &ldquo;Other adjustments / unexplained difference&rdquo; in the debt composition before relying on these
+          figures.
         </div>
       )}
 

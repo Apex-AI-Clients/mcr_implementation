@@ -11,6 +11,12 @@ export interface DocumentRecord {
   docCategory: DocCategory
   status: 'uploaded' | 'ready' | 'rejected'
   uploadedAt: string
+  /** ATO account CSVs (migration 0038): line 1 as printed, e.g. "Income tax 001". */
+  atoAccountLabel?: string | null
+  /** Why the file is in its slot: moved there automatically, or its account type not recognised yet. */
+  categoryNote?: string | null
+  /** Line 2's entity is not the client's company or trust. */
+  entityWarning?: string | null
 }
 
 export interface AccountantDetails {

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
-import { getStoredObjectInfo, removeFromStorage } from '@/lib/storage/upload'
+import { getStoredObjectInfo, readStoredText, removeFromStorage } from '@/lib/storage/upload'
 import { checkUploadRequest } from '@/lib/storage/rules'
 import { recomputeClientStatus } from '@/lib/clients/status'
 import { DPN_CATEGORY, clearNoneIssued, readAndStoreNotice } from '@/lib/dpn/store'
 import { categoryTriggersAnalysis, scheduleClientAnalysis } from '@/lib/analysis/autoRun'
+import { fileAtoAccount, isAtoAccountCategory, readAtoAccountHeader } from '@/lib/analysis/atoAccountKind'
+import type { DocCategory } from '@/lib/constants'
 
 /**
  * The automatic run started below works inside after(), which shares this
@@ -18,6 +20,10 @@ export const maxDuration = 800
  * Step 2 of an upload: the browser has put the file in Storage at the path
  * /api/portal/upload signed. Re-check what actually landed there — the size
  * and type the browser declared are not trusted — and record the document.
+ *
+ * An ATO account CSV is filed by what its first two lines say, not the slot
+ * it was dropped in (atoAccountKind.ts): one in the wrong slot is recorded in
+ * the right one, with a note; an account type not recognised stays put.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -56,6 +62,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: refusal.error }, { status: refusal.status })
     }
 
+    let category = docCategory as DocCategory
+    let atoFields = {}
+    if (isAtoAccountCategory(category)) {
+      // Unreadable: kept where it was put, as before.
+      const text = await readStoredText(supabase, filePath).catch(() => null)
+      if (text !== null) {
+        const header = readAtoAccountHeader(text)
+        const filed = fileAtoAccount(category, header.kind)
+        category = filed.category
+        atoFields = {
+          ato_account_kind: header.kind,
+          ato_account_label: header.label,
+          ato_entity_name: header.entityName,
+          category_note: filed.note,
+        }
+      }
+    }
+
     const { data: document, error: docError } = await supabase
       .from('documents')
       .insert({
@@ -64,8 +88,9 @@ export async function POST(req: NextRequest) {
         original_filename: filename,
         file_type: stored.contentType,
         file_size_bytes: stored.size,
-        doc_category: docCategory as string,
+        doc_category: category,
         status: 'ready',
+        ...atoFields,
       })
       .select()
       .single()
@@ -92,7 +117,7 @@ export async function POST(req: NextRequest) {
 
     // Work out whatever this file changes, in the background: the lodgement
     // figures, the statement extraction and comparison. One run per client.
-    if (categoryTriggersAnalysis(String(docCategory))) {
+    if (categoryTriggersAnalysis(category)) {
       try {
         await scheduleClientAnalysis(supabase, clientId, (task) => after(task))
       } catch (err) {
@@ -100,7 +125,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ documentId: document.id }, { status: 201 })
+    return NextResponse.json({ documentId: document.id, docCategory: category }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/portal/upload/complete]', err)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })

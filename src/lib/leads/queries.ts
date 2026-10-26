@@ -6,6 +6,7 @@ import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
 import { ALL_SOURCES, ALL_VIEWS, DATE_RANGES, LEAD_VIEWS, sourceName, sourcesNamed, type LeadView } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
 import { debtSearchAmount, type LeadFilterState } from '@/lib/leads/filter'
+import type { LeadNote } from '@/lib/leads/notes'
 import type {
   ConvertedClientDetails,
   Lead,
@@ -578,4 +579,32 @@ export async function getOpenLeadCount(): Promise<number> {
     return 0
   }
   return count ?? 0
+}
+
+/**
+ * The notes staff wrote on each lead (activities of type "note"), newest
+ * first, for the notes column on the Non-proceeding and Do not contact tabs.
+ * Ids batched, as in getActivitiesForLeads, so "All" on a long tab still fits
+ * in a URL. A failure leaves the notes out rather than failing the page.
+ */
+export async function getNotesForLeads(leadIds: string[], idsPerQuery = 200): Promise<Record<string, LeadNote[]>> {
+  const notes: Record<string, LeadNote[]> = {}
+  if (leadIds.length === 0) return notes
+  const supabase = getSupabaseServerClient()
+  for (let start = 0; start < leadIds.length; start += idsPerQuery) {
+    const { data, error } = await supabase
+      .from('lead_activities')
+      .select('lead_id, body, author, created_at')
+      .in('lead_id', leadIds.slice(start, start + idsPerQuery))
+      .eq('type', 'note')
+      .order('created_at', { ascending: false })
+    if (error) {
+      console.error('[getNotesForLeads]', error.message)
+      return notes
+    }
+    for (const row of data ?? []) {
+      ;(notes[row.lead_id] ??= []).push({ body: row.body, author: row.author, createdAt: row.created_at })
+    }
+  }
+  return notes
 }

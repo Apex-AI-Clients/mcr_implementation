@@ -47,3 +47,14 @@ Totals are in cents. The output shows the notice type, dates, the row count,
 which checks failed and the totals. Fields such as the reference, ACN and
 director are reported only as found or MISSING, never by value, and the
 director's address is never read into the result at all.
+
+## Re-filing ATO account CSVs (one-off, after migration 0038)
+
+`npm run ato:refile` reads every CSV in the three ATO account slots, works out
+from its first line which account it is (activity statement, income tax,
+superannuation guarantee), and prints what it would move: counts of files,
+account types, moves and clients only. It writes nothing.
+
+`ATO_REFILE_APPLY=yes npm run ato:refile` makes the moves and records each
+file's account type, first two lines and note. Run it only after the dry run
+has been checked.

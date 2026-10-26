@@ -114,6 +114,13 @@ describe('POST predict-outcome — creditors in the SBR', () => {
     expect((upsert.mock.calls[0][0] as { creditors: { atoDebtEdited: boolean } }).creditors.atoDebtEdited).toBe(true)
   })
 
+  it('records when staff typed the ATO debt, and the automatic figure it replaced', async () => {
+    await PREDICT(post({ ...BASE, creditorAmount: 80_000 }), PARAMS)
+    const creditors = (upsert.mock.calls[0][0] as { creditors: Record<string, unknown> }).creditors
+    expect(creditors.atoDebtAuto).toBe(100_000)
+    expect(typeof creditors.atoDebtEditedAt).toBe('string')
+  })
+
   it('is the ATO debt alone when no other row has an amount', async () => {
     const body = await (await PREDICT(post(BASE), PARAMS)).json()
     expect(body.creditorAmount).toBe(100_000)

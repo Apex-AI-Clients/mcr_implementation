@@ -11,6 +11,10 @@ import { bannedWordsIn, withoutBannedSentences } from './wording'
  * A summary that fails is written again once, with what was wrong named. If
  * its figures still do not check out, the fallback (a summary without
  * figures) is used; if only a banned word remains, those sentences are taken out.
+ *
+ * `forbidden` adds phrases one summary must not use (e.g. "lodged by the
+ * company" for a super guarantee account, which the export cannot show); they
+ * are treated exactly as the banned words. None by default.
  */
 export async function writeCheckedSummary(input: {
   prompt: string
@@ -18,14 +22,21 @@ export async function writeCheckedSummary(input: {
   maxTokens: number
   /** A summary without figures, used when the model's figures do not check out twice. */
   withoutFigures: () => string
+  /** Phrases this summary must not use, on top of the banned words. */
+  forbidden?: readonly RegExp[]
 }): Promise<{ text: string; model: string }> {
   const { prompt, label, maxTokens } = input
   const inputs = promptFigures(prompt)
+  const forbidden = input.forbidden ?? []
   const ask = (content: string) => askClaude({ purpose: 'summary', prompt: content, maxTokens, label })
+  const misused = (text: string) => [
+    ...bannedWordsIn(text),
+    ...forbidden.flatMap((pattern) => text.match(new RegExp(pattern.source, 'gi')) ?? []).map((w) => w.toLowerCase()),
+  ]
 
   const first = await ask(prompt)
   const stray = unsupportedFigures(first.text, inputs)
-  const banned = bannedWordsIn(first.text)
+  const banned = [...new Set(misused(first.text))]
   if (stray.length === 0 && banned.length === 0) return { text: first.text, model: first.model }
 
   const problems = [
@@ -38,7 +49,7 @@ export async function writeCheckedSummary(input: {
   if (unsupportedFigures(second.text, inputs).length > 0) {
     return { text: input.withoutFigures(), model: `${second.model} (figures withheld)` }
   }
-  return bannedWordsIn(second.text).length === 0
+  return misused(second.text).length === 0
     ? { text: second.text, model: second.model }
-    : { text: withoutBannedSentences(second.text), model: second.model }
+    : { text: withoutBannedSentences(second.text, forbidden), model: second.model }
 }

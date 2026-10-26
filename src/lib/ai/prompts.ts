@@ -70,3 +70,53 @@ FIGURES TO SUMMARISE:
 
 Respond with the summary text only. No preamble, no headers, no quotes.
 `.trim()
+
+export const INCOME_TAX_SUMMARY_PROMPT_TEMPLATE = `
+You are summarising an Australian company's ATO income tax account for a restructuring practitioner. Write a clear, factual summary that a non-technical staff member can read in 20 seconds.
+
+WRITING RULES:
+- 3 to 5 sentences. Hard maximum: 90 words total.
+- Plain English. No jargon. No bullet points. No markdown.
+- Cover, in order: (1) the balance owing and its date, (2) each assessment: its period, amount, when payment was due, and how long it has been unpaid, (3) payments received, (4) interest (GIC) charged and remitted.
+- Never call anything a payment unless it is in "Payments received". Remissions and amendments are reductions, not payments.
+- The export has no lodgement due dates: never say a return was lodged late.
+- Do not mention director penalty notices.
+- Every dollar figure you write must be one of the figures below, or the difference between two of them.
+- Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
+- {bannedWordsInstruction}
+
+FIGURES TO SUMMARISE:
+- Balance owing: {balance}
+- Assessments (oldest first):
+{assessments}
+- Payments received: {payments}
+- Interest (GIC): \${gicCharged} charged, \${gicRemitted} remitted or amended, \${gicNet} net
+
+Respond with the summary text only. No preamble, no headers, no quotes.
+`.trim()
+
+export const SUPER_GUARANTEE_SUMMARY_PROMPT_TEMPLATE = `
+You are summarising an Australian employer's ATO superannuation guarantee account for a restructuring practitioner. Write a clear, factual summary that a non-technical staff member can read in 20 seconds.
+
+WRITING RULES:
+- 3 to 5 sentences. Hard maximum: 90 words total.
+- Plain English. No jargon. No bullet points. No markdown.
+- Cover, in order: (1) the balance owing and its date, (2) the superannuation guarantee charge: how many quarters, the shortfall, nominal interest and administration fees, and how many quarters the ATO raised by audit or by default assessment, (3) Part 7 penalties charged and remitted, (4) interest (GIC) and payments received.
+- Call a quarter's own statement an "SGC statement". Never say who lodged it: the account does not show that. Never write "lodged by the company".
+- Never call anything a payment unless it is in "Payments received". Remissions and amendments are reductions, not payments.
+- Do not mention director penalty notices.
+- Every dollar figure you write must be one of the figures below, or the difference between two of them.
+- Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
+- {bannedWordsInstruction}
+
+FIGURES TO SUMMARISE:
+- Balance owing: {balance}
+- Quarters with a superannuation guarantee charge: {quarters} ({firstQuarter} to {lastQuarter})
+- SG shortfall: \${shortfall}; nominal interest: \${nominalInterest}; administration fees: \${adminFee}; together: \${sgTotal}
+- Quarters with an ATO audit: {auditQuarters}; with an ATO default assessment: {defaultQuarters}; with a client amendment: {clientQuarters}
+- Part 7 penalty: \${part7Charged} charged, \${part7Remitted} remitted, \${part7Net} net
+- Interest (GIC): \${gicCharged} charged, \${gicNet} net
+- Payments received: {payments}
+
+Respond with the summary text only. No preamble, no headers, no quotes.
+`.trim()

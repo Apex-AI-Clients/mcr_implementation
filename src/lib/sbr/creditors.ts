@@ -45,7 +45,48 @@ export interface SavedCreditors {
   atoDebt: number | null
   /** True when staff typed the ATO debt rather than taking the automatic figure. */
   atoDebtEdited: boolean
+  /** When staff typed it (inputPrecedence.ts). Absent on rows saved before this was kept. */
+  atoDebtEditedAt?: string
+  /** The automatic figure when staff typed theirs: unchanged, theirs still stands. */
+  atoDebtAuto?: number | null
   rows: CreditorRow[]
+}
+
+// ─── The other ATO accounts (migration 0038) ──────────────────────────────────
+
+/**
+ * Whether "Creditors in the SBR" offers one row per other ATO account (income
+ * tax, superannuation guarantee, a second activity statement account). OFF
+ * until Gabby confirms the historical cases' creditor basis allows it
+ * (creditorDebt.ts). Changes only which rows the page offers: the SBR
+ * prediction's factors never come from these accounts.
+ */
+export const ATO_ACCOUNT_CREDITOR_ROWS = false
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const longDay = (iso: string) => {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+  return `${d} ${MONTHS[m - 1]} ${y}`
+}
+
+/**
+ * One row per ATO account other than the activity statement the ATO debt row
+ * already is (`factorsAccount`, line 1 as printed), each named and dated from
+ * its newest balance: "ATO: Income tax 001, at 1 Oct 2026". Only amounts owed
+ * (a credit is not a creditor). Staff edit or remove them like any row.
+ */
+export function atoAccountCreditorRows(
+  accounts: readonly { kind: string; label: string; balance: number | null; balanceDate: string | null }[],
+  factorsAccount: string | null,
+): CreditorRow[] {
+  const same = (a: string, b: string | null) => !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
+  return accounts
+    .filter((a) => typeof a.balance === 'number' && a.balance > 0)
+    .filter((a) => !(a.kind === 'activity_statement' && same(a.label, factorsAccount)))
+    .map((a) => ({
+      label: `ATO: ${a.label}${a.balanceDate ? `, at ${longDay(a.balanceDate)}` : ''}`.slice(0, CREDITOR_LABEL_MAX),
+      amount: Math.round(a.balance! * 100) / 100,
+    }))
 }
 
 export function defaultCreditorRows(): CreditorRow[] {
@@ -91,6 +132,8 @@ export function readSavedCreditors(value: unknown): SavedCreditors | null {
   return {
     atoDebt,
     atoDebtEdited: v.atoDebtEdited === true,
+    ...(typeof v.atoDebtEditedAt === 'string' ? { atoDebtEditedAt: v.atoDebtEditedAt } : {}),
+    ...(typeof v.atoDebtAuto === 'number' && Number.isFinite(v.atoDebtAuto) ? { atoDebtAuto: v.atoDebtAuto } : {}),
     rows: fromFixedRows(normaliseCreditorRows(Array.isArray(v.rows) ? (v.rows as Partial<CreditorRow>[]) : null)),
   }
 }

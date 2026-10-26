@@ -10,6 +10,7 @@ import { CheckCircle2, XCircle, Download, Trash2, X, Upload } from 'lucide-react
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
 import { DpnPanel } from '@/components/admin/dpn/DpnPanel'
+import { AtoFileNotes } from '@/components/admin/AtoFileNotes'
 import type { DpnPanelData } from '@/lib/dpn/view'
 import { formatBytes } from '@/lib/utils'
 import { useRef, useState } from 'react'
@@ -201,6 +202,7 @@ function DocumentRow({
         {doc.status === 'ready' && (
           <span className="text-xs text-success mt-1 block">Ready</span>
         )}
+        <AtoFileNotes doc={doc} />
       </div>
 
       {showDeleteModal && (

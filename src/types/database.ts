@@ -90,6 +90,93 @@ export type Database = {
           },
         ]
       }
+      ato_account_analyses: {
+        Row: {
+          account_kind: string
+          account_label: string
+          ai_summary: string | null
+          ai_summary_generated_at: string | null
+          ai_summary_model: string | null
+          analysed_at: string
+          balance: number | null
+          balance_date: string | null
+          client_id: string
+          composition: Json
+          document_id: string
+          entity_matches: boolean | null
+          entity_name: string | null
+          id: string
+          needs_review: boolean
+          reviewed_at: string | null
+          reviewed_by: string | null
+          rows: Json
+          summary: Json
+          unexplained_difference: number | null
+          warnings: Json
+        }
+        Insert: {
+          account_kind: string
+          account_label: string
+          ai_summary?: string | null
+          ai_summary_generated_at?: string | null
+          ai_summary_model?: string | null
+          analysed_at?: string
+          balance?: number | null
+          balance_date?: string | null
+          client_id: string
+          composition?: Json
+          document_id: string
+          entity_matches?: boolean | null
+          entity_name?: string | null
+          id?: string
+          needs_review?: boolean
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rows?: Json
+          summary?: Json
+          unexplained_difference?: number | null
+          warnings?: Json
+        }
+        Update: {
+          account_kind?: string
+          account_label?: string
+          ai_summary?: string | null
+          ai_summary_generated_at?: string | null
+          ai_summary_model?: string | null
+          analysed_at?: string
+          balance?: number | null
+          balance_date?: string | null
+          client_id?: string
+          composition?: Json
+          document_id?: string
+          entity_matches?: boolean | null
+          entity_name?: string | null
+          id?: string
+          needs_review?: boolean
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          rows?: Json
+          summary?: Json
+          unexplained_difference?: number | null
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ato_account_analyses_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ato_account_analyses_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_deletions: {
         Row: {
           archived_at: string | null
@@ -483,6 +570,10 @@ export type Database = {
           ai_doc_type: string | null
           ai_financial_years: string[] | null
           ai_raw_response: Json | null
+          ato_account_kind: string | null
+          ato_account_label: string | null
+          ato_entity_name: string | null
+          category_note: string | null
           client_id: string
           doc_category: string
           extracted_text: string | null
@@ -505,6 +596,10 @@ export type Database = {
           ai_doc_type?: string | null
           ai_financial_years?: string[] | null
           ai_raw_response?: Json | null
+          ato_account_kind?: string | null
+          ato_account_label?: string | null
+          ato_entity_name?: string | null
+          category_note?: string | null
           client_id: string
           doc_category: string
           extracted_text?: string | null
@@ -527,6 +622,10 @@ export type Database = {
           ai_doc_type?: string | null
           ai_financial_years?: string[] | null
           ai_raw_response?: Json | null
+          ato_account_kind?: string | null
+          ato_account_label?: string | null
+          ato_entity_name?: string | null
+          category_note?: string | null
           client_id?: string
           doc_category?: string
           extracted_text?: string | null
@@ -1398,6 +1497,7 @@ export type Database = {
           creditors: Json | null
           id: string
           input_features: Json
+          input_overrides: Json | null
           practitioner_fee_rate: number
           predicted_high_percent: number
           predicted_low_percent: number
@@ -1412,6 +1512,7 @@ export type Database = {
           creditors?: Json | null
           id?: string
           input_features: Json
+          input_overrides?: Json | null
           practitioner_fee_rate?: number
           predicted_high_percent: number
           predicted_low_percent: number
@@ -1426,6 +1527,7 @@ export type Database = {
           creditors?: Json | null
           id?: string
           input_features?: Json
+          input_overrides?: Json | null
           practitioner_fee_rate?: number
           predicted_high_percent?: number
           predicted_low_percent?: number

@@ -4,6 +4,8 @@ import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv, type ActivityStatementFile } from './lodgementStore'
 import { findLiveComparisonJob, type ExtractError } from '@/lib/financials/jobLiveness'
 import { READER_VERSION, readAndStore, type FinancialDocumentRow } from '@/lib/printed/store'
+import { ATO_ACCOUNT_CATEGORIES } from './atoAccountKind'
+import { analyseAndStoreAtoAccount, clientNamesFor } from './atoAccount/store'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
@@ -41,6 +43,9 @@ export interface AnalysisSnapshot {
   extractedAt: ReadonlyMap<string, string>
   /** The stored comparison: absent, current, or stale since a file changed. */
   comparison: { exists: boolean; staleSince: string | null }
+  /** ATO account CSVs (any of the three slots), and those with an analysis (migration 0038). */
+  atoAccountDocumentIds?: string[]
+  atoAnalysedDocumentIds?: ReadonlySet<string>
 }
 
 export interface AnalysisWork {
@@ -52,6 +57,8 @@ export interface AnalysisWork {
   extract: string[]
   /** Whether to rebuild the comparison. */
   compare: boolean
+  /** ATO account CSVs to analyse (atoAccount/store.ts): never analysed. */
+  atoAccounts: string[]
 }
 
 /** What this run has already tried, so a step that fails is not retried in a loop. */
@@ -60,10 +67,11 @@ export interface Attempted {
   extract: Set<string>
   lodgement: boolean
   compare: boolean
+  atoAccounts: Set<string>
 }
 
 export function newAttempted(): Attempted {
-  return { dpn: new Set(), extract: new Set(), lodgement: false, compare: false }
+  return { dpn: new Set(), extract: new Set(), lodgement: false, compare: false, atoAccounts: new Set() }
 }
 
 /** What is out of date, leaving out anything this run already tried. Pure. */
@@ -89,11 +97,16 @@ export function decideWork(s: AnalysisSnapshot, attempted: Attempted = newAttemp
     s.financialDocuments.length > 0 &&
     (extract.length > 0 || s.comparison.staleSince !== null || (!s.comparison.exists && anyExtracted))
 
-  return { dpn, lodgement, extract, compare }
+  const analysedAccounts = s.atoAnalysedDocumentIds ?? new Set<string>()
+  const atoAccounts = (s.atoAccountDocumentIds ?? []).filter(
+    (id) => !analysedAccounts.has(id) && !(attempted.atoAccounts?.has(id) ?? false),
+  )
+
+  return { dpn, lodgement, extract, compare, atoAccounts }
 }
 
 export function hasWork(work: AnalysisWork): boolean {
-  return work.dpn.length > 0 || work.lodgement || work.extract.length > 0 || work.compare
+  return work.dpn.length > 0 || work.lodgement || work.extract.length > 0 || work.compare || (work.atoAccounts?.length ?? 0) > 0
 }
 
 /** The snapshot, read from the database (and the activity statement found by content). */
@@ -101,15 +114,16 @@ async function loadSnapshot(
   supabase: ServerClient,
   clientId: string,
 ): Promise<{ snapshot: AnalysisSnapshot; activityStatement: ActivityStatementFile | null }> {
-  const [{ data: docs }, { data: notices }, { data: analyses }, { data: reads }] = await Promise.all([
+  const [{ data: docs }, { data: notices }, { data: analyses }, { data: reads }, { data: accountAnalyses }] = await Promise.all([
     supabase
       .from('documents')
-      .select('id, doc_category, fs_override_at')
+      .select('id, doc_category, fs_override_at, file_type, original_filename')
       .eq('client_id', clientId),
     supabase.from('director_penalty_notices').select('document_id').eq('client_id', clientId),
     supabase.from('lodgement_analyses').select('document_id').eq('client_id', clientId),
     // Before migration 0033 there is no table: every PDF reads as unread, and is read (but not kept).
     supabase.from('printed_reads').select('document_id, reader_version, read_at').eq('client_id', clientId),
+    supabase.from('ato_account_analyses').select('document_id').eq('client_id', clientId),
   ])
 
   const all = docs ?? []
@@ -130,6 +144,14 @@ async function loadSnapshot(
       extractedAt: new Map((reads ?? []).filter((r) => r.reader_version === READER_VERSION).map((r) => [r.document_id, r.read_at])),
       // Nothing to build or keep: the comparison is built from the reads when its page opens.
       comparison: { exists: true, staleSince: null },
+      atoAccountDocumentIds: all
+        .filter(
+          (d) =>
+            (ATO_ACCOUNT_CATEGORIES as readonly string[]).includes(d.doc_category) &&
+            (d.file_type === 'text/csv' || (d.original_filename ?? '').toLowerCase().endsWith('.csv')),
+        )
+        .map((d) => d.id),
+      atoAnalysedDocumentIds: new Set((accountAnalyses ?? []).map((a) => a.document_id)),
     },
   }
 }
@@ -146,6 +168,8 @@ export interface AutoRunSummary {
   lodgementAnalysed: boolean
   extracted: number
   compared: boolean
+  /** ATO account CSVs analysed (atoAccount/store.ts). */
+  atoAccountsAnalysed: number
   errors: ExtractError[]
   notes: string[]
 }
@@ -168,6 +192,7 @@ export async function runAutoAnalysis(params: {
     lodgementAnalysed: false,
     extracted: 0,
     compared: false,
+    atoAccountsAnalysed: 0,
     errors: [],
     notes: [],
   }
@@ -184,7 +209,7 @@ export async function runAutoAnalysis(params: {
       const work = decideWork(snapshot, attempted)
       if (!hasWork(work)) break
       console.log(
-        `[auto-run] job=${jobId} pass=${pass + 1} dpn=${work.dpn.length} lodgement=${work.lodgement} extract=${work.extract.length} compare=${work.compare}`,
+        `[auto-run] job=${jobId} pass=${pass + 1} dpn=${work.dpn.length} lodgement=${work.lodgement} extract=${work.extract.length} compare=${work.compare} atoAccounts=${work.atoAccounts.length}`,
       )
 
       // 1. Director penalty notices: in memory, no AI, about a second each.
@@ -222,6 +247,25 @@ export async function runAutoAnalysis(params: {
           else summary.notes.push(`${doc.original_filename}: ${read.issues.map((i) => i.message).join(' ') || read.status}`)
         }
       }
+
+      // 4. ATO account CSVs (activity statement, income tax, super guarantee):
+      // their balances for the ATO accounts panel, and the income tax and
+      // super guarantee analyses. Arithmetic only. Never lodgement_analyses.
+      if (work.atoAccounts.length > 0) {
+        work.atoAccounts.forEach((id) => attempted.atoAccounts.add(id))
+        const names = await clientNamesFor(supabase, clientId)
+        const { data: accountDocs } = await supabase.from('documents').select('id, file_path').in('id', work.atoAccounts)
+        for (const doc of accountDocs ?? []) {
+          const { data: blob } = doc.file_path ? await supabase.storage.from('documents').download(doc.file_path) : { data: null }
+          if (!blob) {
+            summary.notes.push('An ATO account CSV could not be read from storage.')
+            continue
+          }
+          const outcome = await analyseAndStoreAtoAccount(supabase, clientId, doc.id, await blob.text(), names)
+          if (outcome.ok) summary.atoAccountsAnalysed++
+          else summary.notes.push(`ATO account: ${outcome.error}`)
+        }
+      }
     }
 
     await supabase
@@ -237,7 +281,7 @@ export async function runAutoAnalysis(params: {
       })
       .eq('id', jobId)
     console.log(
-      `[auto-run] DONE job=${jobId} dpn=${summary.dpnRead} lodgement=${summary.lodgementAnalysed} extracted=${summary.extracted} compared=${summary.compared} errors=${summary.errors.length}`,
+      `[auto-run] DONE job=${jobId} dpn=${summary.dpnRead} lodgement=${summary.lodgementAnalysed} extracted=${summary.extracted} compared=${summary.compared} atoAccounts=${summary.atoAccountsAnalysed} errors=${summary.errors.length}`,
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -306,7 +350,7 @@ export async function scheduleClientAnalysis(
 export function categoryTriggersAnalysis(category: string): boolean {
   return (
     category === DOCUMENT_CATEGORIES.DIRECTOR_PENALTY_NOTICES ||
-    category === DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT ||
+    (ATO_ACCOUNT_CATEGORIES as readonly string[]).includes(category) ||
     (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(category)
   )
 }

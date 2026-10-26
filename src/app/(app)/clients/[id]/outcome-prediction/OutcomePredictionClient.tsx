@@ -38,6 +38,14 @@ import {
 } from '@/lib/sbr/fees'
 import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
 import {
+  OVERRIDE_REASON_MAX,
+  OVERRIDE_REASON_MIN,
+  directorLoanLabel,
+  directorLoanMismatch,
+  type DirectorLoanOverride,
+  type ResolvedDirectorLoan,
+} from '@/lib/sbr/inputPrecedence'
+import {
   CREDITOR_LABEL_MAX,
   MAX_CREDITOR_ROWS,
   creditorTotal,
@@ -58,6 +66,14 @@ interface InitialAuto {
   directorLoanReceivableAmount: number
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
+  /** The balance sheet the director loan inputs come from (ISO), for their labels. */
+  directorLoanAsOf?: string | null
+  /** Where the checkbox starts: fresh evidence over a stale saved value (inputPrecedence.ts). */
+  directorLoanInitial?: ResolvedDirectorLoan
+  /** Why the ATO debt staff typed last time was replaced, when it was. */
+  atoDebtNote?: string | null
+  /** Why the DPN answer differs from the last prediction, when it does. */
+  dpnNote?: string | null
   creditorAmount: number | null
   /** Where the automatic creditor amount comes from, e.g. "ATO account statement, 26 Sep 2026". */
   creditorSource: string
@@ -70,6 +86,12 @@ interface InitialAuto {
   creditorHints: CreditorHints
   /** The creditors saved with the last prediction, if any (migration 0032). */
   savedCreditors: SavedCreditors | null
+  /**
+   * One row per other ATO account (income tax, super guarantee, a second
+   * activity statement), named and dated (creditors.ts). Empty while the
+   * setting is off.
+   */
+  atoAccountRows?: CreditorRow[]
 }
 
 interface CachedSummary {
@@ -84,6 +106,8 @@ interface CachedSummary {
   practitionerFeeRate: number
   /** The historical cases changed after it was saved (staleness.ts). */
   stale: boolean
+  /** Inputs the current evidence contradicts (inputPrecedence.ts); empty when none. */
+  inputsChanged?: string[]
 }
 
 /** What the prediction is waiting for, and the DPN factor, from readiness.ts. */
@@ -102,6 +126,8 @@ interface Props {
   initialAuto: InitialAuto
   initialPrediction: CachedSummary | null
   readiness: PredictionReadiness
+  /** "Factors come from Activity statement 002 (latest upload); this client also has: …" — only with two or more. */
+  factorsSource?: string | null
 }
 
 interface FullPrediction extends SbrPrediction {
@@ -118,6 +144,10 @@ interface FullPrediction extends SbrPrediction {
     detected: boolean | null
     reasoning: string | null
   }
+  /** The balance sheet the director loan inputs come from (ISO). */
+  directorLoanAsOf?: string | null
+  /** Staff's reason for a flag the amount contradicts. */
+  directorLoanOverride?: DirectorLoanOverride | null
   /** Past cases left out because they are this client's own record. */
   selfMatchExcluded?: number
 }
@@ -279,6 +309,7 @@ export function OutcomePredictionClient({
   initialAuto,
   initialPrediction,
   readiness,
+  factorsSource = null,
 }: Props) {
   const cachedInputs = extractCachedInput(initialPrediction)
 
@@ -294,9 +325,23 @@ export function OutcomePredictionClient({
     cachedInputs?.paymentPlanType ?? 'upfront',
   )
   const [directorLoanAtAppointment, setDirectorLoanAtAppointment] = useState(
-    // Pre-fill from the cached input if any, else from balance-sheet auto-detection.
-    cachedInputs?.directorLoanAtAppointment ?? initialAuto.directorLoanDetected === true,
+    // Fresh balance-sheet evidence over a stale saved value (inputPrecedence.ts);
+    // the saved value when the evidence does not contradict it.
+    initialAuto.directorLoanInitial?.value ??
+      cachedInputs?.directorLoanAtAppointment ??
+      initialAuto.directorLoanDetected === true,
   )
+  const [directorLoanReason, setDirectorLoanReason] = useState(
+    initialAuto.directorLoanInitial?.override?.reason ?? '',
+  )
+  // The flag and the amount disagree: a reason is needed before it can run.
+  const directorLoanConflict = directorLoanMismatch(
+    directorLoanAtAppointment,
+    initialAuto.directorLoanReceivableAmount,
+    initialAuto.directorLoanAsOf ?? null,
+  )
+  const directorLoanReasonOk = !directorLoanConflict || directorLoanReason.trim().length >= OVERRIDE_REASON_MIN
+  const inputsChanged = initialPrediction?.inputsChanged ?? []
 
   // The ATO debt: prefilled from the automatic figure, editable by staff
   // (kept from the last prediction when staff typed it). Only an amount staff
@@ -310,9 +355,10 @@ export function OutcomePredictionClient({
         : '',
   )
   const [creditorEdited, setCreditorEdited] = useState(savedAto != null)
-  // The other creditors in the SBR (creditors.ts), from the last prediction or the defaults.
+  // The other creditors in the SBR (creditors.ts), from the last prediction, or the
+  // defaults with a row for each other ATO account (when that setting is on).
   const [creditorRows, setCreditorRows] = useState<CreditorRowInput[]>(() =>
-    (initialAuto.savedCreditors?.rows ?? defaultCreditorRows()).map((r) => ({
+    (initialAuto.savedCreditors?.rows ?? [...(initialAuto.atoAccountRows ?? []), ...defaultCreditorRows()]).map((r) => ({
       id: newCreditorRowId(),
       label: r.label,
       amountText: r.amount != null ? String(r.amount) : '',
@@ -344,7 +390,12 @@ export function OutcomePredictionClient({
 
   const lodgementReady = auto.hasLodgement
   const canRun =
-    lodgementReady && feeRate !== null && creditorRowsValid && readiness.canPredict && notReady.length === 0
+    lodgementReady &&
+    feeRate !== null &&
+    creditorRowsValid &&
+    directorLoanReasonOk &&
+    readiness.canPredict &&
+    notReady.length === 0
 
   async function runPrediction() {
     setRunning(true)
@@ -357,6 +408,7 @@ export function OutcomePredictionClient({
         body: JSON.stringify({
           paymentPlanType,
           directorLoanAtAppointment,
+          ...(directorLoanConflict ? { directorLoanOverrideReason: directorLoanReason.trim() } : {}),
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
           // Only when nothing is on file; the server ignores it otherwise.
@@ -398,7 +450,9 @@ export function OutcomePredictionClient({
   useEffect(() => {
     if (hydrated.current) return
     if (!initialPrediction || initialPrediction.stale) return
-    if (!lodgementReady || !readiness.canPredict) return
+    // Inputs the evidence now contradicts: staff check them and re-run.
+    if (inputsChanged.length > 0) return
+    if (!lodgementReady || !readiness.canPredict || !directorLoanReasonOk) return
     hydrated.current = true
     runPrediction()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,6 +483,7 @@ export function OutcomePredictionClient({
                 historical cases
               </p>
             )}
+            {factorsSource && <p className="mt-1 text-xs text-foreground/60">{factorsSource}</p>}
           </div>
 
           {prediction && (
@@ -472,6 +527,27 @@ export function OutcomePredictionClient({
                   {initialPrediction.predictedHighPercent.toFixed(1)}%, from{' '}
                   {initialPrediction.trainingSetSize} cases) was made before the historical cases
                   changed. Re-run it to use the current data.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={runPrediction} loading={running} disabled={!canRun}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-run
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {inputsChanged.length > 0 && initialPrediction && !prediction && (
+        <Card className="border-warning/30 bg-warning/5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Inputs changed — re-run</p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  The saved prediction ({initialPrediction.predictedOutcomePercent.toFixed(1)}%) used inputs the
+                  client file no longer shows: {inputsChanged.join(', ')}. Check the inputs below, then re-run.
                 </p>
               </div>
             </div>
@@ -543,6 +619,9 @@ export function OutcomePredictionClient({
           setPaymentPlanType={setPaymentPlanType}
           directorLoanAtAppointment={directorLoanAtAppointment}
           setDirectorLoanAtAppointment={setDirectorLoanAtAppointment}
+          directorLoanConflict={directorLoanConflict}
+          directorLoanReason={directorLoanReason}
+          setDirectorLoanReason={setDirectorLoanReason}
           collapsed={inputsCollapsed}
           onToggleCollapsed={() => setInputsCollapsed((v) => !v)}
           onGenerate={runPrediction}
@@ -658,6 +737,10 @@ interface InputPanelProps {
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
   setDirectorLoanAtAppointment: (v: boolean) => void
+  /** Why the flag and the amount disagree; null when they agree. */
+  directorLoanConflict: string | null
+  directorLoanReason: string
+  setDirectorLoanReason: (v: string) => void
   collapsed: boolean
   onToggleCollapsed: () => void
   onGenerate: () => void
@@ -685,6 +768,9 @@ function InputPanel(props: InputPanelProps) {
     setPaymentPlanType,
     directorLoanAtAppointment,
     setDirectorLoanAtAppointment,
+    directorLoanConflict,
+    directorLoanReason,
+    setDirectorLoanReason,
     collapsed,
     onToggleCollapsed,
     onGenerate,
@@ -769,7 +855,7 @@ function InputPanel(props: InputPanelProps) {
               missing={auto.daysSinceLastPayment == null}
             />
             <ReadOnlyField
-              label="Director loan receivable"
+              label={directorLoanLabel('Director loan receivable amount', auto.directorLoanAsOf ?? null)}
               value={formatAud(auto.directorLoanReceivableAmount)}
               hint={
                 auto.hasFinancials
@@ -808,6 +894,7 @@ function InputPanel(props: InputPanelProps) {
                   <span className="font-medium text-foreground">{dpn ? 'Yes' : 'No'}</span>
                 </p>
                 <p className="mt-0.5 text-foreground/40">{dpnDetail}</p>
+                {auto.dpnNote && <p className="mt-1 text-warning">{auto.dpnNote}</p>}
               </div>
             ) : (
               <div>
@@ -820,7 +907,7 @@ function InputPanel(props: InputPanelProps) {
             )}
             <div>
               <CheckboxField
-                label="Director loan at appointment"
+                label={directorLoanLabel('Director loan at appointment', auto.directorLoanAsOf ?? null)}
                 checked={directorLoanAtAppointment}
                 onChange={setDirectorLoanAtAppointment}
               />
@@ -828,6 +915,31 @@ function InputPanel(props: InputPanelProps) {
                 detected={auto.directorLoanDetected}
                 reasoning={auto.directorLoanReasoning}
               />
+              {auto.directorLoanInitial?.note && (
+                <p className="mt-1 pl-1 text-xs text-warning">{auto.directorLoanInitial.note}</p>
+              )}
+              {directorLoanConflict && (
+                <div
+                  role="alert"
+                  className="mt-2 space-y-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning"
+                >
+                  <p className="flex gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {directorLoanConflict}
+                  </p>
+                  <label htmlFor="director-loan-reason" className="block text-foreground/70">
+                    Reason for keeping {directorLoanAtAppointment ? 'Yes' : 'No'} (saved with the prediction)
+                  </label>
+                  <textarea
+                    id="director-loan-reason"
+                    rows={2}
+                    maxLength={OVERRIDE_REASON_MAX}
+                    value={directorLoanReason}
+                    onChange={(event) => setDirectorLoanReason(event.target.value)}
+                    className="w-full resize-y rounded-md border border-border bg-input-bg px-2 py-1.5 text-xs text-foreground focus:border-accent focus:outline-none"
+                  />
+                </div>
+              )}
             </div>
             <fieldset className="rounded-lg border border-border bg-surface/30 px-3 py-2">
               <legend className="px-1 text-xs text-foreground/50">Payment approach</legend>
@@ -930,6 +1042,13 @@ function CreditorsEditor({
     setFocusId(id)
   }
   const removeRow = (id: string) => setRows(rows.filter((r) => r.id !== id))
+  // The other ATO accounts not yet among the rows (saved before they were on file).
+  const missingAtoRows = (auto.atoAccountRows ?? []).filter((a) => !rows.some((r) => r.label.trim() === a.label))
+  const addAtoRows = () =>
+    setRows([
+      ...rows,
+      ...missingAtoRows.slice(0, MAX_CREDITOR_ROWS - rows.length).map((a) => ({ id: newCreditorRowId(), label: a.label, amountText: String(a.amount) })),
+    ])
   const inputClass =
     'h-7 rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none'
   const grid = 'grid gap-2 sm:grid-cols-[minmax(0,14rem)_9rem_1.75rem_minmax(0,1fr)] sm:items-center'
@@ -963,6 +1082,9 @@ function CreditorsEditor({
           />
           <span aria-hidden />
           <p className="text-foreground/40">
+            {!creditorEdited && auto.atoDebtNote && (
+              <span className="mb-0.5 block text-warning">{auto.atoDebtNote}</span>
+            )}
             {creditorEdited
               ? 'Source: entered by staff'
               : auto.creditorAmount != null
@@ -1025,6 +1147,17 @@ function CreditorsEditor({
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Add creditor
           </button>
+          {missingAtoRows.length > 0 && (
+            <button
+              type="button"
+              onClick={addAtoRows}
+              disabled={rows.length >= MAX_CREDITOR_ROWS}
+              className="ml-2 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-surface/60 hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Add the other ATO accounts ({missingAtoRows.length})
+            </button>
+          )}
           {rows.length >= MAX_CREDITOR_ROWS && (
             <span className="ml-2 text-foreground/40">Up to {MAX_CREDITOR_ROWS} creditors.</span>
           )}
@@ -2290,7 +2423,7 @@ function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
           <tbody>
             {prediction.featureBreakdown.map((entry) => (
               <tr key={entry.feature} className="border-b border-border/40 last:border-0">
-                <td className="py-2 pr-4 text-foreground/80">{entry.label}</td>
+                <td className="py-2 pr-4 text-foreground/80">{factorLabel(entry.feature, entry.label, prediction.directorLoanAsOf)}</td>
                 <td className="py-2 pr-4 text-foreground/70">{formatFeatureValue(entry.feature, entry.inputValue)}</td>
                 <td className="py-2 pr-4 text-foreground/70">{formatFeatureValue(entry.feature, entry.medianInNeighbours)}</td>
                 <td className="py-2 text-foreground/60">{entry.influenceNote}</td>
@@ -2299,8 +2432,21 @@ function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
           </tbody>
         </table>
       </div>
+      {prediction.directorLoanOverride && (
+        <p className="mt-3 text-xs text-foreground/60">
+          Director loan at appointment kept at {prediction.directorLoanOverride.value ? 'Yes' : 'No'} by staff
+          against the receivable amount: &ldquo;{prediction.directorLoanOverride.reason}&rdquo;
+        </p>
+      )}
     </Card>
   )
+}
+
+/** The two director loan factors name the balance sheet they come from. */
+function factorLabel(feature: string, label: string, asOf: string | null | undefined): string {
+  return feature === 'directorLoanAtAppointment' || feature === 'directorLoanReceivableAmount'
+    ? directorLoanLabel(label, asOf ?? null)
+    : label
 }
 
 function CaseInfoTooltip({ explanation }: { explanation: string }) {
@@ -2618,10 +2764,16 @@ function ExportButton({
     push('DPN', prediction.inputFeatures.dpn ? 'Yes' : 'No')
     push('Payment plan type', prediction.inputFeatures.paymentPlanType)
     push(
-      'Director loan at appointment',
+      directorLoanLabel('Director loan at appointment', prediction.directorLoanAsOf ?? null),
       prediction.inputFeatures.directorLoanAtAppointment ? 'Yes' : 'No',
     )
-    push('Director loan receivable', prediction.inputFeatures.directorLoanReceivableAmount)
+    if (prediction.directorLoanOverride) {
+      push('Reason for keeping it', prediction.directorLoanOverride.reason)
+    }
+    push(
+      directorLoanLabel('Director loan receivable amount', prediction.directorLoanAsOf ?? null),
+      prediction.inputFeatures.directorLoanReceivableAmount,
+    )
     push('Cumulative days late', prediction.inputFeatures.cumulativeDaysLate)
     push('Number of late lodgements', prediction.inputFeatures.numberOfLateLodgements)
     push('Days since last payment', prediction.inputFeatures.daysSinceLastPayment)
@@ -2631,7 +2783,7 @@ function ExportButton({
     push('Factor', 'This client', 'Median (neighbours)', 'Influence')
     for (const entry of prediction.featureBreakdown) {
       push(
-        entry.label,
+        factorLabel(entry.feature, entry.label, prediction.directorLoanAsOf),
         formatFeatureValue(entry.feature, entry.inputValue),
         formatFeatureValue(entry.feature, entry.medianInNeighbours),
         entry.influenceNote,

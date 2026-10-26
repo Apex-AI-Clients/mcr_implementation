@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 // Only the follow-up column is hidden; the rule still runs elsewhere.
 // import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
+import type { LeadNote } from '@/lib/leads/notes'
 
 interface LeadTableProps {
   leads: Lead[]
@@ -19,6 +20,11 @@ interface LeadTableProps {
   /** Tick or clear every row on this page. */
   onToggleAll: () => void
   onRequestDelete: (leads: Lead[]) => void
+  /**
+   * Each lead's notes, on the Non-proceeding and Do not contact tabs only:
+   * given, the Notes column shows; absent, it does not exist.
+   */
+  notes?: Record<string, LeadNote[]>
 }
 
 /**
@@ -91,7 +97,16 @@ export function LeadTable({
   onToggleLead,
   onToggleAll,
   onRequestDelete,
+  notes,
 }: LeadTableProps) {
+  const showNotes = notes !== undefined
+  // Just before Stage. Paired with the Notes <td> in LeadTableRow, which also
+  // renders only with `notes`, so the header and body counts stay in step.
+  const columns = showNotes
+    ? COLUMNS.flatMap((column) =>
+        column.label === 'Stage' ? [{ label: 'Notes', className: 'text-center w-14' }, column] : [column],
+      )
+    : COLUMNS
   const selectedHere = leads.filter((lead) => selectedIds.has(lead.id)).length
   const allSelected = leads.length > 0 && selectedHere === leads.length
   if (leads.length === 0) {
@@ -143,7 +158,7 @@ export function LeadTable({
               <th scope="col" className="w-9 px-2 py-3">
                 <span className="sr-only">Delete</span>
               </th>
-              {COLUMNS.map((column, index) => (
+              {columns.map((column, index) => (
                 <th
                   key={column.label || `col-${index}`}
                   scope="col"
@@ -159,6 +174,7 @@ export function LeadTable({
               <LeadTableRow
                 key={lead.id}
                 lead={lead}
+                notes={showNotes ? (notes[lead.id] ?? []) : undefined}
                 onRequestConvert={onRequestConvert}
                 selected={selectedIds.has(lead.id)}
                 onToggleSelect={onToggleLead}
@@ -175,6 +191,7 @@ export function LeadTable({
           <LeadCard
             key={lead.id}
             lead={lead}
+            notes={showNotes ? (notes[lead.id] ?? []) : undefined}
             onRequestConvert={onRequestConvert}
             selected={selectedIds.has(lead.id)}
             onToggleSelect={onToggleLead}

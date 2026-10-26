@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  ATO_ACCOUNT_CREDITOR_ROWS,
   CREDITOR_LABEL_MAX,
+  atoAccountCreditorRows,
   DEFAULT_CREDITORS,
   MAX_CREDITOR_ROWS,
   creditorTotal,
@@ -89,3 +91,29 @@ describe('rows saved by the fixed six-row version', () => {
     ])
   })
 })
+
+describe('a row per other ATO account (behind a setting)', () => {
+  it('is off until Gabby confirms', () => {
+    expect(ATO_ACCOUNT_CREDITOR_ROWS).toBe(false)
+  })
+
+  it('names and dates each account owed, leaving out the one the ATO debt row already is, and credits', () => {
+    const rows = atoAccountCreditorRows(
+      [
+        { kind: 'activity_statement', label: 'Activity statement 002', balance: 40_000, balanceDate: '2026-10-12' },
+        { kind: 'activity_statement', label: 'Activity statement 001', balance: 3_000, balanceDate: '2026-09-26' },
+        { kind: 'income_tax', label: 'Income tax 001', balance: 20_100.5, balanceDate: '2026-10-01' },
+        { kind: 'super_guarantee', label: 'Superannuation guarantee employer 005', balance: 50_000, balanceDate: '2026-09-22' },
+        { kind: 'income_tax', label: 'Income tax 002', balance: -500, balanceDate: '2026-10-01' },
+      ],
+      'activity statement 002',
+    )
+    expect(rows).toEqual([
+      { label: 'ATO: Activity statement 001, at 26 Sep 2026', amount: 3_000 },
+      { label: 'ATO: Income tax 001, at 1 Oct 2026', amount: 20_100.5 },
+      { label: 'ATO: Superannuation guarantee employer 005, at 22 Sep 2026', amount: 50_000 },
+    ])
+    expect(rows.every((r) => r.label.length <= CREDITOR_LABEL_MAX)).toBe(true)
+  })
+})
+

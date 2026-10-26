@@ -20,6 +20,7 @@ import { PER_PAGE_OPTIONS, pageRangeLabel, type PerPage } from '@/lib/leads/pagi
 import { ALL_VIEWS, LEAD_VIEWS, type LeadView } from '@/lib/leads/constants'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/types/leads'
+import type { LeadNote } from '@/lib/leads/notes'
 
 const SEARCH_DEBOUNCE_MS = 250
 
@@ -44,6 +45,8 @@ interface LeadsPageClientProps {
   sources?: string[]
   /** Leads per tab, with the other filters applied. No tabs without them. */
   counts?: Record<LeadView, number>
+  /** Each lead's notes, newest first, on the tabs with a notes column (NOTES_VIEWS). */
+  notes?: Record<string, LeadNote[]>
 }
 
 /**
@@ -69,6 +72,7 @@ export function LeadsPageClient({
   view,
   sources = [],
   counts,
+  notes,
 }: LeadsPageClientProps) {
   const screen = view ? LEAD_VIEWS[view] : null
   const router = useRouter()
@@ -350,6 +354,7 @@ export function LeadsPageClient({
             onToggleLead={toggleLead}
             onToggleAll={toggleAll}
             onRequestDelete={setDeleteTarget}
+            notes={notes}
           />
 
           <Pagination
