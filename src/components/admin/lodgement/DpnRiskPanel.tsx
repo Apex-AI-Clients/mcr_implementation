@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ShieldAlert, ChevronDown, ChevronUp, Wallet, X, FileDown, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import type { AmountSource, SourceLink } from '@/lib/sources'
 import type { DpnRiskBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 
@@ -12,6 +14,22 @@ const AUD = new Intl.NumberFormat('en-AU', {
   currency: 'AUD',
   maximumFractionDigits: 0,
 })
+
+/** Where the DPN figures are: the notices' own page, or the activity statement's rows. */
+const noticesLink = (clientId?: string): SourceLink | null =>
+  clientId ? { kind: 'href', href: `/clients/${clientId}/director-penalty-notices`, label: 'Open the director penalty notices' } : null
+const ROWS_LINK: SourceLink = { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' }
+
+export function noticesSource(what: string, column: string, notices: DpnNoticeFigures, clientId?: string, calculation?: string): AmountSource {
+  return {
+    from: [
+      what,
+      `The ATO's director penalty notices on file: ${notices.notices} current, latest issued ${formatDay(notices.issuedOn)}. The notices' column "${column}", added up across notice types, each period once.`,
+    ],
+    calculation: calculation ?? null,
+    link: noticesLink(clientId),
+  }
+}
 
 function formatAud(value: number): string {
   return AUD.format(value)
@@ -75,15 +93,16 @@ function netBgClass(net: number): string {
 interface TileProps {
   label: string
   value: number
+  source: AmountSource
   colorClass?: string
   bgClass?: string
 }
 
-function MetricTile({ label, value, colorClass, bgClass }: TileProps) {
+function MetricTile({ label, value, source, colorClass, bgClass }: TileProps) {
   return (
     <div className={cn('rounded-lg border p-4 text-center', bgClass ?? 'bg-surface/50 border-border/40')}>
       <p className={cn('text-2xl font-bold tabular-nums', colorClass ?? 'text-foreground')}>
-        {formatAud(value)}
+        <SourcedAmount value={value} format={formatAud} source={source} />
       </p>
       <p className="mt-1 text-xs text-foreground/50">{label}</p>
     </div>
@@ -104,18 +123,34 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
         <MetricTile
           label="Gross debt lodged >90 days late"
           value={dpnRisk.totalGrossLate}
+          source={{
+            from: ['Gross debt lodged more than 90 days late (an estimate, not the ATO’s notice)', `${dpnRisk.contributingDebits.length} original activity statement rows lodged more than 90 days past their due date, as printed in the ATO account CSV.`],
+            calculation: dpnRisk.contributingDebits.length ? `${dpnRisk.contributingDebits.map((r) => formatAud(r.debit)).join(' + ')} = ${formatAud(dpnRisk.totalGrossLate)}` : null,
+            link: ROWS_LINK,
+          }}
           colorClass="text-foreground/80"
           bgClass="bg-surface/50 border-border/40"
         />
         <MetricTile
           label="Reduced by later amendments"
           value={dpnRisk.totalReducedByAmendments}
+          source={{
+            from: ['Reduced by later amendments', 'Credits from amended activity statements for the SAME periods as the late lodgements, in the ATO account CSV.'],
+            rule: 'An amendment reduces only the debt for its own period.',
+            link: ROWS_LINK,
+          }}
           colorClass="text-foreground/80"
           bgClass="bg-surface/50 border-border/40"
         />
         <MetricTile
           label="Estimated still owing"
           value={dpnRisk.totalNetAtRisk}
+          source={{
+            from: ['Estimated still owing on the late lodgements'],
+            calculation: `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} = ${formatAud(dpnRisk.totalNetAtRisk)}`,
+            rule: 'Payments are not counted: the ATO decides which debt each payment goes to, and the account does not say.',
+            link: ROWS_LINK,
+          }}
           colorClass={netColorClass(dpnRisk.totalNetAtRisk)}
           bgClass={`border ${netBgClass(dpnRisk.totalNetAtRisk)}`}
         />
@@ -163,9 +198,33 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
                       >
                         {r.daysLate}
                       </td>
-                      <td className="py-1.5 pr-4 text-right text-foreground/70">{r.debit > 0 ? formatAud(r.debit) : '—'}</td>
                       <td className="py-1.5 pr-4 text-right text-foreground/70">
-                        {r.reducedByAmendments > 0 ? formatAud(r.reducedByAmendments) : '—'}
+                        {r.debit > 0 ? (
+                          <SourcedAmount
+                            value={r.debit}
+                            format={formatAud}
+                            source={{
+                              from: [`Lodged for the period ending ${formatIso(r.periodEnding)}`, `The ATO account row processed ${formatIso(r.processedDate)}: ${formatAud(r.debit)} debit, ${r.daysLate} days past the due date.`],
+                              link: ROWS_LINK,
+                            }}
+                          />
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-4 text-right text-foreground/70">
+                        {r.reducedByAmendments > 0 ? (
+                          <SourcedAmount
+                            value={r.reducedByAmendments}
+                            format={formatAud}
+                            source={{
+                              from: [`Later amendments for the period ending ${formatIso(r.periodEnding)}`, 'Credits from amended activity statements for this period, in the ATO account CSV.'],
+                              link: ROWS_LINK,
+                            }}
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td
                         className={cn('py-1.5 text-right font-semibold', {
@@ -173,7 +232,15 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
                           'text-success': r.netAtRisk === 0,
                         })}
                       >
-                        {formatAud(r.netAtRisk)}
+                        <SourcedAmount
+                          value={r.netAtRisk}
+                          format={formatAud}
+                          source={{
+                            from: [`Estimated still owing for the period ending ${formatIso(r.periodEnding)}`],
+                            calculation: `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} = ${formatAud(r.netAtRisk)}`,
+                            link: ROWS_LINK,
+                          }}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -193,16 +260,24 @@ function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientI
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-3">
-        <MetricTile label="Unpaid" value={notices.unpaid} colorClass="text-foreground/80" bgClass="bg-surface/50 border-border/40" />
+        <MetricTile
+          label="Unpaid"
+          value={notices.unpaid}
+          source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, clientId)}
+          colorClass="text-foreground/80"
+          bgClass="bg-surface/50 border-border/40"
+        />
         <MetricTile
           label={removableLabel(notices.deadline)}
           value={notices.removable}
+          source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, clientId)}
           colorClass="text-warning"
           bgClass="bg-warning/10 border-warning/20"
         />
         <MetricTile
           label={STAYS_LABEL}
           value={notices.staysWithDirector}
+          source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, clientId)}
           colorClass={notices.staysWithDirector > 0 ? 'text-destructive' : 'text-success'}
           bgClass={
             notices.staysWithDirector > 0 ? 'bg-destructive/10 border-destructive/20' : 'bg-success/10 border-success/20'
@@ -241,9 +316,15 @@ function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientI
               {notices.byType.map((t) => (
                 <tr key={t.type} className="border-b border-border/40 last:border-0">
                   <td className="py-1.5 pr-4 text-foreground/70">{t.label}</td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">{formatAud(t.unpaid)}</td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">{formatAud(t.removable)}</td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">{formatAud(t.staysWithDirector)}</td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
+                    <SourcedAmount value={t.unpaid} format={formatAud} source={noticesSource(`${t.label}: unpaid`, 'Unpaid amount', notices, clientId)} />
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
+                    <SourcedAmount value={t.removable} format={formatAud} source={noticesSource(`${t.label}: removed if acted on by ${formatDay(t.deadline)}`, 'Removed if acted on by the deadline', notices, clientId)} />
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
+                    <SourcedAmount value={t.staysWithDirector} format={formatAud} source={noticesSource(`${t.label}: ${STAYS_LABEL.toLowerCase()}`, STAYS_LABEL, notices, clientId)} />
+                  </td>
                   <td className="py-1.5 text-right whitespace-nowrap text-foreground/70">{formatDay(t.deadline)}</td>
                 </tr>
               ))}
@@ -480,13 +561,19 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
         const countLabel = `${cashPayments.length} payment${cashPayments.length !== 1 ? 's' : ''}`
         const periodLabel = sameMonth ? `in ${firstMonth}` : `from ${firstMonth} to ${lastMonth}`
 
+        const paymentsSource: AmountSource = {
+          from: ['Payments received', `${countLabel} on the activity statement account, ${periodLabel}: its "Payment received" rows (allocation rows not counted twice).`],
+          calculation: `${cashPayments.map((r) => formatAud(r.credit ?? 0)).join(' + ')} = ${formatAud(totalReceived)}`,
+          link: ROWS_LINK,
+        }
         return (
-          <button
-            type="button"
-            onClick={() => setShowPaymentsModal(true)}
-            className="flex w-full items-center justify-between gap-4 rounded-lg border border-success/20 bg-success/5 p-4 text-left hover:bg-success/10 transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
+          // A row, not a button: the amount's ⓘ is a button of its own.
+          <div className="flex w-full items-center justify-between gap-4 rounded-lg border border-success/20 bg-success/5 p-4 text-left">
+            <button
+              type="button"
+              onClick={() => setShowPaymentsModal(true)}
+              className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+            >
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-success/15">
                 <Wallet className="h-4 w-4 text-success" />
               </div>
@@ -496,9 +583,11 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
                   {countLabel} {periodLabel} · click for breakdown
                 </p>
               </div>
-            </div>
-            <p className="text-2xl font-bold tabular-nums text-success">{formatAud(totalReceived)}</p>
-          </button>
+            </button>
+            <p className="text-2xl font-bold tabular-nums text-success">
+              <SourcedAmount value={totalReceived} format={formatAud} source={paymentsSource} />
+            </p>
+          </div>
         )
       })()}
 
@@ -547,7 +636,8 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
 
             {/* Scrollable list */}
             <div className="min-h-0 flex-1 overflow-y-auto px-5">
-              <table className="w-full text-xs">
+              {/* The ATO's payment rows as printed: the source of the total. */}
+              <table className="w-full text-xs" data-source-rows="">
                 <thead className="sticky top-0 bg-surface z-10">
                   <tr className="border-b border-border text-left text-foreground/40">
                     <th className="pb-2 pr-4 font-medium">Date</th>
@@ -573,7 +663,13 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
             <div className="shrink-0 border-t-2 border-border bg-surface px-5 py-3">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-sm font-semibold text-foreground">Total Received</span>
-                <span className="text-base font-bold text-success tabular-nums">{formatAud(totalReceived)}</span>
+                <span className="text-base font-bold text-success tabular-nums">
+                  <SourcedAmount
+                    value={totalReceived}
+                    format={formatAud}
+                    source={{ from: ['Total received', 'The payment rows listed above, as printed in the ATO account CSV.'], calculation: `${cashPayments.length} payments = ${formatAud(totalReceived)}` }}
+                  />
+                </span>
               </div>
             </div>
           </div>

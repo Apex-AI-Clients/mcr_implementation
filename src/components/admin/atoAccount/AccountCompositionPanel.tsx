@@ -6,6 +6,23 @@ import { cn } from '@/lib/utils'
 import { RowsTable, UncountedTable } from '@/components/admin/lodgement/DebtCompositionPanel'
 import type { AccountComposition, AccountCompositionLine } from '@/lib/analysis/atoAccount/engine'
 import { drCr } from '@/components/admin/AtoAccountsPanel'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import type { AmountSource } from '@/lib/sources'
+
+/** A composition line's source: what it is (its sentence) and the ATO rows behind it. */
+export function lineSource(line: AccountCompositionLine, account: string): AmountSource {
+  const rows = line.rows.length
+  return {
+    from: [
+      line.label,
+      rows > 0
+        ? `${account}: ${rows === 1 ? '1 row' : `${rows} rows`} of the ATO account, as printed in its CSV.`
+        : `${account}: worked out from the lines above.`,
+    ],
+    calculation: line.explanation || null,
+    link: { kind: 'href', href: '#account-composition', label: 'Show the ATO rows' },
+  }
+}
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 
@@ -14,14 +31,14 @@ const REDUCES = new Set(['payments', 'otherCredits'])
 /** Lines that are sums of the lines above them, and the ATO's own balance. */
 const STRONG = new Set(['totalDebt', 'composed', 'atoBalance'])
 
-function display(line: AccountCompositionLine): string {
-  if (REDUCES.has(line.key)) return line.amount === 0 ? AUD.format(0) : `(${AUD.format(line.amount)})`
-  if (line.key === 'unexplained') return `${line.amount < 0 ? '−' : line.amount > 0 ? '+' : ''}${AUD.format(Math.abs(line.amount))}`
-  if (line.key === 'atoBalance' || line.key === 'opening') return drCr(line.amount)
-  return AUD.format(line.amount)
+function display(line: AccountCompositionLine): (n: number) => string {
+  if (REDUCES.has(line.key)) return (n) => (n === 0 ? AUD.format(0) : `(${AUD.format(n)})`)
+  if (line.key === 'unexplained') return (n) => `${n < 0 ? '−' : n > 0 ? '+' : ''}${AUD.format(Math.abs(n))}`
+  if (line.key === 'atoBalance' || line.key === 'opening') return drCr
+  return (n) => AUD.format(n)
 }
 
-function LineRow({ line, uncounted }: { line: AccountCompositionLine; uncounted: AccountComposition['uncounted'] }) {
+function LineRow({ line, uncounted, account }: { line: AccountCompositionLine; uncounted: AccountComposition['uncounted']; account: string }) {
   const [open, setOpen] = useState(false)
   const strong = STRONG.has(line.key)
   const id = `account-composition-${line.key}`
@@ -57,7 +74,7 @@ function LineRow({ line, uncounted }: { line: AccountCompositionLine; uncounted:
             line.key === 'atoBalance' ? (line.amount > 0 ? 'text-warning' : 'text-success') : REDUCES.has(line.key) ? 'text-success' : 'text-foreground/80',
           )}
         >
-          {display(line)}
+          <SourcedAmount value={line.amount} format={display(line)} source={lineSource(line, account)} />
         </span>
       </div>
       {/* The sentence and the rows not counted are in the PDF; the row lists are screen only. */}
@@ -84,18 +101,18 @@ function LineRow({ line, uncounted }: { line: AccountCompositionLine; uncounted:
  * behind it, and the unexplained difference to the rows no line counts. The
  * ATO's own balance closes the table.
  */
-export function AccountCompositionPanel({ composition }: { composition: AccountComposition }) {
+export function AccountCompositionPanel({ composition, account }: { composition: AccountComposition; account: string }) {
   const lines = [
     ...composition.lines.filter((l) => l.key !== 'atoBalance'),
     ...composition.lines.filter((l) => l.key === 'atoBalance'),
   ]
   return (
-    <div className="space-y-3">
+    <div id="account-composition" className="scroll-mt-4 space-y-3">
       <h3 className="text-sm font-semibold text-foreground">Debt composition</h3>
       <p className="no-print text-xs text-foreground/40">Open a line to see what it is and the ATO rows behind it.</p>
       <ul className="overflow-x-auto rounded-lg border border-border bg-surface/50">
         {lines.map((line) => (
-          <LineRow key={line.key} line={line} uncounted={composition.uncounted} />
+          <LineRow key={line.key} line={line} uncounted={composition.uncounted} account={account} />
         ))}
       </ul>
     </div>

@@ -9,6 +9,7 @@ import { uploadClientDocument } from '@/lib/storage/browserUpload'
 import { CheckCircle2, XCircle, Download, Trash2, X, Upload } from 'lucide-react'
 import { CompareFinancialsButton } from '@/components/admin/CompareFinancialsButton'
 import { LodgementAnalysisButton } from '@/components/admin/LodgementAnalysisButton'
+import { AtoAccountButtons, type AtoAccountLink } from '@/components/admin/AtoAccountButtons'
 import { DpnPanel } from '@/components/admin/dpn/DpnPanel'
 import { AtoFileNotes } from '@/components/admin/AtoFileNotes'
 import type { DpnPanelData } from '@/lib/dpn/view'
@@ -24,6 +25,8 @@ interface DocumentStatusGridProps {
   readOnly?: boolean
   /** The director penalty notices card's notices and "none issued" tick. */
   dpn?: DpnPanelData
+  /** The analysed ATO accounts, for the income tax and super guarantee slots' buttons. */
+  atoAccounts?: AtoAccountLink[]
 }
 
 export function DocumentStatusGrid({
@@ -32,6 +35,7 @@ export function DocumentStatusGrid({
   onDocumentDeleted,
   readOnly = false,
   dpn,
+  atoAccounts = [],
 }: DocumentStatusGridProps) {
   const router = useRouter()
   const refresh = onDocumentDeleted ?? (() => router.refresh())
@@ -111,6 +115,13 @@ export function DocumentStatusGrid({
 
             {category === 'integrated_client_account' && clientId && !readOnly && (
               <LodgementAnalysisButton clientId={clientId} />
+            )}
+
+            {category === 'ato_income_tax_account' && clientId && (
+              <AtoAccountButtons clientId={clientId} kind="income_tax" accounts={atoAccounts} hasFiles={received} />
+            )}
+            {category === 'ato_super_guarantee_account' && clientId && (
+              <AtoAccountButtons clientId={clientId} kind="super_guarantee" accounts={atoAccounts} hasFiles={received} />
             )}
           </div>
         )

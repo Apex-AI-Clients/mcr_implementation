@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { creditorDebt, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { creditorDebt, daysSinceLastPayment, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
+import { suggestMapping } from '@/lib/printed/dictionary'
+import { predictionFinancials, type MappingEntry } from '@/lib/printed/mapping'
+import { MEANINGS } from '@/lib/printed/meanings'
+import { directorLoanInput } from '@/lib/sbr/directorLoan'
+import { LATE_LODGEMENT_SCOPE } from '@/lib/analysis/config'
 import { computeLateLodgement, reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import type { LateLodgementScope } from '@/lib/analysis/config'
 import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
@@ -36,6 +42,20 @@ export interface Snapshot {
   icaRows?: IcaRow[] | null
   /** Director penalty notices: the documents and the stored notices. */
   dpn?: { documents: { id: string; originalFilename: string }[]; noticeRows: NoticeRow[] }
+  /** What the SBR prediction's inputs are worked out from (printed/mapping.ts, sbr/directorLoan.ts). */
+  prediction?: PredictionSnapshot
+}
+
+export interface PredictionSnapshot {
+  /** The financial statement PDFs as read (the stored read, or read in memory by the snapshot). */
+  documents: ComparisonDocument[]
+  /** The line mapping staff confirmed; empty when none is. */
+  mapping: MappingEntry[]
+  directors: string[]
+  /** The DPN answer from the client file: notices on file (Yes), "none issued" (No), else null. */
+  dpnOnFile: boolean | null
+  /** Staff's own answer, saved with the last prediction (used when nothing is on file). */
+  savedDpn: boolean | null
 }
 
 /** What the prediction page would use as the ATO debt from the ATO account (the balance sheet lines need the confirmed mapping). */
@@ -218,4 +238,121 @@ export function atoAccountFigures(a: AtoAccountAnalysis): LodgementFigures {
     }
   }
   return f
+}
+
+// ── The SBR prediction's inputs ──────────────────────────────────────────────
+
+/**
+ * Every input the prediction route works out, from the snapshot with the
+ * CURRENT code: the director loan (gross; or "not identified"), the tick it
+ * implies, the ATO debt and its source, the lodgement counts, days since the
+ * last payment and the DPN answer. With no confirmed mapping, the suggested
+ * one is used and `mappingBasis` says so. Flat, for checking by hand and by
+ * `figures:check` ("prediction" key).
+ */
+export function predictionInputs(alias: string, snapshot: Snapshot | null): LodgementFigures | null {
+  const p = snapshot?.prediction ?? localPrediction(alias, snapshot)
+  if (!p) return null
+  const comparison = buildPrintedComparison(p.documents)
+  const suggested = suggestMapping(comparison, { directors: p.directors })
+  const mapping: MappingEntry[] = p.mapping.length
+    ? p.mapping
+    : MEANINGS.flatMap((m): MappingEntry[] =>
+        suggested[m.key].length
+          ? suggested[m.key].map((rowKey) => ({ meaning: m.key, rowKey, label: null, nonePrinted: false, confirmedBy: 'suggested', confirmedAt: '' }))
+          : [{ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: 'suggested', confirmedAt: '' }],
+      )
+  const f = predictionFinancials(comparison, mapping, { directors: p.directors })
+  const loan = directorLoanInput(f)
+  const debt = creditorDebt({
+    icaRows: snapshot?.icaRows ?? null,
+    mappedAto: f.atoDebt ? { amount: f.atoDebt.amount, lines: f.atoDebt.lines.map((l) => l.label) } : null,
+    balanceSheetDate: f.balanceSheet?.column.periodEnd ?? null,
+    balanceSheetLabel: f.balanceSheet?.label ?? null,
+  })
+  const lodgement = snapshot || existsSync(path.join(DIR, `${alias}.ica.csv`)) ? analyseLodgements(alias, snapshot, LATE_LODGEMENT_SCOPE) : null
+  const dpn = p.dpnOnFile ?? p.savedDpn ?? false
+  return {
+    mappingBasis: p.mapping.length ? 'confirmed' : 'suggested',
+    balanceSheet: f.balanceSheet?.label ?? null,
+    directorLoanReceivableAmount: loan.notIdentified ? 'not identified' : loan.amount,
+    directorLoanAtAppointment: loan.notIdentified ? 'not identified' : loan.amount > 0 ? 'yes' : 'no',
+    directorLoanPayable: loan.notIdentified ? null : loan.payable,
+    directorLoanNet: loan.notIdentified ? null : loan.net,
+    atoDebt: debt.amount,
+    atoDebtSource: debt.source,
+    atoDebtAsOf: debt.asOf,
+    numberOfLateLodgements: lodgement?.summary.numberOfLateLodgements ?? null,
+    cumulativeDaysLate: lodgement?.summary.cumulativeDaysLate ?? null,
+    daysSinceLastPayment: snapshot?.icaRows ? daysSinceLastPayment(snapshot.icaRows) : null,
+    dpn: dpn ? 'yes' : 'no',
+  }
+}
+
+/** The verified statements of a client kept only locally (deleted from the database): verified-figures/printed/<alias>. */
+export function printedAliases(): string[] {
+  const dir = path.join(DIR, 'printed')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter((a) => readdirSync(path.join(dir, a)).some((f) => f.endsWith('.expected.json')))
+}
+
+/**
+ * A client with no database snapshot: its statements from the verified
+ * printed files (as printed, checked by hand), no confirmed mapping (so the
+ * suggested one), and the notices in its old snapshot, if any.
+ */
+function localPrediction(alias: string, snapshot: Snapshot | null): PredictionSnapshot | null {
+  const dir = path.join(DIR, 'printed', alias)
+  if (!existsSync(dir)) return null
+  const documents: ComparisonDocument[] = readdirSync(dir)
+    .filter((f) => f.endsWith('.expected.json'))
+    .map((f) => {
+      const e = JSON.parse(readFileSync(path.join(dir, f), 'utf8')) as { documentId: string; statements: unknown[] }
+      return { documentId: e.documentId, filename: f, uploadedAt: '', read: { status: 'read' as const, pageCount: 1, issues: [], statements: e.statements as never } }
+    })
+  if (documents.length === 0) return null
+  const notices = snapshot?.dpn?.noticeRows.length ?? 0
+  return { documents, mapping: [], directors: [], dpnOnFile: notices > 0 ? true : null, savedDpn: null }
+}
+
+// ── Figures as printed, and what the mapping makes of them ─────────────────────
+
+/**
+ * `printedFigures` in an expected file: printed lines by their label in one
+ * comparison column ("current", "FY2026"), and what the confirmed mapping
+ * makes of that column — the loan accounts (with the sign rule) and the
+ * ATO-related debt. Worked out with the CURRENT reader, comparison and mapping.
+ */
+export interface PrintedFiguresSpec {
+  column: string
+  lines: Record<string, number>
+  derived?: Partial<Record<'loanReceivable' | 'loanPayable' | 'atoRelated', number>>
+}
+
+export function comparePrintedFigures(snapshot: Snapshot | null, alias: string, spec: PrintedFiguresSpec): string[] {
+  const p = snapshot?.prediction ?? localPrediction(alias, snapshot)
+  if (!p) return ['printed  no statements for this client']
+  const comparison = buildPrintedComparison(p.documents)
+  const index = comparison.columns.findIndex((c) => c.key === spec.column)
+  if (index < 0) return [`printed  no "${spec.column}" column (columns: ${comparison.columns.map((c) => c.key).join(', ')})`]
+  const rows = comparison.tables.flatMap((t) => t.rows)
+  const differences: string[] = []
+  const check = (key: string, want: number, got: number | null | undefined) => {
+    if (typeof got !== 'number' || Math.abs(got - want) >= 0.005) differences.push(`printed  ${key}: verified ${want}, now ${got ?? 'missing'}`)
+  }
+  for (const [label, want] of Object.entries(spec.lines)) {
+    // Rows merge across years: the label may carry another year's capitals.
+    const matches = rows.filter((r) => r.label.trim().toLowerCase() === label.toLowerCase() && r.cells[index].printed)
+    if (matches.length !== 1) differences.push(`printed  "${label}": ${matches.length} printed lines with that label in ${spec.column}`)
+    else check(`"${label}"`, want, matches[0].cells[index].value as number | null)
+  }
+  if (spec.derived) {
+    // The prediction reads the latest balance sheet: the derived figures are that column's.
+    const f = predictionFinancials(comparison, p.mapping, { directors: p.directors })
+    if (f.balanceSheet?.column.key !== spec.column) differences.push(`printed  derived figures are for ${f.balanceSheet?.column.key ?? 'no column'}, not ${spec.column}`)
+    if (spec.derived.loanReceivable !== undefined) check('loan owed to the company', spec.derived.loanReceivable, f.loanReceivable?.amount)
+    if (spec.derived.loanPayable !== undefined) check('loan owed by the company', spec.derived.loanPayable, f.loanPayable?.amount)
+    if (spec.derived.atoRelated !== undefined) check('ATO-related debt (mapped lines)', spec.derived.atoRelated, f.atoDebt?.amount)
+  }
+  return differences
 }

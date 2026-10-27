@@ -302,6 +302,24 @@ function repeatedLines(pages: PdfLine[][]): Set<string> {
   return new Set([...bottoms].filter(([, n]) => n >= 2).map(([text]) => text))
 }
 
+/**
+ * A page that carries two statements — a balance sheet starting halfway down
+ * the profit and loss page — is read as two parts, split at the second
+ * statement's title (old reader classifyPages secondStatement). The second
+ * title is a line of its own, of the other kind, below the first.
+ */
+export function splitAtSecondTitle(lines: PdfLine[], previousKind: PrintedStatementKind | null): PdfLine[][] {
+  const first = findTitle(lines)
+  const firstKind = first?.kind ?? previousKind
+  if (!firstKind) return [lines]
+  for (let j = (first?.index ?? 0) + 1; j < lines.length; j++) {
+    if (lines[j].cells.length !== 1) continue
+    const kind = statementKind(lines[j].text)
+    if (kind && kind !== firstKind) return [lines.slice(0, j), lines.slice(j)]
+  }
+  return [lines]
+}
+
 export function readStatements(pages: PdfLine[][]): PrintedRead {
   const issues: ReadIssue[] = []
   if (pages.every((lines) => lines.length === 0)) {
@@ -311,9 +329,11 @@ export function readStatements(pages: PdfLine[][]): PrintedRead {
   const reads: PageRead[] = []
   let previous: PageRead | null = null
   pages.forEach((lines, i) => {
-    const read = readPage(i + 1, lines, issues, repeated, previous)
-    if (read) reads.push(read)
-    previous = read
+    for (const part of splitAtSecondTitle(lines, previous?.page === i ? previous.kind : null)) {
+      const read = readPage(i + 1, part, issues, repeated, previous)
+      if (read) reads.push(read)
+      previous = read
+    }
   })
 
   // Consecutive pages with the same title are one statement.

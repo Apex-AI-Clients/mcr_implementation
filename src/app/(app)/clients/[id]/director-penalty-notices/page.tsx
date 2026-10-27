@@ -21,6 +21,31 @@ import {
   type SummaryNotice,
 } from '@/lib/dpn/summary'
 import type { DpnAmounts } from '@/lib/dpn/types'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import type { AmountSource } from '@/lib/sources'
+
+/** A figure printed on one notice: its PDF, and the column it is in. */
+function noticeSource(n: SummaryNotice, column: string, cents: number): AmountSource {
+  return {
+    from: [
+      `${column}: ${formatCents(cents)}`,
+      `${typeLabel(n.type)} director penalty notice to ${n.directorName}, issued ${formatIsoDate(n.issuedOn)}${n.reference ? `, reference ${n.reference}` : ''} — ${n.filename}.`,
+      n.source === 'manual' ? 'Entered by staff from the notice.' : 'Read from the notice: the total of its column, every period on it.',
+    ],
+    link: { kind: 'pdf', documentId: n.documentId, page: 1, label: 'Open the notice' },
+  }
+}
+
+/** A total over notices: which notices, and the sum. */
+function totalSource(what: string, notices: SummaryNotice[], key: keyof DpnAmounts, total: number, rule: string): AmountSource {
+  return {
+    from: [what, ...notices.map((n) => `${typeLabel(n.type)} notice issued ${formatIsoDate(n.issuedOn)} (${n.filename}): ${formatCents(n.totals[key])}`)],
+    rule,
+    calculation: `= ${formatCents(total)}`,
+  }
+}
+
+const EACH_PERIOD_ONCE = 'Each period counted once: a period on two notices (one per director, or a newer notice) is added once.'
 
 export const dynamic = 'force-dynamic'
 
@@ -125,6 +150,8 @@ function SectionTitle({ id, children }: { id: string; children: React.ReactNode 
 
 /** What the company owes, by type, each period counted once. */
 function CompanyTotals({ summary }: { summary: DpnSummary }) {
+  const current = summary.notices.filter((n) => n.standing === 'current')
+  const of = (type: string) => current.filter((n) => n.type === type)
   return (
     <section aria-labelledby="dpn-company-heading">
       <SectionTitle id="dpn-company-heading">What the company owes, by type</SectionTitle>
@@ -140,10 +167,10 @@ function CompanyTotals({ summary }: { summary: DpnSummary }) {
                 </span>
               </div>
               <dl className="mt-3 space-y-2 text-sm">
-                <AmountLine label={labels.column3} value={t.totals.column3} strong />
-                <AmountLine label={labels.column4} value={t.totals.column4} />
-                <AmountLine label={labels.column5} value={t.totals.column5} />
-                <AmountLine label={labels.column2} value={t.totals.column2} muted />
+                <AmountLine label={labels.column3} value={t.totals.column3} strong source={totalSource(`${typeLabel(t.type)}: ${labels.column3}`, of(t.type), 'column3', t.totals.column3, EACH_PERIOD_ONCE)} />
+                <AmountLine label={labels.column4} value={t.totals.column4} source={totalSource(`${typeLabel(t.type)}: ${labels.column4}`, of(t.type), 'column4', t.totals.column4, EACH_PERIOD_ONCE)} />
+                <AmountLine label={labels.column5} value={t.totals.column5} source={totalSource(`${typeLabel(t.type)}: ${labels.column5}`, of(t.type), 'column5', t.totals.column5, EACH_PERIOD_ONCE)} />
+                <AmountLine label={labels.column2} value={t.totals.column2} muted source={totalSource(`${typeLabel(t.type)}: ${labels.column2}`, of(t.type), 'column2', t.totals.column2, EACH_PERIOD_ONCE)} />
               </dl>
             </div>
           )
@@ -151,21 +178,33 @@ function CompanyTotals({ summary }: { summary: DpnSummary }) {
       </div>
       {summary.companyByType.length > 1 && (
         <p className="mt-3 text-sm text-foreground/80">
-          All types: <span className="font-semibold tabular-nums">{formatCents(summary.company.column3)}</span> unpaid
+          All types:{' '}
+          <span className="font-semibold tabular-nums">
+            <SourcedAmount
+              value={summary.company.column3 / 100}
+              text={formatCents(summary.company.column3)}
+              source={{
+                from: ['Unpaid, all types'],
+                calculation: `${summary.companyByType.map((t) => `${typeLabel(t.type)} ${formatCents(t.totals.column3)}`).join(' + ')} = ${formatCents(summary.company.column3)}`,
+                rule: EACH_PERIOD_ONCE,
+              }}
+            />
+          </span>{' '}
+          unpaid
         </p>
       )}
     </section>
   )
 }
 
-function AmountLine({ label, value, strong, muted }: { label: string; value: number; strong?: boolean; muted?: boolean }) {
+function AmountLine({ label, value, strong, muted, source }: { label: string; value: number; strong?: boolean; muted?: boolean; source: AmountSource }) {
   return (
     <div className="flex items-start justify-between gap-4">
       <dt className={muted ? 'text-foreground/50' : 'text-foreground/70'}>{label}</dt>
       <dd
         className={`shrink-0 tabular-nums ${strong ? 'text-base font-semibold text-foreground' : muted ? 'text-foreground/50' : 'text-foreground'}`}
       >
-        {formatCents(value)}
+        <SourcedAmount value={value / 100} text={formatCents(value)} source={source} />
       </dd>
     </div>
   )
@@ -229,7 +268,7 @@ function NoticesTable({ notices }: { notices: SummaryNotice[] }) {
                   <td className="px-3 py-2 tabular-nums text-foreground/60">{n.reference ?? '—'}</td>
                   {AMOUNT_KEYS.map((key) => (
                     <td key={key} className={`px-3 py-2 text-right tabular-nums ${key === 'column3' ? 'font-medium' : ''}`}>
-                      {formatCents(n.totals[key])}
+                      <SourcedAmount value={n.totals[key] / 100} text={formatCents(n.totals[key])} source={noticeSource(n, headings[key], n.totals[key])} />
                     </td>
                   ))}
                   <td className="px-3 py-2">
@@ -257,6 +296,8 @@ function NoticesTable({ notices }: { notices: SummaryNotice[] }) {
 }
 
 function DirectorTotals({ summary }: { summary: DpnSummary }) {
+  const current = summary.notices.filter((n) => n.standing === 'current')
+  const theirs = (director: string, type?: string) => current.filter((n) => n.directorName === director && (!type || n.type === type))
   const headings = amountHeadings(summary.directors.flatMap((d) => d.byType.map((t) => t.type)))
   return (
     <section aria-labelledby="dpn-directors-heading">
@@ -282,7 +323,11 @@ function DirectorTotals({ summary }: { summary: DpnSummary }) {
                   <td className="px-3 py-2">{typeLabel(t.type)}</td>
                   {AMOUNT_KEYS.map((key) => (
                     <td key={key} className="px-3 py-2 text-right tabular-nums">
-                      {formatCents(t.totals[key])}
+                      <SourcedAmount
+                        value={t.totals[key] / 100}
+                        text={formatCents(t.totals[key])}
+                        source={totalSource(`${d.directorName}, ${typeLabel(t.type)}: ${headings[key]}`, theirs(d.directorName, t.type), key, t.totals[key], 'Their own current notices, each period once.')}
+                      />
                     </td>
                   ))}
                 </tr>
@@ -294,7 +339,11 @@ function DirectorTotals({ summary }: { summary: DpnSummary }) {
                       <td className="px-3 py-2">All types</td>
                       {AMOUNT_KEYS.map((key) => (
                         <td key={key} className="px-3 py-2 text-right tabular-nums">
-                          {formatCents(d.overall[key])}
+                          <SourcedAmount
+                            value={d.overall[key] / 100}
+                            text={formatCents(d.overall[key])}
+                            source={totalSource(`${d.directorName}, all types: ${headings[key]}`, theirs(d.directorName), key, d.overall[key], 'Their own current notices, each period once.')}
+                          />
                         </td>
                       ))}
                     </tr>,

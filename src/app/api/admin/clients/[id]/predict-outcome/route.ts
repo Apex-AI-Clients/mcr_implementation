@@ -21,10 +21,13 @@
  * The offer is sized on the creditor TOTAL: the ATO debt (creditorDebt.ts)
  * plus the other creditor rows staff entered.
  *
- * "Director loan at appointment" must agree with the receivable amount (No
- * with a loan owed to the company, or Yes with $0, is refused with 422
- * DIRECTOR_LOAN_MISMATCH) unless staff give a reason, which is saved with the
- * prediction in input_overrides (inputPrecedence.ts, migration 0037).
+ * "Director loan receivable amount" is the confirmed loan lines owed TO the
+ * company, gross (or net, one setting: sbr/directorLoan.ts). A loan or ATO
+ * line the statements print but nobody mapped is never a silent $0: 422
+ * INPUT_NOT_IDENTIFIED, with where to choose the line. "Director loan at
+ * appointment" follows the amount; when staff change it, who and when are
+ * saved with the prediction (input_overrides, migration 0037). Nothing is
+ * refused over the two disagreeing.
  *
  * The training set is the shared one (historicalCases.ts): excluded cases are
  * never used, and a client is never matched with its own past record — a case
@@ -58,7 +61,9 @@ import {
   type IcaRow,
 } from '@/lib/sbr/creditorDebt'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
+import { directorLoanInput, type DirectorLoanInput } from '@/lib/sbr/directorLoan'
+import { staffAuthorName } from '@/lib/auth/staff'
 import { predictionFinancials, type PredictionFinancials } from '@/lib/printed/mapping'
 import {
   CREDITOR_KINDS,
@@ -71,9 +76,8 @@ import {
   type SavedCreditors,
 } from '@/lib/sbr/creditors'
 import {
-  OVERRIDE_REASON_MAX,
   latest,
-  nextDirectorLoanOverride,
+  recordDirectorLoanChange,
   readDirectorLoanOverride,
   type DirectorLoanOverride,
 } from '@/lib/sbr/inputPrecedence'
@@ -116,8 +120,8 @@ const BodySchema = z.object({
   dpn: z.boolean().optional(),
   paymentPlanType: z.enum(['plan', 'upfront']),
   directorLoanAtAppointment: z.boolean(),
-  /** Why staff keep a flag the receivable amount contradicts. Required then; ignored otherwise. */
-  directorLoanOverrideReason: z.string().max(OVERRIDE_REASON_MAX * 2).optional(),
+  /** Sent by pages from before 26 Oct 2026; no longer asked for, ignored. */
+  directorLoanOverrideReason: z.string().max(1000).optional(),
   // REMOVED in v2: the director-loan-sent-to-ATO flag
   /** The practitioner fee for this client, e.g. 0.1; default fees.ts. */
   practitionerFeeRate: z.number().min(0).lt(MAX_PRACTITIONER_FEE_RATE).optional(),
@@ -136,13 +140,12 @@ interface AutoDetectedDirectorLoan {
  * Returned alongside the prediction so the UI can pre-fill the checkbox. The
  * operator can still override before clicking Generate.
  */
-function autoDetectDirectorLoanAtAppointment(financials: PredictionFinancials): AutoDetectedDirectorLoan {
-  const loan = financials.loanReceivable
-  if (!loan) return { detected: null, reasoning: null }
+function autoDetectDirectorLoanAtAppointment(financials: PredictionFinancials, loan: DirectorLoanInput): AutoDetectedDirectorLoan {
+  if (loan.notIdentified || !financials.loanReceivable) return { detected: null, reasoning: loan.notIdentified?.message ?? null }
   if (loan.amount > 0) {
     return {
       detected: true,
-      reasoning: `Loan owed to the company of $${Math.round(loan.amount).toLocaleString('en-AU')} on the ${loan.source}: ${loan.lines.map((l) => `“${l.label}”`).join(' + ')}.`,
+      reasoning: `Loan owed to the company of $${Math.round(loan.amount).toLocaleString('en-AU')} on the ${loan.source}: ${loan.receivableLines.map((l) => `“${l.label}”`).join(' + ')}.`,
     }
   }
   return { detected: false, reasoning: `No loan owed to the company on the ${loan.source}.` }
@@ -150,8 +153,10 @@ function autoDetectDirectorLoanAtAppointment(financials: PredictionFinancials): 
 
 interface MissingPrerequisite {
   field: string
-  blocker: 'lodgement_analyses' | 'financial_statements'
+  blocker: 'lodgement_analyses' | 'financial_statements' | 'line_mapping'
   actionUrl: string
+  /** What is missing, in a line ("Not found in the statements — choose the line."). */
+  message?: string
 }
 
 interface PredictResponse extends SbrPrediction {
@@ -169,8 +174,10 @@ interface PredictResponse extends SbrPrediction {
   autoDetectedDirectorLoan: AutoDetectedDirectorLoan
   /** The balance sheet the director loan inputs come from (ISO), for their labels. */
   directorLoanAsOf: string | null
-  /** Staff's reason for a flag the amount contradicts, when they gave one. */
+  /** Staff's change to the tick (who and when), when they made one. */
   directorLoanOverride: DirectorLoanOverride | null
+  /** The loan account figures: gross, payable, net, and the printed lines behind them. */
+  directorLoan: DirectorLoanInput
   /** Past cases left out because they are this client's own record. */
   selfMatchExcluded: number
 }
@@ -224,8 +231,13 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // The financial figures: the printed lines staff confirmed (the readiness
     // gate above has made sure they did), on the latest balance sheet.
-    const [{ comparison }, mapping] = await Promise.all([loadPrintedComparison(supabase, clientId), loadMapping(supabase, clientId)])
-    const financials = predictionFinancials(comparison, mapping)
+    const [{ comparison }, mapping, directors] = await Promise.all([
+      loadPrintedComparison(supabase, clientId),
+      loadMapping(supabase, clientId),
+      loadDirectorNames(supabase, clientId),
+    ])
+    const financials = predictionFinancials(comparison, mapping, { directors })
+    const loan = directorLoanInput(financials)
 
     const missing: MissingPrerequisite[] = []
     if (!lodgement) {
@@ -233,6 +245,15 @@ export async function POST(req: NextRequest, { params }: Params) {
         field: 'cumulativeDaysLate',
         blocker: 'lodgement_analyses',
         actionUrl: `/clients/${clientId}`,
+      })
+    }
+    // A loan line the statements print that nobody mapped: ask, never assume $0.
+    if (loan.notIdentified) {
+      missing.push({
+        field: 'directorLoanReceivableAmount',
+        blocker: 'line_mapping',
+        actionUrl: `/clients/${clientId}/financials-comparison/mapping`,
+        message: loan.notIdentified.message,
       })
     }
     if (missing.length > 0) {
@@ -258,9 +279,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const icaRows: IcaRow[] = ica.rows ?? (lodgement!.rows as unknown as IcaRow[])
     const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows)
 
-    // The loan account owed to the company: 0 when staff confirmed none is printed.
-    const directorLoanReceivableAmount = Math.max(0, financials.loanReceivable?.amount ?? 0)
-    const directorLoanAsOf = financials.loanReceivable?.asOf ?? null
+    // The loan account owed to the company (gross by default; directorLoan.ts).
+    const directorLoanReceivableAmount = loan.amount
+    const directorLoanAsOf = loan.asOf
 
     // What was saved last time: the override's original time and the ATO
     // debt staff typed are carried over unchanged when they are sent again.
@@ -271,17 +292,15 @@ export async function POST(req: NextRequest, { params }: Params) {
       .maybeSingle()
     const now = new Date().toISOString()
 
-    // The flag and the amount must agree, or come with a reason.
-    const loanOverride = nextDirectorLoanOverride({
-      value: body.directorLoanAtAppointment,
-      amount: directorLoanReceivableAmount,
-      asOf: directorLoanAsOf,
-      reason: body.directorLoanOverrideReason,
-      stored: readDirectorLoanOverride(stored?.input_overrides ?? null),
-      now,
-    })
-    if (loanOverride.error) {
-      return NextResponse.json({ error: loanOverride.error, code: 'DIRECTOR_LOAN_MISMATCH' }, { status: 422 })
+    // The tick follows the amount; a staff change is recorded, never refused.
+    const loanOverride = {
+      override: recordDirectorLoanChange({
+        value: body.directorLoanAtAppointment,
+        amount: directorLoanReceivableAmount,
+        stored: readDirectorLoanOverride(stored?.input_overrides ?? null),
+        by: staffAuthorName(admin),
+        now,
+      }),
     }
 
     // The creditor debt: staff's figure, else the integrated client account,
@@ -294,6 +313,23 @@ export async function POST(req: NextRequest, { params }: Params) {
       staffAmount: body.creditorAmount ?? null,
     })
     const atoDebt = debt.amount
+    // The ATO debt would come from the balance sheet, which prints an ATO line nobody mapped.
+    if (financials.notIdentified.atoDebt && debt.source !== 'ica' && debt.source !== 'staff') {
+      return NextResponse.json(
+        {
+          error: 'PREREQUISITES_MISSING',
+          missing: [
+            {
+              field: 'atoDebt',
+              blocker: 'line_mapping',
+              actionUrl: `/clients/${clientId}/financials-comparison/mapping`,
+              message: financials.notIdentified.atoDebt.message,
+            },
+          ],
+        },
+        { status: 422 },
+      )
+    }
     // No rows sent (an older page): none, rather than the defaults.
     const creditorRows = normaliseCreditorRows(body.creditors ?? [])
     const creditorAmount = creditorTotal(atoDebt, creditorRows)
@@ -314,7 +350,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // Auto-detect the director loan at appointment from the latest balance
     // sheet. The UI pre-fills the checkbox from this, but the operator's body
     // value is what actually drives the prediction (they can override).
-    const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(financials)
+    const autoDetectedDirectorLoan = autoDetectDirectorLoanAtAppointment(financials, loan)
 
     const inputFeatures: SbrPredictionInput = {
       dpn: readiness.dpn ?? body.dpn ?? false,
@@ -390,6 +426,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       autoDetectedDirectorLoan,
       directorLoanAsOf,
       directorLoanOverride: loanOverride.override,
+      directorLoan: loan,
       selfMatchExcluded,
     }
     return NextResponse.json(response)

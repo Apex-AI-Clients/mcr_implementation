@@ -91,7 +91,12 @@ describe('the confirmed mapping', () => {
     const ato = resolveMeaning(c, entries(c, { ato_debt: ['BAS Payable', 'PAYG Liability'] }), 'ato_debt')
     expect(ato.status).toBe('mapped')
     expect(ato.years.map((y) => y.value)).toEqual([15, 25])
-    expect(ato.years[1].lines).toEqual([{ label: 'BAS Payable', value: 20 }, { label: 'PAYG Liability', value: 5 }])
+    expect(ato.years[1].lines.map(({ label, value, printed, rule }) => ({ label, value, printed, rule }))).toEqual([
+      { label: 'BAS Payable', value: 20, printed: 20, rule: null },
+      { label: 'PAYG Liability', value: 5, printed: 5, rule: null },
+    ])
+    // Where each is printed, for the source of the amount.
+    expect(ato.years[1].lines[0].source).toMatchObject({ documentId: 'fy25', filename: 'fy25.pdf', page: 1 })
   })
 
   it('never guesses: not identified until confirmed, and "not printed" when staff say so', () => {
@@ -195,3 +200,156 @@ describe('saveMapping', () => {
     await expect(saveMapping(supabase, 'client-1', 'Test Staff', wrong, c)).rejects.toThrow(/not on the profit and loss/)
   })
 })
+
+describe('director loan accounts printed under liabilities (the old reader\'s sign rule)', () => {
+  // A current-period report laid out as one real client's is: the director's
+  // loan printed as a negative liability, funds introduced as a positive one.
+  function loans(...rows: PrintedRow[]) {
+    const doc: ComparisonDocument = {
+      documentId: 'current',
+      filename: 'current.pdf',
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [
+          st('balance_sheet', [
+            r([], 'Liabilities', 'heading', null, null),
+            r(['Liabilities'], 'Current Liabilities', 'heading', null, null),
+            ...rows,
+          ]),
+        ],
+      },
+    }
+    return buildPrintedComparison([doc], { comparativeYears: true })
+  }
+  const CL = ['Liabilities', 'Current Liabilities']
+  const NCL = ['Liabilities', 'Non-Current Liabilities']
+
+  it('suggests a negative director loan under liabilities as owed TO the company, funds introduced as owed BY it', () => {
+    const c = loans(r(CL, 'Loan - Director', 'line', -130_167.87, null), r(CL, 'Owner Example Person Funds Introduced', 'line', 40_667.15, null))
+    const s = suggestMapping(c)
+    expect(s.loan_receivable.map((k) => labelOf(c, k))).toEqual(['Loan - Director'])
+    expect(s.loan_payable.map((k) => labelOf(c, k))).toEqual(['Owner Example Person Funds Introduced'])
+  })
+
+  it('counts it as a positive amount owed to the company, saying why', () => {
+    const c = loans(r(CL, 'Loan - Director', 'line', -130_167.87, null), r(CL, 'Owner Example Person Funds Introduced', 'line', 40_667.15, null))
+    const receivable = resolveMeaning(c, entries(c, { loan_receivable: ['Loan - Director'] }), 'loan_receivable')
+    // Years are oldest first: the report's own year is the last.
+    expect(receivable.years.at(-1)!.value).toBe(130_167.87)
+    expect(receivable.years.at(-1)!.lines[0]).toMatchObject({
+      printed: -130_167.87,
+      value: 130_167.87,
+      rule: 'A negative figure under liabilities means the director (or related party) owes the company.',
+    })
+    const payable = resolveMeaning(c, entries(c, { loan_payable: ['Owner Example Person Funds Introduced'] }), 'loan_payable')
+    expect(payable.years.at(-1)).toMatchObject({ value: 40_667.15 })
+    expect(payable.years.at(-1)!.lines[0].rule).toBeNull()
+  })
+
+  it('suggests unnamed loans printed negative under liabilities as owed to the company, never vehicle finance', () => {
+    const c = loans(
+      r(NCL, 'Loan 2019', 'line', -7_325, -17_654),
+      r(NCL, 'Loan 2020', 'line', -21_964, -27_014),
+      r(NCL, 'Loan - Hino Truck Unexpired Interest', 'line', -21_781, null),
+      r(NCL, 'Loan - Mini Excavator', 'line', 82_789, null),
+    )
+    const s = suggestMapping(c)
+    expect(s.loan_receivable.map((k) => labelOf(c, k))).toEqual(['Loan 2019', 'Loan 2020'])
+    expect(s.loan_payable).toEqual([])
+    expect(s.cash_loans.map((k) => labelOf(c, k))).toEqual(['Loan - Hino Truck Unexpired Interest', 'Loan - Mini Excavator'])
+    // Oldest year first: 17,654 + 27,014, then 7,325 + 21,964.
+    expect(resolveMeaning(c, entries(c, { loan_receivable: ['Loan 2019', 'Loan 2020'] }), 'loan_receivable').years.map((y) => y.value)).toEqual([
+      44_668, 29_289,
+    ])
+  })
+
+  it("counts a loan line on the side its sign says, whichever meaning it was confirmed under (one real client's $0)", () => {
+    // Confirmed before the sign rule: the director's loan as owed BY the company,
+    // and the owed-to line an earlier year's, not printed this period.
+    const doc: ComparisonDocument = {
+      documentId: 'current',
+      filename: 'current.pdf',
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [
+          st('balance_sheet', [
+            r([], 'Assets', 'heading', null, null),
+            r(['Assets'], 'Loan - Related Parties', 'line', null, 5_000),
+            r([], 'Liabilities', 'heading', null, null),
+            r(['Liabilities'], 'Current Liabilities', 'heading', null, null),
+            r(CL, 'Loan - Director', 'line', -130_167.87, null),
+            r(CL, 'Owner Example Person Funds Introduced', 'line', 40_667.15, null),
+          ]),
+        ],
+      },
+    }
+    const c = buildPrintedComparison([doc], { comparativeYears: true })
+    const mapping = entries(c, { loan_receivable: ['Loan - Related Parties'], loan_payable: ['Loan - Director', 'Owner Example Person Funds Introduced'] })
+    const f = predictionFinancials(c, mapping)
+    expect(f.notIdentified).toEqual({})
+    expect(f.loanReceivable).toMatchObject({ amount: 130_167.87 })
+    expect(f.loanReceivable!.lines[0]).toMatchObject({
+      label: 'Loan - Director',
+      printed: -130_167.87,
+      value: 130_167.87,
+      rule: 'Printed negative, so it is owed TO the company, although it is confirmed as owed by it.',
+    })
+    expect(f.loanPayable).toMatchObject({ amount: 40_667.15 })
+  })
+
+  it('never makes a silent $0: a mapped loan line not printed on the latest balance sheet is not identified', () => {
+    // Last year's report prints the loan; this year's report does not print the line at all.
+    const report = (id: string, year: number, rows: PrintedRow[]): ComparisonDocument => ({
+      documentId: id,
+      filename: `${id}.pdf`,
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [{ kind: 'balance_sheet', title: 'Balance Sheet', pages: [1], columns: [fy(year)], wholeDollars: true, rows: [r([], 'Liabilities', 'heading', null), r(['Liabilities'], 'Current Liabilities', 'heading', null), ...rows] }],
+      },
+    })
+    const c = buildPrintedComparison([
+      report('fy24', 2024, [r(CL, 'Loan - Director', 'line', -5_000), r(CL, 'Accrued Charges', 'line', 100)]),
+      report('fy25', 2025, [r(CL, 'Accrued Charges', 'line', 100)]),
+    ])
+    const f = predictionFinancials(c, entries(c, { loan_receivable: ['Loan - Director'], loan_payable: 'none' }))
+    expect(f.loanReceivable).toBeNull()
+    expect(f.notIdentified.loanReceivable?.message).toBe('Not found in the statements — choose the line.')
+  })
+
+  it('shows $0 when the mapped line prints "-" (nil)', () => {
+    const doc: ComparisonDocument = {
+      documentId: 'current',
+      filename: 'current.pdf',
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [
+          st('balance_sheet', [
+            r([], 'Assets', 'heading', null, null),
+            { ...r(['Assets'], 'Loan - Director', 'line', null, 5_000), text: 'Loan - Director - 5,000' },
+            r(['Assets'], 'Cash', 'line', 10, 10),
+          ]),
+        ],
+      },
+    }
+    const c = buildPrintedComparison([doc], { comparativeYears: true })
+    // The reader stores "-" as a printed cell with no value: the row is printed in both columns.
+    const row = c.tables[0].rows.find((x) => x.label === 'Loan - Director')!
+    row.cells[1] = { ...row.cells[1], printed: true, value: null }
+    const f = predictionFinancials(c, entries(c, { loan_receivable: ['Loan - Director'], loan_payable: 'none' }))
+    expect(f.loanReceivable).toMatchObject({ amount: 0 })
+    expect(f.notIdentified.loanReceivable).toBeUndefined()
+  })
+})
+

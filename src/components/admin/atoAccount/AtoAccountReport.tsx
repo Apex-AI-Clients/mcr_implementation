@@ -14,6 +14,18 @@ import { atoAccountCsv, exportLock, type AtoAccountPayload } from '@/lib/analysi
 import { unpaidPhrase, type IncomeTaxSummary } from '@/lib/analysis/atoAccount/incomeTax'
 import { SG_HIGHLIGHT, type SgQuarter, type SuperGuaranteeSummary } from '@/lib/analysis/atoAccount/superGuarantee'
 import { cn } from '@/lib/utils'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { aud, calculated, type AmountSource } from '@/lib/sources'
+
+/** The ATO rows are listed under the debt composition, line by line. */
+const ROWS_LINK = { kind: 'href' as const, href: '#account-composition', label: 'Show the ATO rows' }
+/** An amount made of ATO account rows of this account. */
+const fromRows = (what: string, account: string, detail: string, extra: Partial<AmountSource> = {}): AmountSource => ({
+  from: [what, `${account}: ${detail}`],
+  link: ROWS_LINK,
+  ...extra,
+})
+const cents = (n: number) => aud(n)
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -39,7 +51,7 @@ function downloadCsv(content: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
       <p className="text-xs text-foreground/50">{label}</p>
@@ -49,17 +61,27 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   )
 }
 
-function Payments({ payments }: { payments: IncomeTaxSummary['payments'] }) {
+function Payments({ payments, account }: { payments: IncomeTaxSummary['payments']; account: string }) {
   return (
     <Stat
       label="Payments received"
-      value={payments.count === 0 ? 'None' : AUD.format(payments.total)}
+      value={
+        payments.count === 0 ? (
+          'None'
+        ) : (
+          <SourcedAmount
+            value={payments.total}
+            cents
+            source={fromRows('Payments received', account, `${payments.count} “Payment received” rows (allocation rows not counted twice), ${longDate(payments.first)} to ${longDate(payments.last)}.`)}
+          />
+        )
+      }
       sub={payments.count === 0 ? 'No payments in the account' : `${payments.count} payment${payments.count === 1 ? '' : 's'}, ${longDate(payments.first)} – ${longDate(payments.last)}`}
     />
   )
 }
 
-function IncomeTaxSection({ summary }: { summary: IncomeTaxSummary }) {
+function IncomeTaxSection({ summary, account }: { summary: IncomeTaxSummary; account: string }) {
   return (
     <div className="space-y-4">
       <div>
@@ -81,7 +103,13 @@ function IncomeTaxSection({ summary }: { summary: IncomeTaxSummary }) {
                   <td className="px-3 py-2 text-foreground/80">{period(a.period)}</td>
                   <td className="px-3 py-2 text-foreground/70">{longDate(a.assessedOn)}</td>
                   <td className="px-3 py-2 text-foreground/70">{longDate(a.paymentDue)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-foreground/80">{AUD.format(a.amount)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-foreground/80">
+                    <SourcedAmount
+                      value={a.amount}
+                      cents
+                      source={fromRows(`Income tax assessed for ${period(a.period)}`, account, `the row “${a.description}”, processed ${longDate(a.assessedOn)}, effective (payment due) ${longDate(a.paymentDue)}, ${cents(a.amount)} debit.`)}
+                    />
+                  </td>
                   <td className={cn('px-3 py-2', a.unpaid > 0 ? 'text-warning' : 'text-success')}>
                     {a.unpaid <= 0
                       ? 'Paid'
@@ -105,15 +133,38 @@ function IncomeTaxSection({ summary }: { summary: IncomeTaxSummary }) {
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Total assessed" value={AUD.format(summary.assessedTotal)} />
-        <Payments payments={summary.payments} />
-        <Stat label="Interest (GIC)" value={AUD.format(summary.gic.net)} sub={`${AUD.format(summary.gic.charged)} charged, ${AUD.format(summary.gic.remitted)} remitted or amended`} />
+        <Stat
+          label="Total assessed"
+          value={
+            <SourcedAmount
+              value={summary.assessedTotal}
+              cents
+              source={calculated('Total income tax assessed', `${summary.assessments.map((a) => cents(a.amount)).join(' + ') || '$0.00'} = ${cents(summary.assessedTotal)}`, { link: ROWS_LINK })}
+            />
+          }
+        />
+        <Payments payments={summary.payments} account={account} />
+        <GicStat gic={summary.gic} account={account} />
       </div>
     </div>
   )
 }
 
-function QuarterRow({ q }: { q: SgQuarter }) {
+/** Interest (GIC): net, with what was charged and remitted. */
+function GicStat({ gic, account }: { gic: IncomeTaxSummary['gic']; account: string }) {
+  const rows = fromRows('Interest (GIC)', account, 'every “General interest charge” row, net of remissions and amendments (summary rows not counted twice).', {
+    calculation: `${cents(gic.charged)} charged − ${cents(gic.remitted)} remitted or amended = ${cents(gic.net)}`,
+  })
+  return <Stat label="Interest (GIC)" value={<SourcedAmount value={gic.net} cents source={rows} />} sub={`${cents(gic.charged)} charged, ${cents(gic.remitted)} remitted or amended`} />
+}
+
+function QuarterRow({ q, account }: { q: SgQuarter; account: string }) {
+  const quarter = period(q.period)
+  const component = (what: string, value: number, key: 'shortfall' | 'nominalInterest' | 'adminFee') =>
+    calculated(`${what} for ${quarter}`, `${q.events.map((e) => `${e.label} ${cents(e[key])}`).join(' + ')} = ${cents(value)}`, {
+      from: [`${what} for ${quarter}`, `${account}: the “SGC Statement (Liability) - ${what === 'SG shortfall' ? 'SG Shortfall' : what === 'Nominal interest' ? 'SG Nominal Interest' : 'SG Administration Fee'}” rows of this quarter, each added by the event below it.`],
+      link: ROWS_LINK,
+    })
   const [open, setOpen] = useState(false)
   const headline = q.headline
   return (
@@ -130,10 +181,22 @@ function QuarterRow({ q }: { q: SgQuarter }) {
             {period(q.period)}
           </button>
         </td>
-        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">{AUD.format(q.shortfall)}</td>
-        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">{AUD.format(q.nominalInterest)}</td>
-        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">{AUD.format(q.adminFee)}</td>
-        <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{AUD.format(q.total)}</td>
+        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">
+          <SourcedAmount value={q.shortfall} cents source={component('SG shortfall', q.shortfall, 'shortfall')} />
+        </td>
+        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">
+          <SourcedAmount value={q.nominalInterest} cents source={component('Nominal interest', q.nominalInterest, 'nominalInterest')} />
+        </td>
+        <td className="px-3 py-2 text-right tabular-nums text-foreground/70">
+          <SourcedAmount value={q.adminFee} cents source={component('Administration fee', q.adminFee, 'adminFee')} />
+        </td>
+        <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">
+          <SourcedAmount
+            value={q.total}
+            cents
+            source={calculated(`SG charge for ${quarter}`, `${cents(q.shortfall)} shortfall + ${cents(q.nominalInterest)} nominal interest + ${cents(q.adminFee)} administration fee = ${cents(q.total)}`, { link: ROWS_LINK })}
+          />
+        </td>
         <td className="px-3 py-2">
           {headline && (
             <Badge variant={SG_HIGHLIGHT.includes(headline.kind) ? 'warning' : 'muted'}>{headline.label}</Badge>
@@ -148,7 +211,20 @@ function QuarterRow({ q }: { q: SgQuarter }) {
             {q.events.map((e) => (
               <li key={e.rowIndex}>
                 <span className={cn(SG_HIGHLIGHT.includes(e.kind) && 'font-medium text-warning')}>{e.label}</span>, processed{' '}
-                {longDate(e.processed)}: {e.total === 0 ? 'no amount of its own' : AUD.format(e.total)}
+                {longDate(e.processed)}:{' '}
+                {e.total === 0 ? (
+                  'no amount of its own'
+                ) : (
+                  <SourcedAmount
+                    value={e.total}
+                    cents
+                    source={{
+                      from: [`${e.label} for ${quarter}`, `${account}: the rows printed directly above its statement row, processed ${longDate(e.processed)}.`],
+                      calculation: `${cents(e.shortfall)} shortfall + ${cents(e.nominalInterest)} nominal interest + ${cents(e.adminFee)} administration fee = ${cents(e.total)}`,
+                      link: ROWS_LINK,
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -158,7 +234,9 @@ function QuarterRow({ q }: { q: SgQuarter }) {
   )
 }
 
-function SuperGuaranteeSection({ summary }: { summary: SuperGuaranteeSummary }) {
+function SuperGuaranteeSection({ summary, account }: { summary: SuperGuaranteeSummary; account: string }) {
+  const total = (what: string, key: 'shortfall' | 'nominalInterest' | 'adminFee' | 'total') =>
+    calculated(`${what}, every quarter`, `${summary.quarters.map((q) => cents(q[key])).join(' + ')} = ${cents(summary.totals[key])}`, { link: ROWS_LINK })
   const raised = summary.quartersRaisedBy
   return (
     <div className="space-y-4">
@@ -178,14 +256,22 @@ function SuperGuaranteeSection({ summary }: { summary: SuperGuaranteeSummary }) 
             </thead>
             <tbody>
               {summary.quarters.map((q) => (
-                <QuarterRow key={q.period.from} q={q} />
+                <QuarterRow key={q.period.from} q={q} account={account} />
               ))}
               <tr className="border-t border-border/60 font-semibold">
                 <td className="px-3 py-2 text-foreground">Total</td>
-                <td className="px-3 py-2 text-right tabular-nums">{AUD.format(summary.totals.shortfall)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{AUD.format(summary.totals.nominalInterest)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{AUD.format(summary.totals.adminFee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{AUD.format(summary.totals.total)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <SourcedAmount value={summary.totals.shortfall} cents source={total('SG shortfall', 'shortfall')} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <SourcedAmount value={summary.totals.nominalInterest} cents source={total('Nominal interest', 'nominalInterest')} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <SourcedAmount value={summary.totals.adminFee} cents source={total('Administration fee', 'adminFee')} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <SourcedAmount value={summary.totals.total} cents source={total('SG charge', 'total')} />
+                </td>
                 <td />
               </tr>
             </tbody>
@@ -198,9 +284,21 @@ function SuperGuaranteeSection({ summary }: { summary: SuperGuaranteeSummary }) 
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Part 7 penalty (net)" value={AUD.format(summary.part7.net)} sub={`${AUD.format(summary.part7.charged)} charged, ${AUD.format(summary.part7.remitted)} remitted`} />
-        <Stat label="Interest (GIC)" value={AUD.format(summary.gic.net)} sub={`${AUD.format(summary.gic.charged)} charged, ${AUD.format(summary.gic.remitted)} remitted or amended`} />
-        <Payments payments={summary.payments} />
+        <Stat
+          label="Part 7 penalty (net)"
+          value={
+            <SourcedAmount
+              value={summary.part7.net}
+              cents
+              source={fromRows('Part 7 penalty, net of remission', account, 'every “SG Part 7 penalty” and “SG Part 7 penalty - remission” row.', {
+                calculation: `${cents(summary.part7.charged)} charged − ${cents(summary.part7.remitted)} remitted = ${cents(summary.part7.net)}`,
+              })}
+            />
+          }
+          sub={`${cents(summary.part7.charged)} charged, ${cents(summary.part7.remitted)} remitted`}
+        />
+        <GicStat gic={summary.gic} account={account} />
+        <Payments payments={summary.payments} account={account} />
       </div>
     </div>
   )
@@ -320,17 +418,43 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
       <div className="grid gap-2 sm:grid-cols-2">
         <Stat
           label="Balance owing"
-          value={payload.balance === null ? 'No balance printed' : drCr(payload.balance)}
+          value={
+            payload.balance === null ? (
+              'No balance printed'
+            ) : (
+              <SourcedAmount
+                value={payload.balance}
+                format={drCr}
+                source={fromRows('Balance owing', payload.label, `the ATO's own running balance on its newest row${payload.balanceDate ? ` (${longDate(payload.balanceDate)})` : ''}, as printed in the CSV.`)}
+              />
+            )
+          }
           sub={payload.balanceDate ? `ATO balance at ${longDate(payload.balanceDate)}` : undefined}
         />
         <Stat
           label="Unexplained difference"
-          value={payload.unexplained === null ? '—' : AUD.format(payload.unexplained)}
+          value={
+            <SourcedAmount
+              value={payload.unexplained}
+              cents
+              source={calculated(
+                'Unexplained difference',
+                `${payload.balance === null ? 'no balance' : cents(payload.balance)} ATO balance − ${cents((payload.balance ?? 0) - (payload.unexplained ?? 0))} the rows account for = ${cents(payload.unexplained ?? 0)}`,
+                { link: ROWS_LINK },
+              )}
+            />
+          }
           sub="The ATO balance less what the rows account for"
         />
       </div>
 
-      <Card>{payload.kind === 'income_tax' ? <IncomeTaxSection summary={payload.summary} /> : <SuperGuaranteeSection summary={payload.summary} />}</Card>
+      <Card>
+        {payload.kind === 'income_tax' ? (
+          <IncomeTaxSection summary={payload.summary} account={payload.label} />
+        ) : (
+          <SuperGuaranteeSection summary={payload.summary} account={payload.label} />
+        )}
+      </Card>
 
       <p className="flex items-start gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-xs text-foreground/70">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
@@ -338,7 +462,7 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
       </p>
 
       <Card>
-        <AccountCompositionPanel composition={payload.composition} />
+        <AccountCompositionPanel composition={payload.composition} account={payload.label} />
       </Card>
 
       <p className="text-xs text-foreground/40">

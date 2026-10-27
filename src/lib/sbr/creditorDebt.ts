@@ -20,6 +20,8 @@ import { differenceInCalendarDays } from 'date-fns'
 export interface IcaRow {
   rowIndex?: number
   processedDate?: string | Date | null
+  /** The processed date exactly as printed ("01 Sep 2026"): its calendar day, whatever time zone stored the row. */
+  rawProcessed?: string
   balance?: number | null
   lodgementType?: string
 }
@@ -31,6 +33,20 @@ function dateOf(value: string | Date | null | undefined): Date | null {
   const d =
     value instanceof Date ? new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate())) : new Date(value)
   return Number.isFinite(d.getTime()) ? d : null
+}
+
+const MONTH: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }
+
+/**
+ * A row's processed date as a UTC calendar day. The date as printed wins:
+ * rows stored by an analysis run in another time zone carry an ISO date a day
+ * out ("2026-08-31T18:30Z" for a row printed "01 Sep 2026", stored by a
+ * machine ahead of UTC), which made the ATO debt's date a day early.
+ */
+function rowDate(row: IcaRow): Date | null {
+  const m = row.rawProcessed?.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\w*\s+(\d{4})$/)
+  if (m && MONTH[m[2].toLowerCase()] !== undefined) return new Date(Date.UTC(Number(m[3]), MONTH[m[2].toLowerCase()], Number(m[1])))
+  return dateOf(row.processedDate)
 }
 
 function isoDate(d: Date): string {
@@ -52,7 +68,7 @@ export function icaPosition(rows: readonly IcaRow[] | null | undefined): {
   let statement: Date | null = null
   let best: { d: Date; index: number; balance: number } | null = null
   rows.forEach((row, i) => {
-    const d = dateOf(row.processedDate)
+    const d = rowDate(row)
     if (!d) return
     if (!statement || d > statement) statement = d
     if (typeof row.balance !== 'number') return
@@ -76,7 +92,7 @@ export function icaDateRange(rows: readonly IcaRow[] | null | undefined): { firs
   let first: Date | null = null
   let last: Date | null = null
   for (const row of rows ?? []) {
-    const d = dateOf(row.processedDate)
+    const d = rowDate(row)
     if (!d) continue
     if (!first || d < first) first = d
     if (!last || d > last) last = d
@@ -95,7 +111,7 @@ export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined)
   let last: Date | null = null
   for (const row of rows) {
     if (row.lodgementType !== 'Payment') continue
-    const d = dateOf(row.processedDate)
+    const d = rowDate(row)
     if (d && (!last || d > last)) last = d
   }
   if (!last || !statementDate) return 9999

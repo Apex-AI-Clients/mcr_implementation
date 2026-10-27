@@ -5,6 +5,21 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { debtComposition, type CompositionKey, type CompositionLine, type UncountedGroup } from '@/lib/analysis/debtComposition'
 import type { DebtBreakdown, EnrichedRow } from '@/lib/analysis/types'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import type { AmountSource } from '@/lib/sources'
+
+/** Where the activity statement's rows are listed: this composition, line by line. */
+const ROWS_LINK = { kind: 'href' as const, href: '#debt-composition', label: 'Show the ATO rows' }
+
+/** A composition line's source: its sentence and the ATO rows behind it. */
+function lineSource(line: { label: string; explanation: string; rows: unknown[] }): AmountSource {
+  const n = line.rows.length
+  return {
+    from: [line.label, n > 0 ? `${n === 1 ? '1 row' : `${n} rows`} of the activity statement account, as printed in its CSV.` : 'Worked out from the lines above.'],
+    calculation: line.explanation || null,
+    link: ROWS_LINK,
+  }
+}
 
 const AUD = new Intl.NumberFormat('en-AU', {
   style: 'currency',
@@ -61,8 +76,9 @@ function display(line: CompositionLine): string {
 export function RowsTable({ line }: { line: Pick<CompositionLine, 'rows'> }) {
   const [all, setAll] = useState(false)
   const shown = all ? line.rows : line.rows.slice(0, ROWS_SHOWN)
+  // The ATO's rows as printed: the source of the line above, so no ⓘ of their own.
   return (
-    <div className="mt-2">
+    <div className="mt-2" data-source-rows="">
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-border text-left text-foreground/40">
@@ -98,6 +114,14 @@ export function RowsTable({ line }: { line: Pick<CompositionLine, 'rows'> }) {
   )
 }
 
+function uncountedSource(g: UncountedGroup, side: 'debits' | 'credits'): AmountSource {
+  return {
+    from: [`${g.label}: ${side} not counted`, `${g.count === 1 ? '1 row' : `${g.count} rows`} of the ATO account, as printed in its CSV.`],
+    rule: g.reason,
+    link: ROWS_LINK,
+  }
+}
+
 export function UncountedTable({ groups }: { groups: UncountedGroup[] }) {
   if (groups.length === 0) {
     return <p className="text-xs text-foreground/50">Every row is counted in a line above.</p>
@@ -120,8 +144,12 @@ export function UncountedTable({ groups }: { groups: UncountedGroup[] }) {
               <span className="block text-foreground/45">{g.reason}</span>
             </td>
             <td className="py-1 pr-3 text-right tabular-nums text-foreground/70">{g.count}</td>
-            <td className="py-1 pr-3 text-right tabular-nums text-foreground/70">{g.debits ? AUD_CENTS.format(g.debits) : ''}</td>
-            <td className="py-1 text-right tabular-nums text-foreground/70">{g.credits ? AUD_CENTS.format(g.credits) : ''}</td>
+            <td className="py-1 pr-3 text-right tabular-nums text-foreground/70">
+              {g.debits ? <SourcedAmount value={g.debits} cents source={uncountedSource(g, 'debits')} /> : ''}
+            </td>
+            <td className="py-1 text-right tabular-nums text-foreground/70">
+              {g.credits ? <SourcedAmount value={g.credits} cents source={uncountedSource(g, 'credits')} /> : ''}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -191,7 +219,7 @@ function LineRow({
                 : 'text-foreground/80',
           )}
         >
-          {display(line)}
+          <SourcedAmount value={line.amount} format={(n) => display({ ...line, amount: n })} source={lineSource(line)} />
         </span>
       </div>
 
@@ -232,7 +260,7 @@ export function DebtCompositionPanel({ debtBreakdown, rows }: { debtBreakdown: D
   const hasAtoBalance = lines.some((l) => l.key === 'atoBalance')
 
   return (
-    <div className="space-y-3">
+    <div id="debt-composition" className="scroll-mt-4 space-y-3">
       <h3 className="text-sm font-semibold text-foreground">Debt Composition</h3>
       <p className="no-print text-xs text-foreground/40">Open a line to see what it is and the ATO rows behind it.</p>
 
@@ -244,7 +272,15 @@ export function DebtCompositionPanel({ debtBreakdown, rows }: { debtBreakdown: D
           <li className="flex items-start justify-between gap-3 border-t border-border/60 px-4 py-1.5">
             <span className="text-xs font-semibold text-foreground">Current balance owing</span>
             <span className={cn('text-xs font-bold tabular-nums', debtBreakdown.currentBalance === 0 ? 'text-success' : 'text-warning')}>
-              {fmtBalance(debtBreakdown.currentBalance)}
+              <SourcedAmount
+                value={debtBreakdown.currentBalance}
+                format={fmtBalance}
+                source={{
+                  from: ['Current balance owing', 'No balance is printed in the export: what the rows add up to.'],
+                  calculation: `Balance brought forward + total ATO debt + refunds − payments − credits = ${fmtBalance(debtBreakdown.currentBalance)}`,
+                  link: ROWS_LINK,
+                }}
+              />
             </span>
           </li>
         )}

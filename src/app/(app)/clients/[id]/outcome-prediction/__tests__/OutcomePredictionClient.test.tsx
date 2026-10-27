@@ -49,6 +49,9 @@ function mockFetch() {
   return fetchMock
 }
 
+/** A creditor hint, by its whole sentence: the amount in it carries its own ⓘ. */
+const hintText = (re: RegExp) => screen.queryAllByText((_, el) => el?.tagName === 'P' && re.test(el.textContent ?? ''))
+
 const bodyOf = (fetchMock: ReturnType<typeof mockFetch>, call = 0) =>
   JSON.parse((fetchMock.mock.calls[call] as unknown as [string, { body: string }])[1].body)
 
@@ -175,7 +178,7 @@ describe('Creditors in the SBR', () => {
 
   it('shows balance-sheet hints beside the rows without filling them in', () => {
     page()
-    expect(screen.getByText(/Balance sheet shows \$4,200 \(FY2025 balance sheet\)/)).toBeTruthy()
+    expect(hintText(/Balance sheet shows \$4,200 \(FY2025 balance sheet\)/)).toHaveLength(1)
     expect(screen.getByText(/Usually secured/)).toBeTruthy()
     expect((screen.getByRole('textbox', { name: 'Creditor 1 amount' }) as HTMLInputElement).value).toBe('')
     expect(screen.getByTestId('creditor-total').textContent).toBe('$250,000')
@@ -252,12 +255,12 @@ describe('Creditors in the SBR', () => {
 
   it('keeps each hint with its row when rows above it are removed', async () => {
     page()
-    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+    expect(hintText(/Balance sheet shows \$25,000/)).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: 'Remove Credit cards' }))
-    expect(screen.queryByText(/Balance sheet shows \$4,200/)).toBeNull()
+    expect(hintText(/Balance sheet shows \$4,200/)).toHaveLength(0)
     // Cash loans is now the first row, still with its own hint.
     expect((screen.getByRole('textbox', { name: 'Creditor 1 name' }) as HTMLInputElement).value).toBe('Cash loans')
-    expect(screen.getByText(/Balance sheet shows \$25,000/)).toBeTruthy()
+    expect(hintText(/Balance sheet shows \$25,000/)).toHaveLength(1)
   })
 
   it('can remove every row', async () => {
@@ -446,9 +449,9 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("keeps staff's No and its reason when the override stands", async () => {
+  it("keeps staff's No when their change stands, saying who changed it and when", async () => {
     const fetchMock = mockFetch()
-    const override = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-21T10:00:00Z', amount: 120_000 }
+    const override = { value: false, setBy: 'Staff Member', setAt: '2026-10-21T10:00:00Z', amount: 120_000 }
     render(
       <OutcomePredictionClient
         clientId="c1"
@@ -459,13 +462,13 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
       />,
     )
     expect((screen.getByRole('checkbox', { name: LABEL }) as HTMLInputElement).checked).toBe(false)
-    expect((screen.getByLabelText(/Reason for keeping No/) as HTMLTextAreaElement).value).toBe('Loan repaid before appointment')
-    // Not contradicted: it runs as before, sending the reason with it.
+    expect(screen.getByText('Changed by Staff Member on 21 Oct 2026')).toBeTruthy()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    expect(bodyOf(fetchMock)).toMatchObject({ directorLoanAtAppointment: false, directorLoanOverrideReason: 'Loan repaid before appointment' })
+    expect(bodyOf(fetchMock)).toMatchObject({ directorLoanAtAppointment: false })
+    expect(bodyOf(fetchMock)).not.toHaveProperty('directorLoanOverrideReason')
   })
 
-  it('warns on No with a loan owed, and will not run until a reason is given', async () => {
+  it('lets staff change the tick with a small note: no reason box, no warning, nothing blocked', async () => {
     const fetchMock = mockFetch()
     render(
       <OutcomePredictionClient
@@ -477,21 +480,78 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
       />,
     )
     const generate = screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement
-    expect(generate.disabled).toBe(false)
-
     await userEvent.click(screen.getByRole('checkbox', { name: LABEL }))
-    expect(
-      screen.getByText(
-        'Director loan at appointment is No, but the balance sheet at 30 Jun 2026 shows $120,000 owed to the company. Tick Yes, or give a reason for keeping No.',
-      ),
-    ).toBeTruthy()
-    expect(generate.disabled).toBe(true)
-
-    await userEvent.type(screen.getByLabelText(/Reason for keeping No/), 'Loan repaid before appointment')
+    expect(screen.getByText(/Changed from what the amount says/)).toBeTruthy()
+    expect(screen.queryByLabelText(/Reason for keeping/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(generate.disabled).toBe(false)
     await userEvent.click(generate)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(bodyOf(fetchMock).directorLoanOverrideReason).toBe('Loan repaid before appointment')
+    expect(bodyOf(fetchMock).directorLoanAtAppointment).toBe(false)
+  })
+
+  it('shows the payable and net beside the amount, gross by default', () => {
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{
+          ...LOAN_AUTO,
+          directorLoan: {
+            notIdentified: null,
+            amount: 120_000,
+            basis: 'gross',
+            receivable: 120_000,
+            payable: 40_000,
+            net: 80_000,
+            receivableLines: [],
+            payableLines: [],
+            source: 'FY2026 balance sheet',
+            asOf: '2026-06-30',
+            info: '“Owner Funds Introduced” $40,000.00 owed by the company; net $80,000.00 owed to the company',
+          },
+        }}
+        initialPrediction={null}
+        readiness={READY}
+      />,
+    )
+    expect(screen.getByText('“Owner Funds Introduced” $40,000.00 owed by the company; net $80,000.00 owed to the company')).toBeTruthy()
+  })
+
+  it('says "not identified" with the line to choose, never $0, and does not run', () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{
+          ...AUTO,
+          directorLoanReceivableAmount: 0,
+          directorLoanDetected: null,
+          mappingUrl: '/clients/c1/financials-comparison/mapping',
+          directorLoan: {
+            notIdentified: { message: 'Not found in the statements — choose the line.', candidates: [] },
+            amount: 0,
+            basis: 'gross',
+            receivable: 0,
+            payable: 0,
+            net: 0,
+            receivableLines: [],
+            payableLines: [],
+            source: null,
+            asOf: null,
+            info: null,
+          },
+        }}
+        initialPrediction={{ ...saved(), inputsChanged: [] }}
+        readiness={READY}
+      />,
+    )
+    expect(screen.getByText('Not identified')).toBeTruthy()
+    expect(screen.getByText(/Not found in the statements — choose the line\./)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Confirm key figures' }).getAttribute('href')).toBe('/clients/c1/financials-comparison/mapping')
+    expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

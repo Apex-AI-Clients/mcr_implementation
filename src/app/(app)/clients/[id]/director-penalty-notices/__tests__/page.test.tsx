@@ -19,6 +19,7 @@ vi.mock('@/lib/dpn/view', async (importOriginal) => ({
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import DirectorPenaltyNoticesPage from '../page'
 import type { NoticeRow } from '@/lib/dpn/stored'
+import { unsourcedAmounts } from '@/test/sourcedAmounts'
 
 /** The DPN summary page, against a mocked database. Synthetic data only. */
 
@@ -81,6 +82,12 @@ async function renderPage(notices: NoticeRow[], docs = [{ id: 'd1', original_fil
 }
 
 describe('Director penalty notices page', () => {
+  it('shows no amount without its source (ⓘ: the notice, or how a total is made)', async () => {
+    await renderPage([noticeRow({}), noticeRow({ id: 'n2', document_id: 'd1', notice_type: 'gst' })])
+    expect(unsourcedAmounts(document.body)).toEqual([])
+    expect(document.body.querySelectorAll('[data-sourced="yes"]').length).toBeGreaterThan(4)
+  })
+
   it('shows the company totals with the notice wording and the deadline', async () => {
     await renderPage([noticeRow({})])
     const company = screen.getByRole('region', { name: 'What the company owes, by type' })

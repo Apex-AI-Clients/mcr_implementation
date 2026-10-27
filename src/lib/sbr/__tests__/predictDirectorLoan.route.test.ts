@@ -13,19 +13,23 @@ vi.mock('@/lib/sbr/loadReadiness', () => ({ loadReadiness: vi.fn() }))
 vi.mock('@/lib/printed/store', () => ({
   loadPrintedComparison: vi.fn(async () => ({ comparison: { columns: [], tables: [], failures: [], documents: [], annualYears: 0 }, builtAt: null, unread: 0 })),
 }))
-vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []) }))
+vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []), loadDirectorNames: vi.fn(async () => []) }))
 // The confirmed loan lines: $120,000 owed to the company on the balance sheet at 30 Jun 2026.
+const line = (label: string, value: number) => ({ label, value, printed: -value, source: null, rule: null })
+const FINANCIALS = {
+  confirmed: true,
+  balanceSheet: null,
+  loanReceivable: { amount: 120_000, source: 'FY2026 balance sheet', asOf: '2026-06-30', lines: [line('Loan - Director', 120_000)] },
+  loanPayable: { amount: 40_000, source: 'FY2026 balance sheet', asOf: '2026-06-30', lines: [line('Owner Funds Introduced', 40_000)] },
+  notIdentified: {} as Record<string, unknown>,
+  atoDebt: null,
+  creditCards: null,
+  cashLoans: null,
+  bankOverdraft: null,
+  tradeSuppliers: null,
+}
 vi.mock('@/lib/printed/mapping', () => ({
-  predictionFinancials: vi.fn(() => ({
-    confirmed: true,
-    balanceSheet: null,
-    loanReceivable: { amount: 120_000, source: 'FY2026 balance sheet', asOf: '2026-06-30', lines: [{ label: 'Loan - Related Parties', value: 120_000 }] },
-    atoDebt: null,
-    creditCards: null,
-    cashLoans: null,
-    bankOverdraft: null,
-    tradeSuppliers: null,
-  })),
+  predictionFinancials: vi.fn(() => FINANCIALS),
 }))
 vi.mock('@/lib/sbr/icaRows', () => ({ loadIcaRows: vi.fn() }))
 vi.mock('@/lib/sbr/accuracy', () => ({ cachedLeaveOneOut: vi.fn(() => null) }))
@@ -94,40 +98,45 @@ beforeEach(() => {
   } as never)
 })
 
-describe('POST predict-outcome — director loan flag against the amount', () => {
-  it('refuses No with a loan owed to the company, saying why', async () => {
-    const res = await PREDICT(post({ ...BASE, directorLoanAtAppointment: false }), PARAMS)
-    expect(res.status).toBe(422)
-    const body = await res.json()
-    expect(body.code).toBe('DIRECTOR_LOAN_MISMATCH')
-    expect(body.error).toBe(
-      'Director loan at appointment is No, but the balance sheet at 30 Jun 2026 shows $120,000 owed to the company. Tick Yes, or give a reason for keeping No.',
-    )
-    expect(upsert).not.toHaveBeenCalled()
-    expect(predictSbrOutcome).not.toHaveBeenCalled()
+describe('POST predict-outcome — the director loan input', () => {
+  beforeEach(() => {
+    FINANCIALS.notIdentified = {}
   })
 
-  it('runs with Yes, and saves no override', async () => {
+  it('uses the lines owed to the company, gross, and returns the payable and net beside it', async () => {
     const res = await PREDICT(post({ ...BASE, directorLoanAtAppointment: true }), PARAMS)
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.directorLoanAsOf).toBe('2026-06-30')
+    expect(vi.mocked(predictSbrOutcome).mock.calls[0][0]).toMatchObject({ directorLoanReceivableAmount: 120_000, directorLoanAtAppointment: true })
+    expect(body.directorLoan).toMatchObject({ basis: 'gross', amount: 120_000, receivable: 120_000, payable: 40_000, net: 80_000 })
+    expect(body.directorLoan.info).toBe('“Owner Funds Introduced” $40,000.00 owed by the company; net $80,000.00 owed to the company')
     expect(body.directorLoanOverride).toBeNull()
     expect((upsert.mock.calls[0][0] as { input_overrides: unknown }).input_overrides).toBeNull()
   })
 
-  it('runs with No when staff give a reason, and saves it with the prediction', async () => {
-    const res = await PREDICT(
-      post({ ...BASE, directorLoanAtAppointment: false, directorLoanOverrideReason: 'Loan repaid before appointment' }),
-      PARAMS,
-    )
+  it('never refuses a tick that differs from the amount: it records who changed it and when', async () => {
+    const res = await PREDICT(post({ ...BASE, directorLoanAtAppointment: false }), PARAMS)
     expect(res.status).toBe(200)
     const saved = upsert.mock.calls[0][0] as { input_overrides: { directorLoanAtAppointment: Record<string, unknown> } }
-    expect(saved.input_overrides.directorLoanAtAppointment).toMatchObject({
-      value: false,
-      reason: 'Loan repaid before appointment',
-      amount: 120_000,
-    })
+    expect(saved.input_overrides.directorLoanAtAppointment).toMatchObject({ value: false, amount: 120_000 })
+    expect(typeof saved.input_overrides.directorLoanAtAppointment.setBy).toBe('string')
     expect(typeof saved.input_overrides.directorLoanAtAppointment.setAt).toBe('string')
+  })
+
+  it('asks for the line when a loan line is not identified, never predicting on $0', async () => {
+    FINANCIALS.notIdentified = { loanReceivable: { message: 'Not found in the statements — choose the line.', candidates: [] } }
+    const res = await PREDICT(post({ ...BASE, directorLoanAtAppointment: false }), PARAMS)
+    expect(res.status).toBe(422)
+    const body = await res.json()
+    expect(body.error).toBe('PREREQUISITES_MISSING')
+    expect(body.missing).toEqual([
+      {
+        field: 'directorLoanReceivableAmount',
+        blocker: 'line_mapping',
+        actionUrl: '/clients/client-1/financials-comparison/mapping',
+        message: 'Not found in the statements — choose the line.',
+      },
+    ])
+    expect(predictSbrOutcome).not.toHaveBeenCalled()
   })
 })

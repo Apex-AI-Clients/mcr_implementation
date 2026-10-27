@@ -6,10 +6,12 @@ import { AlertCircle, CheckCircle2, ClipboardCheck, HelpCircle } from 'lucide-re
 import { Dialog } from '@/components/ui/Dialog'
 import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
-import { KEY_FIGURES, MEANINGS, type Meaning } from '@/lib/printed/meanings'
+import { KEY_FIGURES, MEANING, MEANINGS, type Meaning } from '@/lib/printed/meanings'
 import { resolveMeaning, type MappingEntry } from '@/lib/printed/mapping'
 import type { ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
-import { describeLine } from '@/lib/printed/picker'
+import { STATEMENT_NAME, describeLine } from '@/lib/printed/picker'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { printedLinesSource } from '@/lib/sources'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { KeyFigureCard, keyFigureStatus, type KeyFigureStatus } from './keyFigures/KeyFigureCard'
 
@@ -181,12 +183,34 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
                     <p className="mt-3 text-[10px] uppercase tracking-wide text-foreground/45">
                       {status === 'suggested' ? (sources.length > 1 ? 'Amount on those lines' : 'Amount on that line') : 'Amount'}, {columnTitle(latest.column).title}
                     </p>
-                    <p className={cn('text-lg font-semibold tabular-nums', status === 'confirmed' ? 'text-foreground' : 'text-foreground/70')}>{formatPrinted(latest.value)}</p>
+                    <p className={cn('text-lg font-semibold tabular-nums', status === 'confirmed' ? 'text-foreground' : 'text-foreground/70')}>
+                      <SourcedAmount
+                        value={latest.value}
+                        format={formatPrinted}
+                        source={printedLinesSource(
+                          `${info.label}${status === 'suggested' ? ' (suggested line, not confirmed yet)' : ''}`,
+                          `${STATEMENT_NAME[MEANING[info.key].statement]}, ${columnTitle(latest.column).title}`,
+                          latest.lines,
+                          latest.value ?? 0,
+                          { confirmUrl: keyFigures },
+                        )}
+                      />
+                    </p>
                     <ul className="mt-2 space-y-0.5 text-[11px] tabular-nums text-foreground/65">
                       {resolved.years.map((y) => (
                         <li key={y.column.key} className="flex justify-between gap-2">
                           <span>{columnTitle(y.column).title}</span>
-                          <span>{y.value === null ? '—' : formatPrinted(y.value)}</span>
+                          <span>
+                            {y.value === null ? (
+                              '—'
+                            ) : (
+                              <SourcedAmount
+                                value={y.value}
+                                format={formatPrinted}
+                                source={printedLinesSource(info.label, `${STATEMENT_NAME[MEANING[info.key].statement]}, ${columnTitle(y.column).title}`, y.lines, y.value, { confirmUrl: keyFigures })}
+                              />
+                            )}
+                          </span>
                         </li>
                       ))}
                     </ul>

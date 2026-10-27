@@ -3,7 +3,8 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
+import { directorLoanInput } from '@/lib/sbr/directorLoan'
 import { predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
@@ -43,7 +44,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [lodgement, printed, mapping, cached, imports] = await Promise.all([
+  const [lodgement, printed, mapping, cached, imports, directors] = await Promise.all([
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label')
@@ -62,6 +63,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // When the historical cases last changed: a saved prediction older than
     // that is stale (staleness.ts).
     supabase.from('sbr_case_imports').select('uploaded_at, undone_at, counts'),
+    loadDirectorNames(supabase, id),
   ])
   const changedAt = trainingDataChangedAt((imports.data ?? []) as ImportChange[])
 
@@ -69,7 +71,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const readiness = await loadReadiness(supabase, id)
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
-  const financials = predictionFinancials(printed.comparison, mapping)
+  const financials = predictionFinancials(printed.comparison, mapping, { directors })
+  // The loan account figures the predict route uses (sbr/directorLoan.ts): gross by default.
+  const loanInput = directorLoanInput(financials)
   const bsColumn = financials.balanceSheet?.column ?? null
 
   // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
@@ -91,18 +95,19 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const savedFeatures = (savedRow?.input_features ?? {}) as Record<string, unknown>
   const savedCreditors = readSavedCreditors(savedRow?.creditors ?? null)
 
-  // The director loan at appointment, from the loan lines staff confirmed on the
-  // latest balance sheet, to pre-fill the checkbox. The operator can override.
-  const loan = financials.loanReceivable
-  const directorLoanValue = Math.max(0, loan?.amount ?? 0)
+  // The director loan at appointment follows the amount owed to the company,
+  // from the loan lines staff confirmed on the latest balance sheet. Not
+  // identified is said so, never shown as $0 (mapping.ts notIdentified).
+  const loan = loanInput.notIdentified ? null : financials.loanReceivable
+  const directorLoanValue = loanInput.amount
   const directorLoanDetected: boolean | null = loan ? directorLoanValue > 0 : null
-  const directorLoanReasoning: string | null = !loan
-    ? financials.confirmed
+  const directorLoanReasoning: string | null = loanInput.notIdentified
+    ? null
+    : !loan
       ? null
-      : 'Confirm which printed lines are the loan accounts first.'
-    : directorLoanValue > 0
-      ? `Loan owed to the company of $${Math.round(directorLoanValue).toLocaleString('en-AU')} on the ${loan.source}: ${loan.lines.map((l) => `“${l.label}”`).join(' + ')}.`
-      : `No loan owed to the company on the ${loan.source}.`
+      : directorLoanValue > 0
+        ? `Loan owed to the company of $${Math.round(directorLoanValue).toLocaleString('en-AU')} on the ${loan.source}: ${loanInput.receivableLines.map((l) => `“${l.label}”`).join(' + ')}.`
+        : `No loan owed to the company on the ${loan.source}.`
 
   const directorLoan = resolveDirectorLoan(
     savedRow && typeof savedFeatures.directorLoanAtAppointment === 'boolean' ? savedFeatures.directorLoanAtAppointment : null,
@@ -111,7 +116,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
       detected: directorLoanDetected,
       amount: directorLoanValue,
       asOf: loan?.asOf ?? null,
-      lines: loan?.lines.map((l) => l.label) ?? [],
+      lines: loanInput.receivableLines.map((l) => l.label),
       changedAt: latest(confirmedAt('loan_receivable'), printed.builtAt),
     },
   )
@@ -141,7 +146,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     directorLoanReceivableAmount: directorLoanValue,
     directorLoanDetected,
     directorLoanReasoning,
-    directorLoanAsOf: loan?.asOf ?? null,
+    directorLoanAsOf: loanInput.asOf,
+    // Gross, payable and net, the printed lines behind them, and why it is not identified (sbr/directorLoan.ts).
+    directorLoan: loanInput,
+    mappingUrl: `/clients/${id}/financials-comparison/mapping`,
+    atoDebtNotIdentified: debt.source === 'ica' ? null : (financials.notIdentified.atoDebt?.message ?? null),
     // Where the page starts: fresh evidence over a stale saved value, with a note.
     directorLoanInitial: directorLoan,
     atoDebtNote: ato.note,

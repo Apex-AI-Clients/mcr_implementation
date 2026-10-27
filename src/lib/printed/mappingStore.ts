@@ -2,6 +2,8 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { PrintedComparison } from './compare'
 import type { MappingEntry } from './mapping'
 import { MEANING, MEANINGS, type Meaning } from './meanings'
+import { fixSpelling } from './compare'
+import { readDirectors } from '@/lib/clients/companyDetails'
 
 /**
  * Server-only. A client's confirmed line mapping (migration 0034): read it,
@@ -28,7 +30,8 @@ export async function loadMapping(supabase: ServerClient, clientId: string): Pro
   if (error) return []
   return (data ?? []).map((r) => ({
     meaning: r.meaning as Meaning,
-    rowKey: r.row_key,
+    // Keys saved before a spelling fix (compare.ts fixSpelling) still find their row.
+    rowKey: fixSpelling(r.row_key),
     label: r.label,
     nonePrinted: r.none_printed,
     confirmedBy: r.confirmed_by,
@@ -131,3 +134,10 @@ export async function saveMapping(
   }
   return next
 }
+
+/** The client's directors' names on file (company details), for the loan rule that names a director (dictionary.ts). */
+export async function loadDirectorNames(supabase: ServerClient, clientId: string): Promise<string[]> {
+  const { data } = await supabase.from('company_details').select('directors').eq('client_id', clientId).maybeSingle()
+  return readDirectors(data?.directors ?? null).map((d) => d.name)
+}
+

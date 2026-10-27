@@ -58,28 +58,35 @@ export interface LoanEvidence {
 }
 
 /**
- * Staff keeping a value the amount contradicts, with their reason. Stored
- * with the prediction (sbr_outcome_predictions.input_overrides).
+ * Staff changing "Director loan at appointment" away from what the amount
+ * says (> 0 is Yes). Recorded with who and when, stored with the prediction
+ * (sbr_outcome_predictions.input_overrides); no reason is asked and nothing
+ * is blocked. Overrides saved before carried a reason, kept as it was.
  */
 export interface DirectorLoanOverride {
   value: boolean
-  reason: string
-  /** When staff gave it. */
+  /** Who changed it; null on an override saved before this was recorded. */
+  setBy: string | null
+  /** When they changed it. */
   setAt: string
-  /** The receivable amount it was given against. */
+  /** The receivable amount it was changed against. */
   amount: number
+  reason?: string
 }
-
-export const OVERRIDE_REASON_MIN = 5
-export const OVERRIDE_REASON_MAX = 500
 
 export function readDirectorLoanOverride(value: unknown): DirectorLoanOverride | null {
   if (!value || typeof value !== 'object') return null
   const o = (value as Record<string, unknown>).directorLoanAtAppointment
   if (!o || typeof o !== 'object') return null
   const r = o as Record<string, unknown>
-  if (typeof r.value !== 'boolean' || typeof r.reason !== 'string' || typeof r.setAt !== 'string') return null
-  return { value: r.value, reason: r.reason, setAt: r.setAt, amount: typeof r.amount === 'number' ? r.amount : 0 }
+  if (typeof r.value !== 'boolean' || typeof r.setAt !== 'string') return null
+  return {
+    value: r.value,
+    setBy: typeof r.setBy === 'string' ? r.setBy : null,
+    setAt: r.setAt,
+    amount: typeof r.amount === 'number' ? r.amount : 0,
+    ...(typeof r.reason === 'string' ? { reason: r.reason } : {}),
+  }
 }
 
 /** "Director loan at appointment (from the balance sheet at 30 Jun 2025)". */
@@ -87,31 +94,25 @@ export function directorLoanLabel(base: string, asOf: string | null): string {
   return asOf ? `${base} (from the balance sheet at ${longDate(asOf)})` : base
 }
 
-/**
- * The flag and the amount disagree: a loan owed to the company with "No", or
- * "Yes" with nothing owed. Null when they agree.
- */
-export function directorLoanMismatch(value: boolean, amount: number, asOf: string | null): string | null {
-  if (!value && amount > 0) {
-    return `Director loan at appointment is No, but the balance sheet${at(asOf)} shows ${AUD(amount)} owed to the company. Tick Yes, or give a reason for keeping No.`
-  }
-  if (value && amount <= 0) {
-    return `Director loan at appointment is Yes, but the director loan receivable amount is $0${asOf ? ` on the balance sheet${at(asOf)}` : ''}. Untick it, or give a reason for keeping Yes.`
-  }
-  return null
+/** What the tick is when nobody has changed it: Yes when anything is owed to the company. */
+export const directorLoanFromAmount = (amount: number) => amount > 0
+
+/** "Changed by Jane Staff on 26 Oct 2026". */
+export function changedNote(o: Pick<DirectorLoanOverride, 'setBy' | 'setAt'>): string {
+  return `Changed by ${o.setBy ?? 'staff'} on ${longDate(o.setAt)}`
 }
 
 export interface ResolvedDirectorLoan {
   value: boolean
   /** What changed from the saved value, and why. Null when nothing did. */
   note: string | null
-  /** The saved override, when it still stands. */
+  /** The staff change, when it still stands (shown as "Changed by … on …"). */
   override: DirectorLoanOverride | null
 }
 
 /**
  * The value the page starts from. `saved` is what the last prediction ran
- * with (null: no prediction); `override` the reason staff gave, if any.
+ * with (null: no prediction); `override` the staff change, if any.
  */
 export function resolveDirectorLoan(
   saved: boolean | null,
@@ -126,7 +127,7 @@ export function resolveDirectorLoan(
     return { value: evidence.detected, note: null, override: null }
   }
 
-  // They disagree. A reason staff gave after the evidence last changed — or
+  // They disagree. A change staff made after the evidence last changed — or
   // against the same amount — still stands.
   if (
     standing &&
@@ -142,29 +143,20 @@ export function resolveDirectorLoan(
 }
 
 /**
- * The override to store with a prediction: only when the flag contradicts the
- * amount, and then with a reason. Keeps the original time when staff gave the
- * same answer and reason before, so a re-run does not make an old reason look new.
+ * The staff change to store with a prediction: only when the tick differs from
+ * what the amount says. The same change sent again keeps its original time
+ * and author, so a re-run does not make an old change look new.
  */
-export function nextDirectorLoanOverride(input: {
+export function recordDirectorLoanChange(input: {
   value: boolean
   amount: number
-  asOf: string | null
-  reason: string | null | undefined
   stored: DirectorLoanOverride | null
+  by: string | null
   now: string
-}): { override: DirectorLoanOverride | null; error: string | null } {
-  const mismatch = directorLoanMismatch(input.value, input.amount, input.asOf)
-  if (!mismatch) return { override: null, error: null }
-  const reason = (input.reason ?? '').trim().slice(0, OVERRIDE_REASON_MAX)
-  if (reason.length < OVERRIDE_REASON_MIN) return { override: null, error: mismatch }
-  const same = input.stored && input.stored.value === input.value && input.stored.reason === reason
-  return {
-    override: same
-      ? input.stored!
-      : { value: input.value, reason, setAt: input.now, amount: input.amount },
-    error: null,
-  }
+}): DirectorLoanOverride | null {
+  if (input.value === directorLoanFromAmount(input.amount)) return null
+  if (input.stored && input.stored.value === input.value) return input.stored
+  return { value: input.value, setBy: input.by, setAt: input.now, amount: input.amount }
 }
 
 // ─── ATO debt ─────────────────────────────────────────────────────────────────

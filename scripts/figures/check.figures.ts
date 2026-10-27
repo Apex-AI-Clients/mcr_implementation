@@ -16,6 +16,10 @@ import {
   readJson,
   snapshotAliases,
   noticeTotals,
+  comparePrintedFigures,
+  predictionInputs,
+  printedAliases,
+  type PrintedFiguresSpec,
   type LodgementFigures,
   type Snapshot,
 } from './figures'
@@ -43,15 +47,19 @@ type NoticeColumns = [number, number, number, number]
 
 interface Expected {
   notes?: string[]
-  prediction?: { atoDebt?: number; asOf?: string }
+  /** Every prediction input (predictionInputs); older files carry only atoDebt and asOf. */
+  prediction?: LodgementFigures & { atoDebt?: number; asOf?: string }
   lodgement?: LodgementFigures
   dpnNotices?: Partial<Record<'paygw' | 'gst' | 'sgc', NoticeColumns>>
+  /** Printed lines in one column, and the loan and ATO figures the mapping makes of them. */
+  printedFigures?: PrintedFiguresSpec
 }
 
 const OTHER_SCOPE: LateLodgementScope = LATE_LODGEMENT_SCOPE === 'originals_only' ? 'originals_and_amendments' : 'originals_only'
 
 it('compares the lodgement, ATO debt and DPN figures with the verified figures', () => {
-  const aliases = [...new Set([...snapshotAliases(), ...icaCsvAliases()])].sort()
+  // Every client: a snapshot, an ATO account CSV, or (deleted from the database) verified printed statements.
+  const aliases = [...new Set([...snapshotAliases(), ...icaCsvAliases(), ...printedAliases()])].sort()
   if (aliases.length === 0) {
     out('No snapshots in verified-figures/. Run `npm run figures:snapshot` first.')
     return
@@ -64,10 +72,19 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
     const { prediction, lodgement: expectedLodgement, dpnNotices: expectedNotices } = expectedFile ?? {}
     const differences: string[] = []
     out('')
-    out(`── ${alias} (${snapshot ? `snapshot ${snapshot.takenAt.slice(0, 10)}` : 'ATO account CSV only'}) ──`)
+    out(`── ${alias} (${snapshot ? `snapshot ${snapshot.takenAt.slice(0, 10)}` : icaCsvAliases().includes(alias) ? 'ATO account CSV only' : 'verified statements only'}) ──`)
 
-    // The ATO debt the prediction takes from the ATO account.
-    if (snapshot && prediction) {
+    // Every input the prediction route works out (figures.ts predictionInputs): a change fails.
+    const inputs = predictionInputs(alias, snapshot)
+    if (inputs) {
+      out(`  prediction inputs: ${Object.entries(inputs).map(([k, v]) => `${k} ${v}`).join(' | ')}`)
+      if (prediction && Object.keys(prediction).some((k) => k !== 'atoDebt' && k !== 'asOf')) {
+        differences.push(...compareLodgement(prediction as LodgementFigures, inputs).map((d) => d.replace(/^lodgement /, 'prediction')))
+      } else {
+        out('  prediction: not verified yet (add the inputs above to the "prediction" key of the expected file)')
+      }
+    } else if (snapshot && prediction) {
+      // A snapshot from before the inputs were captured: the ATO debt the prediction takes from the ATO account.
       const debt = predictionDebt(snapshot)
       const amountOk = prediction.atoDebt === undefined || (debt.amount !== null && Math.abs(debt.amount - prediction.atoDebt) < 0.5)
       const dateOk = prediction.asOf === undefined || debt.asOf === prediction.asOf
@@ -75,6 +92,13 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
       if (!amountOk || !dateOk) {
         differences.push(`prediction  ATO debt (as at ${prediction.asOf ?? '?'}, now ${debt.asOf ?? 'none'}): verified ${prediction.atoDebt ?? 'none'}, now ${debt.amount ?? 'missing'}`)
       }
+    }
+
+    // Figures as printed in one column, and what the confirmed mapping makes of them.
+    if (expectedFile?.printedFigures) {
+      const printed = comparePrintedFigures(snapshot, alias, expectedFile.printedFigures)
+      out(`  printed figures (${expectedFile.printedFigures.column}): ${printed.length === 0 ? 'all match' : `${printed.length} difference(s)`}`)
+      differences.push(...printed)
     }
 
     // Lodgement analysis, under the active setting; the other setting for comparison.

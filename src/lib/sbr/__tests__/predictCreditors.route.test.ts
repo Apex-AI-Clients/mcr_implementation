@@ -13,7 +13,22 @@ vi.mock('@/lib/sbr/loadReadiness', () => ({ loadReadiness: vi.fn() }))
 vi.mock('@/lib/printed/store', () => ({
   loadPrintedComparison: vi.fn(async () => ({ comparison: { columns: [], tables: [], failures: [], documents: [], annualYears: 0 }, builtAt: null, unread: 0 })),
 }))
-vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []) }))
+vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []), loadDirectorNames: vi.fn(async () => []) }))
+// A confirmed loan account (none owed), so these tests are about the creditors alone.
+vi.mock('@/lib/printed/mapping', () => ({
+  predictionFinancials: vi.fn(() => ({
+    confirmed: true,
+    balanceSheet: null,
+    loanReceivable: { amount: 0, source: 'FY2026 balance sheet', asOf: '2026-06-30', lines: [] },
+    loanPayable: { amount: 0, source: 'FY2026 balance sheet', asOf: '2026-06-30', lines: [] },
+    notIdentified: {},
+    atoDebt: null,
+    creditCards: null,
+    cashLoans: null,
+    bankOverdraft: null,
+    tradeSuppliers: null,
+  })),
+}))
 vi.mock('@/lib/sbr/icaRows', () => ({ loadIcaRows: vi.fn() }))
 vi.mock('@/lib/sbr/accuracy', () => ({ cachedLeaveOneOut: vi.fn(() => null) }))
 vi.mock('@/lib/sbr/historicalCases', () => ({

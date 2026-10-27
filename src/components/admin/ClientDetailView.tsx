@@ -363,7 +363,13 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       <div className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-foreground/80">Document Status</h2>
         {/* Read-only in the Archive: files can be downloaded, not changed. */}
-        <DocumentStatusGrid documents={documents} clientId={id} readOnly={archived} dpn={dpn} />
+        <DocumentStatusGrid
+          documents={documents}
+          clientId={id}
+          readOnly={archived}
+          dpn={dpn}
+          atoAccounts={atoAccounts.accounts.map((a) => ({ id: a.id, kind: a.kind, label: a.label }))}
+        />
       </div>
 
       <AtoAccountsPanel clientId={client.id} overview={atoAccounts} />

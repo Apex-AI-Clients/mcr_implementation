@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  changedNote,
+  directorLoanFromAmount,
   directorLoanLabel,
-  directorLoanMismatch,
   dpnNote,
   inputsChanged,
-  nextDirectorLoanOverride,
   readDirectorLoanOverride,
+  recordDirectorLoanChange,
   resolveAtoDebt,
   resolveDirectorLoan,
   type LoanEvidence,
@@ -35,19 +36,19 @@ describe('director loan at appointment', () => {
     )
   })
 
-  it('keeps No when staff overrode it with a reason after the mapping', () => {
-    const override = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-21T10:00:00Z', amount: 120_000 }
+  it('keeps No when staff changed it after the mapping', () => {
+    const override = { value: false, setBy: 'Staff Member', setAt: '2026-10-21T10:00:00Z', amount: 120_000 }
     const r = resolveDirectorLoan(false, override, LOAN)
     expect(r).toEqual({ value: false, note: null, override })
   })
 
   it('keeps the override against the same amount, even when the statements were read again since', () => {
-    const override = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-19T10:00:00Z', amount: 120_000 }
+    const override = { value: false, setBy: 'Staff Member', setAt: '2026-10-19T10:00:00Z', amount: 120_000 }
     expect(resolveDirectorLoan(false, override, LOAN).value).toBe(false)
   })
 
   it('lets a changed balance sheet win over an older override', () => {
-    const override = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-19T10:00:00Z', amount: 40_000 }
+    const override = { value: false, setBy: 'Staff Member', setAt: '2026-10-19T10:00:00Z', amount: 40_000 }
     const r = resolveDirectorLoan(false, override, LOAN)
     expect(r.value).toBe(true)
     expect(r.override).toBeNull()
@@ -76,49 +77,39 @@ describe('director loan at appointment', () => {
   })
 })
 
-describe('director loan flag and amount must agree', () => {
-  it('says why for No with a loan, and for Yes with nothing owed', () => {
-    expect(directorLoanMismatch(false, 120_000, '2026-06-30')).toBe(
-      'Director loan at appointment is No, but the balance sheet at 30 Jun 2026 shows $120,000 owed to the company. Tick Yes, or give a reason for keeping No.',
-    )
-    expect(directorLoanMismatch(true, 0, null)).toMatch(/^Director loan at appointment is Yes, but the director loan receivable amount is \$0\./)
-    expect(directorLoanMismatch(true, 120_000, null)).toBeNull()
-    expect(directorLoanMismatch(false, 0, null)).toBeNull()
+describe('a staff change to the tick (no reason asked, nothing blocked)', () => {
+  it('follows the amount: anything owed to the company is Yes', () => {
+    expect(directorLoanFromAmount(120_000)).toBe(true)
+    expect(directorLoanFromAmount(0)).toBe(false)
   })
 
-  it('refuses a mismatch without a reason, and stores one with it', () => {
-    const base = { value: false, amount: 120_000, asOf: '2026-06-30', stored: null, now: '2026-10-22T00:00:00Z' }
-    expect(nextDirectorLoanOverride({ ...base, reason: '' }).error).toMatch(/is No, but the balance sheet/)
-    expect(nextDirectorLoanOverride({ ...base, reason: 'ok' }).error).not.toBeNull()
-    expect(nextDirectorLoanOverride({ ...base, reason: '  Loan repaid before appointment ' })).toEqual({
-      override: { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-22T00:00:00Z', amount: 120_000 },
-      error: null,
-    })
+  it('records who and when when the tick differs from the amount, and nothing when they agree', () => {
+    const base = { amount: 120_000, stored: null, by: 'Staff Member', now: '2026-10-26T00:00:00Z' }
+    expect(recordDirectorLoanChange({ ...base, value: false })).toEqual({ value: false, setBy: 'Staff Member', setAt: '2026-10-26T00:00:00Z', amount: 120_000 })
+    expect(recordDirectorLoanChange({ ...base, value: true })).toBeNull()
+    expect(recordDirectorLoanChange({ ...base, amount: 0, value: true })).toMatchObject({ value: true, setBy: 'Staff Member' })
   })
 
-  it('keeps the original time when the same answer and reason are sent again', () => {
-    const stored = { value: false, reason: 'Loan repaid before appointment', setAt: '2026-10-01T00:00:00Z', amount: 120_000 }
-    const next = nextDirectorLoanOverride({
-      value: false,
-      amount: 120_000,
-      asOf: null,
-      reason: 'Loan repaid before appointment',
-      stored,
-      now: '2026-10-22T00:00:00Z',
-    })
-    expect(next.override).toBe(stored)
+  it('keeps the original author and time when the same change is sent again', () => {
+    const stored = { value: false, setBy: 'First Staff', setAt: '2026-10-01T00:00:00Z', amount: 120_000 }
+    expect(recordDirectorLoanChange({ value: false, amount: 120_000, stored, by: 'Second Staff', now: '2026-10-26T00:00:00Z' })).toBe(stored)
   })
 
-  it('stores nothing when they agree', () => {
-    expect(nextDirectorLoanOverride({ value: true, amount: 1, asOf: null, reason: 'x', stored: null, now: 'n' })).toEqual({
-      override: null,
-      error: null,
-    })
+  it('says who changed it and when', () => {
+    expect(changedNote({ setBy: 'Staff Member', setAt: '2026-10-26T03:00:00Z' })).toBe('Changed by Staff Member on 26 Oct 2026')
+    expect(changedNote({ setBy: null, setAt: '2026-10-26T03:00:00Z' })).toBe('Changed by staff on 26 Oct 2026')
   })
 
-  it('reads a stored override, and nothing malformed', () => {
-    const o = { value: true, reason: 'r', setAt: '2026-10-01T00:00:00Z', amount: 0 }
+  it('reads a stored change, one saved with a reason before, and nothing malformed', () => {
+    const o = { value: true, setBy: 'Staff Member', setAt: '2026-10-01T00:00:00Z', amount: 0 }
     expect(readDirectorLoanOverride({ directorLoanAtAppointment: o })).toEqual(o)
+    expect(readDirectorLoanOverride({ directorLoanAtAppointment: { value: false, reason: 'r', setAt: '2026-10-01T00:00:00Z', amount: 5 } })).toEqual({
+      value: false,
+      setBy: null,
+      setAt: '2026-10-01T00:00:00Z',
+      amount: 5,
+      reason: 'r',
+    })
     expect(readDirectorLoanOverride({ directorLoanAtAppointment: { value: 'yes' } })).toBeNull()
     expect(readDirectorLoanOverride(null)).toBeNull()
   })

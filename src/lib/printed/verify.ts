@@ -41,6 +41,10 @@ export interface TotalCheck {
 
 const NEGATIVE_SECTION = /cost|expense|outgoing|deduct|liabilit/i
 const LESS = /^less\b/i
+/** Closing stock is taken off cost of sales whether or not the label says "Less" (old reader lineCorrections sectionSum). */
+const CLOSING_STOCK = /^(less:?\s*)?closing (stock|inventory)( on hand)?\b|^stock on hand at (the )?end/i
+/** A line printed positive that its total subtracts. */
+export const SUBTRACTED = (label: string) => LESS.test(label) || CLOSING_STOCK.test(label)
 
 const money = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-AU', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`
 
@@ -58,7 +62,7 @@ function polarity(heading: string): 1 | -1 {
 
 function lineTerm(row: PrintedRow, column: number): Term {
   const v = typeof row.amounts[column] === 'number' ? (row.amounts[column] as number) : 0
-  const value = LESS.test(row.label) && v > 0 ? -v : v
+  const value = SUBTRACTED(row.label) && v > 0 ? -v : v
   return { value, raw: v, text: `${value < 0 && v > 0 ? '− ' : ''}${row.label || '(no label)'} ${money(v)}` }
 }
 

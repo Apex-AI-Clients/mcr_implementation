@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { PrintedComparisonClient } from './PrintedComparisonClient'
@@ -29,12 +29,13 @@ export default async function FinancialsComparisonPage({ params, searchParams }:
   // An archived file is viewed, read-only, in the Archive.
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [{ comparison, builtAt }, { data: figuresChecked }, mapping] = await Promise.all([
+  const [{ comparison, builtAt }, { data: figuresChecked }, mapping, directors] = await Promise.all([
     loadPrintedComparison(supabase, id, { readMissing: true, comparativeYears: earlierYears }),
     // The "I've checked these figures" tick (hardChecks.ts).
     supabase.from('sbr_readiness_reviews').select('fingerprint, reviewed_by, reviewed_at').eq('client_id', id).eq('item', 'financials').maybeSingle(),
     // Which printed lines mean what, as staff confirmed (migration 0034).
     loadMapping(supabase, id),
+    loadDirectorNames(supabase, id),
   ])
 
   return (
@@ -47,7 +48,7 @@ export default async function FinancialsComparisonPage({ params, searchParams }:
         earlierYears={earlierYears}
         aiSummaryEnabled={aiSummariesEnabled()}
         mapping={mapping}
-        suggestions={suggestMapping(comparison)}
+        suggestions={suggestMapping(comparison, { directors })}
         initialFiguresChecked={
           figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null
         }

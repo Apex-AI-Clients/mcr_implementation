@@ -96,3 +96,15 @@ describe('daysSinceLastPayment', () => {
     expect(daysSinceLastPayment(null)).toBe(9999)
   })
 })
+
+describe('dates from rows stored in another time zone', () => {
+  it('takes the calendar day printed, not one shifted by where the row was stored', () => {
+    // Stored by an analysis run ahead of UTC: local midnight is the previous day in UTC.
+    const rows = [
+      { rowIndex: 0, processedDate: '2026-08-31T18:30:00.000Z', rawProcessed: '01 Sep 2026', balance: 107_765.19, lodgementType: 'GIC' },
+      { rowIndex: 1, processedDate: '2026-02-03T18:30:00.000Z', rawProcessed: '04 Feb 2026', balance: 90_000, lodgementType: 'Payment' },
+    ]
+    expect(icaPosition(rows)).toMatchObject({ balance: 107_765.19, balanceDate: '2026-09-01', statementDate: '2026-09-01' })
+    expect(daysSinceLastPayment(rows)).toBe(209)
+  })
+})

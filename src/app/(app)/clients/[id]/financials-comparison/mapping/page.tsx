@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping, loadMappingChanges } from '@/lib/printed/mappingStore'
+import { loadMapping, loadMappingChanges, loadDirectorNames } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { LineMappingClient } from './LineMappingClient'
@@ -24,10 +24,11 @@ export default async function LineMappingPage({ params }: Props) {
   if (!client) notFound()
   if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
 
-  const [{ comparison }, mapping, changes] = await Promise.all([
+  const [{ comparison }, mapping, changes, directors] = await Promise.all([
     loadPrintedComparison(supabase, id, { readMissing: true }),
     loadMapping(supabase, id),
     loadMappingChanges(supabase, id),
+    loadDirectorNames(supabase, id),
   ])
 
   return (
@@ -37,7 +38,7 @@ export default async function LineMappingPage({ params }: Props) {
         clientName={client.name}
         comparison={comparison}
         mapping={mapping}
-        suggestions={suggestMapping(comparison)}
+        suggestions={suggestMapping(comparison, { directors })}
         changes={changes}
         aiEnabled={aiSummariesEnabled()}
       />

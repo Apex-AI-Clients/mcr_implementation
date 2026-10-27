@@ -9,6 +9,7 @@ import { DpnManualForm } from '@/components/admin/dpn/DpnManualForm'
 import { daysUntil } from '@/lib/dpn/checks'
 import { describeManualReason, noticeTypeLabel } from '@/lib/dpn/stored'
 import { formatCents, type DpnNoticeView } from '@/lib/dpn/view'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { formatDate } from '@/lib/utils'
 
 interface DpnNoticeListProps {
@@ -128,7 +129,21 @@ function NoticeCard({
           )}
           {notice.totals && (
             <p>
-              Unpaid <span className="font-medium tabular-nums">{formatCents(notice.totals.column3)}</span>
+              Unpaid{' '}
+              <span className="font-medium tabular-nums">
+                <SourcedAmount
+                  value={notice.totals.column3 / 100}
+                  text={formatCents(notice.totals.column3)}
+                  source={{
+                    from: [
+                      `Unpaid on this notice: ${formatCents(notice.totals.column3)}`,
+                      `${view.filename}: the total of the notice's "unpaid" column, every period on it.`,
+                      notice.source === 'manual' ? 'Entered by staff from the notice.' : 'Read from the notice.',
+                    ],
+                    link: { kind: 'pdf', documentId: view.documentId, page: 1, label: 'Open the notice' },
+                  }}
+                />
+              </span>
               {notice.directorName && <span className="text-foreground/60"> · to {notice.directorName}</span>}
             </p>
           )}

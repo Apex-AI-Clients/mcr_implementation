@@ -8,6 +8,10 @@ import type { Meaning } from './meanings'
  *
  *   "Loan - Related Parties" under assets         loan account owed to the company
  *   the same under liabilities                    loan account owed by the company
+ *   … printed NEGATIVE under liabilities          owed TO the company (the director owes it)
+ *   "Owner … Funds Introduced" under liabilities  owed by the company
+ *   "Loan 2019" (no lender named), negative under
+ *   liabilities or positive under assets          owed to the company
  *   "BAS Payable", "GST", "PAYG", "ATO …"         ATO-related debt
  *   "Income Tax Payable", "Taxation"              income tax payable, on its own
  *
@@ -30,14 +34,59 @@ const printedAnywhere = (r: ComparisonRow) => r.cells.some((c) => c.printed && t
 const ATO = /\b(ato|bas|gst|payg|activity statement|taxation office|integrated client account)\b/i
 const INCOME_TAX = /\b(income tax|provision for (income )?tax)\b|^taxation$/i
 const SUPER = /\bsuper/i
-const RELATED = /\b(directors?|shareholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced)\b|^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
+const RELATED = /\b(directors?|shareholders?|unitholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced|quarantined)\b|^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
 const LOAN_OWED_TO = /\b(loans?|accounts?)\b|^loan\b/i
+/** A loan with no lender, vehicle or person named: "Loan 2019", "Loan - 2023", "Loans" (old reader: director-related). */
+const UNNAMED_LOAN = /^loans?(\s*[-–]?\s*(19|20)\d{2})?$/i
+/** Money a director put in or took out, which is owed either way without the word "loan". */
+const DIRECTOR_MONEY = /\b(funds introduced|drawings|owner)\b/i
 const NOT_A_LOAN = /\b(borrowing costs?|deposits?|bond|interest)\b/i
-/** "Loan - Hino Truck" is equipment finance, not a person: never a related-party loan. */
-const EQUIPMENT_OR_LENDER = /\b(truck|excavator|vehicle|car|ute|van|trailer|equipment|machinery|plant|finance|bank|chattel|mortgage|unexpired|lease|hire|vw|audi|toyota|hino|ford|holden|nissan|mazda|isuzu|landcruiser|prospa|getcapital|ondesk|moula|capify)\b/i
+/**
+ * "Loan - Hino Truck" is equipment finance and "Loan - Westpac" a lender, not
+ * a person: never a related-party loan. The old reader's lists (labels.ts
+ * ASSET_WORDS, VEHICLE_BRANDS, LENDER_MARKERS), with its rule that "Van" is a
+ * vehicle unless a name follows it ("Loan - Van Nguyen" is a person).
+ */
+const EQUIPMENT_OR_LENDER = new RegExp(
+  [
+    // Asset words
+    'trucks?|utes?|cars?|excavators?|plant|equipment|vehicles?|machinery|forklift|trailer|bobcat|tractor|boat|crane|loader|motorbike|motorcycle',
+    // Vehicle brands and models
+    'vw|volkswagen|audi|toyota|hino|isuzu|ford|holden|mazda|nissan|mitsubishi|mercedes|benz|bmw|landcruiser|land cruiser|hilux|t cross|tcross|ranger|navara|triton|prado|kia|hyundai|subaru|volvo|kenworth|iveco|fuso|kubota|caterpillar|cat|komatsu|tesla|jeep|lexus|porsche|suzuki|honda|renault|peugeot|skoda|ldv|ram|dmax|d max',
+    // Lenders and finance
+    'bank|banking|finance|financial|capital|credit|pty|ltd|limited|leasing|lease|funding|lending|lender|ondesk|getcapital|capify|westpac|nab|anz|cba|commonwealth|macquarie|st george|stgeorge|bendigo|suncorp|amex|pepper|latitude|prospa|moula|ato|insurance|premium|mortgage|chattel|hire purchase|hire|unexpired',
+  ]
+    .map((words) => `\\b(${words})\\b`)
+    .join('|') + '|\\bvan\\b(?!\\s+(?!loans?\\b)[a-z]{2,})',
+  'i',
+)
 const CREDIT_CARD = /\b(credit cards?|amex|american express|visa|mastercard)\b/i
 const FINANCE = /\b(loans?|chattel|hire purchase|finance|unexpired interest|mortgage|borrowings?)\b/i
 const OVERDRAFT = /overdraft/i
+/** A bank account printed under liabilities is overdrawn (old reader labels.ts BANK_ACCOUNT). */
+const BANK_ACCOUNT =
+  /^((business|cheque|operating|trading|transaction|everyday|savings|working|bank|main|online)( (cheque|saver|savings))? account|bank|cash at bank|bank overdraft|overdraft|(westpac|cba|commonwealth|nab|anz|bendigo|st george|stgeorge|macquarie|suncorp|bankwest|ing)( bank)?( (business|cheque|operating|transaction|savings))? account)( \d+| no \d+)?$/i
+
+/**
+ * A loan naming a director on file (old reader labels.ts classifyLoan): a
+ * one-word name needs that word in the label, a longer name two of its words.
+ */
+export function namesDirector(label: string, directors: readonly string[]): boolean {
+  const words = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(loans?|less|to|from|account|a c|payable|receivable|owing|the)\b/g, ' ')
+      .split(' ')
+      .filter((t) => t.length >= 2)
+  const tokens = words(label)
+  return directors.some((director) => {
+    const name = words(director)
+    if (name.length === 0) return false
+    const shared = name.filter((t) => tokens.includes(t)).length
+    return name.length === 1 ? shared === 1 : shared >= 2
+  })
+}
 const TRADE = /\b(trade creditors|accounts payable|trade payables|sundry creditors|creditors)\b/i
 
 /** Best first: the first rule a row matches ranks it. */
@@ -71,7 +120,7 @@ function bestPerLayout(rows: ComparisonRow[], rules: RegExp[], columns: number):
   return chosen.map((r) => r.key)
 }
 
-export function suggestMapping(comparison: PrintedComparison): Suggestions {
+export function suggestMapping(comparison: PrintedComparison, { directors = [] }: { directors?: readonly string[] } = {}): Suggestions {
   const pl = comparison.tables.find((t) => t.kind === 'profit_and_loss')?.rows ?? []
   const bs = comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? []
   const n = comparison.columns.length
@@ -87,11 +136,27 @@ export function suggestMapping(comparison: PrintedComparison): Suggestions {
   const revenueRows = pl.filter((r) => r.style !== 'total' && !(r.style === 'subtotal' && (/\bother\b/i.test(section(r)) || netOfCosts(pl, r))))
   const incomeTax = pick(lines.filter((r) => isLiability(r) && INCOME_TAX.test(r.label)))
   const ato = pick(lines.filter((r) => isLiability(r) && ATO.test(r.label) && !SUPER.test(r.label)))
-  const related = (r: ComparisonRow) => RELATED.test(r.label) && !NOT_A_LOAN.test(r.label) && !EQUIPMENT_OR_LENDER.test(r.label)
-  const loanReceivable = pick(lines.filter((r) => isAsset(r) && related(r) && LOAN_OWED_TO.test(r.label)))
-  const loanPayable = pick(lines.filter((r) => isLiability(r) && related(r)))
+  const related = (r: ComparisonRow) =>
+    (RELATED.test(r.label) || namesDirector(r.label, directors)) && !NOT_A_LOAN.test(r.label) && !EQUIPMENT_OR_LENDER.test(r.label)
+  // The newest printed amount says which way a loan account is owed (mapping.ts readLoanLine).
+  const latest = (r: ComparisonRow) => {
+    for (let i = r.cells.length - 1; i >= 0; i--) {
+      const v = r.cells[i]
+      if (v.printed && typeof v.value === 'number') return v.value
+    }
+    return 0
+  }
+  const unnamedLoan = (r: ComparisonRow) => UNNAMED_LOAN.test(r.label.trim()) && !NOT_A_LOAN.test(r.label) && !EQUIPMENT_OR_LENDER.test(r.label)
+  const owedTo = (r: ComparisonRow) =>
+    (isAsset(r) && latest(r) >= 0 && ((related(r) && (LOAN_OWED_TO.test(r.label) || DIRECTOR_MONEY.test(r.label))) || unnamedLoan(r))) ||
+    (isLiability(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
+  // Old reader: an unnamed loan under liabilities is the director's, owed by the company.
+  const owedBy = (r: ComparisonRow) =>
+    (isLiability(r) && latest(r) >= 0 && (related(r) || unnamedLoan(r))) || (isAsset(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
+  const loanReceivable = pick(lines.filter(owedTo))
+  const loanPayable = pick(lines.filter(owedBy))
   const creditCards = pick(lines.filter((r) => isLiability(r) && CREDIT_CARD.test(r.label)))
-  const overdraft = pick(lines.filter((r) => isLiability(r) && (OVERDRAFT.test(r.label) || under(r, OVERDRAFT))))
+  const overdraft = pick(lines.filter((r) => isLiability(r) && (OVERDRAFT.test(r.label) || under(r, OVERDRAFT) || BANK_ACCOUNT.test(r.label.trim()))))
   const cashLoans = pick(lines.filter((r) => isLiability(r) && FINANCE.test(r.label)))
   const trade = pick(lines.filter((r) => isLiability(r) && TRADE.test(r.label)))
 

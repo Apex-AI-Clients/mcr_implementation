@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/utils'
 import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'
 import type { AtoAccountKind } from '@/lib/analysis/atoAccountKind'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -42,24 +43,38 @@ export function AtoAccountsPanel({ clientId, overview }: { clientId: string; ove
           <p className="text-sm text-foreground/70">
             Total ATO debt{' '}
             <span className={cn('font-semibold tabular-nums', overview.totalDebt > 0 ? 'text-warning' : 'text-success')}>
-              {drCr(overview.totalDebt)}
+              <SourcedAmount
+                value={overview.totalDebt}
+                // A server component: the text, not a formatter (functions cannot reach the client).
+                text={drCr(overview.totalDebt)}
+                source={{
+                  from: ['Total ATO debt', "Each account's newest balance as the ATO printed it, credits netted off (the ATO offsets them)."],
+                  calculation: `${overview.accounts
+                    .filter((a) => a.balance !== null)
+                    .map((a) => `${a.label} ${drCr(a.balance!)}`)
+                    .join(' + ')} = ${drCr(overview.totalDebt)}`,
+                }}
+              />
             </span>
           </p>
         )}
       </div>
       <ul className="divide-y divide-border/40 rounded-lg border border-border">
         {overview.accounts.map((a) => (
-          <li key={a.id}>
-            <Link
-              href={
-                a.kind === 'activity_statement'
-                  ? `/clients/${clientId}/lodgement-compliance-analysis`
-                  : `/clients/${clientId}/ato-accounts/${a.id}`
-              }
-              className="flex items-center justify-between gap-3 px-3 py-2 text-xs transition-colors hover:bg-surface/60"
-            >
-              <span className="min-w-0">
-                <span className="font-medium text-foreground">{a.label}</span>
+          <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs transition-colors hover:bg-surface/60">
+            {/* Only the name links: the ⓘ beside the balance must not open the page. */}
+            <span className="min-w-0">
+                <Link
+                  href={
+                    a.kind === 'activity_statement'
+                      ? `/clients/${clientId}/lodgement-compliance-analysis`
+                      : `/clients/${clientId}/ato-accounts/${a.id}`
+                  }
+                  className="font-medium text-foreground hover:text-accent"
+                >
+                  {a.label}
+                  <ChevronRight className="ml-0.5 inline h-3 w-3 text-foreground/30" aria-hidden="true" />
+                </Link>
                 <span className="text-foreground/40"> · {KIND_LABEL[a.kind]}</span>
                 {a.olderFiles > 0 && (
                   <span className="text-foreground/40">
@@ -81,12 +96,27 @@ export function AtoAccountsPanel({ clientId, overview }: { clientId: string; ove
               </span>
               <span className="flex shrink-0 items-center gap-2 tabular-nums">
                 <span className="text-right">
-                  <span className="block font-medium text-foreground">{a.balance === null ? 'No balance' : drCr(a.balance)}</span>
+                  <span className="block font-medium text-foreground">
+                    {a.balance === null ? (
+                      'No balance'
+                    ) : (
+                      <SourcedAmount
+                        value={a.balance}
+                        text={drCr(a.balance)}
+                        source={{
+                          from: [`${a.label}: balance owing`, `The ATO's own running balance on the newest row of its CSV${a.balanceDate ? `, ${longDate(a.balanceDate)}` : ''}.`],
+                          link: {
+                            kind: 'href',
+                            href: a.kind === 'activity_statement' ? `/clients/${clientId}/lodgement-compliance-analysis` : `/clients/${clientId}/ato-accounts/${a.id}`,
+                            label: 'Show the ATO rows',
+                          },
+                        }}
+                      />
+                    )}
+                  </span>
                   {a.balanceDate && <span className="block text-foreground/40">at {longDate(a.balanceDate)}</span>}
                 </span>
-                <ChevronRight className="h-3.5 w-3.5 text-foreground/30" aria-hidden="true" />
               </span>
-            </Link>
           </li>
         ))}
       </ul>

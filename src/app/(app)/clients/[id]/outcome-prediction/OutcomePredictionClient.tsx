@@ -36,12 +36,14 @@ import {
   formatFeeRate,
   isValidFeeRate,
 } from '@/lib/sbr/fees'
-import type { SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
+import type { ComparableCase, SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
+import type { DirectorLoanInput } from '@/lib/sbr/directorLoan'
+import { SourceButton, SourcedAmount } from '@/components/ui/SourcedAmount'
+import { calculated, enteredByStaff, printedLinesSource, type AmountSource } from '@/lib/sources'
 import {
-  OVERRIDE_REASON_MAX,
-  OVERRIDE_REASON_MIN,
   directorLoanLabel,
-  directorLoanMismatch,
+  changedNote,
+  directorLoanFromAmount,
   type DirectorLoanOverride,
   type ResolvedDirectorLoan,
 } from '@/lib/sbr/inputPrecedence'
@@ -72,6 +74,12 @@ interface InitialAuto {
   directorLoanInitial?: ResolvedDirectorLoan
   /** Why the ATO debt staff typed last time was replaced, when it was. */
   atoDebtNote?: string | null
+  /** The loan account figures: gross, payable, net, lines, and why it is not identified (sbr/directorLoan.ts). */
+  directorLoan?: DirectorLoanInput
+  /** "Confirm key figures": where a line is chosen. */
+  mappingUrl?: string
+  /** The balance sheet prints an ATO line nobody mapped, and the ATO debt would come from it. */
+  atoDebtNotIdentified?: string | null
   /** Why the DPN answer differs from the last prediction, when it does. */
   dpnNote?: string | null
   creditorAmount: number | null
@@ -146,16 +154,19 @@ interface FullPrediction extends SbrPrediction {
   }
   /** The balance sheet the director loan inputs come from (ISO). */
   directorLoanAsOf?: string | null
-  /** Staff's reason for a flag the amount contradicts. */
+  /** Staff's change to the tick: who and when. */
   directorLoanOverride?: DirectorLoanOverride | null
+  /** The loan account figures behind the input. */
+  directorLoan?: DirectorLoanInput
   /** Past cases left out because they are this client's own record. */
   selfMatchExcluded?: number
 }
 
 interface MissingPrereq {
   field: string
-  blocker: 'lodgement_analyses' | 'financial_statements'
+  blocker: 'lodgement_analyses' | 'financial_statements' | 'line_mapping'
   actionUrl: string
+  message?: string
 }
 
 const AUD = new Intl.NumberFormat('en-AU', {
@@ -272,6 +283,83 @@ export function headlineExplanations(
   return { offer, discount, cents }
 }
 
+/** The director loan input's source: the printed lines owed to the company (sbr/directorLoan.ts). */
+function directorLoanSource(loan: DirectorLoanInput | undefined, amount: number, mappingUrl?: string): AmountSource {
+  if (!loan) return { from: ['Director loan receivable amount', 'The loan lines confirmed on the latest balance sheet.'], link: mappingUrl ? { kind: 'href', href: mappingUrl, label: 'Confirm key figures' } : null }
+  const source = printedLinesSource(
+    `Director loan receivable amount (owed to the company${loan.basis === 'net' ? ', net of what the company owes' : ''})`,
+    `${loan.source ?? 'Latest balance sheet'}`,
+    loan.receivableLines,
+    loan.receivable,
+    { confirmUrl: mappingUrl },
+  )
+  return loan.basis === 'net'
+    ? { ...source, calculation: `${formatAudCents(loan.receivable)} owed to the company − ${formatAudCents(loan.payable)} owed by it = ${formatAudCents(amount)}` }
+    : source
+}
+
+/** The ATO debt's source: the ATO account, the balance sheet's ATO lines, or staff. */
+function atoDebtSource(description: string | null | undefined, edited: boolean, clientId: string | null, mappingUrl?: string): AmountSource {
+  if (edited) return enteredByStaff('ATO debt', 'Typed by staff on this page, in place of the automatic figure.')
+  const ica = description?.startsWith('ATO account statement')
+  return {
+    from: ['ATO debt', ica ? `${description}: the newest balance the ATO printed on the activity statement account.` : (description ?? 'No ATO debt figure yet.')],
+    link: ica && clientId ? { kind: 'href', href: `/clients/${clientId}/lodgement-compliance-analysis`, label: 'Show the ATO rows' } : mappingUrl ? { kind: 'href', href: mappingUrl, label: 'Confirm key figures' } : null,
+  }
+}
+
+/** A creditor row's amount: pre-filled from an ATO account, or typed by staff. */
+function creditorRowSource(label: string): AmountSource {
+  return label.startsWith('ATO: ')
+    ? { from: [label.replace(/^ATO: /, ''), "Pre-filled from that ATO account's newest balance (ATO accounts on the client page). Edit or remove it as needed."] }
+    : enteredByStaff(label || 'Creditor')
+}
+
+/** The creditor total, with its parts. */
+function creditorTotalSource(atoDebt: number | null, rows: { label: string; amount: number | null }[], total: number | null): AmountSource {
+  const parts = [`ATO debt ${formatAud(atoDebt)}`, ...rows.filter((r) => typeof r.amount === 'number' && r.amount > 0).map((r) => `${r.label || 'Creditor'} ${formatAud(r.amount)}`)]
+  return calculated('Total creditors in the SBR', `${parts.join(' + ')} = ${formatAud(total)}`)
+}
+
+/** The SBR amounts: the suggested payment, and the one similar accepted deals point to. */
+function offerSources(prediction: FullPrediction, suggestedRounded: number | null, targetRounded: number | null) {
+  const outcomes = prediction.comparableCases.map((c) => c.outcomePercent)
+  const mean = outcomes.length ? outcomes.reduce((t, v) => t + v, 0) / outcomes.length : 0
+  const fee = prediction.practitionerFeeRate
+  const total = prediction.creditorAmount ?? 0
+  const receipt = (mean / 100) * total
+  const suggested = calculated(
+    'Suggested SBR amount',
+    [
+      `To creditors = ${exactPercent(mean)}% (the ${outcomes.length} most similar past cases' average) × ${formatAud(total)} = ${formatAudCents(receipt)}`,
+      `Grossed up for the ${formatFeeRate(fee)} fee: ${formatAudCents(receipt)} ÷ ${(1 - fee).toFixed(3)} = ${formatAudCents(receipt / (1 - fee))}`,
+      `Rounded to the nearest $500 = ${formatAud(suggestedRounded)}`,
+    ].join('\n'),
+  )
+  const aligned = prediction.acceptedAlignedOffer
+  const target =
+    aligned.targetPercent != null && aligned.targetAmount != null
+      ? calculated(
+          'SBR amount similar accepted deals point to',
+          [
+            `${aligned.targetPercent.toFixed(2)}% (what similar accepted deals paid) × ${formatAud(total)} = ${formatAudCents((aligned.targetPercent / 100) * total)}`,
+            `Grossed up for the ${formatFeeRate(fee)} fee = ${formatAudCents(aligned.targetAmount)}`,
+            `Rounded to the nearest $500 = ${formatAud(targetRounded)}`,
+          ].join('\n'),
+        )
+      : calculated('SBR amount similar accepted deals point to', `Rounded to the nearest $500 = ${formatAud(targetRounded)}`)
+  const more = calculated('How much more than now', `${formatAud(targetRounded)} − ${formatAud(suggestedRounded)} = ${formatAud(Math.max(0, (targetRounded ?? 0) - (suggestedRounded ?? 0)))}`)
+  return { suggested, target, more }
+}
+
+/** A past case's figures: Gabby's historical cases (Prediction Data). */
+function pastCaseSource(c: ComparableCase, what: string): AmountSource {
+  return {
+    from: [`${what}, past case ${c.clientName}`, "As recorded in the historical cases (Prediction Data), uploaded from Gabby's workbook."],
+    link: { kind: 'href', href: '/sbr/prediction-data', label: 'Open Prediction Data' },
+  }
+}
+
 /** An info icon that shows how a figure was worked out, on hover, focus or tap. */
 function HowCalculated({ text, label }: { text: string | null; label: string }) {
   if (!text) return null
@@ -331,16 +419,10 @@ export function OutcomePredictionClient({
       cachedInputs?.directorLoanAtAppointment ??
       initialAuto.directorLoanDetected === true,
   )
-  const [directorLoanReason, setDirectorLoanReason] = useState(
-    initialAuto.directorLoanInitial?.override?.reason ?? '',
-  )
-  // The flag and the amount disagree: a reason is needed before it can run.
-  const directorLoanConflict = directorLoanMismatch(
-    directorLoanAtAppointment,
-    initialAuto.directorLoanReceivableAmount,
-    initialAuto.directorLoanAsOf ?? null,
-  )
-  const directorLoanReasonOk = !directorLoanConflict || directorLoanReason.trim().length >= OVERRIDE_REASON_MIN
+  // The tick follows the amount owed to the company; a change is staff's, saved with who and when.
+  const directorLoanChanged = directorLoanAtAppointment !== directorLoanFromAmount(initialAuto.directorLoanReceivableAmount)
+  // A loan line the statements print that nobody mapped: Predict asks for it (never a silent $0).
+  const loanNotIdentified = initialAuto.directorLoan?.notIdentified ?? null
   const inputsChanged = initialPrediction?.inputsChanged ?? []
 
   // The ATO debt: prefilled from the automatic figure, editable by staff
@@ -393,7 +475,8 @@ export function OutcomePredictionClient({
     lodgementReady &&
     feeRate !== null &&
     creditorRowsValid &&
-    directorLoanReasonOk &&
+    !loanNotIdentified &&
+    !initialAuto.atoDebtNotIdentified &&
     readiness.canPredict &&
     notReady.length === 0
 
@@ -408,7 +491,6 @@ export function OutcomePredictionClient({
         body: JSON.stringify({
           paymentPlanType,
           directorLoanAtAppointment,
-          ...(directorLoanConflict ? { directorLoanOverrideReason: directorLoanReason.trim() } : {}),
           practitionerFeeRate: feeRate ?? DEFAULT_PRACTITIONER_FEE_RATE,
           ...(creditorOverride !== undefined ? { creditorAmount: creditorOverride } : {}),
           // Only when nothing is on file; the server ignores it otherwise.
@@ -452,7 +534,7 @@ export function OutcomePredictionClient({
     if (!initialPrediction || initialPrediction.stale) return
     // Inputs the evidence now contradicts: staff check them and re-run.
     if (inputsChanged.length > 0) return
-    if (!lodgementReady || !readiness.canPredict || !directorLoanReasonOk) return
+    if (!lodgementReady || !readiness.canPredict || loanNotIdentified) return
     hydrated.current = true
     runPrediction()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -610,6 +692,7 @@ export function OutcomePredictionClient({
       {/* Inputs / auto-detected panel is screen-only — excluded from the PDF. */}
       <div className="print:hidden">
         <InputPanel
+          clientId={clientId}
           auto={auto}
           dpn={dpn}
           dpnDetail={readiness.dpnDetail}
@@ -619,9 +702,7 @@ export function OutcomePredictionClient({
           setPaymentPlanType={setPaymentPlanType}
           directorLoanAtAppointment={directorLoanAtAppointment}
           setDirectorLoanAtAppointment={setDirectorLoanAtAppointment}
-          directorLoanConflict={directorLoanConflict}
-          directorLoanReason={directorLoanReason}
-          setDirectorLoanReason={setDirectorLoanReason}
+          directorLoanChanged={directorLoanChanged}
           collapsed={inputsCollapsed}
           onToggleCollapsed={() => setInputsCollapsed((v) => !v)}
           onGenerate={runPrediction}
@@ -700,14 +781,22 @@ function PrereqMissingBlock({
           <ul className="mt-2 space-y-1 text-xs text-foreground/70">
             {missing.map((m) => (
               <li key={m.field}>
-                <span className="text-foreground/90">{m.field}</span> — needs{' '}
-                {m.blocker === 'lodgement_analyses'
-                  ? 'lodgement analysis'
-                  : 'financials extraction'}
-                .{' '}
-                <Link href={m.actionUrl} className="text-accent hover:text-accent/80">
-                  Open setup
-                </Link>
+                {m.message ? (
+                  <>
+                    {m.message}{' '}
+                    <Link href={m.actionUrl} className="text-accent hover:text-accent/80">
+                      Confirm key figures
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-foreground/90">{m.field}</span> — needs{' '}
+                    {m.blocker === 'lodgement_analyses' ? 'lodgement analysis' : 'financials extraction'}.{' '}
+                    <Link href={m.actionUrl} className="text-accent hover:text-accent/80">
+                      Open setup
+                    </Link>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -727,6 +816,7 @@ function PrereqMissingBlock({
 }
 
 interface InputPanelProps {
+  clientId: string
   auto: InitialAuto
   dpn: boolean
   dpnDetail: string
@@ -737,10 +827,8 @@ interface InputPanelProps {
   setPaymentPlanType: (v: 'plan' | 'upfront') => void
   directorLoanAtAppointment: boolean
   setDirectorLoanAtAppointment: (v: boolean) => void
-  /** Why the flag and the amount disagree; null when they agree. */
-  directorLoanConflict: string | null
-  directorLoanReason: string
-  setDirectorLoanReason: (v: string) => void
+  /** Staff have changed the tick from what the amount says. */
+  directorLoanChanged: boolean
   collapsed: boolean
   onToggleCollapsed: () => void
   onGenerate: () => void
@@ -759,6 +847,7 @@ interface InputPanelProps {
 
 function InputPanel(props: InputPanelProps) {
   const {
+    clientId,
     auto,
     dpn,
     dpnDetail,
@@ -768,9 +857,7 @@ function InputPanel(props: InputPanelProps) {
     setPaymentPlanType,
     directorLoanAtAppointment,
     setDirectorLoanAtAppointment,
-    directorLoanConflict,
-    directorLoanReason,
-    setDirectorLoanReason,
+    directorLoanChanged,
     collapsed,
     onToggleCollapsed,
     onGenerate,
@@ -806,12 +893,11 @@ function InputPanel(props: InputPanelProps) {
             <span className="text-foreground/30"> · </span>
             Creditors in the SBR:{' '}
             <span className="text-foreground">
-              {formatAud(
-                creditorTotal(
-                  parseAmount(creditorText),
-                  creditorRows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
-                ),
-              )}
+              {(() => {
+                const rows = creditorRows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) }))
+                const total = creditorTotal(parseAmount(creditorText), rows)
+                return <SourcedAmount value={total} source={creditorTotalSource(parseAmount(creditorText), rows, total)} />
+              })()}
             </span>
           </div>
           <button
@@ -854,9 +940,31 @@ function InputPanel(props: InputPanelProps) {
               }
               missing={auto.daysSinceLastPayment == null}
             />
+            {auto.directorLoan?.notIdentified ? (
+              <div>
+                <dt className="text-foreground/40">{directorLoanLabel('Director loan receivable amount', auto.directorLoanAsOf ?? null)}</dt>
+                <dd className="mt-0.5 font-medium text-foreground">Not identified</dd>
+                <p className="mt-0.5 text-foreground/60">
+                  {auto.directorLoan.notIdentified.message}{' '}
+                  {auto.mappingUrl && (
+                    <Link href={auto.mappingUrl} className="text-accent hover:text-accent/80">
+                      Confirm key figures
+                    </Link>
+                  )}
+                </p>
+              </div>
+            ) : (
             <ReadOnlyField
               label={directorLoanLabel('Director loan receivable amount', auto.directorLoanAsOf ?? null)}
-              value={formatAud(auto.directorLoanReceivableAmount)}
+              value={
+                <>
+                  <SourcedAmount
+                    value={auto.directorLoanReceivableAmount}
+                    source={directorLoanSource(auto.directorLoan, auto.directorLoanReceivableAmount, auto.mappingUrl)}
+                  />
+                  {auto.directorLoan?.basis === 'net' ? ' (net)' : ''}
+                </>
+              }
               hint={
                 auto.hasFinancials
                   ? auto.latestFinancialYear != null
@@ -866,6 +974,10 @@ function InputPanel(props: InputPanelProps) {
               }
               softMissing={!auto.hasFinancials}
             />
+            )}
+            {auto.directorLoan?.info && !auto.directorLoan.notIdentified && (
+              <p className="-mt-2 text-foreground/50">{auto.directorLoan.info}</p>
+            )}
           </dl>
         </div>
 
@@ -918,28 +1030,13 @@ function InputPanel(props: InputPanelProps) {
               {auto.directorLoanInitial?.note && (
                 <p className="mt-1 pl-1 text-xs text-warning">{auto.directorLoanInitial.note}</p>
               )}
-              {directorLoanConflict && (
-                <div
-                  role="alert"
-                  className="mt-2 space-y-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning"
-                >
-                  <p className="flex gap-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                    {directorLoanConflict}
-                  </p>
-                  <label htmlFor="director-loan-reason" className="block text-foreground/70">
-                    Reason for keeping {directorLoanAtAppointment ? 'Yes' : 'No'} (saved with the prediction)
-                  </label>
-                  <textarea
-                    id="director-loan-reason"
-                    rows={2}
-                    maxLength={OVERRIDE_REASON_MAX}
-                    value={directorLoanReason}
-                    onChange={(event) => setDirectorLoanReason(event.target.value)}
-                    className="w-full resize-y rounded-md border border-border bg-input-bg px-2 py-1.5 text-xs text-foreground focus:border-accent focus:outline-none"
-                  />
-                </div>
-              )}
+              {/* A small note, never a block: the tick is staff's to change. */}
+              {directorLoanChanged &&
+                (auto.directorLoanInitial?.override && auto.directorLoanInitial.override.value === directorLoanAtAppointment ? (
+                  <p className="mt-1 pl-1 text-xs text-foreground/50">{changedNote(auto.directorLoanInitial.override)}</p>
+                ) : (
+                  <p className="mt-1 pl-1 text-xs text-foreground/50">Changed from what the amount says: saved with your name when you run the prediction.</p>
+                ))}
             </div>
             <fieldset className="rounded-lg border border-border bg-surface/30 px-3 py-2">
               <legend className="px-1 text-xs text-foreground/50">Payment approach</legend>
@@ -974,6 +1071,7 @@ function InputPanel(props: InputPanelProps) {
       </div>
 
       <CreditorsEditor
+        clientId={clientId}
         auto={auto}
         creditorText={creditorText}
         setCreditorText={setCreditorText}
@@ -1012,6 +1110,7 @@ function InputPanel(props: InputPanelProps) {
  * figure is shown beside a row when there is one; it is never filled in.
  */
 function CreditorsEditor({
+  clientId,
   auto,
   creditorText,
   setCreditorText,
@@ -1020,6 +1119,7 @@ function CreditorsEditor({
   rows,
   setRows,
 }: {
+  clientId: string
   auto: InitialAuto
   creditorText: string
   setCreditorText: (v: string) => void
@@ -1080,7 +1180,7 @@ function CreditorsEditor({
             }}
             className={cn(inputClass, 'w-36 font-medium tabular-nums')}
           />
-          <span aria-hidden />
+          <SourceButton source={atoDebtSource(auto.creditorSource, creditorEdited, clientId, auto.mappingUrl)} label="the ATO debt" />
           <p className="text-foreground/40">
             {!creditorEdited && auto.atoDebtNote && (
               <span className="mb-0.5 block text-warning">{auto.atoDebtNote}</span>
@@ -1115,21 +1215,33 @@ function CreditorsEditor({
                 onChange={(event) => update(row.id, { amountText: event.target.value })}
                 className={cn(inputClass, 'w-36 tabular-nums', invalid && 'border-destructive')}
               />
-              <button
-                type="button"
-                onClick={() => removeRow(row.id)}
-                aria-label={`Remove ${row.label.trim() || `creditor ${i + 1}`}`}
-                title="Remove this creditor"
-                className={iconButton}
-              >
-                <Minus className="h-3.5 w-3.5" aria-hidden />
-              </button>
+              <span className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => removeRow(row.id)}
+                  aria-label={`Remove ${row.label.trim() || `creditor ${i + 1}`}`}
+                  title="Remove this creditor"
+                  className={iconButton}
+                >
+                  <Minus className="h-3.5 w-3.5" aria-hidden />
+                </button>
+                {row.amountText.trim() !== '' && !invalid && <SourceButton source={creditorRowSource(row.label)} label={`${row.label || 'this creditor'}'s amount`} />}
+              </span>
               <p className="text-foreground/40">
                 {invalid ? (
                   <span className="text-destructive">Enter an amount of $0 or more, or leave it blank.</span>
                 ) : hint ? (
                   <>
-                    Balance sheet shows {formatAud(hint.amount)} ({hint.source})
+                    Balance sheet shows{' '}
+                    <SourcedAmount
+                      value={hint.amount}
+                      source={{
+                        from: [`Balance sheet figure for ${row.label || 'this creditor'}`, `${hint.source}: the lines confirmed for this kind of creditor. Shown beside the row, never filled in.`],
+                        rule: hint.caution ?? null,
+                        link: auto.mappingUrl ? { kind: 'href', href: auto.mappingUrl, label: 'Confirm key figures' } : null,
+                      }}
+                    />{' '}
+                    ({hint.source})
                     {hint.caution && <span className="text-warning"> · {hint.caution}</span>}
                   </>
                 ) : null}
@@ -1165,7 +1277,14 @@ function CreditorsEditor({
         <div className={cn(grid, 'border-t border-border pt-2')}>
           <span className="font-medium text-foreground">Total creditors</span>
           <span className="font-semibold tabular-nums text-foreground" data-testid="creditor-total">
-            {formatAud(total)}
+            <SourcedAmount
+              value={total}
+              source={creditorTotalSource(
+                parseAmount(creditorText),
+                rows.map((r) => ({ label: r.label, amount: parseAmount(r.amountText) })),
+                total,
+              )}
+            />
           </span>
         </div>
       </div>
@@ -1190,18 +1309,22 @@ export function CreditorsSummaryCard({ prediction }: { prediction: FullPredictio
                 <span className="text-foreground/40"> — {prediction.creditorDebt.description}</span>
               ) : null}
             </td>
-            <td className="py-1 text-right tabular-nums text-foreground">{formatAud(atoDebt)}</td>
+            <td className="py-1 text-right tabular-nums text-foreground">
+              <SourcedAmount value={atoDebt} source={atoDebtSource(prediction.creditorDebt?.description, prediction.creditorDebt?.source === 'staff', null)} />
+            </td>
           </tr>
           {others.map((row, i) => (
             <tr key={i} className="border-b border-border">
               <td className="py-1 pr-3 text-foreground/70">{row.label || 'Creditor'}</td>
-              <td className="py-1 text-right tabular-nums text-foreground">{formatAud(row.amount)}</td>
+              <td className="py-1 text-right tabular-nums text-foreground">
+                <SourcedAmount value={row.amount} source={creditorRowSource(row.label)} />
+              </td>
             </tr>
           ))}
           <tr>
             <td className="py-1 pr-3 font-medium text-foreground">Total</td>
             <td className="py-1 text-right font-semibold tabular-nums text-foreground">
-              {formatAud(prediction.creditorAmount)}
+              <SourcedAmount value={prediction.creditorAmount} source={creditorTotalSource(atoDebt, others, prediction.creditorAmount)} />
             </td>
           </tr>
         </tbody>
@@ -1414,7 +1537,7 @@ function ReadOnlyField({
   softMissing,
 }: {
   label: string
-  value: string
+  value: React.ReactNode
   hint?: string
   missing?: boolean
   softMissing?: boolean
@@ -1566,6 +1689,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
   const payment = prediction.paymentStructureRecommendation
   const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
   const explain = headlineExplanations(prediction, suggestedRounded)
+  const sources = offerSources(prediction, suggestedRounded, targetRounded)
 
   return (
     <Card>
@@ -1629,13 +1753,18 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
                 Amount to make it acceptable
               </p>
               <p className="mt-1 text-4xl font-bold tabular-nums text-success">
-                {formatAud(targetRounded)}
+                <SourcedAmount value={targetRounded} source={sources.target} />
               </p>
               <p className="mt-1.5 text-xs text-foreground/70">
                 Current SBR amount is{' '}
-                <span className="font-medium text-foreground">{formatAud(suggestedRounded)}</span> —
-                raise it to{' '}
-                <span className="font-medium text-success">{formatAud(targetRounded)}</span> to match
+                <span className="font-medium text-foreground">
+                  <SourcedAmount value={suggestedRounded} source={sources.suggested} />
+                </span>{' '}
+                — raise it to{' '}
+                <span className="font-medium text-success">
+                  <SourcedAmount value={targetRounded} source={sources.target} />
+                </span>{' '}
+                to match
                 similar deals that were accepted.
               </p>
               <p className="mt-2 text-xs text-foreground/40">SBR amount to aim for</p>
@@ -1643,7 +1772,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           ) : showAlreadyStrong ? (
             <>
               <p className="text-4xl font-bold tabular-nums text-foreground">
-                {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
+                <SourcedAmount value={suggestedRounded} source={sources.suggested} />
               </p>
               <p className="mt-1.5 text-xs text-foreground/70">
                 This is the current SBR amount — already at the level similar deals were accepted
@@ -1654,7 +1783,7 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
           ) : (
             <>
               <p className="text-4xl font-bold tabular-nums text-foreground">
-                {suggestedRounded != null ? formatAud(suggestedRounded) : '—'}
+                <SourcedAmount value={suggestedRounded} source={sources.suggested} />
               </p>
               <p className="mt-1 text-xs text-foreground/60">
                 In line with similar deals that were accepted.
@@ -1670,7 +1799,10 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
         <div className={cn('rounded-lg border p-4 text-center', band.tile)}>
           {suggestedRounded != null && (
             <p className="text-xs text-foreground/60">
-              At <span className="font-semibold text-foreground">{formatAud(suggestedRounded)}</span>{' '}
+              At{' '}
+              <span className="font-semibold text-foreground">
+                <SourcedAmount value={suggestedRounded} source={sources.suggested} />
+              </span>{' '}
               this offer is
             </p>
           )}
@@ -1690,11 +1822,10 @@ function HeadlineTiles({ prediction }: { prediction: FullPrediction }) {
             <div className="mt-2 rounded-md border border-success/30 bg-success/10 px-2 py-1.5">
               <p className="text-[11px] text-foreground/70">To get it accepted, offer</p>
               <p className="text-xl font-bold tabular-nums text-success">
-                {formatAud(targetRounded)}
+                <SourcedAmount value={targetRounded} source={sources.target} />
               </p>
               <p className="text-[11px] text-foreground/60">
-                {formatAud(Math.max(0, (targetRounded ?? 0) - (suggestedRounded ?? 0)))} more than
-                now
+                <SourcedAmount value={Math.max(0, (targetRounded ?? 0) - (suggestedRounded ?? 0))} source={sources.more} /> more than now
               </p>
             </div>
           ) : showAlreadyStrong ? (
@@ -1804,7 +1935,7 @@ function CreditorTotalSteps({ prediction }: { prediction: FullPrediction }) {
   const others = includedCreditorRows(prediction.creditors ?? [])
   const atoDebt = prediction.atoDebt === undefined ? prediction.creditorAmount : prediction.atoDebt
   return (
-    <div className="mb-2 border-b border-border/60 pb-2">
+    <div className="mb-2 border-b border-border/60 pb-2" data-explanation="">
       <div>
         ATO debt = <span className="text-foreground">{formatAud(atoDebt)}</span>
         {prediction.creditorDebt ? ` (${prediction.creditorDebt.description})` : ''}
@@ -1849,7 +1980,8 @@ function CalculationsContent({
   const percentages = offerPercentages(suggestedRounded, prediction.creditorAmount)
 
   return (
-    <>
+    // The working, step by step: the explanation itself (test/sourcedAmounts.ts).
+    <div data-explanation="">
       <div className="mb-5 pr-8">
           <div className="flex items-center gap-2">
             <HelpCircle className="h-4 w-4 text-accent" />
@@ -2139,7 +2271,7 @@ function CalculationsContent({
             {paymentStructureMeaning(prediction.paymentStructureRecommendation.recommended)}
           </div>
         </section>
-    </>
+    </div>
   )
 }
 
@@ -2424,8 +2556,27 @@ function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
             {prediction.featureBreakdown.map((entry) => (
               <tr key={entry.feature} className="border-b border-border/40 last:border-0">
                 <td className="py-2 pr-4 text-foreground/80">{factorLabel(entry.feature, entry.label, prediction.directorLoanAsOf)}</td>
-                <td className="py-2 pr-4 text-foreground/70">{formatFeatureValue(entry.feature, entry.inputValue)}</td>
-                <td className="py-2 pr-4 text-foreground/70">{formatFeatureValue(entry.feature, entry.medianInNeighbours)}</td>
+                <td className="py-2 pr-4 text-foreground/70">
+                  {entry.feature === 'directorLoanReceivableAmount' && typeof entry.inputValue === 'number' ? (
+                    <SourcedAmount value={entry.inputValue} source={directorLoanSource(prediction.directorLoan, entry.inputValue)} />
+                  ) : (
+                    formatFeatureValue(entry.feature, entry.inputValue)
+                  )}
+                </td>
+                <td className="py-2 pr-4 text-foreground/70">
+                  {entry.feature === 'directorLoanReceivableAmount' && typeof entry.medianInNeighbours === 'number' ? (
+                    <SourcedAmount
+                      value={entry.medianInNeighbours}
+                      source={calculated(
+                        'Director loan receivable amount, similar cases (median)',
+                        `Median of ${prediction.comparableCases.map((c) => formatAud(c.features.directorLoanReceivableAmount)).join(', ')} = ${formatAud(entry.medianInNeighbours)}`,
+                        { link: { kind: 'href', href: '/sbr/prediction-data', label: 'Open Prediction Data' } },
+                      )}
+                    />
+                  ) : (
+                    formatFeatureValue(entry.feature, entry.medianInNeighbours)
+                  )}
+                </td>
                 <td className="py-2 text-foreground/60">{entry.influenceNote}</td>
               </tr>
             ))}
@@ -2434,8 +2585,8 @@ function FeatureBreakdownPanel({ prediction }: { prediction: FullPrediction }) {
       </div>
       {prediction.directorLoanOverride && (
         <p className="mt-3 text-xs text-foreground/60">
-          Director loan at appointment kept at {prediction.directorLoanOverride.value ? 'Yes' : 'No'} by staff
-          against the receivable amount: &ldquo;{prediction.directorLoanOverride.reason}&rdquo;
+          Director loan at appointment set to {prediction.directorLoanOverride.value ? 'Yes' : 'No'} by staff:{' '}
+          {changedNote(prediction.directorLoanOverride)}.
         </p>
       )}
     </Card>
@@ -2561,9 +2712,15 @@ function ComparableCasesPanel({ prediction }: { prediction: FullPrediction }) {
                   </div>
                 </dl>
                 <p className="mt-2 text-xs text-foreground/50">
-                  SBR offer: <span className="text-foreground/80">{formatAud(c.sbrPayment)}</span> of{' '}
-                  <span className="text-foreground/80">{formatAud(c.creditorAmount)}</span> creditor
-                  debt
+                  SBR offer:{' '}
+                  <span className="text-foreground/80">
+                    <SourcedAmount value={c.sbrPayment} source={pastCaseSource(c, 'SBR offer')} />
+                  </span>{' '}
+                  of{' '}
+                  <span className="text-foreground/80">
+                    <SourcedAmount value={c.creditorAmount} source={pastCaseSource(c, 'Creditor debt')} />
+                  </span>{' '}
+                  creditor debt
                 </p>
               </div>
             ))}
@@ -2768,7 +2925,7 @@ function ExportButton({
       prediction.inputFeatures.directorLoanAtAppointment ? 'Yes' : 'No',
     )
     if (prediction.directorLoanOverride) {
-      push('Reason for keeping it', prediction.directorLoanOverride.reason)
+      push('Changed by staff', changedNote(prediction.directorLoanOverride))
     }
     push(
       directorLoanLabel('Director loan receivable amount', prediction.directorLoanAsOf ?? null),

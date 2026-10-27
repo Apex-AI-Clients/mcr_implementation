@@ -193,12 +193,38 @@ function sourceDocument(instances: Instance[], kind: PrintedStatementKind, col: 
 
 // ─── Rows ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Misspellings accountants print, fixed so the same line spelt two ways in
+ * two years is one row (old reader labels.ts MISSPELLINGS). Applied to a row
+ * key too, so a mapping confirmed before this still finds its row.
+ */
+const MISSPELLINGS: [RegExp, string][] = [
+  [/\bassests?\b/g, 'assets'],
+  [/\bliabilites\b/g, 'liabilities'],
+  [/\bliabilties\b/g, 'liabilities'],
+  [/\bmaintainance\b/g, 'maintenance'],
+  [/\bmaintenence\b/g, 'maintenance'],
+  [/\brecievables?\b/g, 'receivable'],
+  [/\breceivables\b/g, 'receivable'],
+  [/\bpayables\b/g, 'payable'],
+  [/\bequipments\b/g, 'equipment'],
+  [/\bfitings\b/g, 'fittings'],
+  [/\bdepreciaton\b/g, 'depreciation'],
+  [/\bdeverlopment\b/g, 'development'],
+]
+
+export function fixSpelling(s: string): string {
+  return MISSPELLINGS.reduce((text, [wrong, right]) => text.replace(wrong, right), s)
+}
+
 const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
+  fixSpelling(
+    s
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim(),
+  )
 
 interface BlockRow {
   key: string

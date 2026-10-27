@@ -17,11 +17,13 @@ import {
   STAYS_LABEL,
   describeDaysLeft,
   formatDay,
+  noticesSource,
   removableLabel,
 } from '@/components/admin/lodgement/DpnRiskPanel'
 import { DebtCompositionPanel, withDates } from '@/components/admin/lodgement/DebtCompositionPanel'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
+import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 interface Props {
   clientId: string
@@ -441,6 +443,7 @@ function SummaryPanel({
         const { numberOfLateLodgements, cumulativeDaysLate } = analysis.summary
         const dpn = analysis.dpnRisk
         const fmt = (n: number) => n.toLocaleString('en-AU', { maximumFractionDigits: 0 })
+        const money = (n: number) => `$${fmt(n)}`
 
         return (
           <div className="rounded-md border border-warning/30 bg-warning/5 px-4 py-3 space-y-1.5">
@@ -450,11 +453,14 @@ function SummaryPanel({
               totalling {cumulativeDaysLate} days of delay.
               {notices ? (
                 <>
-                  {' '}The ATO&apos;s director penalty notices show ${fmt(notices.unpaid)} unpaid:{' '}
-                  ${fmt(notices.removable)} is removed if an SBR practitioner, administrator or liquidator is
-                  appointed, or it is paid, by {formatDay(notices.deadline)}, and{' '}
+                  {' '}The ATO&apos;s director penalty notices show{' '}
+                  <SourcedAmount value={notices.unpaid} format={money} source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, analysis.clientId)} /> unpaid:{' '}
+                  <SourcedAmount value={notices.removable} format={money} source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, analysis.clientId)} /> is
+                  removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by{' '}
+                  {formatDay(notices.deadline)}, and{' '}
                   <span className={notices.staysWithDirector > 0 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                    ${fmt(notices.staysWithDirector)} stays with the director unless paid
+                    <SourcedAmount value={notices.staysWithDirector} format={money} source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, analysis.clientId)} /> stays with
+                    the director unless paid
                   </span>
                   .
                 </>
@@ -462,11 +468,28 @@ function SummaryPanel({
                 dpn &&
                 dpn.totalGrossLate > 0 && (
                   <>
-                    {' '}No director penalty notice is uploaded. Estimated from the ATO account: $
-                    {fmt(dpn.totalGrossLate)} was lodged more than 90 days past due, reduced by $
-                    {fmt(dpn.totalReducedByAmendments)} of later amendments for the same periods — leaving an estimated{' '}
+                    {' '}No director penalty notice is uploaded. Estimated from the ATO account:{' '}
+                    <SourcedAmount
+                      value={dpn.totalGrossLate}
+                      format={money}
+                      source={{
+                        from: ['Gross debt lodged more than 90 days late (an estimate)', `${dpn.contributingDebits.length} original activity statement rows lodged more than 90 days past their due date, in the ATO account CSV.`],
+                        link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' },
+                      }}
+                    />{' '}
+                    was lodged more than 90 days past due, reduced by{' '}
+                    <SourcedAmount
+                      value={dpn.totalReducedByAmendments}
+                      format={money}
+                      source={{ from: ['Reduced by later amendments', 'Credits from amended activity statements for the same periods, in the ATO account CSV.'], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
+                    />{' '}
+                    of later amendments for the same periods — leaving an estimated{' '}
                     <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                      ${fmt(dpn.totalNetAtRisk)}
+                      <SourcedAmount
+                        value={dpn.totalNetAtRisk}
+                        format={money}
+                        source={{ from: ['Estimated still owing on the late lodgements'], calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} = $${fmt(dpn.totalNetAtRisk)}` }}
+                      />
                     </span>{' '}
                     still owing on those lodgements.
                   </>
