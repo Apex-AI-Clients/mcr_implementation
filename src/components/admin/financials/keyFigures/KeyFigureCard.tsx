@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCircle2 } from 'lucide-react'
+import { Check, CheckCircle2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { describeLine } from '@/lib/printed/picker'
@@ -157,7 +157,8 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
               Yes, that&apos;s right
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setPicking(true)} disabled={saving}>
+          <Button size="sm" variant={status === 'confirmed' ? 'accent' : 'ghost'} onClick={() => setPicking(true)} disabled={saving}>
+            {status === 'confirmed' && <Pencil className="h-3.5 w-3.5" aria-hidden />}
             {status === 'confirmed' ? 'Change' : status === 'suggested' ? 'Choose another' : 'Choose the line'}
           </Button>
         </div>

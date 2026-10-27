@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, CheckCircle2, ClipboardCheck, HelpCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ClipboardCheck, HelpCircle, Pencil } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
@@ -52,10 +52,20 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-foreground">Headline figures</h2>
         {allConfirmed && (
-          <Link href={keyFigures} className="no-print inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success hover:bg-success/25">
-            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-            All key figures confirmed
-          </Link>
+          <div className="no-print flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+              All key figures confirmed
+            </span>
+            {/* Confirmed is not final: staff can change any line, and the change is recorded. */}
+            <Link
+              href={keyFigures}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1 text-xs font-medium text-foreground/80 hover:bg-surface/60 hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden />
+              Edit key figures
+            </Link>
+          </div>
         )}
       </div>
 
@@ -176,6 +186,16 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
                   <SourceLines sources={sources} />
                 </div>
               )}
+              {status === 'confirmed' && (
+                <button
+                  type="button"
+                  onClick={() => setOpen(info.key)}
+                  className="no-print mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+                >
+                  <Pencil className="h-3 w-3" aria-hidden />
+                  Change
+                </button>
+              )}
 
               {status !== 'not_found' && resolved.status !== 'none' && (
                 latest ? (
@@ -224,7 +244,12 @@ export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Pr
         })}
       </div>
 
-      <Dialog open={open !== null} onClose={() => setOpen(null)} title="Check this key figure" className="max-w-2xl">
+      <Dialog
+        open={open !== null}
+        onClose={() => setOpen(null)}
+        title={open && statusOf(open) === 'confirmed' ? 'Change this key figure' : 'Check this key figure'}
+        className="max-w-2xl"
+      >
         {open && (
           <ul>
             <KeyFigureCard

@@ -96,7 +96,7 @@ describe('PrintedComparisonClient', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the review bar, and each tile marked by its state, until the key figures are confirmed', () => {
+  it('shows the review bar, and each tile marked by its state, until the key figures are confirmed', async () => {
     const c = comparison()
     const suggestions = suggestMapping(c)
     const page = (mapping: MappingEntry[]) =>
@@ -115,8 +115,16 @@ describe('PrintedComparisonClient', () => {
     const all: MappingEntry[] = MEANINGS.filter((m) => m.required).map((m) => ({ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: 'Test Staff', confirmedAt: at }))
     page(all)
     expect(screen.queryByRole('status', { name: 'Key figures to review' })).toBeNull()
-    expect(screen.getByRole('link', { name: /All key figures confirmed/ })).toBeTruthy()
+    expect(screen.getByText('All key figures confirmed')).toBeTruthy()
     expect(screen.getByText('Revenue').closest('[data-status]')!.getAttribute('data-status')).toBe('confirmed')
+
+    // Confirmed figures stay editable: the whole set, or one tile at a time.
+    expect(screen.getByRole('link', { name: /Edit key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
+    const revenue = screen.getByText('Revenue').closest('[data-status]') as HTMLElement
+    await userEvent.setup().click(within(revenue).getByRole('button', { name: 'Change' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Change this key figure')).toBeTruthy()
+    expect(within(dialog).getByRole('radio', { name: /The statements don.t print this/ })).toBeTruthy()
   })
 
   it('opens the exports when every printed total adds up', () => {
