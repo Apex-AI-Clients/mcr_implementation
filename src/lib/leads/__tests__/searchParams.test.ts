@@ -175,22 +175,22 @@ describe('leadsHref', () => {
 })
 
 describe('per page', () => {
-  it('defaults to 10 and leaves it out of the URL', () => {
-    expect(parseLeadQuery({}).filters.perPage).toBe(10)
-    expect(leadsHref(filters({ perPage: 10 }), 1)).toBe('/leads')
+  it('defaults to 100 and leaves it out of the URL', () => {
+    expect(parseLeadQuery({}).filters.perPage).toBe(100)
+    expect(leadsHref(filters({ perPage: 100 }), 1)).toBe('/leads')
   })
 
   it('round-trips each size the control offers', () => {
-    for (const perPage of [50, 100, 'all'] as const) {
+    for (const perPage of [10, 50, 'all'] as const) {
       const href = leadsHref(filters({ perPage }), 1)
       const query = Object.fromEntries(new URLSearchParams(href.split('?')[1]))
       expect(parseLeadQuery(query).filters.perPage).toBe(perPage)
     }
   })
 
-  it('falls back to 10 for a size the control does not offer', () => {
+  it('falls back to 100 for a size the control does not offer', () => {
     for (const per of ['7', '100000', 'ALL', '', '-1']) {
-      expect(parseLeadQuery({ per }).filters.perPage).toBe(10)
+      expect(parseLeadQuery({ per }).filters.perPage).toBe(100)
     }
   })
 })

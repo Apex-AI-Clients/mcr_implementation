@@ -129,7 +129,7 @@ describe('pageRangeLabel', () => {
 })
 
 describe('LEADS_PAGE_SIZE', () => {
-  it('is 10', () => {
-    expect(LEADS_PAGE_SIZE).toBe(10)
+  it('is 100', () => {
+    expect(LEADS_PAGE_SIZE).toBe(100)
   })
 })

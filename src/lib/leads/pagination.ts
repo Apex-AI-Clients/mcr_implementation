@@ -7,7 +7,7 @@
  */
 
 /** Rows per page unless the list asks for more. One place, so the server range and the UI cannot disagree. */
-export const LEADS_PAGE_SIZE = 10
+export const LEADS_PAGE_SIZE = 100
 
 /** What the "per page" control offers. 'all' is every matching row on one page. */
 export const PER_PAGE_OPTIONS = [10, 50, 100, 'all'] as const
