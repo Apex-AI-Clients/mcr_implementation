@@ -7,7 +7,7 @@ import { DebtInput } from '@/components/leads/DebtInput'
 import { SourceInput } from '@/components/leads/SourceInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { NotebookPen, Trash2 } from 'lucide-react'
+import { MessageSquareText, NotebookPen, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
@@ -24,7 +24,7 @@ import {
   formatShortDate,
 } from '@/lib/leads/format'
 import type { Lead } from '@/types/leads'
-import { notesTooltip, type LeadNote } from '@/lib/leads/notes'
+import { noteHeading, type LeadNote } from '@/lib/leads/notes'
 
 interface LeadRowProps {
   lead: Lead
@@ -105,6 +105,9 @@ export function LeadTableRow({
         {formatShortDate(lead.lastEnquiryAt)}
         <EnquiryCount lead={lead} />
       </td>
+      {/* Wraps at spaces, as it always has. Not wrap-anywhere: once the table
+          overflows, auto layout shrinks every column to its minimum, and that
+          would break ordinary names mid-word ("Pava/n"). */}
       <td className="px-3 py-3.5">
         <Link
           href={`/leads/${lead.id}`}
@@ -119,7 +122,12 @@ export function LeadTableRow({
       <td className="hidden max-w-[180px] truncate px-3 py-3.5 text-foreground/50 xl:table-cell">
         {lead.email}
       </td>
-      <td className="px-3 py-3.5 whitespace-nowrap tabular-nums text-foreground/50">
+      {/* Capped: a malformed number with no spaces would otherwise widen the
+          whole table. Cut in the row, in full on hover. */}
+      <td
+        className="max-w-[10rem] truncate px-3 py-3.5 whitespace-nowrap tabular-nums text-foreground/50"
+        title={formatPhone(lead.phone)}
+      >
         {formatPhone(lead.phone)}
       </td>
       {/* An exact figure, typed. The forms can only give a bracket; once the
@@ -151,23 +159,15 @@ export function LeadTableRow({
             <span className="text-foreground/25">&mdash;</span>
           ))}
       </td>
-      {/* The one column allowed to lose information — the record has it in
-          full. Capped so a long message can't push Stage and Source off screen. */}
-      {/* Paired with the Message header in LeadTable's COLUMNS. */}
-      <td className="hidden max-w-[12rem] px-3 py-3.5 2xl:table-cell">
-        {lead.message ? (
-          // Truncated in the row, in full on hover or focus — the column is the
-          // one allowed to lose information, but not to hide it.
-          <Tooltip content={lead.message} className="block min-w-0 cursor-help">
-            <span className="block truncate text-foreground/50">{lead.message}</span>
-          </Tooltip>
-        ) : (
-          <span className="text-foreground/25">&mdash;</span>
-        )}
+      {/* An icon, the message in full on hover or focus, like Notes: a text
+          column here pushed Stage and Source off screen. The record has it too.
+          Paired with the Message header in LeadTable's COLUMNS. */}
+      <td className="w-12 px-2 py-3.5 text-center" onClick={swallow}>
+        <MessageIcon message={lead.message} />
       </td>
       {/* Paired with the Notes header LeadTable adds when given notes. */}
       {notes && (
-        <td className="w-14 px-3 py-3.5 text-center" onClick={swallow}>
+        <td className="w-12 px-2 py-3.5 text-center" onClick={swallow}>
           <NotesIcon notes={notes} />
         </td>
       )}
@@ -239,7 +239,7 @@ export function LeadCard({
           </div>
           <ReenquiryMarker lead={lead} className="mt-1.5" />
           <p className="mt-1 truncate text-xs text-foreground/50">{lead.email}</p>
-          <p className="mt-0.5 text-xs tabular-nums text-foreground/50">
+          <p className="mt-0.5 truncate text-xs tabular-nums text-foreground/50">
             {formatPhone(lead.phone)}
           </p>
         </div>
@@ -340,14 +340,18 @@ function ReenquiryMarker({ lead, className }: { lead: Lead; className?: string }
 }
 
 /**
- * The notes column: an icon with the count, the notes themselves (newest
- * first) on hover or focus, so a long note never stretches the row. A dash
- * when there are none.
+ * The notes column: an icon with the count, every note (newest first, one
+ * bullet each) on hover or focus, so a long note never stretches the row. A
+ * dash when there are none.
  */
 function NotesIcon({ notes }: { notes: LeadNote[] }) {
   if (notes.length === 0) return <span className="text-foreground/25">&mdash;</span>
   return (
-    <Tooltip content={notesTooltip(notes)} className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+    <Tooltip
+      content={<NotesList notes={notes} />}
+      maxHeightClassName="max-h-[70vh]"
+      className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
       <span
         className="inline-flex items-center gap-1 text-accent"
         aria-label={`${notes.length} note${notes.length === 1 ? '' : 's'}`}
@@ -359,3 +363,31 @@ function NotesIcon({ notes }: { notes: LeadNote[] }) {
   )
 }
 
+/** The message column: an icon, the lead's message on hover or focus. A dash when there is none. */
+function MessageIcon({ message }: { message: string | null }) {
+  if (!message) return <span className="text-foreground/25">&mdash;</span>
+  return (
+    <Tooltip
+      content={message}
+      className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
+      <span className="inline-flex items-center text-accent" aria-label="Message">
+        <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+      </span>
+    </Tooltip>
+  )
+}
+
+/** The notes in the tooltip: one bullet each, its date and author over the note. */
+function NotesList({ notes }: { notes: LeadNote[] }) {
+  return (
+    <ul className="list-disc space-y-2 pl-4 text-left">
+      {notes.map((note, index) => (
+        <li key={index}>
+          <span className="block text-foreground/50">{noteHeading(note)}</span>
+          {note.body.trim()}
+        </li>
+      ))}
+    </ul>
+  )
+}

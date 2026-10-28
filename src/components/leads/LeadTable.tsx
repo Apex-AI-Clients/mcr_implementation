@@ -77,9 +77,8 @@ const COLUMNS = [
   // making every header row taller.
   { label: 'Business type', className: 'text-left whitespace-nowrap' },
   { label: 'State', className: 'text-left' },
-  // The widest column and the one already allowed to lose information, so it
-  // is the first to go. Same pairing rule as Email above.
-  { label: 'Message', className: 'text-left hidden 2xl:table-cell' },
+  // An icon, the message on hover — narrow enough to show at every width.
+  { label: 'Message', className: 'text-center w-12' },
   { label: 'Stage', className: 'text-left' },
   { label: 'Source', className: 'text-left' },
   // Follow-up flag column — hidden for now. Keep in step with the matching
@@ -103,7 +102,7 @@ export function LeadTable({
   // renders only with `notes`, so the header and body counts stay in step.
   const columns = showNotes
     ? COLUMNS.flatMap((column) =>
-        column.label === 'Stage' ? [{ label: 'Notes', className: 'text-center w-14' }, column] : [column],
+        column.label === 'Stage' ? [{ label: 'Notes', className: 'text-center w-12' }, column] : [column],
       )
     : COLUMNS
   const selectedHere = leads.filter((lead) => selectedIds.has(lead.id)).length

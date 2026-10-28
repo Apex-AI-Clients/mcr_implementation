@@ -371,7 +371,7 @@ function ContactCard({ lead }: { lead: Lead }) {
           </a>
         </ContactRow>
         <ContactRow icon={Phone} label="Phone" copy={lead.phone}>
-          <a href={`tel:${lead.phone}`} className="tabular-nums text-accent hover:underline">
+          <a href={`tel:${lead.phone}`} className="min-w-0 tabular-nums text-accent wrap-anywhere hover:underline">
             {formatPhone(lead.phone)}
           </a>
         </ContactRow>
@@ -387,7 +387,7 @@ function ContactCard({ lead }: { lead: Lead }) {
       {lead.message && (
         <div className="mt-4 border-t border-border pt-4">
           <p className="text-xs font-medium text-muted">Their message</p>
-          <blockquote className="mt-2 whitespace-pre-wrap border-l-2 border-accent/40 pl-3 text-sm leading-relaxed text-foreground/80">
+          <blockquote className="mt-2 whitespace-pre-wrap wrap-anywhere border-l-2 border-accent/40 pl-3 text-sm leading-relaxed text-foreground/80">
             {lead.message}
           </blockquote>
         </div>

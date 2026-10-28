@@ -4,9 +4,11 @@ import { useRef, useState } from 'react'
 
 interface TooltipProps {
   /** Full text to reveal. Nothing renders when this is empty. */
-  content: string
+  content: React.ReactNode
   children: React.ReactNode
   className?: string
+  /** The bubble's height cap; max-h-80 unless the content needs more room. */
+  maxHeightClassName?: string
 }
 
 /** Roughly the bubble's width, used to keep it inside the viewport. */
@@ -24,7 +26,7 @@ const GAP = 8
  *
  * Opens on focus as well as hover, so it is reachable from the keyboard.
  */
-export function Tooltip({ content, children, className }: TooltipProps) {
+export function Tooltip({ content, children, className, maxHeightClassName = 'max-h-80' }: TooltipProps) {
   const triggerRef = useRef<HTMLSpanElement>(null)
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
 
@@ -72,7 +74,7 @@ export function Tooltip({ content, children, className }: TooltipProps) {
           // break-words is load-bearing: whitespace-pre-wrap only wraps where
           // there is whitespace, so a long unbroken string ("fffff…") would
           // otherwise run straight out of the bubble.
-          className="pointer-events-none fixed z-[70] max-h-80 overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-xl"
+          className={`pointer-events-none fixed z-[70] ${maxHeightClassName} overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-xl`}
         >
           {content}
         </span>

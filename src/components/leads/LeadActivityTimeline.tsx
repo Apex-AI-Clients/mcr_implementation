@@ -120,7 +120,7 @@ function ReadRow({
             )}
           </span>
         </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">
+        <p className="mt-1.5 whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-foreground/80">
           {activity.body}
         </p>
       </div>
@@ -273,7 +273,7 @@ function DeleteActivityDialog({
     >
       <div className="space-y-3 text-sm text-foreground/70">
         {activity && (
-          <p className="rounded-lg border border-border bg-surface p-3 whitespace-pre-wrap text-foreground/80">
+          <p className="rounded-lg border border-border bg-surface p-3 whitespace-pre-wrap wrap-anywhere text-foreground/80">
             {activity.body}
           </p>
         )}

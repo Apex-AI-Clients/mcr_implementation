@@ -39,7 +39,7 @@ export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h1 className="text-2xl font-semibold text-foreground">{lead.name}</h1>
+              <h1 className="text-2xl font-semibold text-foreground wrap-anywhere">{lead.name}</h1>
               <Badge variant={stage.badge}>{stage.label}</Badge>
               {/* Follow-up badge — hidden with the rest of the follow-up UI (table
                   column, filter toggle, page-header count, top-bar pill). */}
