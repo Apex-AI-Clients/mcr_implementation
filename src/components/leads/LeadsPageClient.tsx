@@ -45,7 +45,7 @@ interface LeadsPageClientProps {
   sources?: string[]
   /** Leads per tab, with the other filters applied. No tabs without them. */
   counts?: Record<LeadView, number>
-  /** Each lead's notes, newest first, on the tabs with a notes column (NOTES_VIEWS). */
+  /** Each lead's notes, newest first; given, the table shows a Notes column. */
   notes?: Record<string, LeadNote[]>
 }
 

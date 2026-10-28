@@ -40,7 +40,7 @@ interface LeadRowProps {
   selected: boolean
   onToggleSelect: (leadId: string) => void
   onRequestDelete: (lead: Lead) => void
-  /** The lead's notes, newest first; only on the tabs with a notes column (undefined elsewhere). */
+  /** The lead's notes, newest first; undefined when the table has no notes column. */
   notes?: LeadNote[]
 }
 
@@ -165,7 +165,7 @@ export function LeadTableRow({
           <span className="text-foreground/25">&mdash;</span>
         )}
       </td>
-      {/* Paired with the Notes header LeadTable adds on the closed tabs. */}
+      {/* Paired with the Notes header LeadTable adds when given notes. */}
       {notes && (
         <td className="w-14 px-3 py-3.5 text-center" onClick={swallow}>
           <NotesIcon notes={notes} />

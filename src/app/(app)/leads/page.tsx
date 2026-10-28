@@ -1,6 +1,5 @@
 import { LeadsPageClient } from '@/components/leads/LeadsPageClient'
 import { getLeadSourceOptions, getLeadViewCounts, getLeadsPage, getNotesForLeads } from '@/lib/leads/queries'
-import { NOTES_VIEWS } from '@/lib/leads/notes'
 import { parseLeadQuery, type RawSearchParams } from '@/lib/leads/searchParams'
 
 export const dynamic = 'force-dynamic'
@@ -27,8 +26,8 @@ export default async function LeadsPage({ searchParams }: Props) {
     getLeadViewCounts(filters),
   ])
 
-  // The closed tabs show each lead's notes: why it went nowhere, or why not to call.
-  const notes = NOTES_VIEWS.includes(view) ? await getNotesForLeads(result.leads.map((lead) => lead.id)) : undefined
+  // Every tab shows each lead's notes.
+  const notes = await getNotesForLeads(result.leads.map((lead) => lead.id))
 
   return (
     <LeadsPageClient
