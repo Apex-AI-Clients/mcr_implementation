@@ -1278,7 +1278,8 @@
    "slashes": [
     81.37,
     105.03
-   ]
+   ],
+   "handwritten": true
   },
   {
    "key": "a10_name",
@@ -1304,7 +1305,8 @@
    "slashes": [
     353.82,
     377.48
-   ]
+   ],
+   "handwritten": true
   },
   {
    "key": "f507a_company_name",
@@ -1372,7 +1374,8 @@
    "top": 770.35,
    "x1": 334.12,
    "bot": 786.9,
-   "format": "date"
+   "format": "date",
+   "handwritten": true
   }
  ],
  "tables": [

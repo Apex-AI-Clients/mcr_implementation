@@ -4,8 +4,8 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { PDFDocument } from 'pdf-lib'
 import { dateParts, formatAmount, withComputed } from '../engine'
 import { fillOfficialForm, readTemplate } from '../fill'
-import { FORM_CODES, formVersion, handwrittenKeys } from '../registry'
-import type { FormCode, FormMap } from '../types'
+import { FORM_CODES, TABLE_DATED_KEY, formVersion, handwrittenKeys } from '../registry'
+import type { FormCode, FormData, FormMap } from '../types'
 import { OVERFLOW_PARTB, SAMPLE_509, SAMPLE_PARTA, SAMPLE_PARTB } from './fixtures/samples'
 
 async function pageTexts(pdf: Uint8Array): Promise<string[]> {
@@ -76,11 +76,12 @@ describe('maps', () => {
     expect(formVersion('507b').map.tables.map((t) => t.id)).toEqual(['B2', 'B3', 'B21', 'B28'])
   })
 
-  it('marks B6 user name and password and the B1 address as handwritten', () => {
+  it('marks B6, the B1 address and every date beside a signature as handwritten', () => {
     expect(handwrittenKeys('507b').sort()).toEqual(
-      ['b1_address', 'b1_postcode', 'b1_state', 'b1_street', 'b1_suburb', 'b6_password', 'b6_username'].sort(),
+      ['b1_address', 'b1_postcode', 'b1_state', 'b1_street', 'b1_suburb', 'b31_date', 'b6_password', 'b6_username', TABLE_DATED_KEY].sort(),
     )
-    expect(handwrittenKeys('507a')).toEqual([])
+    expect(handwrittenKeys('507a').sort()).toEqual(['a10_date', 'a9_date', 'f507a_date_signed', TABLE_DATED_KEY].sort())
+    expect(handwrittenKeys('509')).toEqual(['date_signed'])
   })
 
   it('has no signature field on any form: signatures are by hand', () => {
@@ -135,6 +136,22 @@ describe('fill', () => {
     expect(all).toContain('Casey Bookkeeper')
   })
 
+  it.each([['509', SAMPLE_509], ['507a', SAMPLE_PARTA], ['507b', SAMPLE_PARTB]] as const)(
+    '%s: handwritten answers in the data change nothing on the printout (signature dates, table "and dated")',
+    async (code, sample) => {
+      const keys = handwrittenKeys(code)
+      const withAll = { ...sample, fields: { ...sample.fields }, [TABLE_DATED_KEY]: '2026-10-20' } as FormData
+      for (const k of keys) if (k !== TABLE_DATED_KEY) withAll.fields[k] ??= '2026-10-20'
+      const without = { ...sample, fields: Object.fromEntries(Object.entries(sample.fields).filter(([k]) => !keys.includes(k))) }
+      const opts = { include: ['507a'] }
+      const a = await pageTexts((await fillOfficialForm(code, withAll, opts)).pdf)
+      const b = await pageTexts((await fillOfficialForm(code, without, opts)).pdf)
+      expect(a).toEqual(b)
+      // the signing name is still printed
+      expect(a.join('\n')).toContain('Jordan Sample')
+    },
+  )
+
   it('a blank fill adds no text to any page', async () => {
     for (const code of FORM_CODES) {
       const blank = await fillOfficialForm(code, { fields: {} }, { tables: 'all', include: ['507a'] })
@@ -179,6 +196,32 @@ describe('overflow', () => {
     }
     expect(await footer(r.pages - 1)).toEqual(['1', '2'])
     expect(await footer(r.pages)).toEqual(['2', '2'])
+  })
+
+  it('keeps shrunk text centred on its row (A7 row 2: a long email beside full-size cells)', async () => {
+    const r = await fillOfficialForm('507a', SAMPLE_PARTA)
+    const t = formVersion('507a').map.tables.find((x) => x.id === 'A7')!
+    const doc = await getDocumentProxy(new Uint8Array(r.pdf))
+    const texts = await pageTexts(r.pdf)
+    const page = await doc.getPage(texts.findIndex((s) => s.includes('Table A7')) + 1)
+    const height = page.view[3]
+    const items = (await page.getTextContent()).items.flatMap((i) => ('str' in i ? [i] : []))
+    // Where the middle of the capitals sits, measured from the top of the page.
+    const middle = (str: string) => {
+      const it = items.find((i) => i.str === str)!
+      const size = it.transform[3]
+      return { size, top: height - (it.transform[5] + size * 0.359) }
+    }
+    const expected = (key: string) => {
+      const col = t.columns.find((c) => c.key === key)!
+      return t.rows[1].bot + t.skew! * (col.x0 - t.skewOrigin!) - 5.5 - 8 * 0.359
+    }
+    const email = middle('collections@example.com')
+    const name = middle('Sample Finance Pty Ltd')
+    expect(email.size).toBeLessThan(8) // it was shrunk to fit
+    expect(name.size).toBe(8)
+    expect(email.top).toBeCloseTo(expected('email'), 1)
+    expect(name.top).toBeCloseTo(expected('name'), 1)
   })
 
   it('totals Part A A6 across all its rows on the last page', async () => {

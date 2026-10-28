@@ -36,6 +36,8 @@ const CHECK_DX = 5.5
 const CHECK_DY = 7.2
 /** Width of the "/" printed in most date boxes (Part B, 14pt). */
 const SLASH_WIDTH = 5.46
+/** Half of Helvetica's cap height (718/1000 em). */
+const CAP_MIDDLE = 0.359
 
 /* ---------------- value helpers ---------------- */
 
@@ -147,7 +149,10 @@ function drawText(pen: Pen, raw: string, x: number, baseline: number, maxW: numb
   }
   const w = pen.font.widthOfTextAtSize(out, size)
   const dx = opts.align === 'right' ? maxW - w : opts.align === 'center' ? (maxW - w) / 2 : 0
-  pen.page.drawText(out, { x: x + dx, y: y(pen, baseline), size, font: pen.font, color: pen.ink })
+  // Shrunk text keeps the middle of its capitals where full-size text has
+  // them, so it lines up with the rest of its row instead of sinking.
+  const lift = ((opts.size ?? DEFAULT_SIZE) - size) * CAP_MIDDLE
+  pen.page.drawText(out, { x: x + dx, y: y(pen, baseline - lift), size, font: pen.font, color: pen.ink })
   return !cut
 }
 
@@ -325,13 +330,16 @@ function drawCell(pen: Pen, t: FormTable, col: FormTable['columns'][number], top
   }
   const maxW = col.x1 - col.x0 - 7
   const str = pdfSafe(String(v).replace(/\s+/g, ' ').trim())
-  if (pen.font.widthOfTextAtSize(str, 8) <= maxW) {
-    drawText(pen, str, col.x0 + 3.5, bot - 5.5, maxW, { size: 8 })
+  const size = 7
+  const all = wrap(pen.font, str, maxW, size)
+  // One line on the row's baseline (shrunk a little if need be, and centred
+  // with the other cells): short entries, and single words such as an email
+  // address that can't wrap. Cut and flagged if it still doesn't fit.
+  if (pen.font.widthOfTextAtSize(str, 8) <= maxW || all.length < 2) {
+    drawText(pen, str, col.x0 + 3.5, bot - 5.5, maxW, { size: 8, warn })
     return
   }
   // Two lines in the cell, smaller; past that the rest is cut and flagged.
-  const size = 7
-  const all = wrap(pen.font, str, maxW, size)
   const lh = Math.min(8.2, (bot - top - 4) / 2)
   all.slice(0, 2).forEach((ln, k) => drawText(pen, ln, col.x0 + 3.5, top + 2 + lh * (k + 1) - 0.8, maxW, { size, min: 5.5 }))
   if (all.length > 2) {
@@ -364,7 +372,7 @@ function drawTableHeader(pen: Pen, t: FormTable, pageNo: number, pageCount: numb
   spot(h.pageOf, String(formPageTotal), 8.5)
   // Just above the dotted line, so the dots don't run through the name.
   if (data.signedBy) drawText(pen, data.signedBy, h.signedBy.x0 + 4, h.signedBy.baseline - 2, h.signedBy.x1 - h.signedBy.x0 - 8, { size: 8.5 })
-  drawDate(pen, { ...h.dated, size: 8.5 }, data.signedDate)
+  // "...and dated" stays blank: dated by hand beside the signature.
   spot(t.footer.page, String(pageNo), 14)
   spot(t.footer.of, String(pageCount), 14)
 }
@@ -400,7 +408,7 @@ export async function fillForm(
   }
   const out = await PDFDocument.create()
   const font = await out.embedFont(StandardFonts.Helvetica)
-  const ink = opts.ink === 'black' ? rgb(0, 0, 0) : rgb(0.05, 0.1, 0.35)
+  const ink = rgb(0, 0, 0)
   const warnings: FormWarning[] = []
   const fields = withComputed(map, data.fields ?? {})
 

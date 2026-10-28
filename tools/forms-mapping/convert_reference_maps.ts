@@ -25,7 +25,8 @@ interface RefTable {
   footer: { baseline: number; page: number[]; of: number[] }
 }
 
-const HANDWRITTEN = new Set(['b6_username', 'b6_password', 'b1_address', 'b1_street', 'b1_suburb', 'b1_state', 'b1_postcode'])
+// B31's date sits beside the signature: dated by hand on the day.
+const HANDWRITTEN = new Set(['b6_username', 'b6_password', 'b1_address', 'b1_street', 'b1_suburb', 'b1_state', 'b1_postcode', 'b31_date'])
 
 const ref = JSON.parse(readFileSync(process.argv[2], 'utf8')) as {
   questions: FormMap['questions']; fields: RefField[]; tables: RefTable[]
@@ -150,8 +151,8 @@ const f509Fields: FormField[] = [
   money('share_paid', LIAB, 'Share capital paid up', 'erv', 524.7),
   text509('signer_name', SIGN, 'Name of person signing', 2, tb(177.4, 588.7, 389.3)),
   text509('capacity', SIGN, 'Capacity (director or secretary)', 2, tb(177.4, 617.8, 389.3)),
-  // tb(177.4, 647.0, 389.3, 22.2) is the signature: signed by hand.
-  { key: 'date_signed', q: SIGN, label: 'Date signed', type: 'datecells', page: 2, cells: cells(684.7) },
+  // tb(177.4, 647.0, 389.3, 22.2) is the signature: signed by hand, and so is its date.
+  { key: 'date_signed', q: SIGN, label: 'Date signed', type: 'datecells', page: 2, cells: cells(684.7), handwritten: true },
 ]
 
 const f509: FormMap = {

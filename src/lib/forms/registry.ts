@@ -45,11 +45,18 @@ export function formVersion(code: FormCode, version: string = CURRENT_VERSION[co
   return v
 }
 
+/** The appendix tables' "...and dated" (FormData has no field for it). */
+export const TABLE_DATED_KEY = 'signedDate'
+
 /**
- * Keys that are written by hand on the printout and never stored (Part B
- * B6 user name/password, B1 address). The drafts API drops them before
- * saving; the engine never draws them.
+ * Keys that are written by hand on the printout and never stored: Part B
+ * B6 user name/password and the B1 address, and every date beside a
+ * signature (Form 509 "Date signed", A9/A10/B31/507A dates, and the
+ * appendix tables' "...and dated", listed as TABLE_DATED_KEY). The drafts
+ * API drops them before saving; the engine never draws them.
  */
 export function handwrittenKeys(code: FormCode, version: string = CURRENT_VERSION[code]): string[] {
-  return formVersion(code, version).map.fields.filter((f) => f.handwritten).map((f) => f.key)
+  const { map } = formVersion(code, version)
+  const keys = map.fields.filter((f) => f.handwritten).map((f) => f.key)
+  return map.tables.length ? [...keys, TABLE_DATED_KEY] : keys
 }

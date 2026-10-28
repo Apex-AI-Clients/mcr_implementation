@@ -24,6 +24,7 @@
     "printed:check": "vitest run --config vitest.printed.config.ts check",
     "forms:check": "vitest run --config vitest.forms.config.ts check",
     "forms:snapshot": "vitest run --config vitest.forms.config.ts snapshot",
+    "forms:samples": "vitest run --config vitest.forms.config.ts samples",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },

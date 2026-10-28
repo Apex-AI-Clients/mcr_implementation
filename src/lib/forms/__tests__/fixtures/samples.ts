@@ -4,6 +4,9 @@ import type { FormData } from '../../types'
  * Synthetic answers for every form: a fictional company, fictional people,
  * example.com addresses and 0400 000 xxx numbers. No real client, business
  * or person appears here. Used by the render snapshots and the overflow tests.
+ *
+ * Handwritten answers (B6, the B1 address, the dates beside signatures) are
+ * filled in here on purpose: the engine must leave them blank.
  */
 
 const yes = 'yes'
@@ -39,7 +42,6 @@ export const SAMPLE_509: FormData = {
 
 export const SAMPLE_PARTA: FormData = {
   signedBy: 'Jordan Sample',
-  signedDate: '2026-10-20',
   fields: {
     ea_organisation: 'Sample Liquidators Pty Ltd',
     ea_liquidator_number: '000000',
@@ -130,7 +132,6 @@ export const SAMPLE_PARTA: FormData = {
 
 export const SAMPLE_PARTB: FormData = {
   signedBy: 'Jordan Sample',
-  signedDate: '2026-10-20',
   fields: {
     company_name: 'Example Trading Pty Ltd (In Liquidation)',
     company_acn: '000 000 027',

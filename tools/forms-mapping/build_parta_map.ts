@@ -55,13 +55,14 @@ function yesno(key: string, q: string, label: string, page: number, no: string, 
   fields.push({ key, q, label, type: 'yesno', page, no: box(page, no), yes: box(page, yes) })
 }
 /** A date box with its two printed "/" (found by find_boxes.py). */
-function date(key: string, q: string, label: string, page: number, ref: string, slashWidth?: number) {
+function date(key: string, q: string, label: string, page: number, ref: string, slashWidth?: number, handwritten = false) {
   const t = geo[page][ref]
   if (!t.slashes || t.slashes.length !== 2) throw new Error(`${ref} on page ${page} has no two slashes`)
   fields.push({
     key, q, label, type: 'date', page, ...box(page, ref),
     slashes: [t.slashes[0], t.slashes[1]],
     ...(slashWidth ? { slashWidth } : {}),
+    ...(handwritten ? { handwritten } : {}),
   })
 }
 /** Street box + "Suburb/City | State/Territory | Postcode" box split at the printed labels. */
@@ -177,12 +178,12 @@ yesno('a8', 'A8', 'Have you provided the full details asked for in Questions A4 
 question('A9', P, 'Declaration by Director, Secretary, Managing Controller, or person nominated by the External Administrator')
 text('a9_name', 'A9', 'Name', P, 'b3')
 text('a9_position', 'A9', 'Position', P, 'b4')
-// b5 is the signature: signed by hand.
-date('a9_date', 'A9', 'Date', P, 'b6')
+// b5 is the signature: signed by hand, and so is the date beside it.
+date('a9_date', 'A9', 'Date', P, 'b6', undefined, true)
 question('A10', P, 'Declaration by Managing Controller')
 text('a10_name', 'A10', 'Name', P, 'b7')
-// b8 is the signature: signed by hand.
-date('a10_date', 'A10', 'Date', P, 'b9')
+// b8 is the signature: signed by hand, and so is the date beside it.
+date('a10_date', 'A10', 'Date', P, 'b9', undefined, true)
 
 /* ======================= PAGE 7: Form 507A (court liquidations only) ======================= */
 P = 7
@@ -195,8 +196,8 @@ text('f507a_company_acn', F507A, 'ACN/ABN', P, 'b24')
 text('f507a_report_date', F507A, 'Date of Report under s475(1)', P, 'b25', { format: 'date' } as Partial<FormField>)
 text('f507a_name', F507A, 'Name', P, 'b26')
 text('f507a_capacity', F507A, 'Capacity', P, 'b27')
-// b28 is the signature: signed by hand.
-text('f507a_date_signed', F507A, 'Date signed', P, 'b29', { format: 'date' } as Partial<FormField>)
+// b28 is the signature: signed by hand, and so is the date beside it.
+text('f507a_date_signed', F507A, 'Date signed', P, 'b29', { format: 'date', handwritten: true } as Partial<FormField>)
 
 /* ======================= APPENDIX TABLES (pages 9–12) ======================= */
 

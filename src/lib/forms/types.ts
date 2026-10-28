@@ -22,7 +22,8 @@ interface FieldBase {
   page: number
   /**
    * Filled in by hand on the printout: the engine never draws it and the app
-   * never stores it (Part B B6 user name/password, B1 address).
+   * never stores it (Part B B6 user name/password, B1 address, and every
+   * date beside a signature: dated by hand on the day).
    */
   handwritten?: boolean
 }
@@ -101,6 +102,7 @@ export interface FormTable {
     pageFrom: TextSpot
     pageOf: TextSpot
     signedBy: TextSpot
+    /** "...and dated": mapped for reference only, never drawn (dated by hand). */
     dated: { s1: number; s2: number; slashWidth: number; baseline: number }
   }
   footer: { page: TextSpot; of: TextSpot }
@@ -145,9 +147,11 @@ export type TableRow = Record<string, FieldValue>
 export interface FormData {
   fields: Record<string, FieldValue>
   tables?: Record<string, TableRow[]>
-  /** Printed on every appendix table header ("signed by ... and dated"). */
+  /**
+   * Printed on every appendix table header ("signed by ..."). The "...and
+   * dated" beside it is left blank: it is dated by hand on the day.
+   */
   signedBy?: string
-  signedDate?: string
 }
 
 export interface FormWarning {
@@ -161,7 +165,6 @@ export interface FillOptions {
   include?: string[]
   /** "used" (default): appendix tables with rows only; "all": every table page; "none". */
   tables?: 'used' | 'all' | 'none'
-  ink?: 'blue' | 'black'
   /** Outline every mapped box in red: for checking a map, never for output. */
   debug?: boolean
 }
