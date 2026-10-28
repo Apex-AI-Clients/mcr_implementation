@@ -1,0 +1,2079 @@
+{
+ "code": "507a",
+ "form": "ASIC Form 507 - Report on Company Activities and Property - Part A",
+ "version": "20220801",
+ "title": "Report on Company Activities and Property - Part A (Form 507)",
+ "pageCount": 12,
+ "formPages": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6
+ ],
+ "optionalPages": [
+  {
+   "id": "507a",
+   "page": 7,
+   "label": "Form 507A: Statement verifying Report under s475(1) (court liquidations only)"
+  }
+ ],
+ "formPageTotal": 6,
+ "appendixCoverPage": 8,
+ "questions": [
+  {
+   "q": "External Administrator",
+   "page": 2,
+   "text": "External Administrator (lodging party)"
+  },
+  {
+   "q": "A1",
+   "page": 3,
+   "text": "Provide Company records for the dates shown, complete this form and send it to the External Administrator by the date shown."
+  },
+  {
+   "q": "A2",
+   "page": 3,
+   "text": "Do you have the Instructions for completing this form?"
+  },
+  {
+   "q": "A3",
+   "page": 3,
+   "text": "Company details"
+  },
+  {
+   "q": "A4",
+   "page": 4,
+   "text": "Does the Company own any assets as listed below?",
+   "section": "What the Company owns and owes (Assets and Liabilities)"
+  },
+  {
+   "q": "A5",
+   "page": 4,
+   "text": "Is the Company owed money? (Debtors)"
+  },
+  {
+   "q": "A6",
+   "page": 5,
+   "text": "Does the Company owe money to its employees?"
+  },
+  {
+   "q": "A7",
+   "page": 5,
+   "text": "Does the Company owe money, goods or services to others (other than to employees)?"
+  },
+  {
+   "q": "A8",
+   "page": 6,
+   "text": "Have you provided the full details asked for in Questions A4 to A7 including all attachments?"
+  },
+  {
+   "q": "A9",
+   "page": 6,
+   "text": "Declaration by Director, Secretary, Managing Controller, or person nominated by the External Administrator"
+  },
+  {
+   "q": "A10",
+   "page": 6,
+   "text": "Declaration by Managing Controller"
+  },
+  {
+   "q": "Form 507A",
+   "page": 7,
+   "text": "Statement verifying Report under s475(1) (court liquidations only)"
+  }
+ ],
+ "fields": [
+  {
+   "key": "ea_organisation",
+   "q": "External Administrator",
+   "label": "Organisation",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 166.86,
+   "x1": 283.46,
+   "bot": 183.41
+  },
+  {
+   "key": "ea_liquidator_number",
+   "q": "External Administrator",
+   "label": "ASIC Registered Liquidator number (if applicable)",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 200.69,
+   "x1": 283.46,
+   "bot": 217.24
+  },
+  {
+   "key": "ea_name",
+   "q": "External Administrator",
+   "label": "Name of External Administrator",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 234.52,
+   "x1": 283.46,
+   "bot": 251.06
+  },
+  {
+   "key": "ea_contact",
+   "q": "External Administrator",
+   "label": "Contact person",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 268.34,
+   "x1": 283.46,
+   "bot": 284.89
+  },
+  {
+   "key": "ea_phone",
+   "q": "External Administrator",
+   "label": "Phone number during business hours",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 302.17,
+   "x1": 283.46,
+   "bot": 318.72
+  },
+  {
+   "key": "ea_address",
+   "q": "External Administrator",
+   "label": "Address",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 336,
+   "x1": 283.46,
+   "bot": 352.54
+  },
+  {
+   "key": "ea_street",
+   "q": "External Administrator",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 369.82,
+   "x1": 283.46,
+   "bot": 386.37
+  },
+  {
+   "key": "ea_suburb",
+   "q": "External Administrator",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 2,
+   "x0": 55.28,
+   "top": 403.65,
+   "x1": 169.32,
+   "bot": 420.2
+  },
+  {
+   "key": "ea_state",
+   "q": "External Administrator",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 2,
+   "x0": 169.32,
+   "top": 403.65,
+   "x1": 243.58,
+   "bot": 420.2,
+   "pad": 3
+  },
+  {
+   "key": "ea_postcode",
+   "q": "External Administrator",
+   "label": "Postcode",
+   "type": "text",
+   "page": 2,
+   "x0": 243.58,
+   "top": 403.65,
+   "x1": 283.46,
+   "bot": 420.2,
+   "pad": 3
+  },
+  {
+   "key": "ea_role",
+   "q": "External Administrator",
+   "label": "Type of appointment",
+   "type": "choice",
+   "page": 2,
+   "options": {
+    "receiver_manager": {
+     "x0": 53.86,
+     "top": 444.86,
+     "x1": 66.76,
+     "bot": 461.86
+    },
+    "managing_controller": {
+     "x0": 53.86,
+     "top": 499.2,
+     "x1": 66.76,
+     "bot": 516.2
+    },
+    "controller_director_report": {
+     "x0": 53.86,
+     "top": 553.53,
+     "x1": 66.76,
+     "bot": 570.53
+    },
+    "court_liquidator": {
+     "x0": 53.86,
+     "top": 619.86,
+     "x1": 66.76,
+     "bot": 636.86
+    },
+    "cvl_liquidator": {
+     "x0": 53.86,
+     "top": 686.19,
+     "x1": 66.76,
+     "bot": 703.19
+    },
+    "voluntary_administrator": {
+     "x0": 53.86,
+     "top": 752.52,
+     "x1": 66.76,
+     "bot": 769.52
+    }
+   }
+  },
+  {
+   "key": "ea_receiver_appointment_date",
+   "q": "External Administrator",
+   "label": "Receiver and Manager s421A(1) 507G: Appointment date",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 481.32,
+   "x1": 283.46,
+   "bot": 497.87,
+   "slashes": [
+    134.41,
+    211.63
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_controller_control_date",
+   "q": "External Administrator",
+   "label": "Managing Controller s421A(1) 507H: Date person took control",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 535.65,
+   "x1": 283.46,
+   "bot": 552.2,
+   "slashes": [
+    137.38,
+    214.6
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_controller_report_date",
+   "q": "External Administrator",
+   "label": "Controller s429(2)(b) 507F: Date received Report",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 601.98,
+   "x1": 283.46,
+   "bot": 618.53,
+   "slashes": [
+    131.57,
+    208.79
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_court_report_date",
+   "q": "External Administrator",
+   "label": "Court liquidator s475(1) 507C: Date received Report",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 668.31,
+   "x1": 283.46,
+   "bot": 684.86,
+   "slashes": [
+    134.41,
+    211.63
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_cvl_report_date",
+   "q": "External Administrator",
+   "label": "Liquidator, creditors’ voluntary winding up s497(4) 507D: Date received Report",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 734.64,
+   "x1": 283.46,
+   "bot": 751.19,
+   "slashes": [
+    131.57,
+    208.79
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_va_report_date",
+   "q": "External Administrator",
+   "label": "Voluntary Administrator s438B(2) 507K: Date received Report",
+   "type": "date",
+   "page": 2,
+   "x0": 55.28,
+   "top": 788.31,
+   "x1": 283.46,
+   "bot": 808.88,
+   "slashes": [
+    131.57,
+    208.79
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_records_from",
+   "q": "External Administrator",
+   "label": "Director to provide the Company’s records for the period: From",
+   "type": "date",
+   "page": 3,
+   "x0": 101.59,
+   "top": 200.85,
+   "x1": 246.81,
+   "bot": 218.85,
+   "slashes": [
+    125.59,
+    202.81
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_records_to",
+   "q": "External Administrator",
+   "label": "Director to provide the Company’s records for the period: To (appointment date)",
+   "type": "date",
+   "page": 3,
+   "x0": 89.09,
+   "top": 231.68,
+   "x1": 234.23,
+   "bot": 249.68,
+   "slashes": [
+    113.09,
+    190.23
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "ea_return_by",
+   "q": "External Administrator",
+   "label": "Director to return this Report to the External Administrator by",
+   "type": "date",
+   "page": 3,
+   "x0": 79.23,
+   "top": 339.86,
+   "x1": 224.45,
+   "bot": 357.86,
+   "slashes": [
+    103.23,
+    180.45
+   ],
+   "slashWidth": 7.02
+  },
+  {
+   "key": "a2",
+   "q": "A2",
+   "label": "Do you have the Instructions for completing this form?",
+   "type": "yesno",
+   "page": 3,
+   "no": {
+    "x0": 339.65,
+    "top": 258.45,
+    "x1": 351.8,
+    "bot": 274.45
+   },
+   "yes": {
+    "x0": 339.65,
+    "top": 290.95,
+    "x1": 351.8,
+    "bot": 306.95
+   }
+  },
+  {
+   "key": "company_name",
+   "q": "A3",
+   "label": "Name of Company under external administration",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 469.57,
+   "x1": 565.93,
+   "bot": 486.11
+  },
+  {
+   "key": "company_acn",
+   "q": "A3",
+   "label": "ACN/ABN",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 503.39,
+   "x1": 565.93,
+   "bot": 519.94
+  },
+  {
+   "key": "a3_registered_street",
+   "q": "A3",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 563.39,
+   "x1": 565.93,
+   "bot": 579.94
+  },
+  {
+   "key": "a3_registered_suburb",
+   "q": "A3",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 597.22,
+   "x1": 450.04,
+   "bot": 613.77
+  },
+  {
+   "key": "a3_registered_state",
+   "q": "A3",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 3,
+   "x0": 450.04,
+   "top": 597.22,
+   "x1": 524.31,
+   "bot": 613.77,
+   "pad": 3
+  },
+  {
+   "key": "a3_registered_postcode",
+   "q": "A3",
+   "label": "Postcode",
+   "type": "text",
+   "page": 3,
+   "x0": 524.31,
+   "top": 597.22,
+   "x1": 565.93,
+   "bot": 613.77,
+   "pad": 3
+  },
+  {
+   "key": "a3_principal_street",
+   "q": "A3",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 657.22,
+   "x1": 565.93,
+   "bot": 673.77
+  },
+  {
+   "key": "a3_principal_suburb",
+   "q": "A3",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 3,
+   "x0": 338.24,
+   "top": 691.05,
+   "x1": 450.04,
+   "bot": 707.59
+  },
+  {
+   "key": "a3_principal_state",
+   "q": "A3",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 3,
+   "x0": 450.04,
+   "top": 691.05,
+   "x1": 524.31,
+   "bot": 707.59,
+   "pad": 3
+  },
+  {
+   "key": "a3_principal_postcode",
+   "q": "A3",
+   "label": "Postcode",
+   "type": "text",
+   "page": 3,
+   "x0": 524.31,
+   "top": 691.05,
+   "x1": 565.93,
+   "bot": 707.59,
+   "pad": 3
+  },
+  {
+   "key": "a3_commenced",
+   "q": "A3",
+   "label": "Date the Company commenced trading",
+   "type": "date",
+   "page": 3,
+   "x0": 338.24,
+   "top": 724.87,
+   "x1": 438.37,
+   "bot": 741.42,
+   "slashes": [
+    361.5,
+    385.16
+   ]
+  },
+  {
+   "key": "a3_ceased",
+   "q": "A3",
+   "label": "Date the Company ceased trading",
+   "type": "date",
+   "page": 3,
+   "x0": 338.24,
+   "top": 758.7,
+   "x1": 438.37,
+   "bot": 775.25,
+   "slashes": [
+    361.5,
+    385.16
+   ]
+  },
+  {
+   "key": "a3_other_places",
+   "q": "A3",
+   "label": "Does the Company have other places of business?",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 70.91,
+    "x1": 68.9,
+    "bot": 86.91
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 91.42,
+    "x1": 68.9,
+    "bot": 107.42
+   }
+  },
+  {
+   "key": "a3_other_street",
+   "q": "A3",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 4,
+   "x0": 55.35,
+   "top": 127.02,
+   "x1": 283.54,
+   "bot": 143.56
+  },
+  {
+   "key": "a3_other_suburb",
+   "q": "A3",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 4,
+   "x0": 55.35,
+   "top": 160.08,
+   "x1": 167.15,
+   "bot": 177.63
+  },
+  {
+   "key": "a3_other_state",
+   "q": "A3",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 4,
+   "x0": 167.15,
+   "top": 160.08,
+   "x1": 241.42,
+   "bot": 177.63,
+   "pad": 3
+  },
+  {
+   "key": "a3_other_postcode",
+   "q": "A3",
+   "label": "Postcode",
+   "type": "text",
+   "page": 4,
+   "x0": 241.42,
+   "top": 160.08,
+   "x1": 283.54,
+   "bot": 177.63,
+   "pad": 3
+  },
+  {
+   "key": "a3_trustee",
+   "q": "A3",
+   "label": "Is the Company a trustee of a Trust?",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 208.75,
+    "x1": 68.9,
+    "bot": 224.75
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 232.25,
+    "x1": 68.9,
+    "bot": 248.25
+   }
+  },
+  {
+   "key": "a3_trust_name",
+   "q": "A3",
+   "label": "Name of Trust",
+   "type": "lines",
+   "page": 4,
+   "lines": [
+    {
+     "x0": 55.35,
+     "top": 267.85,
+     "x1": 283.54,
+     "bot": 284.4
+    },
+    {
+     "x0": 55.35,
+     "top": 301.68,
+     "x1": 283.54,
+     "bot": 318.22
+    }
+   ]
+  },
+  {
+   "key": "a4_bank",
+   "q": "A4",
+   "label": "Bank accounts",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 534.59,
+    "x1": 68.9,
+    "bot": 550.59
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 555.09,
+    "x1": 68.9,
+    "bot": 571.09
+   }
+  },
+  {
+   "key": "a4_crypto",
+   "q": "A4",
+   "label": "Crypto assets or cryptocurrency",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 610.93,
+    "x1": 68.9,
+    "bot": 626.93
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 631.44,
+    "x1": 68.9,
+    "bot": 647.44
+   }
+  },
+  {
+   "key": "a4_vehicles",
+   "q": "A4",
+   "label": "Motor vehicles",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 687.28,
+    "x1": 68.9,
+    "bot": 703.28
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 707.78,
+    "x1": 68.9,
+    "bot": 723.78
+   }
+  },
+  {
+   "key": "a4_plant",
+   "q": "A4",
+   "label": "Plant and equipment",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 56.76,
+    "top": 751.63,
+    "x1": 68.9,
+    "bot": 767.63
+   },
+   "yes": {
+    "x0": 56.76,
+    "top": 772.13,
+    "x1": 68.9,
+    "bot": 788.13
+   }
+  },
+  {
+   "key": "a4_inventory",
+   "q": "A4",
+   "label": "Inventory",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 94.31,
+    "x1": 352.37,
+    "bot": 110.31
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 114.82,
+    "x1": 352.37,
+    "bot": 130.82
+   }
+  },
+  {
+   "key": "a4_real_property",
+   "q": "A4",
+   "label": "Real property",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 158.66,
+    "x1": 352.37,
+    "bot": 174.66
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 181.16,
+    "x1": 352.37,
+    "bot": 197.16
+   }
+  },
+  {
+   "key": "a4_other",
+   "q": "A4",
+   "label": "Other assets",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 225.01,
+    "x1": 352.37,
+    "bot": 241.01
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 245.51,
+    "x1": 352.37,
+    "bot": 261.51
+   }
+  },
+  {
+   "key": "a4_property_on_trust",
+   "q": "A4",
+   "label": "Does the Company hold property on trust?",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 289.35,
+    "x1": 352.37,
+    "bot": 305.35
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 309.86,
+    "x1": 352.37,
+    "bot": 325.86
+   }
+  },
+  {
+   "key": "a4_super_trustee",
+   "q": "A4",
+   "label": "Is the Company a trustee of a superannuation fund?",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 353.7,
+    "x1": 352.37,
+    "bot": 369.7
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 374.2,
+    "x1": 352.37,
+    "bot": 390.2
+   }
+  },
+  {
+   "key": "a4_no_assets",
+   "q": "A4",
+   "label": "If you ticked NO to all the items, explain why the Company has no assets",
+   "type": "lines",
+   "page": 4,
+   "lines": [
+    {
+     "x0": 338.81,
+     "top": 409.8,
+     "x1": 567,
+     "bot": 438.35
+    },
+    {
+     "x0": 338.81,
+     "top": 455.63,
+     "x1": 567,
+     "bot": 472.17
+    },
+    {
+     "x0": 338.81,
+     "top": 489.45,
+     "x1": 567,
+     "bot": 506
+    }
+   ]
+  },
+  {
+   "key": "a5",
+   "q": "A5",
+   "label": "Is the Company owed money? (Debtors)",
+   "type": "yesno",
+   "page": 4,
+   "no": {
+    "x0": 340.23,
+    "top": 561.86,
+    "x1": 352.37,
+    "bot": 577.86
+   },
+   "yes": {
+    "x0": 340.23,
+    "top": 585.37,
+    "x1": 352.37,
+    "bot": 601.37
+   }
+  },
+  {
+   "key": "a6",
+   "q": "A6",
+   "label": "Does the Company owe money to its employees?",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 86.35,
+    "x1": 68.83,
+    "bot": 102.35
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 109.85,
+    "x1": 68.83,
+    "bot": 125.85
+   }
+  },
+  {
+   "key": "a6_wages",
+   "q": "A6",
+   "label": "Wages or salary",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 177.69,
+    "x1": 68.83,
+    "bot": 193.69
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 200.2,
+    "x1": 68.83,
+    "bot": 216.2
+   }
+  },
+  {
+   "key": "a6_annual_leave",
+   "q": "A6",
+   "label": "Annual leave (holiday pay)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 244.04,
+    "x1": 68.83,
+    "bot": 260.04
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 264.54,
+    "x1": 68.83,
+    "bot": 280.54
+   }
+  },
+  {
+   "key": "a6_long_service",
+   "q": "A6",
+   "label": "Long service leave",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 308.39,
+    "x1": 68.83,
+    "bot": 324.39
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 330.89,
+    "x1": 68.83,
+    "bot": 346.89
+   }
+  },
+  {
+   "key": "a6_super",
+   "q": "A6",
+   "label": "Superannuation",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 374.73,
+    "x1": 68.83,
+    "bot": 390.73
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 397.24,
+    "x1": 68.83,
+    "bot": 413.24
+   }
+  },
+  {
+   "key": "a6_redundancy",
+   "q": "A6",
+   "label": "Redundancy",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 441.08,
+    "x1": 68.83,
+    "bot": 457.08
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 463.58,
+    "x1": 68.83,
+    "bot": 479.58
+   }
+  },
+  {
+   "key": "a6_notice",
+   "q": "A6",
+   "label": "Payment in lieu of notice",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 510.26,
+    "x1": 68.83,
+    "bot": 526.26
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 532.76,
+    "x1": 68.83,
+    "bot": 548.76
+   }
+  },
+  {
+   "key": "a6_other",
+   "q": "A6",
+   "label": "Other (such as reimbursement of expenses)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 56.69,
+    "top": 576.61,
+    "x1": 68.83,
+    "bot": 592.61
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 597.11,
+    "x1": 68.83,
+    "bot": 613.11
+   }
+  },
+  {
+   "key": "a7_suppliers",
+   "q": "A7",
+   "label": "Suppliers of goods/services (including contractors and subcontractors)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 136.35,
+    "x1": 351.7,
+    "bot": 152.35
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 158.85,
+    "x1": 351.7,
+    "bot": 174.85
+   }
+  },
+  {
+   "key": "a7_government",
+   "q": "A7",
+   "label": "Government bodies (e.g. ASIC, local council)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 202.69,
+    "x1": 351.7,
+    "bot": 218.69
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 225.2,
+    "x1": 351.7,
+    "bot": 241.2
+   }
+  },
+  {
+   "key": "a7_landlords",
+   "q": "A7",
+   "label": "Landlords (e.g. rent)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 269.04,
+    "x1": 351.7,
+    "bot": 285.04
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 291.54,
+    "x1": 351.7,
+    "bot": 307.54
+   }
+  },
+  {
+   "key": "a7_leased",
+   "q": "A7",
+   "label": "Leased equipment or transport",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 335.39,
+    "x1": 351.7,
+    "bot": 351.39
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 357.89,
+    "x1": 351.7,
+    "bot": 373.89
+   }
+  },
+  {
+   "key": "a7_utilities",
+   "q": "A7",
+   "label": "Utilities (gas, electricity, telephone, water)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 401.73,
+    "x1": 351.7,
+    "bot": 417.73
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 424.24,
+    "x1": 351.7,
+    "bot": 440.24
+   }
+  },
+  {
+   "key": "a7_email_web",
+   "q": "A7",
+   "label": "Email and web service providers",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 468.08,
+    "x1": 351.7,
+    "bot": 484.08
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 490.58,
+    "x1": 351.7,
+    "bot": 506.58
+   }
+  },
+  {
+   "key": "a7_banks",
+   "q": "A7",
+   "label": "Banks (including credit cards)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 534.43,
+    "x1": 351.7,
+    "bot": 550.43
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 556.93,
+    "x1": 351.7,
+    "bot": 572.93
+   }
+  },
+  {
+   "key": "a7_personal_loans",
+   "q": "A7",
+   "label": "Personal loans",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 600.77,
+    "x1": 351.7,
+    "bot": 616.77
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 621.28,
+    "x1": 351.7,
+    "bot": 637.28
+   }
+  },
+  {
+   "key": "a7_tax",
+   "q": "A7",
+   "label": "Tax (ATO for company tax, GST, PAYG, State Revenue Office for payroll tax/land tax)",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 677.12,
+    "x1": 351.7,
+    "bot": 693.12
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 697.62,
+    "x1": 351.7,
+    "bot": 713.62
+   }
+  },
+  {
+   "key": "a7_other",
+   "q": "A7",
+   "label": "Other",
+   "type": "yesno",
+   "page": 5,
+   "no": {
+    "x0": 339.55,
+    "top": 741.47,
+    "x1": 351.7,
+    "bot": 757.47
+   },
+   "yes": {
+    "x0": 339.55,
+    "top": 761.97,
+    "x1": 351.7,
+    "bot": 777.97
+   }
+  },
+  {
+   "key": "a7_other_specify",
+   "q": "A7",
+   "label": "Other (please specify)",
+   "type": "text",
+   "page": 5,
+   "x0": 353.73,
+   "top": 779.9,
+   "x1": 557.22,
+   "bot": 802.12
+  },
+  {
+   "key": "a8",
+   "q": "A8",
+   "label": "Have you provided the full details asked for in Questions A4 to A7 including all attachments?",
+   "type": "yesno",
+   "page": 6,
+   "no": {
+    "x0": 56.69,
+    "top": 89.35,
+    "x1": 68.83,
+    "bot": 105.35
+   },
+   "yes": {
+    "x0": 56.69,
+    "top": 190.85,
+    "x1": 68.83,
+    "bot": 206.85
+   }
+  },
+  {
+   "key": "a9_name",
+   "q": "A9",
+   "label": "Name",
+   "type": "text",
+   "page": 6,
+   "x0": 55.28,
+   "top": 611.49,
+   "x1": 291.64,
+   "bot": 628.04
+  },
+  {
+   "key": "a9_position",
+   "q": "A9",
+   "label": "Position",
+   "type": "text",
+   "page": 6,
+   "x0": 55.28,
+   "top": 645.32,
+   "x1": 291.64,
+   "bot": 661.86
+  },
+  {
+   "key": "a9_date",
+   "q": "A9",
+   "label": "Date",
+   "type": "date",
+   "page": 6,
+   "x0": 55.28,
+   "top": 712.97,
+   "x1": 164.08,
+   "bot": 729.52,
+   "slashes": [
+    81.37,
+    105.03
+   ]
+  },
+  {
+   "key": "a10_name",
+   "q": "A10",
+   "label": "Name",
+   "type": "text",
+   "page": 6,
+   "x0": 330.57,
+   "top": 184.28,
+   "x1": 566.93,
+   "bot": 200.83
+  },
+  {
+   "key": "a10_date",
+   "q": "A10",
+   "label": "Date",
+   "type": "date",
+   "page": 6,
+   "x0": 330.57,
+   "top": 251.94,
+   "x1": 439.37,
+   "bot": 268.49,
+   "slashes": [
+    353.82,
+    377.48
+   ]
+  },
+  {
+   "key": "f507a_company_name",
+   "q": "Form 507A",
+   "label": "Company name",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 408.54,
+   "x1": 334.12,
+   "bot": 425.09
+  },
+  {
+   "key": "f507a_company_acn",
+   "q": "Form 507A",
+   "label": "ACN/ABN",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 443.6,
+   "x1": 334.12,
+   "bot": 461.15
+  },
+  {
+   "key": "f507a_report_date",
+   "q": "Form 507A",
+   "label": "Date of Report under s475(1)",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 635.04,
+   "x1": 334.12,
+   "bot": 651.59,
+   "format": "date"
+  },
+  {
+   "key": "f507a_name",
+   "q": "Form 507A",
+   "label": "Name",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 668.87,
+   "x1": 334.12,
+   "bot": 685.42
+  },
+  {
+   "key": "f507a_capacity",
+   "q": "Form 507A",
+   "label": "Capacity",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 702.7,
+   "x1": 334.12,
+   "bot": 719.24
+  },
+  {
+   "key": "f507a_date_signed",
+   "q": "Form 507A",
+   "label": "Date signed",
+   "type": "text",
+   "page": 7,
+   "x0": 140.24,
+   "top": 770.35,
+   "x1": 334.12,
+   "bot": 786.9,
+   "format": "date"
+  }
+ ],
+ "tables": [
+  {
+   "id": "A4",
+   "q": "A4",
+   "title": "Assets owned by the Company",
+   "page": 9,
+   "formPage": 4,
+   "columns": [
+    {
+     "key": "description",
+     "label": "Asset description",
+     "type": "text",
+     "x0": 27.12,
+     "x1": 265.82
+    },
+    {
+     "key": "location",
+     "label": "Location/address where asset is located (bank accounts: give bank a/c details including a/c numbers)",
+     "type": "text",
+     "x0": 265.82,
+     "x1": 450
+    },
+    {
+     "key": "security",
+     "label": "Security held by (subject to finance) (if applicable)",
+     "type": "text",
+     "x0": 450,
+     "x1": 559.77
+    },
+    {
+     "key": "estimated_value",
+     "label": "Estimated asset value",
+     "type": "money",
+     "x0": 559.77,
+     "x1": 625.04,
+     "dollar": 563.77
+    },
+    {
+     "key": "security_value",
+     "label": "Value of security",
+     "type": "money",
+     "x0": 625.04,
+     "x1": 687.91,
+     "dollar": 629.04
+    },
+    {
+     "key": "net_realisable",
+     "label": "Net realisable value",
+     "type": "money",
+     "x0": 687.91,
+     "x1": 750.79,
+     "dollar": 691.92
+    },
+    {
+     "key": "disposed",
+     "label": "Tick if disposed of in the last 6 months",
+     "type": "text",
+     "x0": 750.79,
+     "x1": 813.66
+    }
+   ],
+   "rows": [
+    {
+     "top": 242.64,
+     "bot": 262.12
+    },
+    {
+     "top": 262.12,
+     "bot": 281.59
+    },
+    {
+     "top": 281.59,
+     "bot": 301.07
+    },
+    {
+     "top": 301.07,
+     "bot": 320.55
+    },
+    {
+     "top": 320.55,
+     "bot": 340.03
+    },
+    {
+     "top": 340.03,
+     "bot": 362.76
+    },
+    {
+     "top": 362.76,
+     "bot": 382.24
+    },
+    {
+     "top": 382.24,
+     "bot": 401.72
+    },
+    {
+     "top": 401.72,
+     "bot": 421.19
+    },
+    {
+     "top": 421.19,
+     "bot": 440.67
+    },
+    {
+     "top": 440.67,
+     "bot": 460.15
+    },
+    {
+     "top": 460.15,
+     "bot": 479.63
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 159.02,
+     "x1": 187.02,
+     "baseline": 128.95
+    },
+    "pageOf": {
+     "x0": 193.1,
+     "x1": 211.34,
+     "baseline": 128.95
+    },
+    "signedBy": {
+     "x0": 469.52,
+     "x1": 658.48,
+     "baseline": 128.95
+    },
+    "dated": {
+     "s1": 708.92,
+     "s2": 733.29,
+     "slashWidth": 3.3,
+     "baseline": 128.95
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 719.5,
+     "x1": 750,
+     "baseline": 547.5
+    },
+    "of": {
+     "x0": 779,
+     "x1": 804.1,
+     "baseline": 547.5
+    }
+   }
+  },
+  {
+   "id": "A5",
+   "q": "A5",
+   "title": "Money owed to the Company (debtors)",
+   "page": 10,
+   "formPage": 4,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Debtor name",
+     "type": "text",
+     "x0": 28.86,
+     "x1": 117.07
+    },
+    {
+     "key": "description",
+     "label": "Description",
+     "type": "text",
+     "x0": 117.07,
+     "x1": 280.77
+    },
+    {
+     "key": "address",
+     "label": "Debtor address",
+     "type": "text",
+     "x0": 280.77,
+     "x1": 472.82
+    },
+    {
+     "key": "outstanding",
+     "label": "Amount outstanding",
+     "type": "money",
+     "x0": 472.82,
+     "x1": 553.32,
+     "dollar": 476.82
+    },
+    {
+     "key": "realisable",
+     "label": "Estimated amount realisable",
+     "type": "money",
+     "x0": 553.32,
+     "x1": 636.77,
+     "dollar": 557.32
+    },
+    {
+     "key": "ppsr",
+     "label": "PPSR if applicable",
+     "type": "text",
+     "x0": 636.77,
+     "x1": 697.3
+    },
+    {
+     "key": "security_type",
+     "label": "Security type",
+     "type": "text",
+     "x0": 697.3,
+     "x1": 755.57
+    },
+    {
+     "key": "date_secured",
+     "label": "Date secured",
+     "type": "date",
+     "x0": 755.57,
+     "x1": 813.1,
+     "slashes": [
+      776.37,
+      795.12
+     ]
+    }
+   ],
+   "rows": [
+    {
+     "top": 218.64,
+     "bot": 238.12
+    },
+    {
+     "top": 238.12,
+     "bot": 257.59
+    },
+    {
+     "top": 257.59,
+     "bot": 277.07
+    },
+    {
+     "top": 277.07,
+     "bot": 296.55
+    },
+    {
+     "top": 296.55,
+     "bot": 316.03
+    },
+    {
+     "top": 316.03,
+     "bot": 335.5
+    },
+    {
+     "top": 335.5,
+     "bot": 354.98
+    },
+    {
+     "top": 354.98,
+     "bot": 374.46
+    },
+    {
+     "top": 374.46,
+     "bot": 393.93
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 158.42,
+     "x1": 186.42,
+     "baseline": 128.95
+    },
+    "pageOf": {
+     "x0": 192.51,
+     "x1": 210.74,
+     "baseline": 128.95
+    },
+    "signedBy": {
+     "x0": 467.85,
+     "x1": 656.81,
+     "baseline": 128.95
+    },
+    "dated": {
+     "s1": 707.25,
+     "s2": 731.61,
+     "slashWidth": 3.3,
+     "baseline": 128.95
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 719.5,
+     "x1": 750,
+     "baseline": 547.5
+    },
+    "of": {
+     "x0": 779,
+     "x1": 804.1,
+     "baseline": 547.5
+    }
+   }
+  },
+  {
+   "id": "A6_unrelated",
+   "q": "A6",
+   "title": "Amounts the Company owes to its unrelated employees (priority creditors)",
+   "page": 11,
+   "formPage": 5,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Employee’s name",
+     "type": "text",
+     "x0": 27.83,
+     "x1": 175.24
+    },
+    {
+     "key": "start_date",
+     "label": "Start date",
+     "type": "date",
+     "x0": 175.24,
+     "x1": 233.49,
+     "slashes": [
+      196.04,
+      214.79
+     ]
+    },
+    {
+     "key": "wages",
+     "label": "Wages or salary owed",
+     "type": "money",
+     "x0": 233.49,
+     "x1": 300.43,
+     "dollar": 237.49
+    },
+    {
+     "key": "annual_leave",
+     "label": "Annual leave (holiday pay) owed",
+     "type": "money",
+     "x0": 300.43,
+     "x1": 374.13,
+     "dollar": 304.43
+    },
+    {
+     "key": "long_service",
+     "label": "Long service leave owed",
+     "type": "money",
+     "x0": 374.13,
+     "x1": 447.83,
+     "dollar": 378.13
+    },
+    {
+     "key": "super",
+     "label": "Superannuation owed",
+     "type": "money",
+     "x0": 447.83,
+     "x1": 532.98,
+     "dollar": 451.82
+    },
+    {
+     "key": "redundancy",
+     "label": "Redundancy owed",
+     "type": "money",
+     "x0": 532.98,
+     "x1": 606.69,
+     "dollar": 536.98
+    },
+    {
+     "key": "other",
+     "label": "Other",
+     "type": "money",
+     "x0": 606.69,
+     "x1": 680.39,
+     "dollar": 610.67
+    },
+    {
+     "key": "total",
+     "label": "Total owed",
+     "type": "money",
+     "x0": 680.39,
+     "x1": 738.83,
+     "dollar": 684.37
+    }
+   ],
+   "rows": [
+    {
+     "top": 239.14,
+     "bot": 260.92
+    },
+    {
+     "top": 260.92,
+     "bot": 282.69
+    },
+    {
+     "top": 282.69,
+     "bot": 304.46
+    }
+   ],
+   "totals": {
+    "top": 304.46,
+    "bot": 330.58
+   },
+   "header": {
+    "pageFrom": {
+     "x0": 157.39,
+     "x1": 185.39,
+     "baseline": 137.45
+    },
+    "pageOf": {
+     "x0": 191.48,
+     "x1": 209.71,
+     "baseline": 137.45
+    },
+    "signedBy": {
+     "x0": 474.12,
+     "x1": 663.08,
+     "baseline": 137.45
+    },
+    "dated": {
+     "s1": 713.52,
+     "s2": 737.89,
+     "slashWidth": 3.31,
+     "baseline": 137.45
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 719.5,
+     "x1": 750,
+     "baseline": 547.5
+    },
+    "of": {
+     "x0": 779,
+     "x1": 804.1,
+     "baseline": 547.5
+    }
+   }
+  },
+  {
+   "id": "A6_related",
+   "q": "A6",
+   "title": "Amounts the Company owes to its related party employees",
+   "page": 11,
+   "formPage": 5,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Employee’s name",
+     "type": "text",
+     "x0": 27.83,
+     "x1": 175.24
+    },
+    {
+     "key": "start_date",
+     "label": "Start date",
+     "type": "date",
+     "x0": 175.24,
+     "x1": 233.49,
+     "slashes": [
+      196.04,
+      214.79
+     ]
+    },
+    {
+     "key": "wages",
+     "label": "Wages or salary owed",
+     "type": "money",
+     "x0": 233.49,
+     "x1": 300.43,
+     "dollar": 237.49
+    },
+    {
+     "key": "annual_leave",
+     "label": "Annual leave (holiday pay) owed",
+     "type": "money",
+     "x0": 300.43,
+     "x1": 374.13,
+     "dollar": 304.43
+    },
+    {
+     "key": "long_service",
+     "label": "Long service leave owed",
+     "type": "money",
+     "x0": 374.13,
+     "x1": 447.83,
+     "dollar": 378.13
+    },
+    {
+     "key": "super",
+     "label": "Superannuation owed",
+     "type": "money",
+     "x0": 447.83,
+     "x1": 532.98,
+     "dollar": 451.82
+    },
+    {
+     "key": "redundancy",
+     "label": "Redundancy owed",
+     "type": "money",
+     "x0": 532.98,
+     "x1": 606.69,
+     "dollar": 536.98
+    },
+    {
+     "key": "other",
+     "label": "Other",
+     "type": "money",
+     "x0": 606.69,
+     "x1": 680.39,
+     "dollar": 610.67
+    },
+    {
+     "key": "total",
+     "label": "Total owed",
+     "type": "money",
+     "x0": 680.39,
+     "x1": 738.83,
+     "dollar": 684.37
+    }
+   ],
+   "rows": [
+    {
+     "top": 428.64,
+     "bot": 450.41
+    },
+    {
+     "top": 450.41,
+     "bot": 472.18
+    },
+    {
+     "top": 472.18,
+     "bot": 493.96
+    }
+   ],
+   "totals": {
+    "top": 493.96,
+    "bot": 520.08
+   },
+   "header": {
+    "pageFrom": {
+     "x0": 157.39,
+     "x1": 185.39,
+     "baseline": 137.45
+    },
+    "pageOf": {
+     "x0": 191.48,
+     "x1": 209.71,
+     "baseline": 137.45
+    },
+    "signedBy": {
+     "x0": 474.12,
+     "x1": 663.08,
+     "baseline": 137.45
+    },
+    "dated": {
+     "s1": 713.52,
+     "s2": 737.89,
+     "slashWidth": 3.31,
+     "baseline": 137.45
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 719.5,
+     "x1": 750,
+     "baseline": 547.5
+    },
+    "of": {
+     "x0": 779,
+     "x1": 804.1,
+     "baseline": 547.5
+    }
+   }
+  },
+  {
+   "id": "A7",
+   "q": "A7",
+   "title": "Amounts the Company owes to its creditors",
+   "page": 12,
+   "formPage": 5,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Creditor’s name",
+     "type": "text",
+     "x0": 27.3,
+     "x1": 148
+    },
+    {
+     "key": "address",
+     "label": "Postal address in full",
+     "type": "text",
+     "x0": 148,
+     "x1": 310.4
+    },
+    {
+     "key": "email",
+     "label": "Email address",
+     "type": "text",
+     "x0": 310.4,
+     "x1": 405.1
+    },
+    {
+     "key": "secured",
+     "label": "Tick if secured",
+     "type": "check",
+     "x0": 405.1,
+     "x1": 460.9,
+     "glyph": {
+      "x0": 426.91,
+      "dy": 5.03
+     }
+    },
+    {
+     "key": "ppsr",
+     "label": "PPSR (if applicable)",
+     "type": "text",
+     "x0": 460.9,
+     "x1": 549.2
+    },
+    {
+     "key": "security_details",
+     "label": "If secured, give asset details",
+     "type": "text",
+     "x0": 549.2,
+     "x1": 647.5
+    },
+    {
+     "key": "related",
+     "label": "Tick if related party",
+     "type": "check",
+     "x0": 647.5,
+     "x1": 727.7,
+     "glyph": {
+      "x0": 681.56,
+      "dy": 5.03
+     }
+    },
+    {
+     "key": "amount",
+     "label": "Amount owing",
+     "type": "money",
+     "x0": 727.7,
+     "x1": 812,
+     "dollar": 731.76
+    }
+   ],
+   "rows": [
+    {
+     "top": 203.3,
+     "bot": 225.1
+    },
+    {
+     "top": 225.1,
+     "bot": 246.9
+    },
+    {
+     "top": 246.9,
+     "bot": 268.6
+    },
+    {
+     "top": 268.6,
+     "bot": 290.4
+    },
+    {
+     "top": 290.4,
+     "bot": 312.2
+    },
+    {
+     "top": 312.2,
+     "bot": 334
+    }
+   ],
+   "skew": -0.00526,
+   "skewOrigin": 27.3,
+   "header": {
+    "pageFrom": {
+     "x0": 156.39,
+     "x1": 184.39,
+     "baseline": 112.79
+    },
+    "pageOf": {
+     "x0": 190.48,
+     "x1": 208.76,
+     "baseline": 112.68
+    },
+    "signedBy": {
+     "x0": 407.11,
+     "x1": 596.12,
+     "baseline": 110.64
+    },
+    "dated": {
+     "s1": 646.51,
+     "s2": 670.87,
+     "slashWidth": 3.35,
+     "baseline": 110.37
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 719.5,
+     "x1": 750,
+     "baseline": 547.5
+    },
+    "of": {
+     "x0": 779,
+     "x1": 804.1,
+     "baseline": 547.5
+    }
+   }
+  }
+ ]
+}

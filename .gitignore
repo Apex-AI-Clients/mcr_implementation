@@ -83,3 +83,4 @@ supabase/.temp/
 # Real client files dropped in for checking. Never commit.
 /data/
 /docs/
+/reference/

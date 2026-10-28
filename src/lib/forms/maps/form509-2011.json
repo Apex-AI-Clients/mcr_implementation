@@ -1,0 +1,666 @@
+{
+ "code": "509",
+ "form": "ASIC Form 509 - Presentation of summary of affairs of a company",
+ "version": "2011",
+ "title": "Presentation of summary of affairs of a company (Form 509)",
+ "pageCount": 3,
+ "formPages": [
+  1,
+  2
+ ],
+ "formPageTotal": 2,
+ "questions": [
+  {
+   "q": "Lodgement details",
+   "page": 1,
+   "text": "Lodgement details"
+  },
+  {
+   "q": "Company details",
+   "page": 1,
+   "text": "Company details"
+  },
+  {
+   "q": "Summary of assets",
+   "page": 2,
+   "text": "Summary of assets"
+  },
+  {
+   "q": "Summary of liabilities",
+   "page": 2,
+   "text": "Summary of liabilities"
+  },
+  {
+   "q": "Signature",
+   "page": 2,
+   "text": "Signature"
+  }
+ ],
+ "fields": [
+  {
+   "key": "contact_name",
+   "q": "Lodgement details",
+   "label": "Name (who ASIC should contact)",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 223.1,
+   "x1": 566.7,
+   "bot": 236.8
+  },
+  {
+   "key": "agent_number",
+   "q": "Lodgement details",
+   "label": "ASIC registered agent number (if applicable)",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 252.3,
+   "x1": 566.7,
+   "bot": 266
+  },
+  {
+   "key": "entity_name",
+   "q": "Lodgement details",
+   "label": "Company/entity name",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 281.5,
+   "x1": 566.7,
+   "bot": 295.2
+  },
+  {
+   "key": "entity_number",
+   "q": "Lodgement details",
+   "label": "ACN/ABN/ARBN/ARSN",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 310.7,
+   "x1": 332.8,
+   "bot": 324.4
+  },
+  {
+   "key": "phone",
+   "q": "Lodgement details",
+   "label": "Telephone number",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 339.9,
+   "x1": 332.8,
+   "bot": 353.6
+  },
+  {
+   "key": "postal_1",
+   "q": "Lodgement details",
+   "label": "Postal address (line 1)",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 369.1,
+   "x1": 566.7,
+   "bot": 382.8
+  },
+  {
+   "key": "postal_2",
+   "q": "Lodgement details",
+   "label": "Postal address (line 2)",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 386.1,
+   "x1": 566.7,
+   "bot": 399.8
+  },
+  {
+   "key": "email",
+   "q": "Lodgement details",
+   "label": "Email address (optional)",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 415.3,
+   "x1": 566.7,
+   "bot": 429
+  },
+  {
+   "key": "company_name",
+   "q": "Company details",
+   "label": "Company name",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 467.9,
+   "x1": 566.7,
+   "bot": 481.6
+  },
+  {
+   "key": "company_acn",
+   "q": "Company details",
+   "label": "ACN",
+   "type": "text",
+   "page": 1,
+   "x0": 177.4,
+   "top": 497.1,
+   "x1": 427.3,
+   "bot": 510.8
+  },
+  {
+   "key": "summary_date",
+   "q": "Company details",
+   "label": "Date to which summary is made up",
+   "type": "datecells",
+   "page": 1,
+   "cells": [
+    {
+     "x0": 177.4,
+     "top": 575.2,
+     "x1": 191,
+     "bot": 588.9
+    },
+    {
+     "x0": 195.6,
+     "top": 575.2,
+     "x1": 209.2,
+     "bot": 588.9
+    },
+    {
+     "x0": 216,
+     "top": 575.2,
+     "x1": 229.6,
+     "bot": 588.9
+    },
+    {
+     "x0": 234.3,
+     "top": 575.2,
+     "x1": 247.9,
+     "bot": 588.9
+    },
+    {
+     "x0": 254.6,
+     "top": 575.2,
+     "x1": 268.2,
+     "bot": 588.9
+    },
+    {
+     "x0": 272.9,
+     "top": 575.2,
+     "x1": 286.5,
+     "bot": 588.9
+    }
+   ]
+  },
+  {
+   "key": "a_val",
+   "q": "Summary of assets",
+   "label": "1(a) Interest in land: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 104.4,
+   "bot": 117.7
+  },
+  {
+   "key": "a_erv",
+   "q": "Summary of assets",
+   "label": "1(a) Interest in land: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 104.4,
+   "bot": 117.7
+  },
+  {
+   "key": "b_val",
+   "q": "Summary of assets",
+   "label": "1(b) Sundry debtors: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 116.2,
+   "bot": 129.5
+  },
+  {
+   "key": "b_erv",
+   "q": "Summary of assets",
+   "label": "1(b) Sundry debtors: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 116.2,
+   "bot": 129.5
+  },
+  {
+   "key": "c_val",
+   "q": "Summary of assets",
+   "label": "1(c) Cash on hand: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 128,
+   "bot": 141.3
+  },
+  {
+   "key": "c_erv",
+   "q": "Summary of assets",
+   "label": "1(c) Cash on hand: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 128,
+   "bot": 141.3
+  },
+  {
+   "key": "d_val",
+   "q": "Summary of assets",
+   "label": "1(d) Cash at bank: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 139.8,
+   "bot": 153.1
+  },
+  {
+   "key": "d_erv",
+   "q": "Summary of assets",
+   "label": "1(d) Cash at bank: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 139.8,
+   "bot": 153.1
+  },
+  {
+   "key": "e_val",
+   "q": "Summary of assets",
+   "label": "1(e) Stock as detailed in inventory: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 151.6,
+   "bot": 164.9
+  },
+  {
+   "key": "e_erv",
+   "q": "Summary of assets",
+   "label": "1(e) Stock as detailed in inventory: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 151.6,
+   "bot": 164.9
+  },
+  {
+   "key": "f_val",
+   "q": "Summary of assets",
+   "label": "1(f) Work in progress: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 163.4,
+   "bot": 176.7
+  },
+  {
+   "key": "f_erv",
+   "q": "Summary of assets",
+   "label": "1(f) Work in progress: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 163.4,
+   "bot": 176.7
+  },
+  {
+   "key": "g_val",
+   "q": "Summary of assets",
+   "label": "1(g) Plant and machinery: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 175.2,
+   "bot": 188.5
+  },
+  {
+   "key": "g_erv",
+   "q": "Summary of assets",
+   "label": "1(g) Plant and machinery: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 175.2,
+   "bot": 188.5
+  },
+  {
+   "key": "h_val",
+   "q": "Summary of assets",
+   "label": "1(h) Other assets: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 187,
+   "bot": 200.3
+  },
+  {
+   "key": "h_erv",
+   "q": "Summary of assets",
+   "label": "1(h) Other assets: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 187,
+   "bot": 200.3
+  },
+  {
+   "key": "s2_val",
+   "q": "Summary of assets",
+   "label": "2 Assets subject to specific charges less amounts owing: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 210.5,
+   "bot": 223.8
+  },
+  {
+   "key": "s2_erv",
+   "q": "Summary of assets",
+   "label": "2 Assets subject to specific charges less amounts owing: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 210.5,
+   "bot": 223.8
+  },
+  {
+   "key": "total_assets",
+   "q": "Summary of assets",
+   "label": "TOTAL assets (valuation)",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 236,
+   "bot": 249.3
+  },
+  {
+   "key": "total_erv",
+   "q": "Summary of assets",
+   "label": "TOTAL estimated realisable values",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 261.4,
+   "bot": 274.7
+  },
+  {
+   "key": "r3",
+   "q": "Summary of liabilities",
+   "label": "3 Less preferential creditors (priority over floating charge)",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 295.7,
+   "bot": 309
+  },
+  {
+   "key": "r4_to",
+   "q": "Summary of liabilities",
+   "label": "4 Secured by debenture/floating charge: to whom",
+   "type": "text",
+   "page": 2,
+   "x0": 316.5,
+   "top": 330.6,
+   "x1": 398.5,
+   "bot": 341.1,
+   "size": 7
+  },
+  {
+   "key": "r4",
+   "q": "Summary of liabilities",
+   "label": "4 Less amounts owing and secured by debenture/floating charge",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 330.1,
+   "bot": 343.4
+  },
+  {
+   "key": "r5",
+   "q": "Summary of liabilities",
+   "label": "5 Estimated amount available for unsecured creditors",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 364.5,
+   "bot": 377.8
+  },
+  {
+   "key": "r6",
+   "q": "Summary of liabilities",
+   "label": "6 Creditors (unsecured) amount claimed",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 388,
+   "bot": 401.3
+  },
+  {
+   "key": "r7_claims",
+   "q": "Summary of liabilities",
+   "label": "7 Partly secured creditors: total claims",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 411.6,
+   "bot": 424.9
+  },
+  {
+   "key": "r7_security",
+   "q": "Summary of liabilities",
+   "label": "7 Partly secured creditors: security held",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 422.4,
+   "bot": 435.7
+  },
+  {
+   "key": "r8",
+   "q": "Summary of liabilities",
+   "label": "8 Contingent assets estimated to produce",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 445.9,
+   "bot": 459.2
+  },
+  {
+   "key": "r9",
+   "q": "Summary of liabilities",
+   "label": "9 Estimated deficiency/surplus",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 480.3,
+   "bot": 493.6
+  },
+  {
+   "key": "share_issued",
+   "q": "Summary of liabilities",
+   "label": "Share capital issued",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 502.9,
+   "bot": 516.2
+  },
+  {
+   "key": "share_paid",
+   "q": "Summary of liabilities",
+   "label": "Share capital paid up",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 514.7,
+   "bot": 528
+  },
+  {
+   "key": "signer_name",
+   "q": "Signature",
+   "label": "Name of person signing",
+   "type": "text",
+   "page": 2,
+   "x0": 177.4,
+   "top": 588.7,
+   "x1": 566.7,
+   "bot": 602.4
+  },
+  {
+   "key": "capacity",
+   "q": "Signature",
+   "label": "Capacity (director or secretary)",
+   "type": "text",
+   "page": 2,
+   "x0": 177.4,
+   "top": 617.8,
+   "x1": 566.7,
+   "bot": 631.5
+  },
+  {
+   "key": "date_signed",
+   "q": "Signature",
+   "label": "Date signed",
+   "type": "datecells",
+   "page": 2,
+   "cells": [
+    {
+     "x0": 177.4,
+     "top": 684.7,
+     "x1": 191,
+     "bot": 698.4
+    },
+    {
+     "x0": 195.6,
+     "top": 684.7,
+     "x1": 209.2,
+     "bot": 698.4
+    },
+    {
+     "x0": 216,
+     "top": 684.7,
+     "x1": 229.6,
+     "bot": 698.4
+    },
+    {
+     "x0": 234.3,
+     "top": 684.7,
+     "x1": 247.9,
+     "bot": 698.4
+    },
+    {
+     "x0": 254.6,
+     "top": 684.7,
+     "x1": 268.2,
+     "bot": 698.4
+    },
+    {
+     "x0": 272.9,
+     "top": 684.7,
+     "x1": 286.5,
+     "bot": 698.4
+    }
+   ]
+  }
+ ],
+ "tables": [],
+ "computed": [
+  {
+   "key": "total_assets",
+   "sum": [
+    "a_val",
+    "b_val",
+    "c_val",
+    "d_val",
+    "e_val",
+    "f_val",
+    "g_val",
+    "h_val",
+    "s2_val"
+   ]
+  },
+  {
+   "key": "total_erv",
+   "sum": [
+    "a_erv",
+    "b_erv",
+    "c_erv",
+    "d_erv",
+    "e_erv",
+    "f_erv",
+    "g_erv",
+    "h_erv",
+    "s2_erv"
+   ]
+  }
+ ]
+}

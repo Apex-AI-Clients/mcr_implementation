@@ -1,0 +1,3732 @@
+{
+ "code": "507b",
+ "form": "ASIC Form 507 - Report on Company Activities and Property - Part B",
+ "version": "20220801",
+ "title": "Report on Company Activities and Property - Part B",
+ "pageCount": 14,
+ "formPages": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9
+ ],
+ "formPageTotal": 9,
+ "appendixCoverPage": 10,
+ "questions": [
+  {
+   "q": "Company",
+   "page": 2,
+   "text": "The Company"
+  },
+  {
+   "q": "B1",
+   "page": 2,
+   "text": "Your details"
+  },
+  {
+   "q": "B2",
+   "page": 2,
+   "text": "Have you received payments from the Company during the last four years?",
+   "section": null
+  },
+  {
+   "q": "B3",
+   "page": 2,
+   "text": "Did you instruct the Company to make payments to someone else, or another company on your behalf?",
+   "section": null
+  },
+  {
+   "q": "B4",
+   "page": 2,
+   "text": "Did you operate the Company's business through a trust?",
+   "section": null
+  },
+  {
+   "q": "B5",
+   "page": 2,
+   "text": "Who managed the Company's day-to-day business?"
+  },
+  {
+   "q": "B6",
+   "page": 3,
+   "text": "Did the Company keep electronic records?",
+   "section": null
+  },
+  {
+   "q": "B7",
+   "page": 3,
+   "text": "Did the Company keep paper records?",
+   "section": null
+  },
+  {
+   "q": "B8",
+   "page": 3,
+   "text": "Can you or someone else provide financial statements for the last 4 years?",
+   "section": null
+  },
+  {
+   "q": "B9",
+   "page": 3,
+   "text": "Have you provided the full details asked for in Questions B6, B7 and B8?",
+   "section": null
+  },
+  {
+   "q": "B10",
+   "page": 4,
+   "text": "Date the Company started trading"
+  },
+  {
+   "q": "B11",
+   "page": 4,
+   "text": "Did the Company purchase or acquire the business or any part of it from someone else in the last four years?",
+   "section": null
+  },
+  {
+   "q": "B12",
+   "page": 4,
+   "text": "What is the main thing the Company makes or provides?"
+  },
+  {
+   "q": "B13",
+   "page": 4,
+   "text": "Did the Company lease or rent business premises?",
+   "section": null
+  },
+  {
+   "q": "B14",
+   "page": 5,
+   "text": "Did the business fail?",
+   "section": null
+  },
+  {
+   "q": "B15",
+   "page": 5,
+   "text": "Has the Company ceased trading?",
+   "section": null
+  },
+  {
+   "q": "B16",
+   "page": 5,
+   "text": "Is someone else or another company currently carrying on the business (or part of it)?",
+   "section": null
+  },
+  {
+   "q": "B17",
+   "page": 5,
+   "text": "In the last four years, has the Company disposed of, sold or transferred any property outside the normal course of business?",
+   "section": null
+  },
+  {
+   "q": "B18",
+   "page": 6,
+   "text": "In the last four years, has the Company entered into any financial transactions with a related party?",
+   "section": null
+  },
+  {
+   "q": "B19",
+   "page": 7,
+   "text": "In the last four years, has the Company lent money that the borrower has not repaid in full?",
+   "section": null
+  },
+  {
+   "q": "B20",
+   "page": 7,
+   "text": "In the last four years, has the Company borrowed any money and repaid it in full?",
+   "section": null
+  },
+  {
+   "q": "B21",
+   "page": 8,
+   "text": "In the last 12 months, did the Company pay more than a normal payment to a creditor, or enter into an arrangement with a creditor who demanded payment?",
+   "section": "Repayment of money to creditors"
+  },
+  {
+   "q": "B22",
+   "page": 8,
+   "text": "Have any creditors taken enforcement action against the Company?",
+   "section": null
+  },
+  {
+   "q": "B23",
+   "page": 8,
+   "text": "Did the Company enter into a payment arrangement with the Australian Taxation Office?",
+   "section": "Taxation"
+  },
+  {
+   "q": "B24",
+   "page": 8,
+   "text": "Who prepared the most recent Income Tax Return, BAS, Single Touch Payroll and Superannuation Statements?"
+  },
+  {
+   "q": "B25",
+   "page": 8,
+   "text": "Does the Company owe State taxes (e.g. payroll tax)?",
+   "section": null
+  },
+  {
+   "q": "B26",
+   "page": 8,
+   "text": "Does the Company owe insurance and workers compensation?",
+   "section": null
+  },
+  {
+   "q": "B27",
+   "page": 8,
+   "text": "Have you provided the full details asked for in Questions B17 to B26?",
+   "section": null
+  },
+  {
+   "q": "B28",
+   "page": 9,
+   "text": "Have people other than those at B17 and B24 provided advice about the Company's affairs in the last four years?",
+   "section": "External advisers"
+  },
+  {
+   "q": "B29",
+   "page": 9,
+   "text": "Is the Company currently subject to or undertaking legal action?",
+   "section": null
+  },
+  {
+   "q": "B30",
+   "page": 9,
+   "text": "Did someone help you to complete this Report?",
+   "section": null
+  },
+  {
+   "q": "B31",
+   "page": 9,
+   "text": "Declaration by a Director, Secretary, or person nominated by the External Administrator"
+  }
+ ],
+ "fields": [
+  {
+   "key": "company_name",
+   "q": "Company",
+   "label": "Company name",
+   "type": "text",
+   "page": 2,
+   "x0": 53.41,
+   "top": 153.59,
+   "x1": 282.47,
+   "bot": 170.14
+  },
+  {
+   "key": "company_acn",
+   "q": "Company",
+   "label": "ACN",
+   "type": "text",
+   "page": 2,
+   "x0": 53.39,
+   "top": 187.42,
+   "x1": 282.45,
+   "bot": 203.97
+  },
+  {
+   "key": "b1_name",
+   "q": "B1",
+   "label": "Name",
+   "type": "text",
+   "page": 2,
+   "x0": 53.27,
+   "top": 344.91,
+   "x1": 282.33,
+   "bot": 361.46
+  },
+  {
+   "key": "b1_role",
+   "q": "B1",
+   "label": "Your role in the Company",
+   "type": "text",
+   "page": 2,
+   "x0": 53.61,
+   "top": 378.43,
+   "x1": 282.31,
+   "bot": 394.76
+  },
+  {
+   "key": "b1_phone",
+   "q": "B1",
+   "label": "Phone/Mobile",
+   "type": "text",
+   "page": 2,
+   "x0": 53.59,
+   "top": 411.81,
+   "x1": 282.28,
+   "bot": 428.13
+  },
+  {
+   "key": "b1_email",
+   "q": "B1",
+   "label": "Email",
+   "type": "text",
+   "page": 2,
+   "x0": 53.57,
+   "top": 445.18,
+   "x1": 282.26,
+   "bot": 461.51
+  },
+  {
+   "key": "b1_address",
+   "q": "B1",
+   "label": "Address",
+   "type": "text",
+   "page": 2,
+   "x0": 53.54,
+   "top": 478.56,
+   "x1": 282.24,
+   "bot": 494.88,
+   "handwritten": true
+  },
+  {
+   "key": "b1_street",
+   "q": "B1",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 2,
+   "x0": 53.15,
+   "top": 512.24,
+   "x1": 282.21,
+   "bot": 528.79,
+   "handwritten": true
+  },
+  {
+   "key": "b1_suburb",
+   "q": "B1",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 2,
+   "x0": 53.49,
+   "top": 545.76,
+   "x1": 167.1,
+   "bot": 562.08,
+   "handwritten": true
+  },
+  {
+   "key": "b1_state",
+   "q": "B1",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 2,
+   "x0": 167.1,
+   "top": 545.76,
+   "x1": 241.3,
+   "bot": 562.08,
+   "pad": 3,
+   "handwritten": true
+  },
+  {
+   "key": "b1_postcode",
+   "q": "B1",
+   "label": "Postcode",
+   "type": "text",
+   "page": 2,
+   "x0": 241.3,
+   "top": 545.76,
+   "x1": 282.19,
+   "bot": 562.08,
+   "pad": 3,
+   "handwritten": true
+  },
+  {
+   "key": "b2",
+   "q": "B2",
+   "label": "Have you received payments from the Company during the last four years?",
+   "type": "yesno",
+   "page": 2,
+   "yes": {
+    "x0": 54.47,
+    "top": 638.17,
+    "x1": 66.63,
+    "bot": 654.25
+   },
+   "no": {
+    "x0": 54.88,
+    "top": 614.66,
+    "x1": 67.36,
+    "bot": 630.74
+   }
+  },
+  {
+   "key": "b3",
+   "q": "B3",
+   "label": "Did you instruct the Company to make payments to someone else, or another company on your behalf?",
+   "type": "yesno",
+   "page": 2,
+   "yes": {
+    "x0": 54.38,
+    "top": 771.85,
+    "x1": 66.53,
+    "bot": 787.94
+   },
+   "no": {
+    "x0": 54.4,
+    "top": 748.35,
+    "x1": 66.55,
+    "bot": 764.43
+   }
+  },
+  {
+   "key": "b4",
+   "q": "B4",
+   "label": "Did you operate the Company's business through a trust?",
+   "type": "yesno",
+   "page": 2,
+   "yes": {
+    "x0": 339.57,
+    "top": 117.94,
+    "x1": 351.72,
+    "bot": 134.02
+   },
+   "no": {
+    "x0": 339.59,
+    "top": 94.43,
+    "x1": 351.74,
+    "bot": 110.52
+   }
+  },
+  {
+   "key": "b5_m1_name",
+   "q": "B5",
+   "label": "Manager 1: Name",
+   "type": "text",
+   "page": 2,
+   "x0": 338.02,
+   "top": 300.63,
+   "x1": 567.08,
+   "bot": 317.18
+  },
+  {
+   "key": "b5_m1_role",
+   "q": "B5",
+   "label": "Manager 1: Role in the Company",
+   "type": "text",
+   "page": 2,
+   "x0": 338,
+   "top": 334.46,
+   "x1": 567.06,
+   "bot": 351.01
+  },
+  {
+   "key": "b5_m1_duties",
+   "q": "B5",
+   "label": "Manager 1: Duties and responsibilities",
+   "type": "lines",
+   "page": 2,
+   "lines": [
+    {
+     "x0": 337.97,
+     "top": 368.29,
+     "x1": 567.03,
+     "bot": 384.83
+    },
+    {
+     "x0": 337.96,
+     "top": 393.2,
+     "x1": 567.02,
+     "bot": 407.2
+    },
+    {
+     "x0": 337.94,
+     "top": 417.96,
+     "x1": 567,
+     "bot": 431.96
+    },
+    {
+     "x0": 337.92,
+     "top": 442.71,
+     "x1": 566.98,
+     "bot": 456.71
+    }
+   ]
+  },
+  {
+   "key": "b5_m1_phone",
+   "q": "B5",
+   "label": "Manager 1: Phone",
+   "type": "text",
+   "page": 2,
+   "x0": 337.9,
+   "top": 476.38,
+   "x1": 566.96,
+   "bot": 492.93
+  },
+  {
+   "key": "b5_m1_email",
+   "q": "B5",
+   "label": "Manager 1: Email",
+   "type": "text",
+   "page": 2,
+   "x0": 337.87,
+   "top": 510.21,
+   "x1": 566.93,
+   "bot": 526.76
+  },
+  {
+   "key": "b5_m2_name",
+   "q": "B5",
+   "label": "Manager 2: Name",
+   "type": "text",
+   "page": 2,
+   "x0": 337.85,
+   "top": 544.04,
+   "x1": 566.91,
+   "bot": 560.59
+  },
+  {
+   "key": "b5_m2_role",
+   "q": "B5",
+   "label": "Manager 2: Role in the Company",
+   "type": "text",
+   "page": 2,
+   "x0": 337.82,
+   "top": 577.87,
+   "x1": 566.88,
+   "bot": 594.41
+  },
+  {
+   "key": "b5_m2_duties",
+   "q": "B5",
+   "label": "Manager 2: Duties and responsibilities",
+   "type": "lines",
+   "page": 2,
+   "lines": [
+    {
+     "x0": 337.8,
+     "top": 611.69,
+     "x1": 566.86,
+     "bot": 628.24
+    },
+    {
+     "x0": 337.78,
+     "top": 636.61,
+     "x1": 566.84,
+     "bot": 650.61
+    },
+    {
+     "x0": 337.76,
+     "top": 661.36,
+     "x1": 566.82,
+     "bot": 675.36
+    }
+   ]
+  },
+  {
+   "key": "b5_m2_phone",
+   "q": "B5",
+   "label": "Manager 2: Phone",
+   "type": "text",
+   "page": 2,
+   "x0": 337.74,
+   "top": 695.03,
+   "x1": 566.8,
+   "bot": 711.58
+  },
+  {
+   "key": "b5_m2_email",
+   "q": "B5",
+   "label": "Manager 2: Email",
+   "type": "text",
+   "page": 2,
+   "x0": 337.71,
+   "top": 728.86,
+   "x1": 566.77,
+   "bot": 745.41
+  },
+  {
+   "key": "b6",
+   "q": "B6",
+   "label": "Did the Company keep electronic records?",
+   "type": "yesno",
+   "page": 3,
+   "yes": {
+    "x0": 56.69,
+    "top": 185.69,
+    "x1": 68.83,
+    "bot": 201.69
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 165.19,
+    "x1": 68.83,
+    "bot": 181.19
+   }
+  },
+  {
+   "key": "b6_contact",
+   "q": "B6",
+   "label": "Person who can give access to these records, if not you",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 256.8,
+   "x1": 283.5,
+   "bot": 285.34
+  },
+  {
+   "key": "b6_phone",
+   "q": "B6",
+   "label": "Phone",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 302.62,
+   "x1": 283.5,
+   "bot": 319.17
+  },
+  {
+   "key": "b6_email",
+   "q": "B6",
+   "label": "Email",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 336.45,
+   "x1": 283.5,
+   "bot": 353
+  },
+  {
+   "key": "b6_street",
+   "q": "B6",
+   "label": "Records address: Street/Unit number and name",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 396.45,
+   "x1": 283.5,
+   "bot": 413
+  },
+  {
+   "key": "b6_suburb",
+   "q": "B6",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 430.28,
+   "x1": 167.1,
+   "bot": 446.82
+  },
+  {
+   "key": "b6_state",
+   "q": "B6",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 3,
+   "x0": 167.1,
+   "top": 430.28,
+   "x1": 241.3,
+   "bot": 446.82,
+   "pad": 3
+  },
+  {
+   "key": "b6_postcode",
+   "q": "B6",
+   "label": "Postcode",
+   "type": "text",
+   "page": 3,
+   "x0": 241.3,
+   "top": 430.28,
+   "x1": 283.5,
+   "bot": 446.82,
+   "pad": 3
+  },
+  {
+   "key": "b6_storage",
+   "q": "B6",
+   "label": "How have they been stored? (computer, hard drive, cloud, etc.)",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 464.1,
+   "x1": 283.5,
+   "bot": 492.65
+  },
+  {
+   "key": "b6_provider",
+   "q": "B6",
+   "label": "Provider name",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 509.93,
+   "x1": 283.5,
+   "bot": 526.48
+  },
+  {
+   "key": "b6_provider_phone",
+   "q": "B6",
+   "label": "Provider phone",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 543.76,
+   "x1": 283.5,
+   "bot": 572.3
+  },
+  {
+   "key": "b6_provider_email",
+   "q": "B6",
+   "label": "Provider email",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 589.58,
+   "x1": 283.5,
+   "bot": 606.13
+  },
+  {
+   "key": "b6_username",
+   "q": "B6",
+   "label": "User name",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 623.41,
+   "x1": 283.5,
+   "bot": 639.96,
+   "handwritten": true
+  },
+  {
+   "key": "b6_password",
+   "q": "B6",
+   "label": "Password",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 657.24,
+   "x1": 283.5,
+   "bot": 673.78,
+   "handwritten": true
+  },
+  {
+   "key": "b6_registration",
+   "q": "B6",
+   "label": "Registration name",
+   "type": "text",
+   "page": 3,
+   "x0": 55.28,
+   "top": 688.71,
+   "x1": 283.5,
+   "bot": 712.29
+  },
+  {
+   "key": "b7",
+   "q": "B7",
+   "label": "Did the Company keep paper records?",
+   "type": "yesno",
+   "page": 3,
+   "yes": {
+    "x0": 340.19,
+    "top": 109.85,
+    "x1": 352.33,
+    "bot": 125.85
+   },
+   "no": {
+    "x0": 340.19,
+    "top": 86.35,
+    "x1": 352.33,
+    "bot": 102.35
+   }
+  },
+  {
+   "key": "b7_contact",
+   "q": "B7",
+   "label": "Person who can give access to these records, if not you",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 169.45,
+   "x1": 567,
+   "bot": 198
+  },
+  {
+   "key": "b7_phone",
+   "q": "B7",
+   "label": "Phone",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 215.28,
+   "x1": 567,
+   "bot": 231.82
+  },
+  {
+   "key": "b7_email",
+   "q": "B7",
+   "label": "Email",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 248.34,
+   "x1": 567,
+   "bot": 265.89
+  },
+  {
+   "key": "b7_street",
+   "q": "B7",
+   "label": "Records address: Street/Unit number and name",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 309.1,
+   "x1": 567,
+   "bot": 325.65
+  },
+  {
+   "key": "b7_suburb",
+   "q": "B7",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 342.93,
+   "x1": 450.6,
+   "bot": 359.48
+  },
+  {
+   "key": "b7_state",
+   "q": "B7",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 3,
+   "x0": 450.6,
+   "top": 342.93,
+   "x1": 524.8,
+   "bot": 359.48,
+   "pad": 3
+  },
+  {
+   "key": "b7_postcode",
+   "q": "B7",
+   "label": "Postcode",
+   "type": "text",
+   "page": 3,
+   "x0": 524.8,
+   "top": 342.93,
+   "x1": 567,
+   "bot": 359.48,
+   "pad": 3
+  },
+  {
+   "key": "b8",
+   "q": "B8",
+   "label": "Can you or someone else provide financial statements for the last 4 years?",
+   "type": "yesno",
+   "page": 3,
+   "yes": {
+    "x0": 340.19,
+    "top": 438.84,
+    "x1": 352.33,
+    "bot": 454.84
+   },
+   "no": {
+    "x0": 340.19,
+    "top": 415.34,
+    "x1": 352.33,
+    "bot": 431.34
+   }
+  },
+  {
+   "key": "b9",
+   "q": "B9",
+   "label": "Have you provided the full details asked for in Questions B6, B7 and B8?",
+   "type": "yesno",
+   "page": 3,
+   "yes": {
+    "x0": 340.19,
+    "top": 615.86,
+    "x1": 352.33,
+    "bot": 631.86
+   },
+   "no": {
+    "x0": 340.19,
+    "top": 543.53,
+    "x1": 352.33,
+    "bot": 559.53
+   }
+  },
+  {
+   "key": "b9_reason",
+   "q": "B9",
+   "label": "If No: why you cannot provide company records",
+   "type": "text",
+   "page": 3,
+   "x0": 338.78,
+   "top": 594.13,
+   "x1": 567,
+   "bot": 610.67
+  },
+  {
+   "key": "b10_date",
+   "q": "B10",
+   "label": "Date the Company started trading",
+   "type": "text",
+   "page": 4,
+   "format": "date",
+   "x0": 56.69,
+   "top": 108,
+   "x1": 141.73,
+   "bot": 127.84
+  },
+  {
+   "key": "b11",
+   "q": "B11",
+   "label": "Did the Company purchase or acquire the business or any part of it from someone else in the last four years?",
+   "type": "yesno",
+   "page": 4,
+   "yes": {
+    "x0": 56.69,
+    "top": 253.65,
+    "x1": 68.83,
+    "bot": 269.65
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 233.15,
+    "x1": 68.83,
+    "bot": 249.15
+   }
+  },
+  {
+   "key": "b11_from",
+   "q": "B11",
+   "label": "Who was the business purchased or acquired from?",
+   "type": "text",
+   "page": 4,
+   "x0": 55.28,
+   "top": 289.25,
+   "x1": 283.46,
+   "bot": 305.8
+  },
+  {
+   "key": "b11_name",
+   "q": "B11",
+   "label": "Name/Organisation",
+   "type": "text",
+   "page": 4,
+   "x0": 55.28,
+   "top": 323.08,
+   "x1": 283.46,
+   "bot": 339.62
+  },
+  {
+   "key": "b11_acn",
+   "q": "B11",
+   "label": "ACN (if applicable)",
+   "type": "text",
+   "page": 4,
+   "x0": 55.28,
+   "top": 356.9,
+   "x1": 283.46,
+   "bot": 373.45
+  },
+  {
+   "key": "b11_price",
+   "q": "B11",
+   "label": "Purchase price",
+   "type": "money",
+   "page": 4,
+   "x0": 55.28,
+   "top": 390.73,
+   "x1": 283.46,
+   "bot": 407.28,
+   "startX": 65.7
+  },
+  {
+   "key": "b11_date",
+   "q": "B11",
+   "label": "Date the Company acquired the business",
+   "type": "date",
+   "page": 4,
+   "x0": 55.28,
+   "top": 424.56,
+   "x1": 155.91,
+   "bot": 441.1,
+   "slashes": [
+    77.8,
+    101.5
+   ]
+  },
+  {
+   "key": "b12_main",
+   "q": "B12",
+   "label": "What the Company makes or provides",
+   "type": "lines",
+   "page": 4,
+   "lines": [
+    {
+     "x0": 55.28,
+     "top": 537.19,
+     "x1": 283.46,
+     "bot": 551.19
+    },
+    {
+     "x0": 55.28,
+     "top": 561.95,
+     "x1": 283.46,
+     "bot": 575.95
+    },
+    {
+     "x0": 55.28,
+     "top": 586.7,
+     "x1": 283.46,
+     "bot": 600.7
+    },
+    {
+     "x0": 55.28,
+     "top": 611.46,
+     "x1": 283.46,
+     "bot": 625.46
+    }
+   ]
+  },
+  {
+   "key": "b13",
+   "q": "B13",
+   "label": "Did the Company lease or rent business premises?",
+   "type": "yesno",
+   "page": 4,
+   "yes": {
+    "x0": 340.15,
+    "top": 109.05,
+    "x1": 352.3,
+    "bot": 125.05
+   },
+   "no": {
+    "x0": 340.15,
+    "top": 88.54,
+    "x1": 352.3,
+    "bot": 104.54
+   }
+  },
+  {
+   "key": "b13_street",
+   "q": "B13",
+   "label": "Premises: Street/Unit number and name",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 200.66,
+   "x1": 566.93,
+   "bot": 217.2
+  },
+  {
+   "key": "b13_suburb",
+   "q": "B13",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 234.48,
+   "x1": 450.5,
+   "bot": 251.03
+  },
+  {
+   "key": "b13_state",
+   "q": "B13",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 4,
+   "x0": 450.5,
+   "top": 234.48,
+   "x1": 524.8,
+   "bot": 251.03,
+   "pad": 3
+  },
+  {
+   "key": "b13_postcode",
+   "q": "B13",
+   "label": "Postcode",
+   "type": "text",
+   "page": 4,
+   "x0": 524.8,
+   "top": 234.48,
+   "x1": 566.93,
+   "bot": 251.03,
+   "pad": 3
+  },
+  {
+   "key": "b13_agent",
+   "q": "B13",
+   "label": "Real estate agent (if none, landlord's details)",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 268.31,
+   "x1": 566.93,
+   "bot": 296.86
+  },
+  {
+   "key": "b13_agent_phone",
+   "q": "B13",
+   "label": "Agent/landlord phone",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 314.14,
+   "x1": 566.93,
+   "bot": 330.68
+  },
+  {
+   "key": "b13_lease",
+   "q": "B13",
+   "label": "Is/was there a lease agreement?",
+   "type": "yesno",
+   "page": 4,
+   "yes": {
+    "x0": 340.15,
+    "top": 379.71,
+    "x1": 352.3,
+    "bot": 395.71
+   },
+   "no": {
+    "x0": 340.15,
+    "top": 359.21,
+    "x1": 352.3,
+    "bot": 375.21
+   }
+  },
+  {
+   "key": "b13_term",
+   "q": "B13",
+   "label": "Term of the lease agreement",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 415.31,
+   "x1": 566.93,
+   "bot": 443.86
+  },
+  {
+   "key": "b13_start",
+   "q": "B13",
+   "label": "Lease start date",
+   "type": "date",
+   "page": 4,
+   "x0": 338.74,
+   "top": 461.14,
+   "x1": 566.93,
+   "bot": 477.68,
+   "slashes": [
+    361.4,
+    385.1
+   ]
+  },
+  {
+   "key": "b13_end",
+   "q": "B13",
+   "label": "Lease end date",
+   "type": "date",
+   "page": 4,
+   "x0": 338.74,
+   "top": 461.14,
+   "x1": 566.93,
+   "bot": 477.68,
+   "slashes": [
+    479.8,
+    503.4
+   ]
+  },
+  {
+   "key": "b13_last_payment",
+   "q": "B13",
+   "label": "Date of last payment",
+   "type": "date",
+   "page": 4,
+   "x0": 338.74,
+   "top": 494.96,
+   "x1": 566.93,
+   "bot": 511.51,
+   "slashes": [
+    361.4,
+    385.1
+   ]
+  },
+  {
+   "key": "b13_bond",
+   "q": "B13",
+   "label": "Bond amount",
+   "type": "money",
+   "page": 4,
+   "x0": 338.74,
+   "top": 528.79,
+   "x1": 566.93,
+   "bot": 545.34,
+   "startX": 349.9
+  },
+  {
+   "key": "b13_bond_to",
+   "q": "B13",
+   "label": "Who was the bond paid to?",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 562.62,
+   "x1": 566.93,
+   "bot": 579.16
+  },
+  {
+   "key": "b13_copy_name",
+   "q": "B13",
+   "label": "Who has the Company's copy of the lease (if not you): Name",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 596.44,
+   "x1": 566.93,
+   "bot": 636.99
+  },
+  {
+   "key": "b13_copy_address",
+   "q": "B13",
+   "label": "Lease holder: Address",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 654.27,
+   "x1": 566.93,
+   "bot": 670.82
+  },
+  {
+   "key": "b13_copy_street",
+   "q": "B13",
+   "label": "Lease holder: Street/Unit number and name",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 688.1,
+   "x1": 566.93,
+   "bot": 704.64
+  },
+  {
+   "key": "b13_copy_suburb",
+   "q": "B13",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 4,
+   "x0": 338.74,
+   "top": 721.92,
+   "x1": 450.5,
+   "bot": 738.47
+  },
+  {
+   "key": "b13_copy_state",
+   "q": "B13",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 4,
+   "x0": 450.5,
+   "top": 721.92,
+   "x1": 524.8,
+   "bot": 738.47,
+   "pad": 3
+  },
+  {
+   "key": "b13_copy_postcode",
+   "q": "B13",
+   "label": "Postcode",
+   "type": "text",
+   "page": 4,
+   "x0": 524.8,
+   "top": 721.92,
+   "x1": 566.93,
+   "bot": 738.47,
+   "pad": 3
+  },
+  {
+   "key": "b14",
+   "q": "B14",
+   "label": "Did the business fail?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 56.69,
+    "top": 109.85,
+    "x1": 68.83,
+    "bot": 125.85
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 86.35,
+    "x1": 68.83,
+    "bot": 102.35
+   }
+  },
+  {
+   "key": "b14_reasons",
+   "q": "B14",
+   "label": "Reason(s) the business failed",
+   "type": "lines",
+   "page": 5,
+   "lines": [
+    {
+     "x0": 55.28,
+     "top": 157.45,
+     "x1": 283.46,
+     "bot": 174
+    },
+    {
+     "x0": 55.28,
+     "top": 191.28,
+     "x1": 283.46,
+     "bot": 207.82
+    },
+    {
+     "x0": 55.28,
+     "top": 225.1,
+     "x1": 283.46,
+     "bot": 241.65
+    },
+    {
+     "x0": 55.28,
+     "top": 258.93,
+     "x1": 283.46,
+     "bot": 275.48
+    },
+    {
+     "x0": 55.28,
+     "top": 292.76,
+     "x1": 283.46,
+     "bot": 309.3
+    }
+   ]
+  },
+  {
+   "key": "b14_apparent",
+   "q": "B14",
+   "label": "When did the reason(s) become apparent?",
+   "type": "date",
+   "page": 5,
+   "x0": 55.28,
+   "top": 326.58,
+   "x1": 155.91,
+   "bot": 343.13,
+   "slashes": [
+    80.3,
+    104
+   ]
+  },
+  {
+   "key": "b15",
+   "q": "B15",
+   "label": "Has the Company ceased trading?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 56.69,
+    "top": 405.5,
+    "x1": 68.83,
+    "bot": 421.5
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 384.99,
+    "x1": 68.83,
+    "bot": 400.99
+   }
+  },
+  {
+   "key": "b15_date",
+   "q": "B15",
+   "label": "Date the Company ceased trading",
+   "type": "date",
+   "page": 5,
+   "x0": 55.28,
+   "top": 441.1,
+   "x1": 155.91,
+   "bot": 457.64,
+   "slashes": [
+    77.2,
+    102.6
+   ]
+  },
+  {
+   "key": "b15_reasons",
+   "q": "B15",
+   "label": "Reason(s) it ceased trading",
+   "type": "lines",
+   "page": 5,
+   "lines": [
+    {
+     "x0": 55.28,
+     "top": 474.92,
+     "x1": 283.46,
+     "bot": 491.47
+    },
+    {
+     "x0": 55.28,
+     "top": 508.75,
+     "x1": 283.46,
+     "bot": 525.3
+    }
+   ]
+  },
+  {
+   "key": "b16",
+   "q": "B16",
+   "label": "Is someone else or another company currently carrying on the business (or part of it)?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 56.69,
+    "top": 615.66,
+    "x1": 68.83,
+    "bot": 631.66
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 595.16,
+    "x1": 68.83,
+    "bot": 611.16
+   }
+  },
+  {
+   "key": "b16_name",
+   "q": "B16",
+   "label": "Name and address of company or person",
+   "type": "text",
+   "page": 5,
+   "x0": 55.28,
+   "top": 674.77,
+   "x1": 283.46,
+   "bot": 691.31
+  },
+  {
+   "key": "b16_street",
+   "q": "B16",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 5,
+   "x0": 55.28,
+   "top": 708.59,
+   "x1": 283.46,
+   "bot": 725.14
+  },
+  {
+   "key": "b16_suburb",
+   "q": "B16",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 5,
+   "x0": 55.28,
+   "top": 742.42,
+   "x1": 167.1,
+   "bot": 758.97
+  },
+  {
+   "key": "b16_state",
+   "q": "B16",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 5,
+   "x0": 167.1,
+   "top": 742.42,
+   "x1": 241.3,
+   "bot": 758.97,
+   "pad": 3
+  },
+  {
+   "key": "b16_postcode",
+   "q": "B16",
+   "label": "Postcode",
+   "type": "text",
+   "page": 5,
+   "x0": 241.3,
+   "top": 742.42,
+   "x1": 283.46,
+   "bot": 758.97,
+   "pad": 3
+  },
+  {
+   "key": "b16_phone",
+   "q": "B16",
+   "label": "Phone",
+   "type": "text",
+   "page": 5,
+   "x0": 55.28,
+   "top": 776.25,
+   "x1": 283.46,
+   "bot": 792.79
+  },
+  {
+   "key": "b16_agreement_note",
+   "q": "B16",
+   "label": "Sale agreement details (optional note)",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 71.5,
+   "x1": 566.93,
+   "bot": 100.05
+  },
+  {
+   "key": "b16_agreement",
+   "q": "B16",
+   "label": "Is there a sale agreement for the sale or transfer of the business?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 340.15,
+    "top": 102.24,
+    "x1": 352.3,
+    "bot": 118.24
+   },
+   "no": {
+    "x0": 340.15,
+    "top": 122.74,
+    "x1": 352.3,
+    "bot": 138.74
+   }
+  },
+  {
+   "key": "b16_consideration",
+   "q": "B16",
+   "label": "Consideration paid for the business",
+   "type": "money",
+   "page": 5,
+   "x0": 338.74,
+   "top": 158.34,
+   "x1": 566.93,
+   "bot": 225.89,
+   "startX": 350.3
+  },
+  {
+   "key": "b16_received_all",
+   "q": "B16",
+   "label": "Did the Company receive all the money it was owed?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 340.15,
+    "top": 254.24,
+    "x1": 352.3,
+    "bot": 270.24
+   },
+   "no": {
+    "x0": 340.15,
+    "top": 274.75,
+    "x1": 352.3,
+    "bot": 290.75
+   }
+  },
+  {
+   "key": "b16_amount_received",
+   "q": "B16",
+   "label": "If No: amount received by you or the Company",
+   "type": "money",
+   "page": 5,
+   "x0": 338.74,
+   "top": 322.35,
+   "x1": 566.93,
+   "bot": 338.89,
+   "startX": 349.2
+  },
+  {
+   "key": "b17",
+   "q": "B17",
+   "label": "In the last four years, has the Company disposed of, sold or transferred any property outside the normal course of business?",
+   "type": "yesno",
+   "page": 5,
+   "yes": {
+    "x0": 340.15,
+    "top": 497.08,
+    "x1": 352.3,
+    "bot": 513.08
+   },
+   "no": {
+    "x0": 340.15,
+    "top": 473.57,
+    "x1": 352.3,
+    "bot": 489.57
+   }
+  },
+  {
+   "key": "b17_property",
+   "q": "B17",
+   "label": "Description of property disposed of, sold or transferred",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 568.67,
+   "x1": 566.93,
+   "bot": 585.22
+  },
+  {
+   "key": "b17_recipient",
+   "q": "B17",
+   "label": "Who received the property?",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 602.5,
+   "x1": 566.93,
+   "bot": 619.05
+  },
+  {
+   "key": "b17_recipient_address",
+   "q": "B17",
+   "label": "Recipient's address",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 636.33,
+   "x1": 566.93,
+   "bot": 652.87
+  },
+  {
+   "key": "b17_street",
+   "q": "B17",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 670.15,
+   "x1": 566.93,
+   "bot": 686.7
+  },
+  {
+   "key": "b17_suburb",
+   "q": "B17",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 703.98,
+   "x1": 450.5,
+   "bot": 720.53
+  },
+  {
+   "key": "b17_state",
+   "q": "B17",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 5,
+   "x0": 450.5,
+   "top": 703.98,
+   "x1": 524.8,
+   "bot": 720.53,
+   "pad": 3
+  },
+  {
+   "key": "b17_postcode",
+   "q": "B17",
+   "label": "Postcode",
+   "type": "text",
+   "page": 5,
+   "x0": 524.8,
+   "top": 703.98,
+   "x1": 566.93,
+   "bot": 720.53,
+   "pad": 3
+  },
+  {
+   "key": "b17_phone",
+   "q": "B17",
+   "label": "Phone",
+   "type": "text",
+   "page": 5,
+   "x0": 338.74,
+   "top": 737.81,
+   "x1": 566.93,
+   "bot": 754.36
+  },
+  {
+   "key": "b17_related",
+   "q": "B17",
+   "label": "Was the recipient a related party?",
+   "type": "yesno",
+   "page": 6,
+   "yes": {
+    "x0": 47.02,
+    "top": 138.52,
+    "x1": 59.16,
+    "bot": 154.52
+   },
+   "no": {
+    "x0": 47.02,
+    "top": 118.02,
+    "x1": 59.16,
+    "bot": 134.02
+   }
+  },
+  {
+   "key": "b17_price",
+   "q": "B17",
+   "label": "Sale price or consideration given",
+   "type": "money",
+   "page": 6,
+   "x0": 45.6,
+   "top": 174.12,
+   "x1": 273.83,
+   "bot": 190.67,
+   "startX": 56
+  },
+  {
+   "key": "b17_sale_date",
+   "q": "B17",
+   "label": "Sale/disposition date",
+   "type": "date",
+   "page": 6,
+   "x0": 45.6,
+   "top": 243.45,
+   "x1": 273.83,
+   "bot": 260,
+   "slashes": [
+    66,
+    89.7
+   ]
+  },
+  {
+   "key": "b17_payment_date",
+   "q": "B17",
+   "label": "Payment received date",
+   "type": "date",
+   "page": 6,
+   "x0": 45.6,
+   "top": 243.45,
+   "x1": 273.83,
+   "bot": 260,
+   "slashes": [
+    170.9,
+    194.6
+   ]
+  },
+  {
+   "key": "b17_adviser_name",
+   "q": "B17",
+   "label": "Adviser on this transaction: Name",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 347.95,
+   "x1": 273.83,
+   "bot": 364.5
+  },
+  {
+   "key": "b17_adviser_street",
+   "q": "B17",
+   "label": "Adviser: Street/Unit number and name",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 381.78,
+   "x1": 273.83,
+   "bot": 398.33
+  },
+  {
+   "key": "b17_adviser_suburb",
+   "q": "B17",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 415.61,
+   "x1": 157.4,
+   "bot": 432.15
+  },
+  {
+   "key": "b17_adviser_state",
+   "q": "B17",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 6,
+   "x0": 157.4,
+   "top": 415.61,
+   "x1": 231.7,
+   "bot": 432.15,
+   "pad": 3
+  },
+  {
+   "key": "b17_adviser_postcode",
+   "q": "B17",
+   "label": "Postcode",
+   "type": "text",
+   "page": 6,
+   "x0": 231.7,
+   "top": 415.61,
+   "x1": 273.83,
+   "bot": 432.15,
+   "pad": 3
+  },
+  {
+   "key": "b17_adviser_phone",
+   "q": "B17",
+   "label": "Adviser: Phone",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 449.43,
+   "x1": 273.83,
+   "bot": 465.98
+  },
+  {
+   "key": "b17_advice_amount",
+   "q": "B17",
+   "label": "Amount paid for advice",
+   "type": "money",
+   "page": 6,
+   "x0": 45.6,
+   "top": 483.26,
+   "x1": 273.83,
+   "bot": 499.81,
+   "startX": 56
+  },
+  {
+   "key": "b17_advice_paid_by",
+   "q": "B17",
+   "label": "Who paid for the advice?",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 517.09,
+   "x1": 273.83,
+   "bot": 533.63
+  },
+  {
+   "key": "b17_advice_docs",
+   "q": "B17",
+   "label": "Engagement letter and advice (attached copies)",
+   "type": "text",
+   "page": 6,
+   "x0": 45.6,
+   "top": 552.38,
+   "x1": 273.83,
+   "bot": 570.94
+  },
+  {
+   "key": "b18",
+   "q": "B18",
+   "label": "In the last four years, has the Company entered into any financial transactions with a related party?",
+   "type": "yesno",
+   "page": 6,
+   "yes": {
+    "x0": 330.52,
+    "top": 175.95,
+    "x1": 342.66,
+    "bot": 191.95
+   },
+   "no": {
+    "x0": 330.52,
+    "top": 155.45,
+    "x1": 342.66,
+    "bot": 171.45
+   }
+  },
+  {
+   "key": "b18_details",
+   "q": "B18",
+   "label": "Details of the property or business transferred or received",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 211.55,
+   "x1": 557.33,
+   "bot": 240.1
+  },
+  {
+   "key": "b18_name",
+   "q": "B18",
+   "label": "Related party name",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 257.38,
+   "x1": 557.33,
+   "bot": 273.93
+  },
+  {
+   "key": "b18_address",
+   "q": "B18",
+   "label": "Related party address",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 291.21,
+   "x1": 557.33,
+   "bot": 307.75
+  },
+  {
+   "key": "b18_street",
+   "q": "B18",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 325.03,
+   "x1": 557.33,
+   "bot": 341.58
+  },
+  {
+   "key": "b18_suburb",
+   "q": "B18",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 358.86,
+   "x1": 440.9,
+   "bot": 375.41
+  },
+  {
+   "key": "b18_state",
+   "q": "B18",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 6,
+   "x0": 440.9,
+   "top": 358.86,
+   "x1": 515.2,
+   "bot": 375.41,
+   "pad": 3
+  },
+  {
+   "key": "b18_postcode",
+   "q": "B18",
+   "label": "Postcode",
+   "type": "text",
+   "page": 6,
+   "x0": 515.2,
+   "top": 358.86,
+   "x1": 557.33,
+   "bot": 375.41,
+   "pad": 3
+  },
+  {
+   "key": "b18_phone",
+   "q": "B18",
+   "label": "Phone",
+   "type": "text",
+   "page": 6,
+   "x0": 329.1,
+   "top": 392.69,
+   "x1": 557.33,
+   "bot": 409.23
+  },
+  {
+   "key": "b18_value",
+   "q": "B18",
+   "label": "Value of transaction",
+   "type": "money",
+   "page": 6,
+   "x0": 329.1,
+   "top": 426.51,
+   "x1": 557.33,
+   "bot": 443.06,
+   "startX": 338.8
+  },
+  {
+   "key": "b18_given",
+   "q": "B18",
+   "label": "Consideration given",
+   "type": "money",
+   "page": 6,
+   "x0": 329.1,
+   "top": 460.34,
+   "x1": 557.33,
+   "bot": 476.89,
+   "startX": 338.5
+  },
+  {
+   "key": "b18_received",
+   "q": "B18",
+   "label": "Consideration received",
+   "type": "money",
+   "page": 6,
+   "x0": 329.1,
+   "top": 529.67,
+   "x1": 557.33,
+   "bot": 546.22,
+   "startX": 339.2
+  },
+  {
+   "key": "b18_date",
+   "q": "B18",
+   "label": "Date of transaction",
+   "type": "date",
+   "page": 6,
+   "x0": 329.1,
+   "top": 563.5,
+   "x1": 429.77,
+   "bot": 580.04,
+   "slashes": [
+    352.4,
+    376
+   ]
+  },
+  {
+   "key": "b18_payment_date",
+   "q": "B18",
+   "label": "Date of payment (or final instalment)",
+   "type": "date",
+   "page": 6,
+   "x0": 329.1,
+   "top": 608.66,
+   "x1": 429.77,
+   "bot": 625.87,
+   "slashes": [
+    352.4,
+    376
+   ]
+  },
+  {
+   "key": "b19",
+   "q": "B19",
+   "label": "In the last four years, has the Company lent money that the borrower has not repaid in full?",
+   "type": "yesno",
+   "page": 7,
+   "yes": {
+    "x0": 56.76,
+    "top": 120.85,
+    "x1": 68.9,
+    "bot": 136.85
+   },
+   "no": {
+    "x0": 56.76,
+    "top": 100.35,
+    "x1": 68.9,
+    "bot": 116.35
+   }
+  },
+  {
+   "key": "b19_name",
+   "q": "B19",
+   "label": "Name of borrower",
+   "type": "text",
+   "page": 7,
+   "x0": 131,
+   "x1": 283.5,
+   "top": 190,
+   "bot": 206.5
+  },
+  {
+   "key": "b19_address",
+   "q": "B19",
+   "label": "Address",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 224.46,
+   "x1": 283.54,
+   "bot": 241.01
+  },
+  {
+   "key": "b19_street",
+   "q": "B19",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 258.28,
+   "x1": 283.54,
+   "bot": 274.83
+  },
+  {
+   "key": "b19_suburb",
+   "q": "B19",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 292.11,
+   "x1": 167.1,
+   "bot": 308.66
+  },
+  {
+   "key": "b19_state",
+   "q": "B19",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 7,
+   "x0": 167.1,
+   "top": 292.11,
+   "x1": 241.4,
+   "bot": 308.66,
+   "pad": 3
+  },
+  {
+   "key": "b19_postcode",
+   "q": "B19",
+   "label": "Postcode",
+   "type": "text",
+   "page": 7,
+   "x0": 241.4,
+   "top": 292.11,
+   "x1": 283.54,
+   "bot": 308.66,
+   "pad": 3
+  },
+  {
+   "key": "b19_phone",
+   "q": "B19",
+   "label": "Phone",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 325.94,
+   "x1": 283.54,
+   "bot": 342.49
+  },
+  {
+   "key": "b19_total",
+   "q": "B19",
+   "label": "Total of all money lent to this borrower",
+   "type": "money",
+   "page": 7,
+   "x0": 55.35,
+   "top": 359.77,
+   "x1": 283.54,
+   "bot": 376.31,
+   "startX": 65.8
+  },
+  {
+   "key": "b19_purpose",
+   "q": "B19",
+   "label": "Purpose of loan",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 393.59,
+   "x1": 283.54,
+   "bot": 410.14
+  },
+  {
+   "key": "b19_date_lent",
+   "q": "B19",
+   "label": "Date money was lent",
+   "type": "date",
+   "page": 7,
+   "x0": 55.35,
+   "top": 427.42,
+   "x1": 283.54,
+   "bot": 443.97,
+   "slashes": [
+    78.6,
+    102.3
+   ]
+  },
+  {
+   "key": "b19_rate",
+   "q": "B19",
+   "label": "Interest rate per annum (%)",
+   "type": "text",
+   "page": 7,
+   "x0": 183,
+   "top": 427.4,
+   "x1": 283.5,
+   "bot": 444
+  },
+  {
+   "key": "b19_date_repaid",
+   "q": "B19",
+   "label": "Date money was repaid",
+   "type": "date",
+   "page": 7,
+   "x0": 55.35,
+   "top": 461.25,
+   "x1": 155.98,
+   "bot": 477.79,
+   "slashes": [
+    78.6,
+    102.3
+   ]
+  },
+  {
+   "key": "b19_related_note",
+   "q": "B19",
+   "label": "Related party note (optional)",
+   "type": "text",
+   "page": 7,
+   "x0": 55.35,
+   "top": 495.07,
+   "x1": 283.54,
+   "bot": 511.62
+  },
+  {
+   "key": "b19_related",
+   "q": "B19",
+   "label": "Was the borrower a related party?",
+   "type": "yesno",
+   "page": 7,
+   "yes": {
+    "x0": 56.76,
+    "top": 569.81,
+    "x1": 68.9,
+    "bot": 585.81
+   },
+   "no": {
+    "x0": 56.76,
+    "top": 549.31,
+    "x1": 68.9,
+    "bot": 565.31
+   }
+  },
+  {
+   "key": "b20",
+   "q": "B20",
+   "label": "In the last four years, has the Company borrowed any money and repaid it in full?",
+   "type": "yesno",
+   "page": 7,
+   "yes": {
+    "x0": 335.84,
+    "top": 120.85,
+    "x1": 347.99,
+    "bot": 136.85
+   },
+   "no": {
+    "x0": 335.84,
+    "top": 100.61,
+    "x1": 347.99,
+    "bot": 116.61
+   }
+  },
+  {
+   "key": "b20_lender",
+   "q": "B20",
+   "label": "Name of lender",
+   "type": "text",
+   "page": 7,
+   "x0": 338.81,
+   "top": 156.45,
+   "x1": 567,
+   "bot": 173
+  },
+  {
+   "key": "b20_address",
+   "q": "B20",
+   "label": "Address",
+   "type": "text",
+   "page": 7,
+   "x0": 338.81,
+   "top": 192.28,
+   "x1": 567,
+   "bot": 208.82
+  },
+  {
+   "key": "b20_street",
+   "q": "B20",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 7,
+   "x0": 338.81,
+   "top": 226.1,
+   "x1": 567,
+   "bot": 242.65
+  },
+  {
+   "key": "b20_suburb",
+   "q": "B20",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 7,
+   "x0": 338.81,
+   "top": 259.93,
+   "x1": 450.6,
+   "bot": 276.48
+  },
+  {
+   "key": "b20_state",
+   "q": "B20",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 7,
+   "x0": 450.6,
+   "top": 259.93,
+   "x1": 524.9,
+   "bot": 276.48,
+   "pad": 3
+  },
+  {
+   "key": "b20_postcode",
+   "q": "B20",
+   "label": "Postcode",
+   "type": "text",
+   "page": 7,
+   "x0": 524.9,
+   "top": 259.93,
+   "x1": 567,
+   "bot": 276.48,
+   "pad": 3
+  },
+  {
+   "key": "b20_phone",
+   "q": "B20",
+   "label": "Phone",
+   "type": "text",
+   "page": 7,
+   "x0": 338.81,
+   "top": 293.76,
+   "x1": 567,
+   "bot": 310.3
+  },
+  {
+   "key": "b20_amount",
+   "q": "B20",
+   "label": "Amount borrowed from this lender",
+   "type": "money",
+   "page": 7,
+   "x0": 338.81,
+   "top": 327.58,
+   "x1": 567,
+   "bot": 344.13,
+   "startX": 349.2
+  },
+  {
+   "key": "b20_start",
+   "q": "B20",
+   "label": "Loan term: Start date",
+   "type": "date",
+   "page": 7,
+   "x0": 338.81,
+   "top": 361.41,
+   "x1": 567,
+   "bot": 389.96,
+   "slashes": [
+    364,
+    387.7
+   ]
+  },
+  {
+   "key": "b20_end",
+   "q": "B20",
+   "label": "Loan term: End date",
+   "type": "date",
+   "page": 7,
+   "x0": 338.81,
+   "top": 361.41,
+   "x1": 567,
+   "bot": 389.96,
+   "slashes": [
+    476.9,
+    500.5
+   ]
+  },
+  {
+   "key": "b20_date_borrowed",
+   "q": "B20",
+   "label": "Date the Company borrowed the money",
+   "type": "date",
+   "page": 7,
+   "x0": 338.81,
+   "top": 418.58,
+   "x1": 567,
+   "bot": 435.78,
+   "slashes": [
+    359.9,
+    383.6
+   ]
+  },
+  {
+   "key": "b20_rate",
+   "q": "B20",
+   "label": "Interest rate per annum (%)",
+   "type": "text",
+   "page": 7,
+   "x0": 466.5,
+   "top": 418.6,
+   "x1": 567,
+   "bot": 435.8
+  },
+  {
+   "key": "b20_date_repaid",
+   "q": "B20",
+   "label": "Date money was repaid",
+   "type": "date",
+   "page": 7,
+   "x0": 338.81,
+   "top": 453.06,
+   "x1": 439.44,
+   "bot": 469.61,
+   "slashes": [
+    361.8,
+    385.4
+   ]
+  },
+  {
+   "key": "b20_related",
+   "q": "B20",
+   "label": "Was the lender a related party?",
+   "type": "yesno",
+   "page": 7,
+   "yes": {
+    "x0": 340.23,
+    "top": 592.48,
+    "x1": 352.37,
+    "bot": 608.48
+   },
+   "no": {
+    "x0": 340.23,
+    "top": 571.98,
+    "x1": 352.37,
+    "bot": 587.98
+   }
+  },
+  {
+   "key": "b20_related_details",
+   "q": "B20",
+   "label": "If Yes: details",
+   "type": "text",
+   "page": 7,
+   "x0": 354.4,
+   "top": 610.41,
+   "x1": 558.5,
+   "bot": 632.63
+  },
+  {
+   "key": "b21",
+   "q": "B21",
+   "label": "In the last 12 months, did the Company pay more than a normal payment to a creditor, or enter into an arrangement with a creditor who demanded payment?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 56.69,
+    "top": 180.66,
+    "x1": 68.83,
+    "bot": 196.66
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 157.16,
+    "x1": 68.83,
+    "bot": 173.16
+   }
+  },
+  {
+   "key": "b22",
+   "q": "B22",
+   "label": "Have any creditors taken enforcement action against the Company?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 56.69,
+    "top": 314.35,
+    "x1": 68.83,
+    "bot": 330.35
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 290.84,
+    "x1": 68.83,
+    "bot": 306.84
+   }
+  },
+  {
+   "key": "b22_creditors",
+   "q": "B22",
+   "label": "Name of creditor(s)",
+   "type": "text",
+   "page": 8,
+   "x0": 55.28,
+   "top": 373.95,
+   "x1": 284.17,
+   "bot": 390.49
+  },
+  {
+   "key": "b22_action",
+   "q": "B22",
+   "label": "Type of action taken",
+   "type": "text",
+   "page": 8,
+   "x0": 55.28,
+   "top": 407.77,
+   "x1": 284.17,
+   "bot": 424.32
+  },
+  {
+   "key": "b23",
+   "q": "B23",
+   "label": "Did the Company enter into a payment arrangement with the Australian Taxation Office?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 56.69,
+    "top": 587,
+    "x1": 68.83,
+    "bot": 603
+   },
+   "no": {
+    "x0": 56.69,
+    "top": 566.5,
+    "x1": 68.83,
+    "bot": 582.5
+   }
+  },
+  {
+   "key": "b23_owing",
+   "q": "B23",
+   "label": "Amount owing",
+   "type": "money",
+   "page": 8,
+   "x0": 55.28,
+   "top": 622.81,
+   "x1": 166,
+   "bot": 645.39,
+   "startX": 65.7
+  },
+  {
+   "key": "b23_paid",
+   "q": "B23",
+   "label": "Amount paid",
+   "type": "money",
+   "page": 8,
+   "x0": 55.28,
+   "top": 622.81,
+   "x1": 284.17,
+   "bot": 645.39,
+   "startX": 179.1
+  },
+  {
+   "key": "b23_first_payment",
+   "q": "B23",
+   "label": "Date of first payment",
+   "type": "date",
+   "page": 8,
+   "x0": 55.28,
+   "top": 661.23,
+   "x1": 284.17,
+   "bot": 677.78,
+   "slashes": [
+    78.5,
+    102.2
+   ]
+  },
+  {
+   "key": "b23_balance",
+   "q": "B23",
+   "label": "Balance owing now",
+   "type": "money",
+   "page": 8,
+   "x0": 55.28,
+   "top": 661.23,
+   "x1": 284.17,
+   "bot": 677.78,
+   "startX": 179.1
+  },
+  {
+   "key": "b24_name",
+   "q": "B24",
+   "label": "Name",
+   "type": "text",
+   "page": 8,
+   "x0": 339.45,
+   "top": 56.98,
+   "x1": 568.35,
+   "bot": 73.52
+  },
+  {
+   "key": "b24_phone",
+   "q": "B24",
+   "label": "Phone",
+   "type": "text",
+   "page": 8,
+   "x0": 339.45,
+   "top": 90.8,
+   "x1": 568.35,
+   "bot": 107.35
+  },
+  {
+   "key": "b24_itr_start",
+   "q": "B24",
+   "label": "Latest Income Tax Return: start date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 124.63,
+   "x1": 568.35,
+   "bot": 153.18,
+   "slashes": [
+    362.4,
+    386
+   ]
+  },
+  {
+   "key": "b24_itr_end",
+   "q": "B24",
+   "label": "Latest Income Tax Return: end date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 124.63,
+   "x1": 568.35,
+   "bot": 153.18,
+   "slashes": [
+    476,
+    499.7
+   ]
+  },
+  {
+   "key": "b24_bas_start",
+   "q": "B24",
+   "label": "Latest Business Activity Statement: start date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 170.46,
+   "x1": 568.35,
+   "bot": 205.25,
+   "slashes": [
+    363.9,
+    387.6
+   ]
+  },
+  {
+   "key": "b24_bas_end",
+   "q": "B24",
+   "label": "Latest Business Activity Statement: end date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 170.46,
+   "x1": 568.35,
+   "bot": 205.25,
+   "slashes": [
+    477.7,
+    501.4
+   ]
+  },
+  {
+   "key": "b24_stp_start",
+   "q": "B24",
+   "label": "Latest Single Touch Payroll: start date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 221.08,
+   "x1": 568.35,
+   "bot": 249.63,
+   "slashes": [
+    362.6,
+    386.3
+   ]
+  },
+  {
+   "key": "b24_stp_end",
+   "q": "B24",
+   "label": "Latest Single Touch Payroll: end date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 221.08,
+   "x1": 568.35,
+   "bot": 249.63,
+   "slashes": [
+    473.2,
+    496.8
+   ]
+  },
+  {
+   "key": "b24_sgc_start",
+   "q": "B24",
+   "label": "Latest Superannuation Guarantee Charge: start date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 266.91,
+   "x1": 568.35,
+   "bot": 307.46,
+   "slashes": [
+    363.9,
+    387.6
+   ]
+  },
+  {
+   "key": "b24_sgc_end",
+   "q": "B24",
+   "label": "Latest Superannuation Guarantee Charge: end date",
+   "type": "date",
+   "page": 8,
+   "x0": 339.45,
+   "top": 266.91,
+   "x1": 568.35,
+   "bot": 307.46,
+   "slashes": [
+    477.3,
+    501
+   ]
+  },
+  {
+   "key": "b25",
+   "q": "B25",
+   "label": "Does the Company owe State taxes (e.g. payroll tax)?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 340.86,
+    "top": 383.82,
+    "x1": 353.01,
+    "bot": 399.82
+   },
+   "no": {
+    "x0": 340.86,
+    "top": 363.32,
+    "x1": 353.01,
+    "bot": 379.32
+   }
+  },
+  {
+   "key": "b25_creditor",
+   "q": "B25",
+   "label": "Name of creditor",
+   "type": "text",
+   "page": 8,
+   "x0": 339.45,
+   "top": 419.42,
+   "x1": 568.35,
+   "bot": 435.97
+  },
+  {
+   "key": "b25_amount",
+   "q": "B25",
+   "label": "Amount owed",
+   "type": "money",
+   "page": 8,
+   "x0": 339.45,
+   "top": 453.25,
+   "x1": 568.35,
+   "bot": 469.8,
+   "startX": 349.9
+  },
+  {
+   "key": "b26",
+   "q": "B26",
+   "label": "Does the Company owe insurance and workers compensation?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 340.86,
+    "top": 546.16,
+    "x1": 353.01,
+    "bot": 562.16
+   },
+   "no": {
+    "x0": 340.86,
+    "top": 525.66,
+    "x1": 353.01,
+    "bot": 541.66
+   }
+  },
+  {
+   "key": "b26_creditor",
+   "q": "B26",
+   "label": "Name of creditor",
+   "type": "text",
+   "page": 8,
+   "x0": 339.45,
+   "top": 581.76,
+   "x1": 568.35,
+   "bot": 598.31
+  },
+  {
+   "key": "b26_amount",
+   "q": "B26",
+   "label": "Amount owed",
+   "type": "money",
+   "page": 8,
+   "x0": 339.45,
+   "top": 615.59,
+   "x1": 568.35,
+   "bot": 632.13,
+   "startX": 349.6
+  },
+  {
+   "key": "b27",
+   "q": "B27",
+   "label": "Have you provided the full details asked for in Questions B17 to B26?",
+   "type": "yesno",
+   "page": 8,
+   "yes": {
+    "x0": 340.86,
+    "top": 712.5,
+    "x1": 353.01,
+    "bot": 728.5
+   },
+   "no": {
+    "x0": 340.86,
+    "top": 689,
+    "x1": 353.01,
+    "bot": 705
+   }
+  },
+  {
+   "key": "b28",
+   "q": "B28",
+   "label": "Have people other than those at B17 and B24 provided advice about the Company's affairs in the last four years?",
+   "type": "yesno",
+   "page": 9,
+   "yes": {
+    "x0": 55.34,
+    "top": 169.19,
+    "x1": 67.49,
+    "bot": 185.19
+   },
+   "no": {
+    "x0": 55.34,
+    "top": 148.69,
+    "x1": 67.49,
+    "bot": 164.69
+   }
+  },
+  {
+   "key": "b28_name",
+   "q": "B28",
+   "label": "Adviser name",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 255.79,
+   "x1": 289.2,
+   "bot": 272.33
+  },
+  {
+   "key": "b28_firm",
+   "q": "B28",
+   "label": "Business or firm name",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 289.61,
+   "x1": 289.2,
+   "bot": 306.16
+  },
+  {
+   "key": "b28_nature",
+   "q": "B28",
+   "label": "Nature of advice (formal or informal)",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 323.44,
+   "x1": 289.2,
+   "bot": 351.99
+  },
+  {
+   "key": "b28_address",
+   "q": "B28",
+   "label": "Adviser address",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 369.27,
+   "x1": 289.2,
+   "bot": 385.82
+  },
+  {
+   "key": "b28_phone",
+   "q": "B28",
+   "label": "Phone number",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 403.09,
+   "x1": 289.2,
+   "bot": 419.64
+  },
+  {
+   "key": "b28_amount",
+   "q": "B28",
+   "label": "Amount paid",
+   "type": "money",
+   "page": 9,
+   "x0": 53.93,
+   "top": 436.92,
+   "x1": 289.2,
+   "bot": 453.47,
+   "startX": 64.3
+  },
+  {
+   "key": "b29",
+   "q": "B29",
+   "label": "Is the Company currently subject to or undertaking legal action?",
+   "type": "yesno",
+   "page": 9,
+   "yes": {
+    "x0": 55.34,
+    "top": 529.83,
+    "x1": 67.49,
+    "bot": 545.83
+   },
+   "no": {
+    "x0": 55.34,
+    "top": 509.33,
+    "x1": 67.49,
+    "bot": 525.33
+   }
+  },
+  {
+   "key": "b29_nature",
+   "q": "B29",
+   "label": "Nature of legal action",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 592.43,
+   "x1": 289.2,
+   "bot": 608.98
+  },
+  {
+   "key": "b29_solicitor",
+   "q": "B29",
+   "label": "Name of acting solicitor",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 626.26,
+   "x1": 289.2,
+   "bot": 642.81
+  },
+  {
+   "key": "b29_street",
+   "q": "B29",
+   "label": "Solicitor: Street/Unit number and name",
+   "type": "text",
+   "page": 9,
+   "x0": 174,
+   "x1": 289.2,
+   "top": 652,
+   "bot": 668.5
+  },
+  {
+   "key": "b29_suburb",
+   "q": "B29",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 686.26,
+   "x1": 165.7,
+   "bot": 702.81
+  },
+  {
+   "key": "b29_state",
+   "q": "B29",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 9,
+   "x0": 165.7,
+   "top": 686.26,
+   "x1": 240,
+   "bot": 702.81,
+   "pad": 3
+  },
+  {
+   "key": "b29_postcode",
+   "q": "B29",
+   "label": "Postcode",
+   "type": "text",
+   "page": 9,
+   "x0": 240,
+   "top": 686.26,
+   "x1": 289.2,
+   "bot": 702.81,
+   "pad": 3
+  },
+  {
+   "key": "b29_phone",
+   "q": "B29",
+   "label": "Solicitor phone",
+   "type": "text",
+   "page": 9,
+   "x0": 53.93,
+   "top": 720.09,
+   "x1": 289.2,
+   "bot": 736.63
+  },
+  {
+   "key": "b30",
+   "q": "B30",
+   "label": "Did someone help you to complete this Report?",
+   "type": "yesno",
+   "page": 9,
+   "yes": {
+    "x0": 333.07,
+    "top": 103.38,
+    "x1": 345.21,
+    "bot": 119.38
+   },
+   "no": {
+    "x0": 333.07,
+    "top": 82.88,
+    "x1": 345.21,
+    "bot": 98.88
+   }
+  },
+  {
+   "key": "b30_name",
+   "q": "B30",
+   "label": "Name",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 162.48,
+   "x1": 567,
+   "bot": 179.03
+  },
+  {
+   "key": "b30_street",
+   "q": "B30",
+   "label": "Street/Unit number and name",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 196.31,
+   "x1": 567,
+   "bot": 212.86
+  },
+  {
+   "key": "b30_suburb",
+   "q": "B30",
+   "label": "Suburb/City",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 230.14,
+   "x1": 443.5,
+   "bot": 246.68
+  },
+  {
+   "key": "b30_state",
+   "q": "B30",
+   "label": "State/Territory",
+   "type": "text",
+   "page": 9,
+   "x0": 443.5,
+   "top": 230.14,
+   "x1": 517.7,
+   "bot": 246.68,
+   "pad": 3
+  },
+  {
+   "key": "b30_postcode",
+   "q": "B30",
+   "label": "Postcode",
+   "type": "text",
+   "page": 9,
+   "x0": 517.7,
+   "top": 230.14,
+   "x1": 567,
+   "bot": 246.68,
+   "pad": 3
+  },
+  {
+   "key": "b30_phone",
+   "q": "B30",
+   "label": "Phone",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 263.96,
+   "x1": 567,
+   "bot": 280.51
+  },
+  {
+   "key": "b30_email",
+   "q": "B30",
+   "label": "Email",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 297.79,
+   "x1": 567,
+   "bot": 314.34
+  },
+  {
+   "key": "b30_permission",
+   "q": "B30",
+   "label": "Permission to discuss this Report with the person who helped you?",
+   "type": "yesno",
+   "page": 9,
+   "yes": {
+    "x0": 333.07,
+    "top": 389.2,
+    "x1": 345.21,
+    "bot": 405.2
+   },
+   "no": {
+    "x0": 333.07,
+    "top": 366.69,
+    "x1": 345.21,
+    "bot": 382.69
+   }
+  },
+  {
+   "key": "b31_name",
+   "q": "B31",
+   "label": "Name",
+   "type": "text",
+   "page": 9,
+   "x0": 331.65,
+   "top": 570.32,
+   "x1": 567,
+   "bot": 586.86
+  },
+  {
+   "key": "b31_date",
+   "q": "B31",
+   "label": "Date",
+   "type": "date",
+   "page": 9,
+   "x0": 331.65,
+   "top": 637.97,
+   "x1": 439.44,
+   "bot": 654.52,
+   "slashes": [
+    354.9,
+    378.6
+   ]
+  }
+ ],
+ "tables": [
+  {
+   "id": "B2",
+   "q": "B2",
+   "title": "Payments you received from the Company during the last four years",
+   "page": 11,
+   "formPage": 2,
+   "columns": [
+    {
+     "key": "year",
+     "label": "Year",
+     "type": "text",
+     "x0": 28.5,
+     "x1": 207.8
+    },
+    {
+     "key": "type",
+     "label": "Payment type",
+     "type": "text",
+     "x0": 207.8,
+     "x1": 674.9
+    },
+    {
+     "key": "amount",
+     "label": "Amount",
+     "type": "money",
+     "x0": 674.9,
+     "x1": 813.2,
+     "dollar": 678.9
+    }
+   ],
+   "rows": [
+    {
+     "top": 145.6,
+     "bot": 167.4
+    },
+    {
+     "top": 167.4,
+     "bot": 189.1
+    },
+    {
+     "top": 189.1,
+     "bot": 210.9
+    },
+    {
+     "top": 210.9,
+     "bot": 232.7
+    },
+    {
+     "top": 232.7,
+     "bot": 254.4
+    },
+    {
+     "top": 254.4,
+     "bot": 276.2
+    },
+    {
+     "top": 276.2,
+     "bot": 298
+    },
+    {
+     "top": 298,
+     "bot": 319.8
+    },
+    {
+     "top": 319.8,
+     "bot": 341.5
+    },
+    {
+     "top": 341.5,
+     "bot": 363.3
+    },
+    {
+     "top": 363.3,
+     "bot": 385.1
+    },
+    {
+     "top": 385.1,
+     "bot": 406.9
+    },
+    {
+     "top": 406.9,
+     "bot": 428.6
+    },
+    {
+     "top": 428.6,
+     "bot": 450.4
+    },
+    {
+     "top": 450.4,
+     "bot": 472.2
+    },
+    {
+     "top": 472.2,
+     "bot": 493.9
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 158,
+     "x1": 186,
+     "baseline": 70.7
+    },
+    "pageOf": {
+     "x0": 192.1,
+     "x1": 210.3,
+     "baseline": 70.7
+    },
+    "signedBy": {
+     "x0": 461.7,
+     "x1": 645,
+     "baseline": 70.7
+    },
+    "dated": {
+     "s1": 695.4,
+     "s2": 719.6,
+     "slashWidth": 5.16,
+     "baseline": 70.7
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 713.5,
+     "x1": 744,
+     "baseline": 538.5
+    },
+    "of": {
+     "x0": 774.9,
+     "x1": 800,
+     "baseline": 538.5
+    }
+   }
+  },
+  {
+   "id": "B3",
+   "q": "B3",
+   "title": "Payments made by the Company to someone else or another Company",
+   "page": 12,
+   "formPage": 2,
+   "columns": [
+    {
+     "key": "year",
+     "label": "Year",
+     "type": "text",
+     "x0": 28.5,
+     "x1": 110.4
+    },
+    {
+     "key": "type",
+     "label": "Payment type",
+     "type": "text",
+     "x0": 110.4,
+     "x1": 251.9
+    },
+    {
+     "key": "payee",
+     "label": "Payee",
+     "type": "text",
+     "x0": 251.9,
+     "x1": 387.6
+    },
+    {
+     "key": "address",
+     "label": "Address",
+     "type": "text",
+     "x0": 387.6,
+     "x1": 674.9
+    },
+    {
+     "key": "amount",
+     "label": "Amount",
+     "type": "money",
+     "x0": 674.9,
+     "x1": 813.2,
+     "dollar": 678.9
+    }
+   ],
+   "rows": [
+    {
+     "top": 146.1,
+     "bot": 165.5
+    },
+    {
+     "top": 165.5,
+     "bot": 185
+    },
+    {
+     "top": 185,
+     "bot": 204.5
+    },
+    {
+     "top": 204.5,
+     "bot": 224
+    },
+    {
+     "top": 224,
+     "bot": 243.4
+    },
+    {
+     "top": 243.4,
+     "bot": 262.9
+    },
+    {
+     "top": 262.9,
+     "bot": 282.4
+    },
+    {
+     "top": 282.4,
+     "bot": 301.9
+    },
+    {
+     "top": 301.9,
+     "bot": 321.3
+    },
+    {
+     "top": 321.3,
+     "bot": 340.8
+    },
+    {
+     "top": 340.8,
+     "bot": 366.3
+    },
+    {
+     "top": 366.3,
+     "bot": 385.7
+    },
+    {
+     "top": 385.7,
+     "bot": 405.2
+    },
+    {
+     "top": 405.2,
+     "bot": 424.7
+    },
+    {
+     "top": 424.7,
+     "bot": 444.2
+    },
+    {
+     "top": 444.2,
+     "bot": 463.7
+    },
+    {
+     "top": 463.7,
+     "bot": 483.1
+    },
+    {
+     "top": 483.1,
+     "bot": 502.6
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 158,
+     "x1": 186,
+     "baseline": 71.2
+    },
+    "pageOf": {
+     "x0": 192.1,
+     "x1": 210.3,
+     "baseline": 71.2
+    },
+    "signedBy": {
+     "x0": 461.7,
+     "x1": 645,
+     "baseline": 71.2
+    },
+    "dated": {
+     "s1": 695.4,
+     "s2": 719.6,
+     "slashWidth": 5.16,
+     "baseline": 71.2
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 713.5,
+     "x1": 744,
+     "baseline": 538.5
+    },
+    "of": {
+     "x0": 774.9,
+     "x1": 800,
+     "baseline": 538.5
+    }
+   }
+  },
+  {
+   "id": "B21",
+   "q": "B21",
+   "title": "Repayments to creditors",
+   "page": 13,
+   "formPage": 8,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Creditor's name in full",
+     "type": "text",
+     "x0": 28.5,
+     "x1": 109.5
+    },
+    {
+     "key": "address",
+     "label": "Address in full",
+     "type": "text",
+     "x0": 109.5,
+     "x1": 191.1
+    },
+    {
+     "key": "email",
+     "label": "Email",
+     "type": "text",
+     "x0": 191.1,
+     "x1": 271.1
+    },
+    {
+     "key": "phone",
+     "label": "Phone number",
+     "type": "text",
+     "x0": 271.1,
+     "x1": 340.5
+    },
+    {
+     "key": "how",
+     "label": "How did creditor ask for payment",
+     "type": "text",
+     "x0": 340.5,
+     "x1": 435.4
+    },
+    {
+     "key": "pressure",
+     "label": "Was there pressure to pay",
+     "type": "check",
+     "x0": 435.4,
+     "x1": 509.8,
+     "glyph": {
+      "x0": 466.5,
+      "dy": 3.4
+     }
+    },
+    {
+     "key": "payment",
+     "label": "Payment amount or property value given",
+     "type": "text",
+     "x0": 509.8,
+     "x1": 658.2
+    },
+    {
+     "key": "balance",
+     "label": "Balance owing now",
+     "type": "money",
+     "x0": 658.2,
+     "x1": 737.5,
+     "dollar": 662.2
+    },
+    {
+     "key": "date",
+     "label": "Date of first payment / provision of property",
+     "type": "date",
+     "x0": 737.5,
+     "x1": 813.4,
+     "slashes": [
+      758.3,
+      777.1
+     ]
+    }
+   ],
+   "rows": [
+    {
+     "top": 187.5,
+     "bot": 207.6
+    },
+    {
+     "top": 207.6,
+     "bot": 227.8
+    },
+    {
+     "top": 227.8,
+     "bot": 247.9
+    },
+    {
+     "top": 247.9,
+     "bot": 268.1
+    },
+    {
+     "top": 268.1,
+     "bot": 288.3
+    },
+    {
+     "top": 288.3,
+     "bot": 308.4
+    },
+    {
+     "top": 308.4,
+     "bot": 328.6
+    },
+    {
+     "top": 328.6,
+     "bot": 350.5
+    },
+    {
+     "top": 350.5,
+     "bot": 370.7
+    },
+    {
+     "top": 370.7,
+     "bot": 390.8
+    },
+    {
+     "top": 390.8,
+     "bot": 411
+    },
+    {
+     "top": 411,
+     "bot": 431.1
+    },
+    {
+     "top": 431.1,
+     "bot": 451.3
+    },
+    {
+     "top": 451.3,
+     "bot": 471.4
+    },
+    {
+     "top": 471.4,
+     "bot": 491.6
+    },
+    {
+     "top": 491.6,
+     "bot": 511.8
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 158,
+     "x1": 186,
+     "baseline": 73.8
+    },
+    "pageOf": {
+     "x0": 192.1,
+     "x1": 210.3,
+     "baseline": 73.8
+    },
+    "signedBy": {
+     "x0": 461.7,
+     "x1": 645,
+     "baseline": 73.8
+    },
+    "dated": {
+     "s1": 695.4,
+     "s2": 719.6,
+     "slashWidth": 5.16,
+     "baseline": 73.8
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 713.5,
+     "x1": 744,
+     "baseline": 538.5
+    },
+    "of": {
+     "x0": 774.9,
+     "x1": 800,
+     "baseline": 538.5
+    }
+   }
+  },
+  {
+   "id": "B28",
+   "q": "B28",
+   "title": "External Advisers",
+   "page": 14,
+   "formPage": 9,
+   "columns": [
+    {
+     "key": "name",
+     "label": "Adviser name, business or firm name",
+     "type": "text",
+     "x0": 27.1,
+     "x1": 144.2
+    },
+    {
+     "key": "nature",
+     "label": "Nature of advice given",
+     "type": "text",
+     "x0": 144.2,
+     "x1": 297
+    },
+    {
+     "key": "formal",
+     "label": "Formal advice",
+     "type": "check",
+     "x0": 297,
+     "x1": 371.4,
+     "glyph": {
+      "x0": 328.1,
+      "dy": 4.4
+     }
+    },
+    {
+     "key": "address",
+     "label": "Adviser address",
+     "type": "text",
+     "x0": 371.4,
+     "x1": 543.5
+    },
+    {
+     "key": "phone",
+     "label": "Phone number",
+     "type": "text",
+     "x0": 543.5,
+     "x1": 615.5
+    },
+    {
+     "key": "amount",
+     "label": "Amount paid",
+     "type": "money",
+     "x0": 615.5,
+     "x1": 687.4,
+     "dollar": 619.5
+    },
+    {
+     "key": "date",
+     "label": "Date",
+     "type": "date",
+     "x0": 687.4,
+     "x1": 759.2,
+     "slashes": [
+      708.2,
+      726.9
+     ]
+    },
+    {
+     "key": "method",
+     "label": "Payment method",
+     "type": "text",
+     "x0": 759.2,
+     "x1": 810.9
+    }
+   ],
+   "rows": [
+    {
+     "top": 164.2,
+     "bot": 186.2
+    },
+    {
+     "top": 186.2,
+     "bot": 206.3
+    },
+    {
+     "top": 206.3,
+     "bot": 229.6
+    },
+    {
+     "top": 229.6,
+     "bot": 249.8
+    },
+    {
+     "top": 249.8,
+     "bot": 270
+    },
+    {
+     "top": 270,
+     "bot": 290.1
+    },
+    {
+     "top": 290.1,
+     "bot": 310.3
+    },
+    {
+     "top": 310.3,
+     "bot": 330.4
+    },
+    {
+     "top": 330.4,
+     "bot": 350.6
+    },
+    {
+     "top": 350.6,
+     "bot": 370.7
+    },
+    {
+     "top": 370.7,
+     "bot": 394.2
+    },
+    {
+     "top": 394.2,
+     "bot": 414.4
+    },
+    {
+     "top": 414.4,
+     "bot": 434.6
+    },
+    {
+     "top": 434.6,
+     "bot": 454.7
+    },
+    {
+     "top": 454.7,
+     "bot": 474.9
+    },
+    {
+     "top": 474.9,
+     "bot": 495
+    },
+    {
+     "top": 495,
+     "bot": 515.2
+    }
+   ],
+   "header": {
+    "pageFrom": {
+     "x0": 156.7,
+     "x1": 184.7,
+     "baseline": 73.8
+    },
+    "pageOf": {
+     "x0": 190.79999999999998,
+     "x1": 209,
+     "baseline": 73.8
+    },
+    "signedBy": {
+     "x0": 473.8,
+     "x1": 662.6,
+     "baseline": 73.8
+    },
+    "dated": {
+     "s1": 713.1999999999999,
+     "s2": 737.5,
+     "slashWidth": 5.16,
+     "baseline": 73.8
+    }
+   },
+   "footer": {
+    "page": {
+     "x0": 713.5,
+     "x1": 744,
+     "baseline": 538.5
+    },
+    "of": {
+     "x0": 774.9,
+     "x1": 800,
+     "baseline": 538.5
+    }
+   }
+  }
+ ]
+}
