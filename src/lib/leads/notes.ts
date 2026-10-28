@@ -1,8 +1,4 @@
 import { formatShortDate } from './format'
-import type { LeadView } from './constants'
-
-/** The tabs with a notes column: the leads that went nowhere, and those not to contact. */
-export const NOTES_VIEWS: readonly LeadView[] = ['non_proceeding', 'do_not_contact']
 
 /** A note staff wrote on a lead, as the leads list shows it. */
 export interface LeadNote {

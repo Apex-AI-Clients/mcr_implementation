@@ -21,8 +21,7 @@ interface LeadTableProps {
   onToggleAll: () => void
   onRequestDelete: (leads: Lead[]) => void
   /**
-   * Each lead's notes, on the Non-proceeding and Do not contact tabs only:
-   * given, the Notes column shows; absent, it does not exist.
+   * Each lead's notes: given, the Notes column shows; absent, it does not exist.
    */
   notes?: Record<string, LeadNote[]>
 }

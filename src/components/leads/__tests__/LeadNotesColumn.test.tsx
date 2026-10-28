@@ -6,7 +6,7 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { notesTooltip, NOTES_SHOWN } from '@/lib/leads/notes'
 import type { Lead } from '@/types/leads'
 
-/** The notes column on the Non-proceeding and Do not contact tabs. Synthetic data only. */
+/** The notes column on the leads table. Synthetic data only. */
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }), usePathname: () => '/leads' }))
 
@@ -85,7 +85,7 @@ describe('the notes column', () => {
     expect(screen.queryByLabelText(/notes?$/)).toBeNull()
   })
 
-  it('does not exist on the other tabs', () => {
+  it('does not exist without notes', () => {
     table(undefined)
     expect(screen.queryByRole('columnheader', { name: 'Notes' })).toBeNull()
   })
