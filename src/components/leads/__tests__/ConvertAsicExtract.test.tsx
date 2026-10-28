@@ -462,8 +462,10 @@ describe('Convert to client — uploads that are refused', () => {
 })
 
 describe('Convert to client — directors by hand', () => {
-  it('adds and removes rows', async () => {
-    const user = userEvent.setup()
+  // Typing into a large dialog re-renders it per key; under full-suite load
+  // that ran past 20s. No delay between keys, and more headroom.
+  it('adds and removes rows', { timeout: 60_000 }, async () => {
+    const user = userEvent.setup({ delay: null })
     mockRoutes()
     const dialog = renderDialog()
 
