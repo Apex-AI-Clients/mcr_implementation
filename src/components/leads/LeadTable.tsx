@@ -77,8 +77,6 @@ const COLUMNS = [
   // making every header row taller.
   { label: 'Business type', className: 'text-left whitespace-nowrap' },
   { label: 'State', className: 'text-left' },
-  // An icon, the message on hover — narrow enough to show at every width.
-  { label: 'Message', className: 'text-center w-12' },
   { label: 'Stage', className: 'text-left' },
   { label: 'Source', className: 'text-left' },
   // Follow-up flag column — hidden for now. Keep in step with the matching

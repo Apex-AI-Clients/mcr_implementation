@@ -7,9 +7,10 @@ import { DebtInput } from '@/components/leads/DebtInput'
 import { SourceInput } from '@/components/leads/SourceInput'
 // Follow-up flag temporarily hidden — see the note on LeadRowProps.
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { MessageSquareText, NotebookPen, Trash2 } from 'lucide-react'
+import { Copy, NotebookPen, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { useToast } from '@/components/ui/Toast'
 import { ENTITY_TYPE_META } from '@/lib/leads/constants'
 import {
   describeLatestEnquiry,
@@ -105,22 +106,26 @@ export function LeadTableRow({
         {formatShortDate(lead.lastEnquiryAt)}
         <EnquiryCount lead={lead} />
       </td>
-      {/* Wraps at spaces, as it always has. Not wrap-anywhere: once the table
-          overflows, auto layout shrinks every column to its minimum, and that
-          would break ordinary names mid-word ("Pava/n"). */}
-      <td className="px-3 py-3.5">
+      {/* One line, never wrapped. Capped so only a junk-length name (Meta's
+          test lead) is cut, in full on hover; real names fit. */}
+      <td className="px-3 py-3.5 whitespace-nowrap">
         <Link
           href={`/leads/${lead.id}`}
           onClick={(event) => event.stopPropagation()}
-          className="font-medium text-foreground hover:text-accent"
+          title={lead.name}
+          className="block max-w-[14rem] truncate font-medium text-foreground hover:text-accent"
         >
           {lead.name}
         </Link>
         <ReenquiryMarker lead={lead} className="mt-1" />
       </td>
-      {/* Paired with the Email header in LeadTable's COLUMNS. */}
-      <td className="hidden max-w-[180px] truncate px-3 py-3.5 text-foreground/50 xl:table-cell">
-        {lead.email}
+      {/* Cut in the row so a long address can't widen the table; in full, with
+          a copy button, on hover or focus. Paired with the Email header in
+          LeadTable's COLUMNS. */}
+      <td className="hidden max-w-[180px] px-3 py-3.5 text-foreground/50 xl:table-cell">
+        <Tooltip interactive content={<EmailCard email={lead.email} />} className="block min-w-0 cursor-help">
+          <span className="block truncate">{lead.email}</span>
+        </Tooltip>
       </td>
       {/* Capped: a malformed number with no spaces would otherwise widen the
           whole table. Cut in the row, in full on hover. */}
@@ -158,12 +163,6 @@ export function LeadTableRow({
           ) : (
             <span className="text-foreground/25">&mdash;</span>
           ))}
-      </td>
-      {/* An icon, the message in full on hover or focus, like Notes: a text
-          column here pushed Stage and Source off screen. The record has it too.
-          Paired with the Message header in LeadTable's COLUMNS. */}
-      <td className="w-12 px-2 py-3.5 text-center" onClick={swallow}>
-        <MessageIcon message={lead.message} />
       </td>
       {/* Paired with the Notes header LeadTable adds when given notes. */}
       {notes && (
@@ -341,13 +340,14 @@ function ReenquiryMarker({ lead, className }: { lead: Lead; className?: string }
 
 /**
  * The notes column: an icon with the count, every note (newest first, one
- * bullet each) on hover or focus, so a long note never stretches the row. A
- * dash when there are none.
+ * bullet each, each with a copy button) on hover or focus, so a long note
+ * never stretches the row. A dash when there are none.
  */
 function NotesIcon({ notes }: { notes: LeadNote[] }) {
   if (notes.length === 0) return <span className="text-foreground/25">&mdash;</span>
   return (
     <Tooltip
+      interactive
       content={<NotesList notes={notes} />}
       maxHeightClassName="max-h-[70vh]"
       className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -363,28 +363,51 @@ function NotesIcon({ notes }: { notes: LeadNote[] }) {
   )
 }
 
-/** The message column: an icon, the lead's message on hover or focus. A dash when there is none. */
-function MessageIcon({ message }: { message: string | null }) {
-  if (!message) return <span className="text-foreground/25">&mdash;</span>
+/** Copies `value`, and says so. `what` names it in the label and the toast. */
+function CopyButton({ value, what }: { value: string; what: string }) {
+  const { toast } = useToast()
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast(`${what[0].toUpperCase()}${what.slice(1)} copied.`)
+    } catch {
+      toast(`Could not copy the ${what}.`, { tone: 'error' })
+    }
+  }
+
   return (
-    <Tooltip
-      content={message}
-      className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={`Copy ${what}`}
+      className="shrink-0 cursor-pointer rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      <span className="inline-flex items-center text-accent" aria-label="Message">
-        <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-      </span>
-    </Tooltip>
+      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+    </button>
   )
 }
 
-/** The notes in the tooltip: one bullet each, its date and author over the note. */
+/** The email tooltip: the address in full, and a button to copy it. */
+function EmailCard({ email }: { email: string }) {
+  return (
+    <span className="flex items-center gap-2 whitespace-normal">
+      <span className="min-w-0 flex-1 break-all text-sm">{email}</span>
+      <CopyButton value={email} what="email" />
+    </span>
+  )
+}
+
+/** The notes in the tooltip: one bullet each, its date, author and copy button over the note. */
 function NotesList({ notes }: { notes: LeadNote[] }) {
   return (
     <ul className="list-disc space-y-2 pl-4 text-left">
       {notes.map((note, index) => (
         <li key={index}>
-          <span className="block text-foreground/50">{noteHeading(note)}</span>
+          <span className="-my-1 flex items-center justify-between gap-2">
+            <span className="text-foreground/50">{noteHeading(note)}</span>
+            <CopyButton value={note.body.trim()} what="note" />
+          </span>
           {note.body.trim()}
         </li>
       ))}

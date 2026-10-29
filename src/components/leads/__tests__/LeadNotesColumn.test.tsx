@@ -102,6 +102,20 @@ describe('the notes tooltip', () => {
   })
 })
 
+describe('copying a note', () => {
+  it('has a copy button on each note in the tooltip', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    table({ 'lead-1': NOTES })
+    fireEvent.mouseEnter(screen.getAllByLabelText('2 notes')[0].parentElement!)
+    const buttons = within(screen.getByRole('tooltip')).getAllByRole('button', { name: 'Copy note' })
+    expect(buttons).toHaveLength(2)
+    fireEvent.click(buttons[1])
+    expect(writeText).toHaveBeenCalledWith('Called twice, no answer.')
+    expect(await screen.findByText('Note copied.')).toBeTruthy()
+  })
+})
+
 describe('a lead with long unbroken text', () => {
   it('cuts a malformed phone, so the row cannot widen the table', () => {
     const phone = '9'.repeat(35)
@@ -126,14 +140,13 @@ describe('a lead with long unbroken text', () => {
   })
 })
 
-describe('the message column', () => {
-  it('shows an icon with the message on hover, and a dash without one', () => {
-    const message = 'Please call after 5pm about the ATO debt.'
+describe('the name and email columns', () => {
+  function rowWith(lead: Lead) {
     render(
       <ToastProvider>
         <LeadsStoreProvider author="Tester">
           <LeadTable
-            leads={[{ ...LEAD, message }, { ...LEAD, id: 'lead-2', message: null }]}
+            leads={[lead]}
             filtered={false}
             onResetFilters={() => {}}
             onRequestConvert={() => {}}
@@ -145,10 +158,29 @@ describe('the message column', () => {
         </LeadsStoreProvider>
       </ToastProvider>,
     )
-    const icons = screen.getAllByLabelText('Message')
-    // One in the table row; the card layout keeps its own one-line preview.
-    expect(icons).toHaveLength(1)
-    fireEvent.mouseEnter(icons[0].parentElement!)
-    expect(screen.getByRole('tooltip').textContent).toBe(message)
+  }
+
+  it('has no Message column', () => {
+    rowWith({ ...LEAD, message: 'Please call after 5pm.' } as Lead)
+    expect(screen.queryByRole('columnheader', { name: 'Message' })).toBeNull()
+  })
+
+  it('keeps the name on one line', () => {
+    rowWith(LEAD)
+    const cell = screen.getAllByRole('link', { name: 'Test Person' })[0].closest('td')!
+    expect(cell.className).toContain('whitespace-nowrap')
+  })
+
+  it('shows the full email on hover, with a button that copies it', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    rowWith(LEAD)
+    const email = within(screen.getAllByRole('row')[1]).getByText('test.person@example.test')
+    fireEvent.mouseEnter(email.parentElement!)
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toContain('test.person@example.test')
+    fireEvent.click(within(tip).getByRole('button', { name: 'Copy email' }))
+    expect(writeText).toHaveBeenCalledWith('test.person@example.test')
+    expect(await screen.findByText('Email copied.')).toBeTruthy()
   })
 })
