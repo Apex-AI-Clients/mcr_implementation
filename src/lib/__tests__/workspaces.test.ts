@@ -19,7 +19,7 @@ describe('WORKSPACES', () => {
     // AdminSidebar and WorkspaceTopBar both key off this, so exactly one of
     // them renders for any workspace route.
     const chrome = Object.fromEntries(WORKSPACES.map((w) => [w.id, w.chrome]))
-    expect(chrome).toEqual({ leads: 'topbar', sbr: 'sidebar', cvl: 'topbar' })
+    expect(chrome).toEqual({ leads: 'topbar', sbr: 'sidebar', cvl: 'sidebar' })
   })
 
   it('only gives a sidebar to a workspace with more than one nav item', () => {
@@ -36,6 +36,16 @@ describe('WORKSPACES', () => {
       ['Prediction data', '/sbr/prediction-data'],
       ['Archive', '/sbr/archive'],
     ])
+  })
+
+  it('gives the CVL workspace Clients and CVL settings', () => {
+    const cvl = WORKSPACES.find((w) => w.id === 'cvl')!
+    expect(cvl.nav.map((n) => [n.label, n.href])).toEqual([
+      ['Clients', '/cvl'],
+      ['CVL settings', '/cvl/settings'],
+    ])
+    expect(activeNavHref(cvl.nav, '/cvl/settings')).toBe('/cvl/settings')
+    expect(activeNavHref(cvl.nav, '/cvl/abc-123/forms/509')).toBe('/cvl')
   })
 
   it('gives the CRM workspace Leads', () => {

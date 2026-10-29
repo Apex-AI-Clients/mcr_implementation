@@ -31,6 +31,7 @@ import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
 import { CvlStatusControl } from '@/components/cvl/CvlStatusControl'
 import { CvlFileCard } from '@/components/cvl/CvlFileCard'
 import { toCvlCase } from '@/lib/cvl/cases'
+import { loadCvlSettings, PER_DIRECTOR_DEFAULT } from '@/lib/cvl/settings'
 import { clientBase, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
 import { Archive, ArrowLeft, Building, Gavel, Landmark, Pencil } from 'lucide-react'
@@ -67,6 +68,14 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
           .eq('client_id', id)
           .maybeSingle()
           .then(({ data }) => (data ? toCvlCase(data) : null))
+      : null
+  // The CVL page's forms: which are drafted, and how they are split per director.
+  const cvlForms =
+    mode === 'cvl' && cvlCase
+      ? await Promise.all([
+          supabase.from('cvl_form_answers').select('form_code, subject, updated_at, updated_by').eq('case_id', cvlCase.id),
+          loadCvlSettings(supabase),
+        ]).then(([drafts, settings]) => ({ drafts: drafts.data ?? [], perDirector: settings.perDirector }))
       : null
   // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
   const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'
@@ -313,7 +322,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
 
       {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} basePath={base} jobId={runningJob.id} startedAt={runningJob.created_at} />}
 
-      {cvl && cvlCase && <CvlFileCard clientId={client.id} cvlCase={cvlCase} />}
+      {cvl && cvlCase && <CvlFileCard clientId={client.id} cvlCase={cvlCase} directors={companyDetails?.directors ?? []} perDirector={cvlForms?.perDirector ?? PER_DIRECTOR_DEFAULT} drafts={cvlForms?.drafts ?? []} />}
 
       <Card className="mb-4">
         <CompletenessBar documents={documents} />

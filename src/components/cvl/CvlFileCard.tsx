@@ -3,11 +3,18 @@ import { ArrowRight, FileText, Gavel } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
+import type { PerDirector } from '@/lib/cvl/settings'
+import { subjectsFor } from '@/lib/cvl/prefill'
+import type { Director } from '@/lib/asic/types'
 import { formatDate } from '@/lib/utils'
 
 interface CvlFileCardProps {
   clientId: string
   cvlCase: CvlCase
+  directors: Director[]
+  perDirector: PerDirector
+  /** The drafts saved on this case: which form, for whom, when and by whom. */
+  drafts: { form_code: string; subject: string; updated_at: string; updated_by: string }[]
 }
 
 /** "1 Aug 2022" from ASIC's "20220801"; a year alone as it is. */
@@ -21,8 +28,11 @@ function versionLabel(version: string): string {
  * forms, and the analyses the forms draw on. The analyses open inside the
  * CVL workspace (/cvl/[id]/…), on the same pages SBR uses.
  */
-export function CvlFileCard({ clientId, cvlCase }: CvlFileCardProps) {
+export function CvlFileCard({ clientId, cvlCase, directors, perDirector, drafts }: CvlFileCardProps) {
   const base = `/cvl/${clientId}`
+  const draftOf = (code: string, subject: string) => drafts.find((d) => d.form_code === code && d.subject === subject)
+  const subjectLabel = (subject: string) =>
+    subject === 'company' ? null : (directors[Number(subject.split(':')[1]) - 1]?.name ?? `Director ${subject.split(':')[1]}`)
   const analyses = [
     { href: `${base}/financials-comparison`, label: 'Financial statements comparison' },
     { href: `${base}/lodgement-compliance-analysis`, label: 'ATO activity statement account' },
@@ -58,19 +68,27 @@ export function CvlFileCard({ clientId, cvlCase }: CvlFileCardProps) {
         <div>
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-foreground/40">ASIC forms</p>
           <ul className="space-y-2">
-            {FORM_CODES.map((code) => {
+            {FORM_CODES.flatMap((code) => {
               const { map } = formVersion(code)
-              return (
-                <li key={code} className="flex items-start gap-2">
-                  <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/40" aria-hidden="true" />
-                  <span>
-                    <span className="text-foreground/80">{map.title}</span>
-                    <span className="block text-foreground/40">
-                      Version {versionLabel(CURRENT_VERSION[code])} · not started
+              return subjectsFor(code, { directors: directors.length, perDirector }).map((subject) => {
+                const draft = draftOf(code, subject)
+                const who = subjectLabel(subject)
+                return (
+                  <li key={`${code}-${subject}`} className="flex items-start gap-2">
+                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/40" aria-hidden="true" />
+                    <span>
+                      <Link href={`${base}/forms/${code}?subject=${encodeURIComponent(subject)}`} className="text-accent hover:underline">
+                        {map.title}
+                        {who ? ` — ${who}` : ''}
+                      </Link>
+                      <span className="block text-foreground/40">
+                        Version {versionLabel(CURRENT_VERSION[code])} ·{' '}
+                        {draft ? `draft saved ${formatDate(draft.updated_at)} by ${draft.updated_by}` : 'not started'}
+                      </span>
                     </span>
-                  </span>
-                </li>
-              )
+                  </li>
+                )
+              })
             })}
           </ul>
         </div>

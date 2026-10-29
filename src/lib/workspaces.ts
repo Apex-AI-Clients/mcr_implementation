@@ -1,4 +1,4 @@
-import { Archive, ChartScatter, Gavel, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
+import { Archive, ChartScatter, Gavel, LayoutDashboard, Settings, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
 
 /**
  * The workspaces behind the single staff login.
@@ -79,10 +79,13 @@ export const WORKSPACES: Workspace[] = [
     description: 'Liquidation files and the ASIC forms',
     href: '/cvl',
     icon: Gavel,
-    nav: [{ href: '/cvl', label: 'Clients', icon: Users }],
+    nav: [
+      { href: '/cvl', label: 'Clients', icon: Users },
+      // The items waiting for Gabby's confirmation (cvl_settings, migration 0039).
+      { href: '/cvl/settings', label: 'CVL settings', icon: Settings },
+    ],
     prefixes: ['/cvl'],
-    // One page for now; the CVL settings page (Stage 3) brings the sidebar.
-    chrome: 'topbar',
+    chrome: 'sidebar',
   },
 ]
 
