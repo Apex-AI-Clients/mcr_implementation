@@ -223,14 +223,14 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         >
           <Archive className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
           <p>
-            <span className="font-medium text-foreground">Archived</span> on{' '}
+            <span className="font-medium text-foreground">{workspace === 'cvl' ? 'Archived CVL file' : 'Archived'}</span> on{' '}
             {formatDate(client.archived_at)}
             {client.archived_by ? ` by ${client.archived_by}` : ''}.{' '}
             {archiveReasonLabel(client.archived_reason)
               ? `${archiveReasonLabel(client.archived_reason)}. `
               : ''}
-            It is not on the client list. Make it a client again to edit it, or delete it
-            permanently.
+            It is not on the {workspace === 'cvl' ? 'CVL' : 'SBR'} client list. Make it a client again to
+            edit it, or delete it permanently.
           </p>
         </div>
       )}
@@ -278,6 +278,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
             clientId={client.id}
             clientName={client.name}
             clientEmail={client.email}
+            workflow={workspace}
           />
         </div>
         )

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Archive, AlertTriangle, Eye, RotateCcw, Trash2, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
+import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { formatDate } from '@/lib/utils'
 import { archiveReasonLabel } from '@/lib/clients/archive'
@@ -55,7 +56,7 @@ const ACTIONS: Record<Action, ActionMeta> = {
     request: (id) => fetch(`/api/admin/clients/${id}/restore`, { method: 'POST' }),
     title: (count) => (count === 1 ? 'Make this a client again?' : `Make ${count} clients again?`),
     consequence: (count) =>
-      `${count === 1 ? 'goes' : 'go'} back on the client list exactly as ${count === 1 ? 'it was' : 'they were'} archived.`,
+      `${count === 1 ? 'goes' : 'go'} back on the client list of ${count === 1 ? 'its' : 'their'} own workspace (SBR or CVL), exactly as ${count === 1 ? 'it was' : 'they were'} archived.`,
     failed: 'restored',
     progress: (count) => (count === 1 ? 'Making client again…' : `Making ${count} clients again…`),
   },
@@ -208,6 +209,7 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
                 />
               </th>
               <th className="px-4 py-3 text-left font-medium text-foreground/50">Client</th>
+              {archived && <th className="px-4 py-3 text-left font-medium text-foreground/50">Workflow</th>}
               <th className="px-4 py-3 text-left font-medium text-foreground/50">Documents</th>
               <th className="px-4 py-3 text-left font-medium text-foreground/50">
                 {archived ? 'Archived' : 'Created'}
@@ -246,6 +248,13 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
                     <p className="font-medium text-foreground">{client.name}</p>
                     <p className="text-xs text-foreground/40 mt-0.5">{client.email}</p>
                   </td>
+                  {archived && (
+                    <td className="px-4 py-3.5">
+                      <Badge variant={client.workflow === 'cvl' ? 'accent' : 'muted'}>
+                        {client.workflow === 'cvl' ? 'CVL' : 'SBR'}
+                      </Badge>
+                    </td>
+                  )}
                   <td className="px-4 py-3.5 min-w-[160px]">
                     <div className="flex items-center gap-2">
                       <Progress value={progress} className="flex-1" />

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { CvlClientTable } from '@/components/cvl/CvlClientTable'
 import { getCvlListPage } from '@/lib/cvl/listing'
 
@@ -20,7 +21,10 @@ export default async function CvlClientsPage({ searchParams }: Props) {
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-foreground">CVL clients</h1>
         <p className="mt-1 text-sm text-foreground/50">
-          {list.total} {list.total === 1 ? 'client' : 'clients'} in creditors&rsquo; voluntary liquidation.
+          {list.total} {list.total === 1 ? 'client' : 'clients'} in creditors&rsquo; voluntary liquidation.{' '}
+          <Link href="/sbr/archive?workflow=cvl" className="text-accent hover:underline">
+            Archived CVL files
+          </Link>
         </p>
       </div>
       <CvlClientTable

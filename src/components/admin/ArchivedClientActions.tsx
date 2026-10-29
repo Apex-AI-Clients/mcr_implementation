@@ -7,17 +7,21 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
+import { clientBase, type ClientWorkspace } from '@/lib/clients/workspace'
 
 interface ArchivedClientActionsProps {
   clientId: string
   clientName: string
   clientEmail: string
+  /** The workspace the file goes back to when made a client again. */
+  workflow?: ClientWorkspace
 }
 
 /**
  * The two ways out of the Archive.
  *
- *   Make client again   back on the client list, exactly as it was archived
+ *   Make client again   back on its own workspace's client list (SBR or CVL),
+ *                       exactly as it was archived
  *   Delete permanently  the file, its documents and storage objects, and its
  *                       company and accountant details. Asks for the name,
  *                       because it cannot be undone.
@@ -26,6 +30,7 @@ export function ArchivedClientActions({
   clientId,
   clientName,
   clientEmail,
+  workflow = 'sbr',
 }: ArchivedClientActionsProps) {
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
@@ -45,7 +50,7 @@ export function ArchivedClientActions({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to restore client')
       }
-      router.push(`/clients/${clientId}`)
+      router.push(clientBase(clientId, workflow))
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

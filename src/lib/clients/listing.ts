@@ -1,6 +1,7 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { CHECKLIST_ORDER, displayCategory, type DocCategory } from '@/lib/constants'
 import type { ClientSummary } from '@/types/app'
+import { workspaceOf, type ClientWorkspace } from './workspace'
 
 /**
  * One page of the client list, or of the Archive — the same rows, the same
@@ -24,6 +25,8 @@ export async function getClientListPage(options: {
   q?: string
   page?: string
   archived: boolean
+  /** The Archive only: one workspace's files. Every archived file when not given. */
+  workflow?: ClientWorkspace
 }): Promise<ClientListPage> {
   const q = (options.q ?? '').trim()
   // Sanitise for the PostgREST or() filter (strip operators that break syntax).
@@ -37,12 +40,13 @@ export async function getClientListPage(options: {
   let query = supabase
     .from('clients')
     .select(
-      'id, name, email, status, ato_admin_confirmed, created_at, updated_at, archived_at, archived_reason',
+      'id, name, email, status, ato_admin_confirmed, created_at, updated_at, archived_at, archived_reason, workflow',
       { count: 'exact' },
     )
   // The client list is SBR files only: a CVL file is listed in the CVL
   // workspace (migration 0039). The Archive keeps every archived file.
   query = options.archived ? query.not('archived_at', 'is', null) : query.is('archived_at', null).eq('workflow', 'sbr')
+  if (options.archived && options.workflow) query = query.eq('workflow', options.workflow)
   if (safeQ) {
     query = query.or(`name.ilike.%${safeQ}%,email.ilike.%${safeQ}%`)
   }
@@ -95,6 +99,7 @@ export async function getClientListPage(options: {
     createdAt: c.created_at,
     archivedAt: c.archived_at,
     archivedReason: c.archived_reason,
+    workflow: workspaceOf(c),
   }))
 
   return { clients: summaries, total: count ?? 0, page, pageSize: CLIENTS_PAGE_SIZE, query: q }

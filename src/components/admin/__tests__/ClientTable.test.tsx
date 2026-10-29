@@ -80,6 +80,19 @@ describe('ClientTable — the client list', () => {
 })
 
 describe('ClientTable — the Archive', () => {
+  it('says which workflow each archived file belongs to, so a CVL file never looks like an SBR one', () => {
+    render(<ClientTable clients={[{ ...ARCHIVED, workflow: 'sbr' }, { ...ARCHIVED, id: 'cl_2', name: 'Other', workflow: 'cvl' }]} mode="archived" />)
+    expect(screen.getByRole('columnheader', { name: 'Workflow' })).toBeTruthy()
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows[0].textContent).toContain('SBR')
+    expect(rows[1].textContent).toContain('CVL')
+  })
+
+  it('has no Workflow column on the SBR client list', () => {
+    render(<ClientTable clients={[{ ...ARCHIVED, archivedAt: null }]} />)
+    expect(screen.queryByRole('columnheader', { name: 'Workflow' })).toBeNull()
+  })
+
   it('shows when and why each file was archived, and links to its Archive page', () => {
     render(<ClientTable clients={[ARCHIVED]} mode="archived" />)
 

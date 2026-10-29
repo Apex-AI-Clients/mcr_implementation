@@ -42,6 +42,8 @@ export interface ClientSummary {
   /** Set only on Archive rows (migration 0024). */
   archivedAt?: string | null
   archivedReason?: string | null
+  /** The workspace the file belongs to: 'sbr' or 'cvl' (migration 0039). */
+  workflow?: 'sbr' | 'cvl'
 }
 
 export interface ClientDetail {

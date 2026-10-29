@@ -54,6 +54,18 @@ describe('the SBR client list', () => {
   })
 })
 
+describe('the Archive', () => {
+  it('filters archived files by workflow, and marks each row with it', async () => {
+    const calls = recordingDb([{ id: 'cl_1', name: 'Sample Trading Pty Ltd', email: 'a@example.test', status: 'in_progress', workflow: 'cvl', archived_at: '2026-10-01T00:00:00Z' }])
+    const page = await getClientListPage({ archived: true, workflow: 'cvl' })
+    expect(filters(calls, 'clients')).toEqual([
+      ['not', 'archived_at', 'is', null],
+      ['eq', 'workflow', 'cvl'],
+    ])
+    expect(page.clients[0].workflow).toBe('cvl')
+  })
+})
+
 describe('the CVL list', () => {
   const ROW = {
     id: 'case-1',

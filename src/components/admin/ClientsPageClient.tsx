@@ -15,6 +15,8 @@ interface ClientsPageClientProps {
   query: string
   /** 'archived' for the Archive: its own URL, wording and row actions. */
   mode?: 'active' | 'archived'
+  /** Kept on search and paging links (the Archive's ?workflow= filter). */
+  keep?: Record<string, string>
 }
 
 export function ClientsPageClient({
@@ -24,6 +26,7 @@ export function ClientsPageClient({
   pageSize,
   query,
   mode = 'active',
+  keep,
 }: ClientsPageClientProps) {
   const basePath = mode === 'archived' ? '/sbr/archive' : '/clients'
   const router = useRouter()
@@ -41,15 +44,15 @@ export function ClientsPageClient({
   useEffect(() => {
     if (term.trim() === query.trim()) return
     const t = setTimeout(() => {
-      const params = new URLSearchParams()
+      const params = new URLSearchParams(keep)
       if (term.trim()) params.set('q', term.trim())
       router.replace(`${basePath}${params.toString() ? `?${params.toString()}` : ''}`)
     }, 300)
     return () => clearTimeout(t)
-  }, [term, query, router, basePath])
+  }, [term, query, router, basePath, keep])
 
   function goToPage(p: number) {
-    const params = new URLSearchParams()
+    const params = new URLSearchParams(keep)
     if (query.trim()) params.set('q', query.trim())
     if (p > 1) params.set('page', String(p))
     router.replace(`${basePath}${params.toString() ? `?${params.toString()}` : ''}`)
