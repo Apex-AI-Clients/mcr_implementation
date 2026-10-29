@@ -27,18 +27,25 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { formatDate } from '@/lib/utils'
 import { atoFileInfo } from '@/lib/analysis/atoAccountKind'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
+import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
+import { CvlStatusControl } from '@/components/cvl/CvlStatusControl'
+import { CvlFileCard } from '@/components/cvl/CvlFileCard'
+import { toCvlCase } from '@/lib/cvl/cases'
+import { clientBase, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
-import { Archive, ArrowLeft, Building, Landmark, Pencil } from 'lucide-react'
+import { Archive, ArrowLeft, Building, Gavel, Landmark, Pencil } from 'lucide-react'
 
 interface ClientDetailViewProps {
   id: string
   /**
-   * 'active' is the client page (/clients/[id]); 'archived' is the same file in
-   * the Archive (/sbr/archive/[id]) — read-only, with Restore and Delete
-   * permanently in place of the editing actions. Each redirects to the other
+   * 'active' is the SBR client page (/clients/[id]); 'archived' is the same file
+   * in the SBR Archive (/sbr/archive/[id]) — read-only, with Restore and
+   * Delete permanently in place of the editing actions; a file moved to CVL
+   * keeps its SBR record there, read-only, with neither. 'cvl' is the CVL
+   * client page (/cvl/[id], migration 0039). Each redirects to the right one
    * when the file is not in the state it shows.
    */
-  mode: 'active' | 'archived'
+  mode: 'active' | 'archived' | 'cvl'
 }
 
 /**
@@ -50,10 +57,30 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
 
   const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
   if (!client) notFound()
+  const workspace = workspaceOf(client)
+  // The CVL case, for a file in CVL: its status, and whether it was an SBR client.
+  const cvlCase =
+    workspace === 'cvl'
+      ? await supabase
+          .from('cvl_cases')
+          .select('*')
+          .eq('client_id', id)
+          .maybeSingle()
+          .then(({ data }) => (data ? toCvlCase(data) : null))
+      : null
+  // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
+  const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'
+
   // Each page shows only files in its own state.
-  if (mode === 'active' && client.archived_at) redirect(`/sbr/archive/${client.id}`)
-  if (mode === 'archived' && !client.archived_at) redirect(`/clients/${client.id}`)
+  if (mode === 'active' && (client.archived_at || movedToCvl)) redirect(`/sbr/archive/${client.id}`)
+  if (mode !== 'archived' && !client.archived_at && workspace !== (mode === 'cvl' ? 'cvl' : 'sbr')) {
+    redirect(clientBase(client.id, workspace))
+  }
+  if (mode === 'cvl' && client.archived_at) redirect(`/sbr/archive/${client.id}`)
+  if (mode === 'archived' && !client.archived_at && !movedToCvl) redirect(clientBase(client.id, workspace))
   const archived = mode === 'archived'
+  const cvl = mode === 'cvl'
+  const base = clientBase(client.id, cvl ? 'cvl' : 'sbr')
 
   const [
     { data: rawDocs },
@@ -162,12 +189,32 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link
-        href={archived ? '/sbr/archive' : '/clients'}
+        href={archived ? (movedToCvl ? '/sbr/archive?view=moved' : '/sbr/archive') : cvl ? '/cvl' : '/clients'}
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        {archived ? 'Archive' : 'All Clients'}
+        {archived ? 'Archive' : cvl ? 'CVL clients' : 'All Clients'}
       </Link>
+
+      {archived && movedToCvl && cvlCase?.sbrArchivedAt && (
+        <div
+          role="status"
+          className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm text-foreground/80"
+        >
+          <p className="flex items-start gap-2">
+            <Gavel className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+            <span>
+              <span className="font-medium text-foreground">Moved to CVL</span> on{' '}
+              {formatDate(cvlCase.sbrArchivedAt)}
+              {cvlCase.sbrArchivedBy ? ` by ${cvlCase.sbrArchivedBy}` : ''}. This SBR record is kept
+              read-only. The file is worked on in the CVL workspace.
+            </span>
+          </p>
+          <Link href={`/cvl/${client.id}`} className="text-sm font-medium text-accent hover:underline">
+            Open the CVL file
+          </Link>
+        </div>
+      )}
 
       {archived && client.archived_at && (
         <div
@@ -204,7 +251,28 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>
 
-      {archived ? (
+      {cvl && cvlCase && (
+        <div className="mb-6 space-y-3">
+          <CvlStatusControl
+            caseId={cvlCase.id}
+            status={cvlCase.status}
+            formsPreparedAt={cvlCase.formsPreparedAt}
+            printedAt={cvlCase.printedAt}
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href={`${base}/intake`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-primary"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit details
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {cvl ? null : archived ? (
+        movedToCvl ? null : (
         <div className="mb-6">
           <ArchivedClientActions
             clientId={client.id}
@@ -212,9 +280,13 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
             clientEmail={client.email}
           />
         </div>
+        )
       ) : (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <ClientActions clientId={client.id} clientName={client.name} />
+          <div className="flex flex-wrap items-center gap-1">
+            <ClientActions clientId={client.id} clientName={client.name} />
+            <ConvertToCvlButton clientId={client.id} clientName={client.name} />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/clients/${client.id}/intake`}
@@ -232,13 +304,15 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         </div>
       )}
 
-      {readiness && (
+      {readiness && !cvl && (
         <div className="mb-6">
           <ReadinessChecklist clientId={client.id} readiness={readiness} />
         </div>
       )}
 
-      {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} jobId={runningJob.id} startedAt={runningJob.created_at} />}
+      {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} basePath={base} jobId={runningJob.id} startedAt={runningJob.created_at} />}
+
+      {cvl && cvlCase && <CvlFileCard clientId={client.id} cvlCase={cvlCase} />}
 
       <Card className="mb-4">
         <CompletenessBar documents={documents} />
@@ -366,13 +440,14 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         <DocumentStatusGrid
           documents={documents}
           clientId={id}
+          basePath={base}
           readOnly={archived}
           dpn={dpn}
           atoAccounts={atoAccounts.accounts.map((a) => ({ id: a.id, kind: a.kind, label: a.label }))}
         />
       </div>
 
-      <AtoAccountsPanel clientId={client.id} overview={atoAccounts} />
+      <AtoAccountsPanel clientId={client.id} overview={atoAccounts} basePath={base} />
     </div>
   )
 }

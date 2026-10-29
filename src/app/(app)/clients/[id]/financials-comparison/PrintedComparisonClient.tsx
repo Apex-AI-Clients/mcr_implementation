@@ -19,6 +19,8 @@ import type { PrintedComparison } from '@/lib/printed/compare'
 
 interface Props {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   clientName: string
   comparison: PrintedComparison
   /** The latest read: what the "I've checked these figures" tick covers. */
@@ -39,7 +41,7 @@ interface Props {
  * guessed; a printed total that does not add up shows Needs review and locks
  * the PDF and CSV until a staff member ticks that they checked it.
  */
-export function PrintedComparisonClient({ clientId, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false, aiSummaryEnabled = false }: Props) {
+export function PrintedComparisonClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false, aiSummaryEnabled = false }: Props) {
   const router = useRouter()
   const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [selected, setSelected] = useState<SelectedFigure | null>(null)
@@ -82,7 +84,7 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
   return (
     <div id="financials-export-root" className="space-y-6">
       <div className="space-y-3">
-        <Link href={`/clients/${clientId}`} className="no-print inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors">
+        <Link href={basePath} className="no-print inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to client
         </Link>
@@ -127,7 +129,7 @@ export function PrintedComparisonClient({ clientId, clientName, comparison, buil
           {comparison.annualYears < 2 && (
             <p className="text-xs text-foreground/60">Only one financial year is on file so far: upload the earlier years to compare.</p>
           )}
-          <HeadlineTiles clientId={clientId} comparison={comparison} mapping={mapping} suggestions={suggestions} />
+          <HeadlineTiles clientId={clientId} basePath={basePath} comparison={comparison} mapping={mapping} suggestions={suggestions} />
           {aiSummaryEnabled && (
             <ComparisonSummaryCard
               clientId={clientId}

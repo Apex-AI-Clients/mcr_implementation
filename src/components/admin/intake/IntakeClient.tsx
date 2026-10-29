@@ -19,6 +19,8 @@ import { IdentitySummary } from '@/components/identity/IdentitySummary'
 interface Props {
   /** null = adding a new client (later steps are locked until created). */
   clientId: string | null
+  /** Where the finished intake returns to: the client page in its workspace. Default /clients/{id}. */
+  basePath?: string
   initialName?: string
   initialEmail?: string
   initialPhone?: string
@@ -51,6 +53,7 @@ interface WizardStep extends StepDescriptor {
 
 export function IntakeClient({
   clientId,
+  basePath,
   initialName = '',
   initialEmail = '',
   initialPhone = '',
@@ -225,7 +228,7 @@ export function IntakeClient({
       setActiveStepId(steps[activeIndex + 1].id)
     } else if (clientId) {
       // Last step: finish intake and return to the client detail page.
-      router.push(`/clients/${clientId}`)
+      router.push(basePath ?? `/clients/${clientId}`)
     }
   }
 
@@ -246,7 +249,7 @@ export function IntakeClient({
       <div className="flex flex-1 min-w-0 h-full flex-col overflow-y-auto">
         <div className="flex-1 px-6 md:px-12 py-8">
           <Link
-            href={clientId ? `/clients/${clientId}` : '/clients'}
+            href={clientId ? (basePath ?? `/clients/${clientId}`) : '/clients'}
             className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

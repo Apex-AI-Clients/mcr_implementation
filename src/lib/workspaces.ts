@@ -1,13 +1,13 @@
-import { Archive, ChartScatter, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
+import { Archive, ChartScatter, Gavel, LayoutDashboard, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
 
 /**
- * The two workspaces behind the single staff login.
+ * The workspaces behind the single staff login.
  *
  * Defined once so the chooser (`/`) and the sidebar switcher can't drift apart
  * on names, routes or which paths belong where.
  */
 
-export type WorkspaceId = 'leads' | 'sbr'
+export type WorkspaceId = 'leads' | 'sbr' | 'cvl'
 
 export interface WorkspaceNavItem {
   href: string
@@ -69,6 +69,20 @@ export const WORKSPACES: Workspace[] = [
     ],
     prefixes: ['/sbr', '/clients'],
     chrome: 'sidebar',
+  },
+  {
+    // Client files in liquidation (migration 0039): converted from an SBR
+    // client or straight from a lead.
+    id: 'cvl',
+    name: 'CVL',
+    fullName: 'Creditors’ Voluntary Liquidation',
+    description: 'Liquidation files and the ASIC forms',
+    href: '/cvl',
+    icon: Gavel,
+    nav: [{ href: '/cvl', label: 'Clients', icon: Users }],
+    prefixes: ['/cvl'],
+    // One page for now; the CVL settings page (Stage 3) brings the sidebar.
+    chrome: 'topbar',
   },
 ]
 

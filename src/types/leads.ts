@@ -206,6 +206,8 @@ export interface ConvertedClientDetails {
   phone: string | null
   /** Set when the file is in the SBR Archive (migration 0024). */
   archivedAt: string | null
+  /** The workspace the file is in: 'sbr' or 'cvl' (migration 0039). */
+  workflow: string
   /** 'company', or 'trust' for a company acting as trustee. null with no company record. */
   entityType: string | null
   companyName: string | null

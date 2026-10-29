@@ -591,3 +591,32 @@ describe('Convert to client — what conversion sends', () => {
     })
   })
 })
+
+describe('Convert to client — SBR or CVL client (migration 0039)', () => {
+  it('converts to an SBR client unless CVL is chosen', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = mockRoutes()
+    const dialog = renderDialog()
+    expect((within(dialog).getByRole('radio', { name: /SBR client/ }) as HTMLInputElement).checked).toBe(true)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+    await waitFor(() => expect(callsTo(fetchMock, '/api/admin/clients')).toHaveLength(1))
+    const [[, init]] = callsTo(fetchMock, '/api/admin/clients') as [string, RequestInit][]
+    expect(JSON.parse(init.body as string).workflow).toBe('sbr')
+  })
+
+  it('sends workflow "cvl" and links the new file in the CVL workspace', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = mockRoutes()
+    const dialog = renderDialog()
+
+    await user.click(within(dialog).getByRole('radio', { name: /CVL client/ }))
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+
+    await waitFor(() => expect(callsTo(fetchMock, '/api/admin/clients')).toHaveLength(1))
+    const [[, init]] = callsTo(fetchMock, '/api/admin/clients') as [string, RequestInit][]
+    expect(JSON.parse(init.body as string).workflow).toBe('cvl')
+    const link = await screen.findByRole('link', { name: 'Open client file' })
+    expect(link.getAttribute('href')).toBe('/cvl/client-1')
+  })
+})

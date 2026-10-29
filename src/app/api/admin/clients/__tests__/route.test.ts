@@ -52,7 +52,8 @@ function mockDb({
   lead = { id: LEAD_ID, stage: 'prospect' } as { id: string; stage: string } | null,
   leadUpdateError = null as DbError,
   activityError = null as DbError,
-  existingClient = null as { id: string; archived_at: string | null } | null,
+  existingClient = null as { id: string; archived_at: string | null; workflow?: string } | null,
+  caseError = null as DbError,
 } = {}) {
   const clientInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
     select: () => ({ single: () => Promise.resolve({ data: { id: 'cl_1' }, error: null }) }),
@@ -67,7 +68,9 @@ function mockDb({
   const activityInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() =>
     Promise.resolve({ error: activityError }),
   )
+  const caseInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() => Promise.resolve({ error: caseError }))
   const tables: Record<string, unknown> = {
+    cvl_cases: { insert: caseInsert },
     clients: {
       select: () => ({
         eq: () => ({ maybeSingle: () => Promise.resolve({ data: existingClient }) }),
@@ -87,7 +90,7 @@ function mockDb({
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => tables[table],
   } as never)
-  return { clientInsert, clientDelete, detailsInsert, leadUpdate, activityInsert }
+  return { clientInsert, clientDelete, detailsInsert, leadUpdate, activityInsert, caseInsert }
 }
 
 function signedIn(user: { id: string; email?: string } | null) {
@@ -286,5 +289,46 @@ describe('POST /api/admin/clients — an email that already has a file', () => {
       archived: true,
     })
     expect(clientInsert).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () => {
+  it('opens an SBR client when no workflow is given, with no CVL case', async () => {
+    const { clientInsert, caseInsert } = mockDb()
+    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    expect(response.status).toBe(201)
+    expect(clientInsert.mock.calls[0][0]).toMatchObject({ workflow: 'sbr' })
+    expect(caseInsert).not.toHaveBeenCalled()
+  })
+
+  it('opens a CVL client and its case, from the lead, in the same request', async () => {
+    const { clientInsert, caseInsert, detailsInsert, leadUpdate } = mockDb()
+    const response = await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))
+    expect(response.status).toBe(201)
+    expect(clientInsert.mock.calls[0][0]).toMatchObject({ workflow: 'cvl' })
+    expect(caseInsert).toHaveBeenCalledWith({ client_id: 'cl_1', origin: 'lead', created_by: 'gabby' })
+    expect(detailsInsert).toHaveBeenCalled()
+    expect(leadUpdate).toHaveBeenCalled()
+  })
+
+  it('undoes the client when its CVL case cannot be written, and goes no further', async () => {
+    const { clientDelete, detailsInsert, leadUpdate } = mockDb({ caseError: { message: 'boom' } })
+    const response = await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))
+    expect(response.status).toBe(500)
+    expect(clientDelete).toHaveBeenCalled()
+    expect(detailsInsert).not.toHaveBeenCalled()
+    expect(leadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('refuses a workflow it does not know', async () => {
+    mockDb()
+    expect((await POST(post({ ...BODY, workflow: 'liquidation' }))).status).toBe(400)
+  })
+
+  it('says which workspace the file that owns the email is in', async () => {
+    mockDb({ existingClient: { id: 'cl_9', archived_at: null, workflow: 'cvl' } })
+    const response = await POST(post(BODY))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ clientId: 'cl_9', archived: false, workflow: 'cvl' })
   })
 })

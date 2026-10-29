@@ -27,6 +27,8 @@ import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 interface Props {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   initialAnalysis: LodgementAnalysisPayload | null
   hasActivityStatementCsv: boolean
   /** The ATO's director penalty notices' figures, when any are on file (loadDpnNoticeFigures). */
@@ -334,9 +336,12 @@ function WarningsList({ warnings }: { warnings: AnalysisWarning[] }) {
 function SummaryPanel({
   analysis,
   notices,
+  dpnPage,
 }: {
   analysis: LodgementAnalysisPayload
   notices: DpnNoticeFigures | null
+  /** The client's director penalty notices page. */
+  dpnPage: string
   onClose?: () => void
 }) {
   return (
@@ -454,12 +459,12 @@ function SummaryPanel({
               {notices ? (
                 <>
                   {' '}The ATO&apos;s director penalty notices show{' '}
-                  <SourcedAmount value={notices.unpaid} format={money} source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, analysis.clientId)} /> unpaid:{' '}
-                  <SourcedAmount value={notices.removable} format={money} source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, analysis.clientId)} /> is
+                  <SourcedAmount value={notices.unpaid} format={money} source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, dpnPage)} /> unpaid:{' '}
+                  <SourcedAmount value={notices.removable} format={money} source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, dpnPage)} /> is
                   removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by{' '}
                   {formatDay(notices.deadline)}, and{' '}
                   <span className={notices.staysWithDirector > 0 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                    <SourcedAmount value={notices.staysWithDirector} format={money} source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, analysis.clientId)} /> stays with
+                    <SourcedAmount value={notices.staysWithDirector} format={money} source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, dpnPage)} /> stays with
                     the director unless paid
                   </span>
                   .
@@ -508,10 +513,12 @@ function SummaryPanel({
 function SummaryModal({
   analysis,
   notices,
+  dpnPage,
   onClose,
 }: {
   analysis: LodgementAnalysisPayload
   notices: DpnNoticeFigures | null
+  dpnPage: string
   onClose: () => void
 }) {
   // Close on Escape and lock body scroll while open
@@ -547,7 +554,7 @@ function SummaryModal({
         >
           <X className="h-4 w-4" />
         </button>
-        <SummaryPanel analysis={analysis} notices={notices} onClose={onClose} />
+        <SummaryPanel analysis={analysis} notices={notices} dpnPage={dpnPage} onClose={onClose} />
       </div>
     </div>
   )
@@ -555,7 +562,7 @@ function SummaryModal({
 
 // ─── Main card ────────────────────────────────────────────────────────────────
 
-export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivityStatementCsv, dpnNotices = null }: Props) {
+export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientId}`, initialAnalysis, hasActivityStatementCsv, dpnNotices = null }: Props) {
   const router = useRouter()
   const [analysis, setAnalysis] = useState<LodgementAnalysisPayload | null>(initialAnalysis)
   const [loading, setLoading] = useState(false)
@@ -721,7 +728,7 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
           </div>
 
           {showSummary && (
-            <SummaryModal analysis={analysis} notices={dpnNotices} onClose={() => setShowSummary(false)} />
+            <SummaryModal analysis={analysis} notices={dpnNotices} dpnPage={`${basePath}/director-penalty-notices`} onClose={() => setShowSummary(false)} />
           )}
 
           {/* DPN Risk */}
@@ -732,6 +739,7 @@ export function LodgementAnalysisCard({ clientId, initialAnalysis, hasActivitySt
                 paymentRows={analysis.rows}
                 notices={dpnNotices}
                 clientId={clientId}
+                basePath={basePath}
               />
             </div>
           )}

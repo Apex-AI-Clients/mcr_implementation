@@ -50,6 +50,8 @@ export async function getCompletenessSummary(): Promise<CompletenessSummary> {
       .from('clients')
       .select('id, name, created_at')
       .is('archived_at', null)
+      // SBR files only: CVL files are not part of the SBR portfolio.
+      .eq('workflow', 'sbr')
       .order('created_at', { ascending: false }),
     supabase.from('documents').select('client_id, doc_category, status'),
   ])

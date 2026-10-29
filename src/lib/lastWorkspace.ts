@@ -10,7 +10,7 @@
 export const LAST_WORKSPACE_COOKIE = 'mcr_last_workspace'
 
 /** Where each workspace opens, by its id in workspaces.ts. */
-export const WORKSPACE_HOMES = { leads: '/leads', sbr: '/sbr' } as const
+export const WORKSPACE_HOMES = { leads: '/leads', sbr: '/sbr', cvl: '/cvl' } as const
 
 export type LastWorkspace = keyof typeof WORKSPACE_HOMES
 
@@ -18,6 +18,7 @@ const PREFIXES: Array<[string, LastWorkspace]> = [
   ['/leads', 'leads'],
   ['/sbr', 'sbr'],
   ['/clients', 'sbr'],
+  ['/cvl', 'cvl'],
 ]
 
 /** The workspace a page belongs to, or null (the root, login, intake …). */

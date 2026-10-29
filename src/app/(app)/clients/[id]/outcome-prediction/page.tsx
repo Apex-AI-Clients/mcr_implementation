@@ -37,12 +37,13 @@ export default async function OutcomePredictionPage({ params }: Props) {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name, archived_at')
+    .select('id, name, archived_at, workflow')
     .eq('id', id)
     .maybeSingle()
   if (!client) notFound()
-  // An archived file is viewed, read-only, in the Archive.
-  if (client.archived_at) redirect(`/sbr/archive/${client.id}`)
+  // An archived file is viewed, read-only, in the Archive, and so is the SBR
+  // record of a file moved to CVL (the prediction is SBR only).
+  if (client.archived_at || client.workflow === 'cvl') redirect(`/sbr/archive/${client.id}`)
 
   const [lodgement, printed, mapping, cached, imports, directors] = await Promise.all([
     supabase

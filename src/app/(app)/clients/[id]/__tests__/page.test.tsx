@@ -10,11 +10,13 @@ vi.mock('next/navigation', () => ({
   redirect: (to: string) => {
     throw new Error(`redirect:${to}`)
   },
+  useRouter: () => ({ push: () => {}, refresh: () => {} }),
 }))
 // The rest of the page is not what is under test here.
 vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: () => null }))
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
+vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
@@ -43,6 +45,7 @@ import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
 import { hasUnanalysedAtoAccounts } from '@/lib/analysis/atoAccount/store'
 import ClientDetailPage from '../page'
 import ArchivedClientPage from '@/app/(app)/sbr/archive/[id]/page'
+import CvlClientPage from '@/app/(app)/cvl/[id]/page'
 
 /**
  * The SBR client page: the client's phone in the header, and the ASIC fields in
@@ -82,8 +85,9 @@ const COMPANY = {
   company_details_source: 'asic_pdf_edited',
 }
 
-function mockDb(client: Record<string, unknown>, company: Record<string, unknown> | null) {
+function mockDb(client: Record<string, unknown>, company: Record<string, unknown> | null, cvlCase: Record<string, unknown> | null = null) {
   const rows: Record<string, unknown> = {
+    cvl_cases: cvlCase,
     clients: client,
     company_details: company,
     accountant_details: null,
@@ -268,5 +272,67 @@ describe('Client detail page — waiting analysis', () => {
     vi.mocked(loadReadiness).mockResolvedValueOnce(quiet as never)
     await renderPage()
     expect(scheduleClientAnalysis).not.toHaveBeenCalled()
+  })
+})
+
+describe('Client page, Archive page and CVL page — files in CVL (migration 0039)', () => {
+  const PARAMS = { params: Promise.resolve({ id: 'cl_1' }) }
+  const IN_CVL = { ...CLIENT, archived_at: null, workflow: 'cvl' }
+  const CASE = {
+    id: 'case-1',
+    client_id: 'cl_1',
+    origin: 'sbr_client',
+    status: 'forms_prepared',
+    forms_prepared_at: '2026-10-25T00:00:00.000Z',
+    printed_at: null,
+    sbr_archived_at: '2026-10-20T00:00:00.000Z',
+    sbr_archived_by: 'Gabby',
+    created_by: 'Gabby',
+    created_at: '2026-10-20T00:00:00.000Z',
+  }
+  const FROM_LEAD = { ...CASE, origin: 'lead', sbr_archived_at: null, sbr_archived_by: null }
+
+  it('sends a file moved to CVL from the SBR client page to its read-only SBR record', async () => {
+    mockDb(IN_CVL, COMPANY, CASE)
+    await expect(ClientDetailPage(PARAMS)).rejects.toThrow('redirect:/sbr/archive/cl_1')
+  })
+
+  it('sends a CVL file that came straight from a lead to the CVL page: it has no SBR record', async () => {
+    mockDb(IN_CVL, COMPANY, FROM_LEAD)
+    await expect(ClientDetailPage(PARAMS)).rejects.toThrow('redirect:/cvl/cl_1')
+    await expect(ArchivedClientPage(PARAMS)).rejects.toThrow('redirect:/cvl/cl_1')
+  })
+
+  it('sends an SBR file from the CVL page to the SBR client page', async () => {
+    mockDb({ ...CLIENT, workflow: 'sbr' }, COMPANY)
+    await expect(CvlClientPage(PARAMS)).rejects.toThrow('redirect:/clients/cl_1')
+  })
+
+  it('shows the SBR record of a moved file read-only, pointing to the CVL file', async () => {
+    mockDb(IN_CVL, COMPANY, CASE)
+    render(await ArchivedClientPage(PARAMS))
+    const banner = screen.getByRole('status')
+    expect(banner.textContent).toContain('Moved to CVL')
+    expect(banner.textContent).toContain('by Gabby')
+    expect(within(banner).getByRole('link', { name: 'Open the CVL file' }).getAttribute('href')).toBe('/cvl/cl_1')
+    expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Mark printed/ })).toBeNull()
+  })
+
+  it('shows the CVL page: status with its date, the forms, and the analyses inside CVL', async () => {
+    mockDb(IN_CVL, COMPANY, CASE)
+    render(await CvlClientPage(PARAMS))
+    expect(screen.getByRole('heading', { level: 1, name: 'Dean Whitlock' })).toBeTruthy()
+    const step = screen.getByText('Forms prepared', { selector: '[aria-current="step"]' })
+    expect(step.textContent).toMatch(/2026/)
+    expect(screen.getByRole('button', { name: 'Mark printed' })).toBeTruthy()
+    expect(screen.getByText('Presentation of summary of affairs of a company (Form 509)')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
+      '/cvl/cl_1/director-penalty-notices',
+    )
+    expect(screen.getByRole('link', { name: /Edit details/ }).getAttribute('href')).toBe('/cvl/cl_1/intake')
+    expect(screen.getByRole('link', { name: /CVL clients/ }).getAttribute('href')).toBe('/cvl')
+    // SBR only: no prediction checklist, no Continue intake.
+    expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
   })
 })

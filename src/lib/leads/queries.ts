@@ -418,7 +418,7 @@ export async function getConvertedClientDetails(
   const [clientRead, detailsRead] = await Promise.all([
     supabase
       .from('clients')
-      .select('id, name, email, phone, archived_at')
+      .select('id, name, email, phone, archived_at, workflow')
       .eq('id', clientId)
       .maybeSingle(),
     supabase
@@ -448,6 +448,7 @@ export async function getConvertedClientDetails(
     email: client.email,
     phone: client.phone,
     archivedAt: client.archived_at,
+    workflow: client.workflow,
     entityType: details?.entity_type ?? null,
     companyName: details?.company_name ?? null,
     acnNumber: details?.acn_number ?? null,

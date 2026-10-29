@@ -1,5 +1,6 @@
 import { toCompanyDetails, type ConversionForm } from './conversionForm'
 import type { LeadActivity } from '@/types/leads'
+import type { ClientWorkspace } from '@/lib/clients/workspace'
 
 /**
  * Creating a client file from a lead.
@@ -34,7 +35,7 @@ export type ConvertResult =
    * archived file is not offered for linking: it is restored, or deleted
    * permanently, from the Archive first.
    */
-  | { kind: 'duplicate'; clientId: string; archived: boolean }
+  | { kind: 'duplicate'; clientId: string; archived: boolean; workflow: ClientWorkspace }
   | { kind: 'failed'; message: string }
 
 const GENERIC_FAILURE = "That didn't work. No client file was created."
@@ -58,6 +59,8 @@ function readActivity(value: unknown): LeadActivity | null {
 export async function createClientFromLead(
   form: ConversionForm,
   leadId?: string,
+  /** The workspace the file opens in: an SBR client (default) or a CVL client. */
+  workflow: ClientWorkspace = 'sbr',
 ): Promise<ConvertResult> {
   let response: Response
   try {
@@ -70,6 +73,7 @@ export async function createClientFromLead(
         phone: form.phone.trim(),
         companyDetails: toCompanyDetails(form),
         ...(leadId ? { leadId } : {}),
+        workflow,
       }),
     })
   } catch {
@@ -89,12 +93,18 @@ export async function createClientFromLead(
     leadLinked?: unknown
     leadActivity?: unknown
     archived?: unknown
+    workflow?: unknown
   }
 
   if (response.status === 409) {
     // Only useful if the route told us which file it collided with.
     return typeof payload.clientId === 'string' && payload.clientId
-      ? { kind: 'duplicate', clientId: payload.clientId, archived: payload.archived === true }
+      ? {
+          kind: 'duplicate',
+          clientId: payload.clientId,
+          archived: payload.archived === true,
+          workflow: payload.workflow === 'cvl' ? 'cvl' : 'sbr',
+        }
       : { kind: 'failed', message: 'A client with this email already exists.' }
   }
 

@@ -16,18 +16,19 @@ const AUD = new Intl.NumberFormat('en-AU', {
 })
 
 /** Where the DPN figures are: the notices' own page, or the activity statement's rows. */
-const noticesLink = (clientId?: string): SourceLink | null =>
-  clientId ? { kind: 'href', href: `/clients/${clientId}/director-penalty-notices`, label: 'Open the director penalty notices' } : null
+const noticesLink = (dpnPage?: string): SourceLink | null =>
+  dpnPage ? { kind: 'href', href: dpnPage, label: 'Open the director penalty notices' } : null
 const ROWS_LINK: SourceLink = { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' }
 
-export function noticesSource(what: string, column: string, notices: DpnNoticeFigures, clientId?: string, calculation?: string): AmountSource {
+/** @param dpnPage the client's director penalty notices page, for the source's link */
+export function noticesSource(what: string, column: string, notices: DpnNoticeFigures, dpnPage?: string, calculation?: string): AmountSource {
   return {
     from: [
       what,
       `The ATO's director penalty notices on file: ${notices.notices} current, latest issued ${formatDay(notices.issuedOn)}. The notices' column "${column}", added up across notice types, each period once.`,
     ],
     calculation: calculation ?? null,
-    link: noticesLink(clientId),
+    link: noticesLink(dpnPage),
   }
 }
 
@@ -255,7 +256,7 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
 }
 
 /** The notices' own figures: columns 3, 4 and 5, the deadline, and each type. */
-function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientId?: string }) {
+function NoticesBody({ notices, dpnPage }: { notices: DpnNoticeFigures; dpnPage?: string }) {
   const urgent = isUrgentDeadline(notices.daysLeft)
   return (
     <div className="space-y-3">
@@ -263,21 +264,21 @@ function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientI
         <MetricTile
           label="Unpaid"
           value={notices.unpaid}
-          source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, clientId)}
+          source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, dpnPage)}
           colorClass="text-foreground/80"
           bgClass="bg-surface/50 border-border/40"
         />
         <MetricTile
           label={removableLabel(notices.deadline)}
           value={notices.removable}
-          source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, clientId)}
+          source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, dpnPage)}
           colorClass="text-warning"
           bgClass="bg-warning/10 border-warning/20"
         />
         <MetricTile
           label={STAYS_LABEL}
           value={notices.staysWithDirector}
-          source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, clientId)}
+          source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, dpnPage)}
           colorClass={notices.staysWithDirector > 0 ? 'text-destructive' : 'text-success'}
           bgClass={
             notices.staysWithDirector > 0 ? 'bg-destructive/10 border-destructive/20' : 'bg-success/10 border-success/20'
@@ -317,13 +318,13 @@ function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientI
                 <tr key={t.type} className="border-b border-border/40 last:border-0">
                   <td className="py-1.5 pr-4 text-foreground/70">{t.label}</td>
                   <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.unpaid} format={formatAud} source={noticesSource(`${t.label}: unpaid`, 'Unpaid amount', notices, clientId)} />
+                    <SourcedAmount value={t.unpaid} format={formatAud} source={noticesSource(`${t.label}: unpaid`, 'Unpaid amount', notices, dpnPage)} />
                   </td>
                   <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.removable} format={formatAud} source={noticesSource(`${t.label}: removed if acted on by ${formatDay(t.deadline)}`, 'Removed if acted on by the deadline', notices, clientId)} />
+                    <SourcedAmount value={t.removable} format={formatAud} source={noticesSource(`${t.label}: removed if acted on by ${formatDay(t.deadline)}`, 'Removed if acted on by the deadline', notices, dpnPage)} />
                   </td>
                   <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.staysWithDirector} format={formatAud} source={noticesSource(`${t.label}: ${STAYS_LABEL.toLowerCase()}`, STAYS_LABEL, notices, clientId)} />
+                    <SourcedAmount value={t.staysWithDirector} format={formatAud} source={noticesSource(`${t.label}: ${STAYS_LABEL.toLowerCase()}`, STAYS_LABEL, notices, dpnPage)} />
                   </td>
                   <td className="py-1.5 text-right whitespace-nowrap text-foreground/70">{formatDay(t.deadline)}</td>
                 </tr>
@@ -333,9 +334,9 @@ function NoticesBody({ notices, clientId }: { notices: DpnNoticeFigures; clientI
         </div>
       )}
 
-      {clientId && (
+      {dpnPage && (
         <Link
-          href={`/clients/${clientId}/director-penalty-notices`}
+          href={dpnPage}
           className="no-print inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
         >
           DPN Summary
@@ -352,6 +353,8 @@ interface Props {
   /** The ATO's director penalty notices' figures; null when none is on file. */
   notices?: DpnNoticeFigures | null
   clientId?: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
 }
 
 /**
@@ -360,7 +363,8 @@ interface Props {
  * account only as a closed, secondary item. Without, the estimate, labelled
  * as one. The payments received card below is real payments only.
  */
-export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId }: Props) {
+export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId, basePath }: Props) {
+  const dpnPage = clientId ? `${basePath ?? `/clients/${clientId}`}/director-penalty-notices` : undefined
   const [showEstimate, setShowEstimate] = useState(false)
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
@@ -530,7 +534,7 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
 
       {notices ? (
         <>
-          <NoticesBody notices={notices} clientId={clientId} />
+          <NoticesBody notices={notices} dpnPage={dpnPage} />
           {/* The estimate stays available, second and closed. */}
           <div className="rounded-lg border border-border/40">
             <button

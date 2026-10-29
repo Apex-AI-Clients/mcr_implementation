@@ -14,6 +14,7 @@ import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections
 import { commitChange, withExtract, withoutExtract } from '@/lib/clients/identityForm'
 import { createClientFromLead } from '@/lib/leads/convert'
 import { emptyConversionForm, type ConversionForm } from '@/lib/leads/conversionForm'
+import { clientBase, type ClientWorkspace } from '@/lib/clients/workspace'
 import type { Lead } from '@/types/leads'
 
 interface ConvertToClientDialogProps {
@@ -25,9 +26,9 @@ type Phase =
   | { kind: 'form' }
   | { kind: 'working'; label: string }
   /** 409 — the email already belongs to a client file. Offer to link instead. */
-  | { kind: 'duplicate'; clientId: string; archived: boolean }
+  | { kind: 'duplicate'; clientId: string; archived: boolean; workflow: ClientWorkspace }
   /** The file was created but the lead could not be updated. Never retry. */
-  | { kind: 'orphaned'; clientId: string }
+  | { kind: 'orphaned'; clientId: string; workflow: ClientWorkspace }
   | { kind: 'failed'; message: string }
 
 /** Nothing on this form is required, so no field ever carries an error. */
@@ -49,6 +50,8 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   const { toast } = useToast()
   const [phase, setPhase] = useState<Phase>({ kind: 'form' })
   const [form, setForm] = useState<ConversionForm>(() => emptyConversionForm(lead))
+  // Which workspace the new file opens in. SBR unless staff choose CVL.
+  const [workflow, setWorkflow] = useState<ClientWorkspace>('sbr')
 
   // Reset when a different lead is opened. React-sanctioned "adjust state
   // during render" — same pattern as ClientsPageClient, no effect needed.
@@ -57,36 +60,38 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
     setPrevLeadId(lead?.id ?? null)
     setPhase({ kind: 'form' })
     setForm(emptyConversionForm(lead))
+    setWorkflow('sbr')
   }
 
   function patch(change: Partial<ConversionForm>) {
     setForm((current) => ({ ...current, ...change }))
   }
 
-  async function link(clientId: string) {
+  async function link(clientId: string, target: ClientWorkspace) {
     if (!lead) return
     setPhase({ kind: 'working', label: 'Linking to client file…' })
     try {
       await markConverted(lead.id, clientId)
       toast('Lead linked to client file.', {
-        href: `/clients/${clientId}`,
+        href: clientBase(clientId, target),
         linkLabel: 'Open client file',
       })
       onClose()
     } catch {
-      setPhase({ kind: 'orphaned', clientId })
+      setPhase({ kind: 'orphaned', clientId, workflow: target })
     }
   }
 
   async function handleConvert() {
     if (!lead) return
 
-    setPhase({ kind: 'working', label: 'Creating client file…' })
+    setPhase({ kind: 'working', label: workflow === 'cvl' ? 'Creating CVL client file…' : 'Creating client file…' })
     // No checks: the client row only needs a name and an email, and the lead
     // always has both.
     const result = await createClientFromLead(
       { ...form, name: form.name.trim() || lead.name, email: form.email.trim() || lead.email },
       lead.id,
+      workflow,
     )
 
     if (result.kind === 'failed') {
@@ -94,7 +99,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       return
     }
     if (result.kind === 'duplicate') {
-      setPhase({ kind: 'duplicate', clientId: result.clientId, archived: result.archived })
+      setPhase({ kind: 'duplicate', clientId: result.clientId, archived: result.archived, workflow: result.workflow })
       return
     }
 
@@ -108,13 +113,13 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       try {
         await markConverted(lead.id, result.clientId)
       } catch {
-        setPhase({ kind: 'orphaned', clientId: result.clientId })
+        setPhase({ kind: 'orphaned', clientId: result.clientId, workflow })
         return
       }
     }
 
-    toast('Client file created.', {
-      href: `/clients/${result.clientId}`,
+    toast(workflow === 'cvl' ? 'CVL client file created.' : 'Client file created.', {
+      href: clientBase(result.clientId, workflow),
       linkLabel: 'Open client file',
     })
     onClose()
@@ -157,6 +162,8 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                     fill it: the company name, ACN and ABN where empty, the two
                     addresses and the directors. Never the lead's own name, and
                     never the trust — trusts are not registered with ASIC. */}
+                <WorkflowChoice value={workflow} disabled={working} onChange={setWorkflow} />
+
                 <AsicExtractUpload
                   id="convert-asic-extract"
                   layout="centered"
@@ -236,7 +243,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   link {lead.name} to the existing file.
                 </p>
                 <Link
-                  href={`/clients/${phase.clientId}`}
+                  href={clientBase(phase.clientId, phase.workflow)}
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
                 >
                   Look at the existing file first
@@ -269,7 +276,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   Client file created, but this lead wasn&rsquo;t updated.
                 </p>
                 <Link
-                  href={`/clients/${phase.clientId}`}
+                  href={clientBase(phase.clientId, phase.workflow)}
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"
                 >
                   Open the client file
@@ -293,6 +300,54 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   )
 }
 
+/**
+ * SBR client or CVL client (migration 0039). Everything else on the form is
+ * the same: both start from the same client and company details.
+ */
+function WorkflowChoice({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ClientWorkspace
+  disabled: boolean
+  onChange: (value: ClientWorkspace) => void
+}) {
+  const options: { value: ClientWorkspace; label: string; hint: string }[] = [
+    { value: 'sbr', label: 'SBR client', hint: 'Small Business Restructuring' },
+    { value: 'cvl', label: 'CVL client', hint: 'Creditors’ Voluntary Liquidation' },
+  ]
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-medium uppercase tracking-wide text-foreground/40">Convert to</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((o) => (
+          <label
+            key={o.value}
+            className={`flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition-colors ${
+              value === o.value ? 'border-accent/50 bg-accent/10' : 'border-border hover:bg-surface/60'
+            }`}
+          >
+            <input
+              type="radio"
+              name="convert-workflow"
+              value={o.value}
+              checked={value === o.value}
+              disabled={disabled}
+              onChange={() => onChange(o.value)}
+              className="mt-0.5 accent-accent"
+            />
+            <span>
+              <span className="block font-medium text-foreground">{o.label}</span>
+              <span className="block text-xs text-foreground/50">{o.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 function Fieldset({ legend, children }: { legend: string; children: React.ReactNode }) {
   return (
     <fieldset className="space-y-3">
@@ -312,7 +367,7 @@ function Footer({
 }: {
   phase: Phase
   onConvert: () => void
-  onLink: (clientId: string) => void
+  onLink: (clientId: string, workflow: ClientWorkspace) => void
   onClose: () => void
 }) {
   // Nothing to retry once the file exists — only a way out.
@@ -325,7 +380,7 @@ function Footer({
   }
 
   if (phase.kind === 'duplicate') {
-    const { clientId, archived } = phase
+    const { clientId, archived, workflow } = phase
     return (
       <>
         <Button type="button" variant="ghost" onClick={onClose}>
@@ -333,7 +388,7 @@ function Footer({
         </Button>
         {/* An archived file is restored first, from the Archive. */}
         {!archived && (
-          <Button type="button" onClick={() => onLink(clientId)}>
+          <Button type="button" onClick={() => onLink(clientId, workflow)}>
             Link to existing file
           </Button>
         )}

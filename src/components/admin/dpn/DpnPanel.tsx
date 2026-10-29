@@ -10,6 +10,8 @@ import { formatDate } from '@/lib/utils'
 
 interface DpnPanelProps {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   data: DpnPanelData
   /** An archived file: shown, not changed. */
   readOnly?: boolean
@@ -21,7 +23,7 @@ interface DpnPanelProps {
  * summary when there are. What each notice says, and reading or entering it,
  * live on the summary page.
  */
-export function DpnPanel({ clientId, data, readOnly = false }: DpnPanelProps) {
+export function DpnPanel({ clientId, basePath = `/clients/${clientId}`, data, readOnly = false }: DpnPanelProps) {
   return (
     <>
       {data.clearedNote && (
@@ -35,7 +37,7 @@ export function DpnPanel({ clientId, data, readOnly = false }: DpnPanelProps) {
         <NoneIssuedTick clientId={clientId} noneIssued={data.noneIssued} readOnly={readOnly} />
       ) : (
         <div className="mt-3 ml-6.5 flex justify-end">
-          <Link href={`/clients/${clientId}/director-penalty-notices`}>
+          <Link href={`${basePath}/director-penalty-notices`}>
             <Button variant="primary" size="sm">
               <FileWarning className="h-3.5 w-3.5" />
               DPN Summary

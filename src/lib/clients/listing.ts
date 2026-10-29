@@ -40,7 +40,9 @@ export async function getClientListPage(options: {
       'id, name, email, status, ato_admin_confirmed, created_at, updated_at, archived_at, archived_reason',
       { count: 'exact' },
     )
-  query = options.archived ? query.not('archived_at', 'is', null) : query.is('archived_at', null)
+  // The client list is SBR files only: a CVL file is listed in the CVL
+  // workspace (migration 0039). The Archive keeps every archived file.
+  query = options.archived ? query.not('archived_at', 'is', null) : query.is('archived_at', null).eq('workflow', 'sbr')
   if (safeQ) {
     query = query.or(`name.ilike.%${safeQ}%,email.ilike.%${safeQ}%`)
   }

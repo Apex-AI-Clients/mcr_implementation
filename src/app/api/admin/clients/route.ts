@@ -34,6 +34,11 @@ const CreateClientSchema = z.object({
    * "lead" and still offered to convert.
    */
   leadId: z.string().uuid().optional(),
+  /**
+   * Which workspace the new file opens in (migration 0039): an SBR client
+   * (the default) or a CVL client, whose case is opened in this request.
+   */
+  workflow: z.enum(['sbr', 'cvl']).optional(),
 })
 
 /**
@@ -59,8 +64,10 @@ export async function GET() {
     const { data, error } = await supabase
       .from('clients')
       .select('id, name, email, status, created_at, updated_at')
-      // Archived files are in the Archive, not the client list.
+      // Archived files are in the Archive, not the client list; CVL files
+      // are in the CVL workspace.
       .is('archived_at', null)
+      .eq('workflow', 'sbr')
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -109,7 +116,7 @@ export async function POST(req: NextRequest) {
 
     const { data: existing } = await supabase
       .from('clients')
-      .select('id, archived_at')
+      .select('id, archived_at, workflow')
       .eq('email', email)
       .maybeSingle()
     if (existing) {
@@ -123,19 +130,37 @@ export async function POST(req: NextRequest) {
             : 'A client with this email already exists',
           clientId: existing.id,
           archived,
+          workflow: existing.workflow,
         },
         { status: 409 },
       )
     }
 
+    const workflow = parsed.data.workflow ?? 'sbr'
     const { data: client, error: insertError } = await supabase
       .from('clients')
-      .insert({ name, email, phone, status: 'in_progress' })
+      .insert({ name, email, phone, status: 'in_progress', workflow })
       .select()
       .single()
 
     if (insertError || !client) {
       throw insertError ?? new Error('Insert returned no row')
+    }
+
+    // A CVL file without its case is half-made: undone the same way as the
+    // details below.
+    if (workflow === 'cvl') {
+      const { error: caseError } = await supabase
+        .from('cvl_cases')
+        .insert({ client_id: client.id, origin: 'lead', created_by: staffAuthorName(staff) })
+      if (caseError) {
+        await supabase.from('clients').delete().eq('id', client.id)
+        console.error('[POST /api/admin/clients] CVL case insert failed:', caseError.message)
+        return NextResponse.json(
+          { error: 'Could not open the CVL file. No client file was created.' },
+          { status: 500 },
+        )
+      }
     }
 
     // Written in the same request as the client, so intake opens pre-filled

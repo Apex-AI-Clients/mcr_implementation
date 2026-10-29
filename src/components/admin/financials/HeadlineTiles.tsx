@@ -17,6 +17,8 @@ import { KeyFigureCard, keyFigureStatus, type KeyFigureStatus } from './keyFigur
 
 interface Props {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   comparison: PrintedComparison
   mapping: MappingEntry[]
   suggestions: Suggestions
@@ -37,10 +39,10 @@ const LOOK: Record<KeyFigureStatus, { edge: string; segment: string; icon: typeo
  * and leads to "Confirm key figures". The SBR prediction uses only confirmed
  * lines.
  */
-export function HeadlineTiles({ clientId, comparison, mapping, suggestions }: Props) {
+export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, comparison, mapping, suggestions }: Props) {
   const [open, setOpen] = useState<Meaning | null>(null)
   const tiles = MEANINGS.filter((m) => m.tile)
-  const keyFigures = `/clients/${clientId}/financials-comparison/mapping`
+  const keyFigures = `${basePath}/financials-comparison/mapping`
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
   const statusOf = (m: Meaning) => keyFigureStatus(entriesOf(m), suggestions[m])
   const confirmed = KEY_FIGURES.filter((m) => statusOf(m.key) === 'confirmed').length

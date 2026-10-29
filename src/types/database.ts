@@ -314,6 +314,7 @@ export type Database = {
           phone: string | null
           status: string
           updated_at: string
+          workflow: string
         }
         Insert: {
           archived_at?: string | null
@@ -333,6 +334,7 @@ export type Database = {
           phone?: string | null
           status?: string
           updated_at?: string
+          workflow?: string
         }
         Update: {
           archived_at?: string | null
@@ -352,6 +354,7 @@ export type Database = {
           phone?: string | null
           status?: string
           updated_at?: string
+          workflow?: string
         }
         Relationships: []
       }
@@ -422,6 +425,193 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cvl_cases: {
+        Row: {
+          appointment_date: string | null
+          client_id: string
+          created_at: string
+          created_by: string
+          forms_prepared_at: string | null
+          id: string
+          origin: string
+          printed_at: string | null
+          report_date: string | null
+          report_return_date: string | null
+          sbr_archived_at: string | null
+          sbr_archived_by: string | null
+          status: string
+          summary_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          appointment_date?: string | null
+          client_id: string
+          created_at?: string
+          created_by: string
+          forms_prepared_at?: string | null
+          id?: string
+          origin: string
+          printed_at?: string | null
+          report_date?: string | null
+          report_return_date?: string | null
+          sbr_archived_at?: string | null
+          sbr_archived_by?: string | null
+          status?: string
+          summary_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          appointment_date?: string | null
+          client_id?: string
+          created_at?: string
+          created_by?: string
+          forms_prepared_at?: string | null
+          id?: string
+          origin?: string
+          printed_at?: string | null
+          report_date?: string | null
+          report_return_date?: string | null
+          sbr_archived_at?: string | null
+          sbr_archived_by?: string | null
+          status?: string
+          summary_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cvl_cases_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cvl_form_answers: {
+        Row: {
+          answers: Json
+          case_id: string
+          edited_keys: string[]
+          form_code: string
+          form_version: string
+          id: string
+          subject: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          answers?: Json
+          case_id: string
+          edited_keys?: string[]
+          form_code: string
+          form_version: string
+          id?: string
+          subject: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          answers?: Json
+          case_id?: string
+          edited_keys?: string[]
+          form_code?: string
+          form_version?: string
+          id?: string
+          subject?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cvl_form_answers_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cvl_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cvl_generated_documents: {
+        Row: {
+          answers_snapshot: Json
+          case_id: string
+          client_id: string
+          file_path: string
+          form_code: string
+          form_versions: Json
+          generated_at: string
+          generated_by: string
+          id: string
+          subject: string
+          warnings: Json
+        }
+        Insert: {
+          answers_snapshot: Json
+          case_id: string
+          client_id: string
+          file_path: string
+          form_code: string
+          form_versions: Json
+          generated_at?: string
+          generated_by: string
+          id?: string
+          subject: string
+          warnings?: Json
+        }
+        Update: {
+          answers_snapshot?: Json
+          case_id?: string
+          client_id?: string
+          file_path?: string
+          form_code?: string
+          form_versions?: Json
+          generated_at?: string
+          generated_by?: string
+          id?: string
+          subject?: string
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cvl_generated_documents_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cvl_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cvl_generated_documents_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cvl_settings: {
+        Row: {
+          confirmed: boolean
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json | null
+        }
+        Insert: {
+          confirmed?: boolean
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json | null
+        }
+        Update: {
+          confirmed?: boolean
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json | null
+        }
+        Relationships: []
       }
       director_penalty_notices: {
         Row: {
@@ -1622,6 +1812,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cvl_convert_client: {
+        Args: { p_by: string; p_client_id: string }
+        Returns: string
+      }
       ingest_lead_submission: {
         Args: {
           p_latest_touch?: boolean

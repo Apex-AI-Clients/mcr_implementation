@@ -11,6 +11,8 @@ const POLL_INTERVAL_MS = 4000
 
 interface Props {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   /** The comparison job running when the page was rendered. */
   jobId: string
   startedAt: string
@@ -24,7 +26,7 @@ type Phase = 'running' | 'done' | 'failed'
  * the ATO export; no AI). A run takes seconds, up to about a minute with many
  * files. Follows the job until it finishes, then says so.
  */
-export function ComparisonJobStatus({ clientId, jobId, startedAt }: Props) {
+export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}`, jobId, startedAt }: Props) {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>('running')
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +70,7 @@ export function ComparisonJobStatus({ clientId, jobId, startedAt }: Props) {
     }
   }, [clientId, jobId, startedAt, router])
 
-  const href = `/clients/${clientId}/financials-comparison`
+  const href = `${basePath}/financials-comparison`
 
   if (phase === 'done') {
     return (

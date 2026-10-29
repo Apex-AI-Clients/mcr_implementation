@@ -13,6 +13,8 @@ import type { MappingChange, MappingSelection } from '@/lib/printed/mappingStore
 
 interface Props {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   clientName: string
   comparison: PrintedComparison
   mapping: MappingEntry[]
@@ -28,7 +30,7 @@ interface Props {
  * one, or confirm all the suggestions at once. Each confirmation records who
  * and when.
  */
-export function LineMappingClient({ clientId, clientName, comparison, mapping, suggestions, changes, aiEnabled = false }: Props) {
+export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, mapping, suggestions, changes, aiEnabled = false }: Props) {
   const { confirm, saving, error } = useConfirmKeyFigures(clientId)
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
   const confirmedCount = KEY_FIGURES.filter((m) => entriesOf(m.key).length > 0).length
@@ -79,7 +81,7 @@ export function LineMappingClient({ clientId, clientName, comparison, mapping, s
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Link href={`/clients/${clientId}/financials-comparison`} className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors">
+        <Link href={`${basePath}/financials-comparison`} className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to the statements
         </Link>

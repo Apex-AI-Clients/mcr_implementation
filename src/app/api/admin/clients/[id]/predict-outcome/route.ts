@@ -203,11 +203,16 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     const { data: client } = await supabase
       .from('clients')
-      .select('id, name, company_details(company_name, trust_name)')
+      .select('id, name, workflow, company_details(company_name, trust_name)')
       .eq('id', clientId)
       .maybeSingle()
     if (!client) {
       return NextResponse.json({ error: 'Client not found.' }, { status: 404 })
+    }
+    // The prediction is part of the SBR record, which is read-only once the
+    // file has moved to CVL (migration 0039).
+    if (client.workflow === 'cvl') {
+      return NextResponse.json({ error: 'This file has moved to CVL; its SBR record is read-only.' }, { status: 409 })
     }
 
     // Every readiness item finished (Ready or Failed) — the same rule as the

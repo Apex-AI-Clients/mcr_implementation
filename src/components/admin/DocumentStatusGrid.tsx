@@ -20,6 +20,8 @@ import { useRouter } from 'next/navigation'
 interface DocumentStatusGridProps {
   documents: DocumentRecord[]
   clientId?: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   onDocumentDeleted?: () => void
   /** An archived file: downloads only — no upload, delete or analysis. */
   readOnly?: boolean
@@ -32,6 +34,7 @@ interface DocumentStatusGridProps {
 export function DocumentStatusGrid({
   documents,
   clientId,
+  basePath,
   onDocumentDeleted,
   readOnly = false,
   dpn,
@@ -104,24 +107,24 @@ export function DocumentStatusGrid({
 
             {/* 2-file minimum: comparison view requires at least two years of statements. */}
             {category === 'financial_statements' && clientId && !readOnly && (
-              <CompareFinancialsButton clientId={clientId} documentCount={docs.length} />
+              <CompareFinancialsButton clientId={clientId} basePath={basePath} documentCount={docs.length} />
             )}
 
             {/* Below the upload area, as Compare Financials: the "none issued"
                 tick, or the way to the DPN summary. */}
             {category === 'director_penalty_notices' && clientId && dpn && (
-              <DpnPanel clientId={clientId} data={dpn} readOnly={readOnly} />
+              <DpnPanel clientId={clientId} basePath={basePath} data={dpn} readOnly={readOnly} />
             )}
 
             {category === 'integrated_client_account' && clientId && !readOnly && (
-              <LodgementAnalysisButton clientId={clientId} />
+              <LodgementAnalysisButton clientId={clientId} basePath={basePath} />
             )}
 
             {category === 'ato_income_tax_account' && clientId && (
-              <AtoAccountButtons clientId={clientId} kind="income_tax" accounts={atoAccounts} hasFiles={received} />
+              <AtoAccountButtons clientId={clientId} basePath={basePath} kind="income_tax" accounts={atoAccounts} hasFiles={received} />
             )}
             {category === 'ato_super_guarantee_account' && clientId && (
-              <AtoAccountButtons clientId={clientId} kind="super_guarantee" accounts={atoAccounts} hasFiles={received} />
+              <AtoAccountButtons clientId={clientId} basePath={basePath} kind="super_guarantee" accounts={atoAccounts} hasFiles={received} />
             )}
           </div>
         )

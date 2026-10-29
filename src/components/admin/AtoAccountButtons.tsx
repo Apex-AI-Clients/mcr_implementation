@@ -25,11 +25,14 @@ export interface AtoAccountLink {
  */
 export function AtoAccountButtons({
   clientId,
+  basePath = `/clients/${clientId}`,
   kind,
   accounts,
   hasFiles,
 }: {
   clientId: string
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
   kind: AtoAccountKind
   accounts: AtoAccountLink[]
   hasFiles: boolean
@@ -42,7 +45,7 @@ export function AtoAccountButtons({
   return (
     <div className="mt-3 ml-6.5 flex flex-wrap justify-end gap-2">
       {mine.map((a) => (
-        <Link key={a.id} href={`/clients/${clientId}/ato-accounts/${a.id}`}>
+        <Link key={a.id} href={`${basePath}/ato-accounts/${a.id}`}>
           <Button variant="primary" size="sm">
             <Activity className="h-3.5 w-3.5" />
             {mine.length === 1 ? (PLAIN_NAME[kind] ?? a.label) : a.label} analysis

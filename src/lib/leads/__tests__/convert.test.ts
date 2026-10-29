@@ -79,6 +79,8 @@ describe('createClientFromLead', () => {
     // One request, not two: a client file that exists without the details
     // somebody was just made to type is the state this flow rules out.
     expect(JSON.parse(init.body as string)).toEqual({
+      // An SBR client unless CVL is chosen.
+      workflow: 'sbr',
       name: 'Dean Whitlock',
       email: 'dean@whitlockcivil.example.com.au',
       // The lead's own number, carried over, in its grouped display form.
@@ -158,6 +160,7 @@ describe('createClientFromLead', () => {
       kind: 'duplicate',
       clientId: 'client-9',
       archived: false,
+      workflow: 'sbr',
     })
   })
 
@@ -171,6 +174,7 @@ describe('createClientFromLead', () => {
       kind: 'duplicate',
       clientId: 'client-9',
       archived: true,
+      workflow: 'sbr',
     })
   })
 

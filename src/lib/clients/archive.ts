@@ -1,4 +1,5 @@
 import type { Database } from '@/types/database'
+import { clientFileHref } from './workspace'
 
 /**
  * Archiving client files (migration 0024).
@@ -52,7 +53,7 @@ export function restoreUpdate(at: Date = new Date()): ClientUpdate {
   }
 }
 
-/** Where a client file is viewed: the client page, or its Archive page. */
-export function clientHref(client: { id: string; archivedAt?: string | null }): string {
-  return client.archivedAt ? `/sbr/archive/${client.id}` : `/clients/${client.id}`
+/** Where a client file is viewed: its client page (SBR or CVL), or its Archive page. */
+export function clientHref(client: { id: string; archivedAt?: string | null; workflow?: string | null }): string {
+  return clientFileHref(client)
 }

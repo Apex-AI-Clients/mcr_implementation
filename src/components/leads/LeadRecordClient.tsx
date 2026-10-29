@@ -143,7 +143,12 @@ export function LeadRecordClient({
         <ReenquiryNotice lead={lead} onDismiss={() => dismissReenquiry(lead.id)} />
       )}
 
-      <ProgressCard lead={lead} onConvert={() => setConvertTarget(lead)} />
+      <ProgressCard
+        lead={lead}
+        onConvert={() => setConvertTarget(lead)}
+        // The file in its own workspace (SBR or CVL), once it has been read.
+        clientFile={convertedClient && convertedClient.id === lead.convertedClientId ? clientHref(convertedClient) : null}
+      />
 
       <KeyFacts lead={lead} activities={activities} />
 
@@ -212,7 +217,7 @@ function SectionHeading({
  * action sits here rather than at the bottom of a column, because it is the
  * step the track leads to.
  */
-function ProgressCard({ lead, onConvert }: { lead: Lead; onConvert: () => void }) {
+function ProgressCard({ lead, onConvert, clientFile }: { lead: Lead; onConvert: () => void; clientFile: string | null }) {
   return (
     <section
       aria-label="Progress"
@@ -234,18 +239,18 @@ function ProgressCard({ lead, onConvert }: { lead: Lead; onConvert: () => void }
             Since {formatAge(lead.stageSince).toLowerCase()}
           </span>
         </div>
-        <ConvertAction lead={lead} onConvert={onConvert} />
+        <ConvertAction lead={lead} onConvert={onConvert} clientFile={clientFile} />
       </div>
     </section>
   )
 }
 
 /** The join between the two halves of the product. */
-function ConvertAction({ lead, onConvert }: { lead: Lead; onConvert: () => void }) {
+function ConvertAction({ lead, onConvert, clientFile }: { lead: Lead; onConvert: () => void; clientFile: string | null }) {
   if (lead.convertedClientId) {
     return (
       <Link
-        href={`/clients/${lead.convertedClientId}`}
+        href={clientFile ?? `/clients/${lead.convertedClientId}`}
         className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success transition-colors hover:bg-success/15"
       >
         Open their client file

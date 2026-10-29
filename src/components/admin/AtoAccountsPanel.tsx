@@ -33,7 +33,16 @@ const KIND_LABEL: Record<AtoAccountKind, string> = {
  * Each line opens its analysis: the activity statement's lodgement analysis,
  * or the income tax / super guarantee summary.
  */
-export function AtoAccountsPanel({ clientId, overview }: { clientId: string; overview: AtoAccountsOverview }) {
+export function AtoAccountsPanel({
+  clientId,
+  overview,
+  basePath = `/clients/${clientId}`,
+}: {
+  clientId: string
+  overview: AtoAccountsOverview
+  /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
+  basePath?: string
+}) {
   if (overview.accounts.length === 0) return null
   return (
     <Card className="mb-6">
@@ -67,8 +76,8 @@ export function AtoAccountsPanel({ clientId, overview }: { clientId: string; ove
                 <Link
                   href={
                     a.kind === 'activity_statement'
-                      ? `/clients/${clientId}/lodgement-compliance-analysis`
-                      : `/clients/${clientId}/ato-accounts/${a.id}`
+                      ? `${basePath}/lodgement-compliance-analysis`
+                      : `${basePath}/ato-accounts/${a.id}`
                   }
                   className="font-medium text-foreground hover:text-accent"
                 >
@@ -107,7 +116,7 @@ export function AtoAccountsPanel({ clientId, overview }: { clientId: string; ove
                           from: [`${a.label}: balance owing`, `The ATO's own running balance on the newest row of its CSV${a.balanceDate ? `, ${longDate(a.balanceDate)}` : ''}.`],
                           link: {
                             kind: 'href',
-                            href: a.kind === 'activity_statement' ? `/clients/${clientId}/lodgement-compliance-analysis` : `/clients/${clientId}/ato-accounts/${a.id}`,
+                            href: a.kind === 'activity_statement' ? `${basePath}/lodgement-compliance-analysis` : `${basePath}/ato-accounts/${a.id}`,
                             label: 'Show the ATO rows',
                           },
                         }}

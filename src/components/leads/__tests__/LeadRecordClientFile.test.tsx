@@ -53,6 +53,7 @@ const CLIENT: ConvertedClientDetails = {
   email: 'dean@example.test',
   phone: '0400000001',
   archivedAt: null,
+  workflow: 'sbr',
   entityType: 'company',
   companyName: 'Sample Trading Pty Ltd',
   acnNumber: '123456780',

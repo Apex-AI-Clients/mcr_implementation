@@ -8,18 +8,18 @@ import { WORKSPACES, workspaceForPath, activeNavHref } from '../workspaces'
 
 describe('WORKSPACES', () => {
   it('lists CRM first — it comes first in the workflow', () => {
-    expect(WORKSPACES.map((w) => w.id)).toEqual(['leads', 'sbr'])
+    expect(WORKSPACES.map((w) => w.id)).toEqual(['leads', 'sbr', 'cvl'])
   })
 
-  it('names the workspaces CRM and SBR', () => {
-    expect(WORKSPACES.map((w) => w.name)).toEqual(['CRM', 'SBR'])
+  it('names the workspaces CRM, SBR and CVL', () => {
+    expect(WORKSPACES.map((w) => w.name)).toEqual(['CRM', 'SBR', 'CVL'])
   })
 
   it('gives SBR a sidebar and CRM a top bar', () => {
     // AdminSidebar and WorkspaceTopBar both key off this, so exactly one of
     // them renders for any workspace route.
     const chrome = Object.fromEntries(WORKSPACES.map((w) => [w.id, w.chrome]))
-    expect(chrome).toEqual({ leads: 'topbar', sbr: 'sidebar' })
+    expect(chrome).toEqual({ leads: 'topbar', sbr: 'sidebar', cvl: 'topbar' })
   })
 
   it('only gives a sidebar to a workspace with more than one nav item', () => {
@@ -57,11 +57,14 @@ describe('workspaceForPath', () => {
     ['/clients/abc-123', 'sbr'],
     ['/clients/abc-123/outcome-prediction', 'sbr'],
     ['/clients/new/intake', 'sbr'],
+    ['/cvl', 'cvl'],
+    ['/cvl/abc-123', 'cvl'],
+    ['/cvl/abc-123/financials-comparison', 'cvl'],
   ])('maps %s to the %s workspace', (pathname, expected) => {
     expect(workspaceForPath(pathname)?.id).toBe(expected)
   })
 
-  it.each(['/leadstuff', '/sbrx', '/clientsomething'])(
+  it.each(['/leadstuff', '/sbrx', '/clientsomething', '/cvlx'])(
     'does not match %s on a partial segment',
     (pathname) => {
       expect(workspaceForPath(pathname)).toBeNull()

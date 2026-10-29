@@ -13,10 +13,11 @@ describe('last workspace', () => {
   it('goes back to the workspace used last', () => {
     expect(homeFor('sbr')).toBe('/sbr')
     expect(homeFor('leads')).toBe('/leads')
+    expect(homeFor('cvl')).toBe('/cvl')
   })
 
   it('agrees with workspaces.ts on every route and home', () => {
-    for (const path of ['/leads', '/leads/abc', '/sbr', '/sbr/archive', '/clients', '/clients/abc/outcome-prediction', '/', '/login', '/leadsx']) {
+    for (const path of ['/leads', '/leads/abc', '/sbr', '/sbr/archive', '/clients', '/clients/abc/outcome-prediction', '/cvl', '/cvl/abc/director-penalty-notices', '/cvlx', '/', '/login', '/leadsx']) {
       expect(lastWorkspaceForPath(path)).toBe(workspaceForPath(path)?.id ?? null)
     }
     for (const workspace of WORKSPACES) expect(WORKSPACE_HOMES[workspace.id]).toBe(workspace.href)
