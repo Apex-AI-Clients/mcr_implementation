@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { Tooltip } from '../Tooltip'
 
 /**
@@ -88,3 +88,43 @@ describe('Tooltip', () => {
     expect(screen.getByRole('tooltip').className).toContain('fixed')
   })
 })
+
+describe('Tooltip, interactive', () => {
+  function renderInteractive(onRowClick: () => void) {
+    return render(
+      <div onClick={onRowClick}>
+        <Tooltip interactive content={<button type="button">Copy</button>} className="block">
+          <span>trigger</span>
+        </Tooltip>
+      </div>,
+    )
+  }
+
+  it('stays open long enough to move into it, and closes after', () => {
+    vi.useFakeTimers()
+    try {
+      renderInteractive(() => {})
+      const trigger = screen.getByText('trigger').parentElement!
+      fireEvent.mouseEnter(trigger)
+      fireEvent.mouseLeave(trigger)
+      expect(screen.getByRole('tooltip')).toBeTruthy()
+      fireEvent.mouseEnter(trigger)
+      vi.advanceTimersByTime(1000)
+      expect(screen.getByRole('tooltip')).toBeTruthy()
+      fireEvent.mouseLeave(trigger)
+      act(() => vi.advanceTimersByTime(1000))
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a click inside it from reaching the row beneath', () => {
+    const onRowClick = vi.fn()
+    renderInteractive(onRowClick)
+    fireEvent.mouseEnter(screen.getByText('trigger').parentElement!)
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+})
+
