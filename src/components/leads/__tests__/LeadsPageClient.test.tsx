@@ -8,6 +8,10 @@ import { EMPTY_FILTERS, type LeadFilterState } from '@/lib/leads/filter'
 import type { Lead } from '@/types/leads'
 import type { LeadView } from '@/lib/leads/constants'
 
+// The whole leads table renders for each test; under full-suite load the
+// slowest ran past the 20s default (they take 1–2s alone).
+vi.setConfig({ testTimeout: 60_000 })
+
 /**
  * Smoke test for the leads list.
  *
