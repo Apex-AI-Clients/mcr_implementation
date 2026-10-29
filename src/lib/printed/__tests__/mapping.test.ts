@@ -85,6 +85,73 @@ describe('suggestMapping', () => {
   })
 })
 
+describe('suggestMapping — the CVL meanings (migration 0040)', () => {
+  function cvlComparison() {
+    const doc: ComparisonDocument = {
+      documentId: 'fy25',
+      filename: 'fy25.pdf',
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [
+          st('balance_sheet', [
+            r([], 'Current Assets', 'heading', null, null),
+            r(['Current Assets'], 'Cash at Bank', 'line', 1200, 800),
+            r(['Current Assets'], 'Petty Cash', 'line', 150, 150),
+            r(['Current Assets'], 'Trade Debtors', 'line', 3204, 2500),
+            r(['Current Assets'], 'Stock on Hand', 'line', 8900, 9100),
+            r(['Current Assets'], 'Loan - Director', 'line', 4000, 3000),
+            r([], 'Non-Current Assets', 'heading', null, null),
+            r(['Non-Current Assets'], 'Plant and Equipment', 'line', 30000, 30000),
+            r(['Non-Current Assets'], 'Less Accumulated Depreciation', 'line', -7500, -5000),
+            r([], 'Liabilities', 'heading', null, null),
+            r(['Liabilities'], 'Westpac Business Account', 'line', 900, null),
+            r(['Liabilities'], 'Trade Creditors', 'line', 5000, 4000),
+            r([], 'Equity', 'heading', null, null),
+            r(['Equity'], 'Share Capital', 'line', 100, 100),
+            r(['Equity'], 'Retained Earnings', 'line', 9000, 8000),
+          ]),
+        ],
+      },
+    }
+    return buildPrintedComparison([doc], { comparativeYears: true })
+  }
+
+  it('suggests the Form 509 asset lines and share capital', () => {
+    const c = cvlComparison()
+    const s = suggestMapping(c)
+    const labels = (k: keyof typeof s) => s[k].map((key) => labelOf(c, key))
+    expect(labels('cash_at_bank')).toEqual(['Cash at Bank'])
+    expect(labels('cash_on_hand')).toEqual(['Petty Cash'])
+    expect(labels('trade_debtors')).toEqual(['Trade Debtors'])
+    expect(labels('stock')).toEqual(['Stock on Hand'])
+    expect(labels('plant_equipment')).toEqual(['Plant and Equipment'])
+    expect(labels('share_capital')).toEqual(['Share Capital'])
+    // Never guessed.
+    expect(labels('other_assets')).toEqual([])
+  })
+
+  it('never takes a line from an SBR meaning: the SBR suggestions are what they were', () => {
+    const c = cvlComparison()
+    const s = suggestMapping(c)
+    const labels = (k: keyof typeof s) => s[k].map((key) => labelOf(c, key))
+    expect(labels('loan_receivable')).toEqual(['Loan - Director'])
+    // An overdrawn account under liabilities stays the overdraft, not cash at bank.
+    expect(labels('bank_overdraft')).toEqual(['Westpac Business Account'])
+    expect(labels('trade_suppliers')).toEqual(['Trade Creditors'])
+  })
+
+  it('leaves the CVL meanings out of the SBR lists', async () => {
+    const { SBR_MEANINGS, CVL_MEANINGS, KEY_FIGURES } = await import('../meanings')
+    expect(CVL_MEANINGS.map((m) => m.key)).toEqual(['cash_at_bank', 'cash_on_hand', 'trade_debtors', 'stock', 'plant_equipment', 'other_assets', 'share_capital'])
+    expect(SBR_MEANINGS.some((m) => m.cvl)).toBe(false)
+    expect(CVL_MEANINGS.every((m) => !m.required && !m.prediction && !m.tile)).toBe(true)
+    expect(KEY_FIGURES).toHaveLength(7)
+  })
+})
+
 describe('the confirmed mapping', () => {
   it('gives each year the mapped line, or the mapped lines added up, each named', () => {
     const c = comparison()

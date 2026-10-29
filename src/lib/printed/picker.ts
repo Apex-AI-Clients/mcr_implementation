@@ -19,6 +19,7 @@ export const STATEMENT_NAME = { profit_and_loss: 'Profit and loss', balance_shee
 
 const path = (r: ComparisonRow) => r.path.join(' > ').toLowerCase()
 const isLiability = (r: ComparisonRow) => /liabilit/.test(path(r)) && !/equity|capital|funds|reserves/.test((r.path[r.path.length - 1] ?? '').toLowerCase())
+const isAsset = (r: ComparisonRow) => /asset/.test(path(r)) && !/liabilit/.test(path(r)) && r.style === 'line'
 const isExpenseSection = (r: ComparisonRow) => /expense|cost|outgoing|overhead/.test(path(r))
 /** A loan account is a printed line, not a total, and never equity ("Total shareholders' equity"). */
 const isLoanLine = (r: ComparisonRow) =>
@@ -38,6 +39,14 @@ const PLAUSIBLE: Record<Meaning, (r: ComparisonRow) => boolean> = {
   cash_loans: (r) => isLiability(r) && /\b(loans?|chattel|hire purchase|finance|unexpired interest|mortgage|borrowings?)\b/i.test(r.label),
   bank_overdraft: (r) => isLiability(r) && (/overdraft/i.test(r.label) || /overdraft/.test(path(r))),
   trade_suppliers: (r) => isLiability(r) && /\b(creditors|accounts payable|trade payables?|suppliers?)\b/i.test(r.label),
+  // CVL (Form 509): any asset line for the asset meanings, equity lines for share capital.
+  cash_at_bank: (r) => isAsset(r),
+  cash_on_hand: (r) => isAsset(r),
+  trade_debtors: (r) => isAsset(r),
+  stock: (r) => isAsset(r),
+  plant_equipment: (r) => isAsset(r),
+  other_assets: (r) => isAsset(r),
+  share_capital: (r) => /equity|capital/.test(path(r)) || /\bcapital\b|\bshares?\b/i.test(r.label),
 }
 
 function statementRows(comparison: PrintedComparison, meaning: Meaning): ComparisonRow[] {

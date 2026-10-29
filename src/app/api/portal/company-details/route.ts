@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
+import { withAppointmentDates } from '@/lib/asic/keep'
 import {
   CompanyDetailsSchema,
   readDirectors,
@@ -80,6 +81,12 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   if (existing) {
+    // The directors' appointment dates come from a kept ASIC extract, not
+    // this form (migration 0041): carried over to the same directors.
+    if (Array.isArray(details.directors) && details.directors.length > 0) {
+      const { data: stored } = await supabase.from('company_details').select('directors').eq('client_id', clientId).maybeSingle()
+      details.directors = withAppointmentDates(details.directors, readDirectors(stored?.directors)).directors
+    }
     // A partial write leaves every column it did not mention alone. Intake
     // step 1 sends only what the business register answered for, and the phone
     // number and email on this record are not on any register — see

@@ -8,6 +8,11 @@ import type { PrintedStatementKind } from './types'
  * The seven key figures are confirmed on "Confirm key figures"; the SBR
  * prediction waits for them. The four creditor hints are optional: they only
  * pre-fill the creditor rows on the prediction page.
+ *
+ * The CVL meanings (migration 0040, `cvl: true`) are the assets and share
+ * capital on Form 509. Nothing in SBR reads them: they are offered only on
+ * the CVL workspace's mapping page, never to AI label suggestions, and the
+ * SBR prediction is unchanged by them (figures:proof).
  */
 
 export type Meaning =
@@ -22,6 +27,13 @@ export type Meaning =
   | 'cash_loans'
   | 'bank_overdraft'
   | 'trade_suppliers'
+  | 'cash_at_bank'
+  | 'cash_on_hand'
+  | 'trade_debtors'
+  | 'stock'
+  | 'plant_equipment'
+  | 'other_assets'
+  | 'share_capital'
 
 export interface MeaningInfo {
   key: Meaning
@@ -38,6 +50,8 @@ export interface MeaningInfo {
   prediction: boolean
   /** Shown as a headline tile on the comparison page. */
   tile: boolean
+  /** For the CVL forms only (Form 509): offered in the CVL workspace, unknown to SBR. */
+  cvl?: boolean
 }
 
 /** In the order staff see them: what the SBR prediction uses first. */
@@ -116,9 +130,39 @@ export const MEANINGS: MeaningInfo[] = [
   },
   { key: 'bank_overdraft', label: 'Bank overdraft', hint: 'An overdrawn bank account.', statement: 'balance_sheet', multiple: true, required: false, prediction: false, tile: false },
   { key: 'trade_suppliers', label: 'Trade suppliers', hint: 'Accounts payable and trade creditors.', statement: 'balance_sheet', multiple: true, required: false, prediction: false, tile: false },
+  // CVL, Form 509 "Assets not specifically charged" and share capital (migration 0040).
+  ...(
+    [
+      ['cash_at_bank', 'Cash at bank', 'Bank accounts in credit (Form 509 1(d)).'],
+      ['cash_on_hand', 'Cash on hand', 'Petty cash and cash on hand (Form 509 1(c)).'],
+      ['trade_debtors', 'Trade debtors', 'Accounts receivable and sundry debtors (Form 509 1(b)).'],
+      ['stock', 'Stock', 'Stock on hand and inventory (Form 509 1(e)).'],
+      ['plant_equipment', 'Plant and equipment', 'Plant, equipment, machinery and motor vehicles, at written-down value (Form 509 1(g)).'],
+      ['other_assets', 'Other assets', 'Any other asset not listed above (Form 509 1(h)).'],
+      ['share_capital', 'Share capital', 'Issued and paid-up share capital (Form 509 item 9).'],
+    ] as const
+  ).map(
+    ([key, label, hint]): MeaningInfo => ({
+      key,
+      label,
+      hint,
+      statement: 'balance_sheet',
+      multiple: true,
+      required: false,
+      prediction: false,
+      tile: false,
+      cvl: true,
+    }),
+  ),
 ]
 
 export const MEANING: Record<Meaning, MeaningInfo> = Object.fromEntries(MEANINGS.map((m) => [m.key, m])) as Record<Meaning, MeaningInfo>
+
+/** The meanings SBR offers: everything but the CVL ones. */
+export const SBR_MEANINGS = MEANINGS.filter((m) => !m.cvl)
+
+/** The meanings only the CVL forms use (Form 509). */
+export const CVL_MEANINGS = MEANINGS.filter((m) => m.cvl)
 
 /** The seven key figures the SBR prediction waits for. */
 export const KEY_FIGURES = MEANINGS.filter((m) => m.required)

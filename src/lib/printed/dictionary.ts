@@ -87,6 +87,13 @@ export function namesDirector(label: string, directors: readonly string[]): bool
     return name.length === 1 ? shared === 1 : shared >= 2
   })
 }
+/** CVL, Form 509 assets and share capital (migration 0040). */
+const CASH_AT_BANK = /\b(cash at bank|bank accounts?|cheque account|operating account|business (cheque |transaction )?account|savings account|term deposits?)\b/i
+const CASH_ON_HAND = /\b(cash on hand|petty cash|cash in hand|float)\b/i
+const TRADE_DEBTORS = /\b(trade debtors|debtors|accounts receivable|trade receivables?|receivables?)\b/i
+const STOCK = /\b(stock|inventor(y|ies)|work in progress|finished goods|raw materials)\b/i
+const PLANT = /\b(plant|equipment|machinery|motor vehicles?|vehicles?|furniture|fixtures|fittings|office equipment|computer equipment|tools)\b/i
+const SHARE_CAPITAL = /\b(share capital|issued capital|paid[- ]up capital|ordinary shares?|contributed equity)\b/i
 const TRADE = /\b(trade creditors|accounts payable|trade payables|sundry creditors|creditors)\b/i
 
 /** Best first: the first rule a row matches ranks it. */
@@ -159,6 +166,14 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
   const overdraft = pick(lines.filter((r) => isLiability(r) && (OVERDRAFT.test(r.label) || under(r, OVERDRAFT) || BANK_ACCOUNT.test(r.label.trim()))))
   const cashLoans = pick(lines.filter((r) => isLiability(r) && FINANCE.test(r.label)))
   const trade = pick(lines.filter((r) => isLiability(r) && TRADE.test(r.label)))
+  // CVL meanings last, so they never take a line from an SBR meaning above.
+  const cashAtBank = pick(lines.filter((r) => isAsset(r) && (CASH_AT_BANK.test(r.label) || BANK_ACCOUNT.test(r.label.trim())) && !CASH_ON_HAND.test(r.label)))
+  const cashOnHand = pick(lines.filter((r) => isAsset(r) && CASH_ON_HAND.test(r.label)))
+  const tradeDebtors = pick(lines.filter((r) => isAsset(r) && TRADE_DEBTORS.test(r.label) && !RELATED.test(r.label)))
+  const stock = pick(lines.filter((r) => isAsset(r) && STOCK.test(r.label)))
+  // A printed "less accumulated depreciation" line is part of the written-down value.
+  const plant = pick(lines.filter((r) => isAsset(r) && (PLANT.test(r.label) || (/depreciation/i.test(r.label) && PLANT.test(section(r))))))
+  const shareCapital = pick(bs.filter((r) => r.style === 'line' && printedAnywhere(r) && EQUITY.test(section(r)) && SHARE_CAPITAL.test(r.label)))
 
   return {
     // One printed line each: the best match.
@@ -173,5 +188,13 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
     cash_loans: cashLoans,
     bank_overdraft: overdraft,
     trade_suppliers: trade,
+    cash_at_bank: cashAtBank,
+    cash_on_hand: cashOnHand,
+    trade_debtors: tradeDebtors,
+    stock,
+    plant_equipment: plant,
+    // Never guessed: what is left over is for staff to choose.
+    other_assets: [],
+    share_capital: shareCapital,
   }
 }

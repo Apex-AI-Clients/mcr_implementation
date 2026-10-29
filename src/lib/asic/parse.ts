@@ -19,9 +19,10 @@ import type {
  * What it reads, in ASIC's own section names:
  *
  *   cover                         Date/Time (the "as at"), Name and ACN as a fallback
- *   Organisation Details          Name, ACN, ABN, Status — current only
+ *   Organisation Details          Name, ACN, ABN, Status, Registration date — current only
  *   Address Details               Registered and Principal Place Of Business — current only
- *   Officeholders and Other Roles the Director blocks: Name, and the date from Born
+ *   Officeholders and Other Roles the Director blocks: Name, the date from Born,
+ *                                 and the Appointment date
  *
  * What it never reads: Contact Address (ASIC's postal address for the company,
  * not one of the wanted fields), and Share Information / Members, which list
@@ -403,10 +404,11 @@ interface OrganisationFields {
   acn: string | null
   abn: string | null
   status: string | null
+  registeredOn: string | null
 }
 
 function readOrganisation(section: SectionLines | undefined): OrganisationFields {
-  const fields: OrganisationFields = { companyName: null, acn: null, abn: null, status: null }
+  const fields: OrganisationFields = { companyName: null, acn: null, abn: null, status: null, registeredOn: null }
   if (!section) return fields
   const current = section.lines.filter((line) => line.current).map((line) => line.text)
 
@@ -422,6 +424,8 @@ function readOrganisation(section: SectionLines | undefined): OrganisationFields
       fields.abn = abnIn(value)
     } else if (read.label === 'status' && !fields.status) {
       fields.status = stripDocumentNumber(value).text || null
+    } else if (read.label === 'registration date' && !fields.registeredOn) {
+      fields.registeredOn = dobFromBornValue(value)
     }
   })
   return fields
@@ -511,6 +515,7 @@ function readDirectors(section: SectionLines | undefined): Director[] {
 
     // The rest of this person's block, up to the next person or role.
     let dateOfBirth: string | null = null
+    let appointedOn: string | null = null
     let ended = false
     for (; j < lines.length; j++) {
       const line = lines[j].text
@@ -520,6 +525,7 @@ function readDirectors(section: SectionLines | undefined): Director[] {
       if (field?.label === 'born' && dateOfBirth === null) {
         dateOfBirth = dobFromBornValue(field.value || lines[j + 1]?.text || '')
       }
+      if (field?.label === 'appointment date' && appointedOn === null) appointedOn = dobFromBornValue(field.value)
       if (ENDED.test(line)) ended = true
     }
     i = j - 1
@@ -528,7 +534,7 @@ function readDirectors(section: SectionLines | undefined): Director[] {
     const key = `${name.toUpperCase()}|${dateOfBirth ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
-    directors.push({ name: tidyRegisterName(name), dateOfBirth })
+    directors.push({ name: tidyRegisterName(name), dateOfBirth, ...(appointedOn ? { appointedOn } : {}) })
   }
   return directors
 }
@@ -584,6 +590,7 @@ export function parseAsicExtract(rawLines: readonly string[]): AsicParseResult {
     acn,
     abn,
     status: organisation.status,
+    registeredOn: organisation.registeredOn,
     registeredOffice: addresses.registered,
     principalPlaceOfBusiness: addresses.principal,
     directors,

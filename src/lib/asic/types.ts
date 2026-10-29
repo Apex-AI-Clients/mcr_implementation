@@ -7,9 +7,10 @@
  * which one answered.
  *
  * Deliberately narrow. The extract also carries directors' places of birth,
- * appointment dates, the ASIC contact (postal) address and shareholders with
- * their residential addresses. None of those are wanted, so none of them have a
- * field here, and the parser never reads the sections they live in.
+ * the ASIC contact (postal) address and shareholders with their residential
+ * addresses. None of those are wanted, so none of them have a field here, and
+ * the parser never reads the sections they live in. The registration date and
+ * directors' appointment dates are read for the CVL forms (migration 0041).
  */
 
 export type AsicExtractType = 'current' | 'current_and_historical'
@@ -22,6 +23,8 @@ export interface Director {
    * 2027, so a full date cannot be assumed. null when the extract had none.
    */
   dateOfBirth: string | null
+  /** Appointment date (ISO), for the CVL forms. Absent when the extract had none. */
+  appointedOn?: string | null
 }
 
 export interface AsicExtract {
@@ -32,6 +35,8 @@ export interface AsicExtract {
   abn: string | null
   /** ASIC's own wording, e.g. "Registered". */
   status: string | null
+  /** The company's registration date (ISO), for the CVL forms. null when not printed. */
+  registeredOn: string | null
   registeredOffice: string | null
   principalPlaceOfBusiness: string | null
   /** Current directors only, one row each, de-duplicated. */

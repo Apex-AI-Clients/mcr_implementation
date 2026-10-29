@@ -129,13 +129,16 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Could not record the deletion, so nothing was deleted.' }, { status: 500 })
     }
 
-    // 1. Remove storage objects. Files live at documents/{client_id}/{uuid}.{ext}.
-    const { data: docs } = await supabase
-      .from('documents')
-      .select('file_path')
-      .eq('client_id', id)
+    // 1. Remove storage objects. Files live at documents/{client_id}/{uuid}.{ext},
+    // with the kept ASIC extracts (migration 0041) and the generated CVL forms
+    // (0039) beside them; neither is a documents row.
+    const [{ data: docs }, { data: extracts }, { data: generated }] = await Promise.all([
+      supabase.from('documents').select('file_path').eq('client_id', id),
+      supabase.from('client_asic_extracts').select('file_path').eq('client_id', id),
+      supabase.from('cvl_generated_documents').select('file_path').eq('client_id', id),
+    ])
 
-    const paths = (docs ?? []).map((d) => d.file_path).filter(Boolean) as string[]
+    const paths = [...(docs ?? []), ...(extracts ?? []), ...(generated ?? [])].map((d) => d.file_path).filter(Boolean) as string[]
     if (paths.length > 0) {
       const { error: storageError } = await supabase.storage.from('documents').remove(paths)
       if (storageError) {

@@ -860,3 +860,29 @@ Added 2026-10-16. Code: `src/components/leads/EditLeadDialog.tsx`, PATCH
   - Business type: new `leads.entity_type_label`, shown instead of company or
     trust. `entity_type` is cleared so trust rules never act on a stale value.
   - Source: `source_label` (0025). `source` is left for filters and dedup.
+
+---
+
+## ASIC extract kept on the client file (migration 0041) — PENDING GABBY'S CONFIRMATION
+
+Added 2026-10-29 for the CVL forms. Code: `src/app/api/admin/clients/[id]/asic-extract/`,
+`src/lib/asic/readUpload.ts`, `src/lib/asic/keep.ts`,
+`supabase/migrations/0041_asic_extract_dates.sql`.
+
+- Until now the ASIC extract PDF was parse-only and never stored. From now on,
+  an extract uploaded on the conversion dialog or the intake company step is
+  also **kept privately on the client file** once the file exists (documents
+  bucket, `{client_id}/asic/{uuid}.pdf`, signed links of 300 seconds). It is
+  not an upload slot, not classified or analysed, and not counted in the
+  document checklist. Permanent delete removes it with the file.
+- Two dates are written from it for the CVL forms: the company's
+  **registration date** (`company_details.registration_date`) and each
+  director's **appointment date** (`directors[].appointedOn`, matched by name).
+  Nothing else on the file changes. Intake saves keep the appointment dates.
+- The database still holds only what the forms use. The parser never reads the
+  shareholder, member or residential sections; only the file contains them.
+- Existing clients have no kept extract: the CVL screens say "Upload the ASIC
+  extract again to fill" for the two dates.
+- An extract for a different ACN from the file's is refused.
+- To undo if Gabby says no: stop calling `keepAsicExtract` (two call sites) and
+  delete the kept files and `client_asic_extracts` rows.

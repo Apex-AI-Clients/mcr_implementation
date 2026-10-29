@@ -54,6 +54,12 @@ function mockDb(
       select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/a.pdf' }] }) }),
     },
     client_deletions: { insert: deletionInsert },
+    client_asic_extracts: {
+      select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/asic/b.pdf' }] }) }),
+    },
+    cvl_generated_documents: {
+      select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/c.pdf' }] }) }),
+    },
     leads: {
       select: () => ({ eq: () => Promise.resolve({ data: convertedLeads.map(({ id }) => ({ id })), error: null }) }),
       update: leadUpdate,
@@ -153,7 +159,7 @@ describe('DELETE — permanent, from the Archive only', () => {
     expect(deleteUser).not.toHaveBeenCalled()
   })
 
-  it('deletes an archived file with its storage objects', async () => {
+  it('deletes an archived file with its storage objects, kept ASIC extracts and generated CVL forms included', async () => {
     const { remove, storageRemove } = mockDb({
       id: 'cl_1',
       archived_at: '2026-09-30T00:00:00.000Z',
@@ -162,7 +168,7 @@ describe('DELETE — permanent, from the Archive only', () => {
     const response = await DELETE(req('DELETE'), PARAMS)
 
     expect(response.status).toBe(200)
-    expect(storageRemove).toHaveBeenCalledWith(['cl_1/a.pdf'])
+    expect(storageRemove).toHaveBeenCalledWith(['cl_1/a.pdf', 'cl_1/asic/b.pdf', 'cl_1/c.pdf'])
     expect(remove).toHaveBeenCalled()
   })
 

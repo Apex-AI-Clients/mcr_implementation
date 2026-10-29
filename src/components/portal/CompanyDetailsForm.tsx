@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
 import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections'
 import { formatExtractDate } from '@/lib/asic/dates'
+import { keepAsicExtract } from '@/lib/asic/browser'
 import {
   directorRows,
   directorsForSave,
@@ -144,6 +145,10 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
   // screen now — so the line under the fields says ", edited" as soon as it is.
   const resolved = resolveOrigin(state.asicFill, origin, asicFieldsOf(state))
 
+  // The extract PDF just read, kept on the file after the next save.
+  const [extractFile, setExtractFile] = useState<File | null>(null)
+  const [keepNote, setKeepNote] = useState<string | null>(null)
+
   function update(next: IntakeCompanyState) {
     setState(next)
     setSaved(false)
@@ -190,6 +195,13 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
         fields: asicFieldsOf(state),
       })
       setState((current) => ({ ...current, asicFill: null }))
+      // The extract itself, kept on the file now the company record holds its
+      // ACN and directors (migration 0041). Never blocks the save.
+      if (extractFile && clientId) {
+        const kept = await keepAsicExtract(clientId, extractFile)
+        setKeepNote(kept.ok ? null : kept.message)
+        setExtractFile(null)
+      }
       setSaved(true)
       setSaving(false)
       onComplete?.()
@@ -214,6 +226,7 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
           </span>
         )}
       </div>
+      {keepNote && <p className="mb-3 text-xs text-warning">{keepNote}</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <CompanyTrustSections
@@ -229,10 +242,14 @@ export function CompanyDetailsForm({ clientId, initial, onComplete }: CompanyDet
               acnNumber={state.acnNumber}
               fill={state.asicFill}
               disabled={saving}
-              onFill={(extract, mode) =>
+              onFill={(extract, mode, file) => {
                 update(commitChange(withExtract(state, extract, mode), 'no_abn'))
-              }
-              onUndo={() => update(withoutExtract(state))}
+                setExtractFile(file)
+              }}
+              onUndo={() => {
+                update(withoutExtract(state))
+                setExtractFile(null)
+              }}
             />
           }
           directorsFooter={

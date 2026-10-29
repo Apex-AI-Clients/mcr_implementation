@@ -24,7 +24,8 @@ interface AsicExtractUploadProps {
    */
   layout?: 'inline' | 'centered'
   /** 'merge' fills empty boxes; 'replace' after a confirmed ACN mismatch. */
-  onFill: (extract: AsicExtract, mode: IdentityFillMode) => void
+  /** `file` is the PDF read, for keeping on the client file once saved (migration 0041). */
+  onFill: (extract: AsicExtract, mode: IdentityFillMode, file: File) => void
   onUndo: () => void
 }
 
@@ -33,7 +34,7 @@ type Status =
   | { kind: 'reading' }
   | { kind: 'failed'; message: string }
   /** The extract is for a different ACN than the form's. Nothing filled until confirmed. */
-  | { kind: 'confirm'; extract: AsicExtract }
+  | { kind: 'confirm'; extract: AsicExtract; file: File }
 
 /**
  * "Upload ASIC extract (PDF)": fills from an ASIC Current Company Extract — the
@@ -70,11 +71,11 @@ export function AsicExtractUpload({
       return
     }
     if (acnDiffers(acnNumber, result.extract.acn)) {
-      setStatus({ kind: 'confirm', extract: result.extract })
+      setStatus({ kind: 'confirm', extract: result.extract, file })
       return
     }
     setStatus({ kind: 'idle' })
-    onFill(result.extract, 'merge')
+    onFill(result.extract, 'merge', file)
   }
 
   const asAt = formatExtractDate(fill?.extractedAt)
@@ -156,9 +157,9 @@ export function AsicExtractUpload({
               type="button"
               size="sm"
               onClick={() => {
-                const { extract } = status
+                const { extract, file } = status
                 setStatus({ kind: 'idle' })
-                onFill(extract, 'replace')
+                onFill(extract, 'replace', file)
               }}
             >
               Replace company details with the extract&rsquo;s

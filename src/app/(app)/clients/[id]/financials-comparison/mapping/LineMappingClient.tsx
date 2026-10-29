@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { KeyFigureCard, keyFigureStatus, shortDate, useConfirmKeyFigures } from '@/components/admin/financials/keyFigures/KeyFigureCard'
-import { KEY_FIGURES, MEANINGS, type Meaning } from '@/lib/printed/meanings'
+import { CVL_MEANINGS, KEY_FIGURES, MEANINGS, SBR_MEANINGS, type Meaning } from '@/lib/printed/meanings'
 import type { PrintedComparison } from '@/lib/printed/compare'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
@@ -35,8 +35,11 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
   const confirmedCount = KEY_FIGURES.filter((m) => entriesOf(m.key).length > 0).length
   // Confirm all takes the dictionary's suggestions only: an AI suggestion is confirmed on its own card.
-  const toConfirm = MEANINGS.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'suggested')
-  const unknown = MEANINGS.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'not_found').length
+  // The CVL meanings (Form 509 assets, share capital) only in the CVL workspace.
+  const cvl = basePath.startsWith('/cvl/')
+  const offered = cvl ? MEANINGS : SBR_MEANINGS
+  const toConfirm = offered.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'suggested')
+  const unknown = SBR_MEANINGS.filter((m) => keyFigureStatus(entriesOf(m.key), suggestions[m.key]) === 'not_found').length
   const [aiSuggestions, setAiSuggestions] = useState<Partial<Record<Meaning, string[]>>>({})
 
   useEffect(() => {
@@ -56,7 +59,7 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
       cancelled = true
     }
   }, [aiEnabled, clientId, unknown])
-  const optional = MEANINGS.filter((m) => !m.required)
+  const optional = SBR_MEANINGS.filter((m) => !m.required)
 
   function confirmAll() {
     const selection: MappingSelection = Object.fromEntries(toConfirm.map((m) => [m.key, { rowKeys: suggestions[m.key] }]))
@@ -107,6 +110,16 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
         <p className="mt-1 text-xs text-foreground/55">These pre-fill the creditor rows on the prediction page. They are not needed to run the prediction.</p>
         <ul className="mt-3 space-y-3">{optional.map((m) => card(m.key))}</ul>
       </details>
+
+      {cvl && (
+        <details open className="rounded-lg border border-border/60 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-foreground">Assets and share capital for Form 509</summary>
+          <p className="mt-1 text-xs text-foreground/55">
+            These fill the valuation column of Form 509. They are not used by the SBR prediction.
+          </p>
+          <ul className="mt-3 space-y-3">{CVL_MEANINGS.map((m) => card(m.key))}</ul>
+        </details>
+      )}
 
       {changes.length > 0 && (
         <section>

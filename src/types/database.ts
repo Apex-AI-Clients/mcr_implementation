@@ -177,6 +177,50 @@ export type Database = {
           },
         ]
       }
+      client_asic_extracts: {
+        Row: {
+          acn: string
+          client_id: string
+          extracted_at: string | null
+          file_path: string
+          id: string
+          page_count: number
+          section_pages: Json
+          uploaded_at: string
+          uploaded_by: string
+        }
+        Insert: {
+          acn: string
+          client_id: string
+          extracted_at?: string | null
+          file_path: string
+          id?: string
+          page_count: number
+          section_pages?: Json
+          uploaded_at?: string
+          uploaded_by: string
+        }
+        Update: {
+          acn?: string
+          client_id?: string
+          extracted_at?: string | null
+          file_path?: string
+          id?: string
+          page_count?: number
+          section_pages?: Json
+          uploaded_at?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_asic_extracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_deletions: {
         Row: {
           archived_at: string | null
@@ -374,6 +418,7 @@ export type Database = {
           phone_number: string | null
           principal_place_of_business: string | null
           registered_office_address: string | null
+          registration_date: string | null
           trust_abn_number: string | null
           trust_name: string | null
           updated_at: string
@@ -393,6 +438,7 @@ export type Database = {
           phone_number?: string | null
           principal_place_of_business?: string | null
           registered_office_address?: string | null
+          registration_date?: string | null
           trust_abn_number?: string | null
           trust_name?: string | null
           updated_at?: string
@@ -412,6 +458,7 @@ export type Database = {
           phone_number?: string | null
           principal_place_of_business?: string | null
           registered_office_address?: string | null
+          registration_date?: string | null
           trust_abn_number?: string | null
           trust_name?: string | null
           updated_at?: string

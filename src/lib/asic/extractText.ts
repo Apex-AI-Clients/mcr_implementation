@@ -20,6 +20,8 @@ export { PdfTooLongError, PdfUnreadableError, groupIntoLines }
 export interface ExtractedPdfText {
   pageCount: number
   lines: string[]
+  /** The same lines, page by page (page 1 first): where a section is printed. */
+  pages: string[][]
 }
 
 /**
@@ -30,5 +32,5 @@ export const MAX_EXTRACT_PAGES = 60
 
 export async function extractPdfLines(bytes: Uint8Array): Promise<ExtractedPdfText> {
   const { pageCount, pages } = await readPdfPageLines(bytes, MAX_EXTRACT_PAGES)
-  return { pageCount, lines: pages.flat() }
+  return { pageCount, lines: pages.flat(), pages }
 }

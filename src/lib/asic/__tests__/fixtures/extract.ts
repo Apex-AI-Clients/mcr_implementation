@@ -42,7 +42,7 @@ export function person({
     docNumber ? `Name: ${name} ${docNumber}` : `Name: ${name}`,
     'Address: Not available in this ASIC extract',
     ...(born === null ? [] : [`Born: ${born}`]),
-    'Appointment date: 01/07/2015',
+    'Appointment date: 05/08/2016',
     ...(ceased ? ['Cease date: 30/06/2020'] : []),
   ]
 }
@@ -74,7 +74,7 @@ export function organisation({
     `ACN: ${acn}`,
     ...(abn === null ? [] : [`ABN: ${abn}`]),
     'Registered in: Victoria',
-    'Registration date: 01/07/2015',
+    'Registration date: 12/06/2014',
     'Next review date: 01/07/2027',
     'Status: Registered',
     'Company type: Australian Proprietary Company',
@@ -184,6 +184,8 @@ export const NEVER_EXTRACTED = [
   'Private Lane',
   'SECRETVILLE',
   'Secretville',
+  // Address, share and name start dates: never read. (Appointment and
+  // registration dates are read, for the CVL forms, and have their own values.)
   '01/07/2015',
   '2015-07-01',
 ]

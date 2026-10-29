@@ -48,9 +48,10 @@ describe('parseAsicExtract — a current extract', () => {
       acn: SAMPLE.acn,
       abn: SAMPLE.abn,
       status: 'Registered',
+      registeredOn: '2014-06-12',
       registeredOffice: SAMPLE.address,
       principalPlaceOfBusiness: SAMPLE.address,
-      directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }],
+      directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }],
       extractType: 'current',
       extractedAt: SAMPLE.extractedAt,
       warnings: [],
@@ -60,8 +61,8 @@ describe('parseAsicExtract — a current extract', () => {
   it('reads two directors, in the order ASIC lists them', () => {
     const extract = parsed(currentExtract([JANE, RAJ], []))
     expect(extract.directors).toEqual([
-      { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-      { name: 'Raj Example', dateOfBirth: '1981-11-02' },
+      { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+      { name: 'Raj Example', dateOfBirth: '1981-11-02', appointedOn: '2016-08-05' },
     ])
   })
 
@@ -77,7 +78,7 @@ describe('parseAsicExtract — a current extract', () => {
 
   it('lists somebody who is both director and secretary once', () => {
     const extract = parsed(currentExtract([JANE], [JANE]))
-    expect(extract.directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }])
+    expect(extract.directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }])
   })
 
   it('never takes a secretary who is not a director', () => {
@@ -176,11 +177,11 @@ describe('parseAsicExtract — layout quirks', () => {
       'SAMPLE-LONGNAME 7EBH40554',
       'Address: Not available in this ASIC extract',
       'Born: 14/03/1970, BIRTHVILLE, VIC',
-      'Appointment date: 01/07/2015',
+      'Appointment date: 05/08/2016',
       ...end(),
     ]
     expect(parsed(lines).directors).toEqual([
-      { name: 'Jane Elizabeth Sample-Longname', dateOfBirth: '1970-03-14' },
+      { name: 'Jane Elizabeth Sample-Longname', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
     ])
   })
 
@@ -220,10 +221,10 @@ describe('parseAsicExtract — layout quirks', () => {
       `Name: ${SAMPLE.companyRaw}`,
       `ACN: ${SAMPLE.acnSpaced}`,
       'Born: 14/03/1970, BIRTHVILLE, VIC',
-      'Appointment date: 01/07/2015',
+      'Appointment date: 05/08/2016',
       ...end(),
     ]
-    expect(parsed(lines).directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }])
+    expect(parsed(lines).directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }])
   })
 
   it('keeps only the date from "Born:", never the place or country', () => {
@@ -258,8 +259,8 @@ describe('parseAsicExtract — dates of birth', () => {
   it('leaves the date blank and warns, without naming anyone, when "Born:" is missing', () => {
     const extract = parsed(currentExtract([JANE, { ...RAJ, born: null }], []))
     expect(extract.directors).toEqual([
-      { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-      { name: 'Raj Example', dateOfBirth: null },
+      { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+      { name: 'Raj Example', dateOfBirth: null, appointedOn: '2016-08-05' },
     ])
     expect(extract.warnings).toEqual([WARNINGS.missingDob(1)])
     expect(extract.warnings.join(' ')).not.toMatch(/raj|example/i)
@@ -333,7 +334,7 @@ describe('parseAsicExtract — a Current & Historical extract', () => {
     expect(extract.extractType).toBe('current_and_historical')
     expect(extract.companyName).toBe(SAMPLE.company)
     expect(extract.registeredOffice).toBe(SAMPLE.address)
-    expect(extract.directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }])
+    expect(extract.directors).toEqual([{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }])
     expect(extract.warnings).toEqual([WARNINGS.historical])
     expect(JSON.stringify(extract)).not.toMatch(/old sample|oldtown|ceased|former/i)
     expectNothingUnwanted(extract)

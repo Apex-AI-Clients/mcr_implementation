@@ -54,9 +54,9 @@ describe('extractPdfLines + parseAsicExtract', () => {
       extractType: 'current',
       extractedAt: SAMPLE.extractedAt,
       directors: [
-        { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-        { name: 'Raj Example', dateOfBirth: '1981-11-02' },
-        { name: "Mei O'Sample-Smith", dateOfBirth: '1988-02-29' },
+        { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+        { name: 'Raj Example', dateOfBirth: '1981-11-02', appointedOn: '2016-08-05' },
+        { name: "Mei O'Sample-Smith", dateOfBirth: '1988-02-29', appointedOn: '2016-08-05' },
       ],
     })
     const text = JSON.stringify(result)
@@ -82,8 +82,8 @@ describe('extractPdfLines + parseAsicExtract', () => {
       registeredOffice: SAMPLE.address,
       principalPlaceOfBusiness: SAMPLE.address,
       directors: [
-        { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-        { name: 'Raj Example', dateOfBirth: '1981-11-02' },
+        { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+        { name: 'Raj Example', dateOfBirth: '1981-11-02', appointedOn: '2016-08-05' },
       ],
       warnings: [],
     })

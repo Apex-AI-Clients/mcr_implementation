@@ -60,6 +60,12 @@ const DirectorSchema = z.object({
     .string()
     .refine(isIsoDob, 'A date of birth has to be YYYY-MM-DD, YYYY-MM or YYYY.')
     .nullable(),
+  /** From a kept ASIC extract (migration 0041), for the CVL forms: YYYY-MM-DD. */
+  appointedOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
 })
 
 /**
@@ -120,9 +126,10 @@ type TextField = keyof typeof TEXT_COLUMNS
 const TEXT_FIELDS = Object.keys(TEXT_COLUMNS) as TextField[]
 
 function directorsJson(directors: Director[]): Json {
-  // Rebuilt field by field, so nothing beyond name and dateOfBirth — a place of
-  // birth, say — can ride into the column on the back of a wider object.
-  return directors.map(({ name, dateOfBirth }) => ({ name, dateOfBirth }))
+  // Rebuilt field by field, so nothing beyond name, dateOfBirth and the
+  // appointment date — a place of birth, say — can ride into the column on the
+  // back of a wider object.
+  return directors.map(({ name, dateOfBirth, appointedOn }) => ({ name, dateOfBirth, ...(appointedOn ? { appointedOn } : {}) }))
 }
 
 /**

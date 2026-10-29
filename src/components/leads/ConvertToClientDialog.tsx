@@ -13,6 +13,7 @@ import { AsicExtractUpload } from '@/components/asic/AsicExtractUpload'
 import { CompanyTrustSections } from '@/components/identity/CompanyTrustSections'
 import { commitChange, withExtract, withoutExtract } from '@/lib/clients/identityForm'
 import { createClientFromLead } from '@/lib/leads/convert'
+import { keepAsicExtract } from '@/lib/asic/browser'
 import { emptyConversionForm, type ConversionForm } from '@/lib/leads/conversionForm'
 import { clientBase, type ClientWorkspace } from '@/lib/clients/workspace'
 import type { Lead } from '@/types/leads'
@@ -52,6 +53,8 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
   const [form, setForm] = useState<ConversionForm>(() => emptyConversionForm(lead))
   // Which workspace the new file opens in. SBR unless staff choose CVL.
   const [workflow, setWorkflow] = useState<ClientWorkspace>('sbr')
+  // The extract PDF read into the form, kept on the new file once it exists (migration 0041).
+  const [extractFile, setExtractFile] = useState<File | null>(null)
 
   // Reset when a different lead is opened. React-sanctioned "adjust state
   // during render" — same pattern as ClientsPageClient, no effect needed.
@@ -61,6 +64,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
     setPhase({ kind: 'form' })
     setForm(emptyConversionForm(lead))
     setWorkflow('sbr')
+    setExtractFile(null)
   }
 
   function patch(change: Partial<ConversionForm>) {
@@ -118,7 +122,10 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
       }
     }
 
-    toast(workflow === 'cvl' ? 'CVL client file created.' : 'Client file created.', {
+    // The extract itself, now the file exists. Never undoes the conversion.
+    const kept = extractFile ? await keepAsicExtract(result.clientId, extractFile) : { ok: true as const }
+
+    toast(`${workflow === 'cvl' ? 'CVL client file created.' : 'Client file created.'}${kept.ok ? '' : ` ${kept.message}`}`, {
       href: clientBase(result.clientId, workflow),
       linkLabel: 'Open client file',
     })
@@ -170,10 +177,14 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                   acnNumber={form.acnNumber}
                   fill={form.asicFill}
                   disabled={working}
-                  onFill={(extract, mode) =>
+                  onFill={(extract, mode, file) => {
                     setForm(commitChange(withExtract(form, extract, mode), 'no_abn'))
-                  }
-                  onUndo={() => setForm(withoutExtract(form))}
+                    setExtractFile(file)
+                  }}
+                  onUndo={() => {
+                    setForm(withoutExtract(form))
+                    setExtractFile(null)
+                  }}
                 />
 
                 <Fieldset legend="Client">

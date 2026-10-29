@@ -72,7 +72,7 @@ export function realLayoutExtract({
     `ACN: ${SAMPLE.acnSpaced}`,
     `ABN: ${SAMPLE.abn}`,
     'Registered in: Victoria',
-    'Registration date: 01/07/2015',
+    'Registration date: 12/06/2014',
     'Next review date: 01/07/2027',
     'Name start date: 01/07/2015',
     'Status: Registered',

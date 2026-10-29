@@ -42,6 +42,7 @@ const EXTRACT: AsicExtract = {
   acn: '123456780',
   abn: '11123456780',
   status: 'Registered',
+  registeredOn: null,
   registeredOffice: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
   principalPlaceOfBusiness: 'Level 2, 20 Example Street, Sampleton NSW 2000',
   directors: [
@@ -69,6 +70,7 @@ function mockRoutes(extract: { status: number; body: unknown } = { status: 200, 
   const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
     const url = String(input)
     if (url.startsWith('/api/asic/extract-pdf')) return json(extract.status, extract.body)
+    if (url === '/api/admin/clients/client-1/asic-extract') return json(201, { id: 'ex-1' })
     if (url.startsWith('/api/admin/clients')) return json(201, { id: 'client-1' })
     return json(503, { error: 'not configured', configured: false })
   })
@@ -76,8 +78,9 @@ function mockRoutes(extract: { status: number; body: unknown } = { status: 200, 
   return fetchMock
 }
 
+/** Calls to exactly this route (not the routes under it), query string aside. */
 function callsTo(fetchMock: ReturnType<typeof mockRoutes>, path: string) {
-  return fetchMock.mock.calls.filter(([input]) => String(input).startsWith(path))
+  return fetchMock.mock.calls.filter(([input]) => String(input).split('?')[0] === path)
 }
 
 function pdf(size = 1024, type = 'application/pdf', name = 'extract.pdf') {
@@ -527,6 +530,10 @@ describe('Convert to client — what conversion sends', () => {
     const sent = await convert(user, dialog, fetchMock)
 
     expect(sent.name).toBe('Dean Whitlock')
+    // The extract PDF itself is kept on the new file, once it exists (migration 0041).
+    await waitFor(() => expect(callsTo(fetchMock, '/api/admin/clients/client-1/asic-extract')).toHaveLength(1))
+    const [, keep] = callsTo(fetchMock, '/api/admin/clients/client-1/asic-extract')[0]
+    expect(keep?.body).toBeInstanceOf(FormData)
     expect(sent.companyDetails).toMatchObject({
       companyName: 'Sample Trading Pty Ltd',
       registeredOfficeAddress: EXTRACT.registeredOffice,

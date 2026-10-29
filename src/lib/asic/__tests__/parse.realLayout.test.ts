@@ -24,9 +24,10 @@ describe('parseAsicExtract — the real layout', () => {
       acn: SAMPLE.acn,
       abn: SAMPLE.abn,
       status: 'Registered',
+      registeredOn: '2014-06-12',
       registeredOffice: SAMPLE.address,
       principalPlaceOfBusiness: SAMPLE.address,
-      directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }],
+      directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }],
       extractType: 'current',
       extractedAt: SAMPLE.extractedAt,
       warnings: [],
@@ -65,9 +66,9 @@ describe('parseAsicExtract — the real layout', () => {
   it('reads several directors, and only directors', () => {
     const extract = parsed({ directors: [JANE, RAJ, MEI], secretaries: [JANE, RAJ] })
     expect(extract.directors).toEqual([
-      { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-      { name: 'Raj Example', dateOfBirth: '1981-11-02' },
-      { name: "Mei O'Sample-Smith", dateOfBirth: '1988-02-29' },
+      { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+      { name: 'Raj Example', dateOfBirth: '1981-11-02', appointedOn: '2016-08-05' },
+      { name: "Mei O'Sample-Smith", dateOfBirth: '1988-02-29', appointedOn: '2016-08-05' },
     ])
   })
 
@@ -81,8 +82,8 @@ describe('parseAsicExtract — the real layout', () => {
       const extract = parsed({ pageBreakAfter, directors: [JANE, RAJ] })
       expect(extract.registeredOffice).toBe(SAMPLE.address)
       expect(extract.directors).toEqual([
-        { name: 'Jane Sample', dateOfBirth: '1970-03-14' },
-        { name: 'Raj Example', dateOfBirth: '1981-11-02' },
+        { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+        { name: 'Raj Example', dateOfBirth: '1981-11-02', appointedOn: '2016-08-05' },
       ])
       expect(extract.warnings).toEqual([])
     }

@@ -11,7 +11,7 @@
  */
 import { askClaude } from './openrouterClient'
 import { LABEL_SUGGESTION_PROMPT_TEMPLATE } from './prompts'
-import { MEANINGS, MEANING, type Meaning } from '@/lib/printed/meanings'
+import { SBR_MEANINGS, MEANING, type Meaning } from '@/lib/printed/meanings'
 import { STATEMENT_NAME } from '@/lib/printed/picker'
 import type { ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
 import type { MappingEntry } from '@/lib/printed/mapping'
@@ -19,9 +19,9 @@ import type { Suggestions } from '@/lib/printed/dictionary'
 
 export type AiSuggestions = Partial<Record<Meaning, string[]>>
 
-/** The meanings to ask about: no dictionary suggestion, nothing confirmed. */
+/** The meanings to ask about: no dictionary suggestion, nothing confirmed. Never the CVL ones. */
 export function unknownMeanings(mapping: MappingEntry[], suggestions: Suggestions): Meaning[] {
-  return MEANINGS.filter((m) => suggestions[m.key].length === 0 && !mapping.some((e) => e.meaning === m.key)).map((m) => m.key)
+  return SBR_MEANINGS.filter((m) => suggestions[m.key].length === 0 && !mapping.some((e) => e.meaning === m.key)).map((m) => m.key)
 }
 
 interface OfferedLine {

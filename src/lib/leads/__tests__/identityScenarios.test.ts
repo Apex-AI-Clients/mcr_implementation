@@ -47,6 +47,7 @@ const COMPANY_EXTRACT: AsicExtract = {
   acn: ACN,
   abn: COMPANY_ABN,
   status: 'Registered',
+  registeredOn: null,
   registeredOffice: 'Unit 1, 10 Sample Road, North Melbourne VIC 3051',
   principalPlaceOfBusiness: 'Level 2, 20 Example Street, Sampleton NSW 2000',
   directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }],

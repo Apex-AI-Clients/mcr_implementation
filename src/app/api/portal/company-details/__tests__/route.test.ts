@@ -49,6 +49,21 @@ beforeEach(() => {
 })
 
 describe('POST /api/portal/company-details', () => {
+  it('keeps the appointment dates a kept ASIC extract wrote, for the same directors (migration 0041)', async () => {
+    const { update } = mockTable(
+      { id: 'cd_1' },
+      { directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' }] },
+    )
+    const response = await POST(
+      post({ clientId: 'cl_1', directors: [{ name: 'Jane Sample', dateOfBirth: '1970-03-14' }, { name: 'New Person', dateOfBirth: null }] }),
+    )
+    expect(response.status).toBe(200)
+    expect(update.mock.calls[0][0].directors).toEqual([
+      { name: 'Jane Sample', dateOfBirth: '1970-03-14', appointedOn: '2016-08-05' },
+      { name: 'New Person', dateOfBirth: null },
+    ])
+  })
+
   it('answers 401 without a staff session', async () => {
     vi.mocked(requireStaffUser).mockResolvedValue(null)
     const { update, insert } = mockTable({ id: 'cd_1' })
