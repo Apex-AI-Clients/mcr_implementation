@@ -31,6 +31,7 @@ export default async function CvlClientsPage({ searchParams }: Props) {
         list={list}
         path="/cvl"
         rowHref={(clientId) => `/cvl/${clientId}`}
+        deletable
         empty="No CVL clients yet. Convert an SBR client from its client page, or a lead from the CRM."
       />
     </div>

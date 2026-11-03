@@ -326,7 +326,20 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     const step = screen.getByText('Forms prepared', { selector: '[aria-current="step"]' })
     expect(step.textContent).toMatch(/2026/)
     expect(screen.getByRole('button', { name: 'Mark printed' })).toBeTruthy()
-    expect(screen.getByText('Presentation of summary of affairs of a company (Form 509)')).toBeTruthy()
+    // Form 509 and Part A for the company, a Part B for each director, each to fill in or preview.
+    const fillIn = screen.getAllByRole('link', { name: /Fill in/ }).map((l) => l.getAttribute('href'))
+    expect(fillIn).toEqual([
+      '/cvl/cl_1/forms/509?subject=company',
+      '/cvl/cl_1/forms/507a?subject=company',
+      '/cvl/cl_1/forms/507b?subject=director%3A1',
+      '/cvl/cl_1/forms/507b?subject=director%3A2',
+    ])
+    expect(screen.getByText('— Jane Sample')).toBeTruthy()
+    expect(screen.getByText('— Raj Example')).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
+    expect(screen.getByRole('link', { name: /Preview and print/ }).getAttribute('href')).toBe('/cvl/cl_1/print')
+    expect(screen.getByText(/Forms are saved for printing/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',
     )

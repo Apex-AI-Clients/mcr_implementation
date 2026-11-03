@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils'
 import { CVL_ORIGIN_LABELS, CVL_STATUS_LABELS, type CvlStatus } from '@/lib/cvl/cases'
 import type { CvlListPage } from '@/lib/cvl/listing'
+import { CvlDeleteButton } from './CvlDeleteButton'
 
 const STATUS_VARIANT: Record<CvlStatus, 'muted' | 'warning' | 'success'> = {
   draft: 'muted',
@@ -21,11 +22,13 @@ interface CvlClientTableProps {
   rowHref: (clientId: string) => string
   /** "Moved to CVL": show when and by whom, instead of status. */
   moved?: boolean
+  /** A Delete on each row (the CVL client list; never the SBR Archive's "Moved to CVL"). */
+  deletable?: boolean
   empty: string
 }
 
 /** The CVL client list, and the SBR Archive's "Moved to CVL". Search and paging are plain links. */
-export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, empty }: CvlClientTableProps) {
+export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, deletable = false, empty }: CvlClientTableProps) {
   const pages = Math.max(1, Math.ceil(list.total / list.pageSize))
   const link = (page: number) => {
     const params = new URLSearchParams({ ...keep, ...(list.query ? { q: list.query } : {}), page: String(page) })
@@ -62,6 +65,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                 <th className="px-4 py-3 font-medium">{moved ? 'Moved to CVL' : 'Status'}</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'By' : 'Came from'}</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Opened'}</th>
+                {deletable && <th className="w-12 px-4 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -94,6 +98,11 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                       <td className="px-4 py-3 text-foreground/70">{CVL_ORIGIN_LABELS[r.origin]}</td>
                       <td className="px-4 py-3 tabular-nums text-foreground/70">{formatDate(r.createdAt)}</td>
                     </>
+                  )}
+                  {deletable && (
+                    <td className="px-4 py-3 text-right">
+                      <CvlDeleteButton clientId={r.clientId} clientName={r.name} compact />
+                    </td>
                   )}
                 </tr>
               ))}

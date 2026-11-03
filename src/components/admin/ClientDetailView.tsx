@@ -28,8 +28,7 @@ import { formatDate } from '@/lib/utils'
 import { atoFileInfo } from '@/lib/analysis/atoAccountKind'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
-import { CvlStatusControl } from '@/components/cvl/CvlStatusControl'
-import { CvlFileCard } from '@/components/cvl/CvlFileCard'
+import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
 import { toCvlCase } from '@/lib/cvl/cases'
 import { clientBase, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
@@ -191,6 +190,24 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   // Document status, naming the required categories that have no file yet.
   const statusBadge = documentStatusBadge(client.status, documents.map((d) => d.docCategory))
 
+  // A CVL file has its own layout: status and next step first, then the forms.
+  if (cvl && cvlCase) {
+    return (
+      <CvlDetailLayout
+        client={{ id: client.id, name: client.name, email: client.email, phone: client.phone }}
+        originLeadId={originLeadId}
+        cvlCase={cvlCase}
+        drafts={cvlDrafts}
+        company={companyDetails}
+        accountant={accountantDetails}
+        documents={documents}
+        dpn={dpn}
+        atoAccounts={atoAccounts}
+        runningJob={runningJob}
+      />
+    )
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link
@@ -256,27 +273,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
       </div>
 
-      {cvl && cvlCase && (
-        <div className="mb-6 space-y-3">
-          <CvlStatusControl
-            caseId={cvlCase.id}
-            status={cvlCase.status}
-            formsPreparedAt={cvlCase.formsPreparedAt}
-            printedAt={cvlCase.printedAt}
-          />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href={`${base}/intake`}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-primary"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit details
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {cvl ? null : archived ? (
+      {archived ? (
         movedToCvl ? null : (
         <div className="mb-6">
           <ArchivedClientActions
@@ -317,8 +314,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       )}
 
       {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} basePath={base} jobId={runningJob.id} startedAt={runningJob.created_at} />}
-
-      {cvl && cvlCase && <CvlFileCard clientId={client.id} cvlCase={cvlCase} directors={companyDetails?.directors ?? []} drafts={cvlDrafts} />}
 
       <Card className="mb-4">
         <CompletenessBar documents={documents} />
