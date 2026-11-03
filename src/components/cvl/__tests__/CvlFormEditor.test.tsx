@@ -84,11 +84,14 @@ describe('CvlFormEditor', () => {
     expect(within(name.parentElement as HTMLElement).queryByRole('button')).toBeNull()
   })
 
-  it('shows handwritten answers as written by hand, with nothing to type', () => {
+  it('leaves handwritten answers off the screen: nothing to type, nothing saved', () => {
     renderPartB()
     const b6 = section('B6')
-    expect(within(b6).getAllByText(/Written by hand on the printout/).length).toBe(2)
+    expect(within(b6).queryByLabelText('User name')).toBeNull()
     expect(within(b6).queryByLabelText('Password')).toBeNull()
+    expect(screen.queryByText(/Written by hand on the printout/)).toBeNull()
+    // The rest of B6 is still asked.
+    expect(within(b6).getByLabelText('Provider name')).toBeTruthy()
   })
 
   it('saves the answers and the changed keys', async () => {
@@ -144,11 +147,11 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const debtors = row('1(b) Sundry debtors')
     expect(debtors.valuation?.value).toBe('12480.5')
     expect(debtors.erv?.value).toBe('')
-    // Both totals have a box in each column; the one each column adds up says so.
-    expect(row('TOTAL assets').valuation?.placeholder).toBe('Adds up if blank')
+    // Both totals have a box in each column.
+    expect(row('TOTAL assets').valuation?.placeholder).toBe('')
     expect(row('TOTAL assets').erv).not.toBeNull()
     expect(row('TOTAL estimated realisable values').valuation).not.toBeNull()
-    expect(row('TOTAL estimated realisable values').erv?.placeholder).toBe('Adds up if blank')
+    expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
     // Every liability line, as the form words it, with a box in both columns.
     for (const label of [
       '3 Less preferential creditors entitled to priority over the holders of debentures under any floating charge',

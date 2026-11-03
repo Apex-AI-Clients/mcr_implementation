@@ -45,25 +45,16 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
         settings={settings}
         save={save}
       />
-      <section className="rounded-xl border border-border bg-card p-4 text-xs text-foreground/60">
-        <h2 className="mb-1 text-sm font-semibold text-foreground">Left blank on the forms</h2>
-        <ul className="list-disc space-y-1 pl-4">
-          <li>Dates on the forms (appointment, summary, report, return-by): left blank, entered on each form with a date picker.</li>
-          <li>Form 509 estimated realisable values: left blank; the book values go in the valuation column only.</li>
-          <li>Anything the client file does not have: left blank, filled in on each form and checked in its preview.</li>
-        </ul>
-      </section>
     </div>
   )
 }
 
 type Save = (key: SettingKey, value: unknown, confirmed: boolean) => Promise<string | null>
 
-function Status({ settingKey, settings, blank }: { settingKey: SettingKey; settings: CvlSettings; blank: boolean }) {
+function Status({ settingKey, settings }: { settingKey: SettingKey; settings: CvlSettings }) {
   const updated = settings.updated[settingKey]
   return (
     <p className="flex flex-wrap items-center gap-2 text-xs">
-      {blank && <span className="text-destructive">Not set: the boxes it fills stay blank.</span>}
       {updated && (
         <span className="text-foreground/40">
           Last changed {formatDate(updated.at)}
@@ -104,7 +95,7 @@ function Item<V>({
         <h3 className={plain ? 'text-xs font-medium text-foreground/80' : 'text-sm font-semibold text-foreground'}>{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-foreground/50">{hint}</p>}
       </div>
-      <Status settingKey={settingKey} settings={settings} blank={blank} />
+      <Status settingKey={settingKey} settings={settings} />
       {render(value, (v) => {
         setValue(v)
         setState({ saving: false, error: null, done: false })

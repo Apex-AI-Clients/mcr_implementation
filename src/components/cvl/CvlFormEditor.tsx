@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, ExternalLink, Loader2, PenLine, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ExternalLink, Loader2, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -461,17 +461,8 @@ function FieldInput({
   const wide = f.type === 'lines' || f.type === 'choice' || f.label.length > 60
   const info = source ? <SourceButton source={source} label={f.label} /> : null
 
-  if (f.handwritten) {
-    return (
-      <div className={wide ? 'sm:col-span-2' : ''} data-page={f.page}>
-        <p className="mb-1.5 text-xs font-medium text-muted">{f.label}</p>
-        <p className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-foreground/50">
-          <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
-          Written by hand on the printout. Not typed or saved here.
-        </p>
-      </div>
-    )
-  }
+  // Written by hand on the printout (signature dates, B6 log-ins, B1 address): not on this screen.
+  if (f.handwritten) return null
 
   let control: React.ReactNode
   if (f.type === 'yesno') {
@@ -608,7 +599,6 @@ function ColumnsTable({
             aria-label={f.label}
             inputMode="decimal"
             value={value === null || value === undefined ? '' : String(value)}
-            placeholder={f.computed ? 'Adds up if blank' : undefined}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
             className={`${inputClass} py-1.5 tabular-nums`}
           />
