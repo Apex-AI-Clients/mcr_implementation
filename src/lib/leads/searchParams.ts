@@ -1,7 +1,7 @@
-import { AU_STATES, DATE_RANGES, DEBT_FLOORS, LEAD_VIEWS, viewForTab } from './constants'
+import { AU_STATES, DATE_RANGES, DEBT_FLOORS, viewDef, viewForTab } from './constants'
 import { EMPTY_FILTERS, type LeadFilterState } from './filter'
 import { PER_PAGE_OPTIONS, type PerPage } from './pagination'
-import type { AuState } from '@/types/leads'
+import type { AuState, CustomStage } from '@/types/leads'
 
 /**
  * The list's state, carried in the URL.
@@ -53,7 +53,8 @@ function oneOf<T extends string>(
 }
 
 /** Read a list URL. Unknown or malformed values fall back to the default. */
-export function parseLeadQuery(params: RawSearchParams): LeadQuery {
+/** `custom`: the stages staff added (getCustomStages), so their tabs parse. */
+export function parseLeadQuery(params: RawSearchParams, custom: readonly CustomStage[] = []): LeadQuery {
   const debtRaw = one(params[PARAM.debtFloor])
   // Only the floors the filter actually offers — an arbitrary ?debt=1 would
   // otherwise become a query nobody can reproduce from the UI.
@@ -70,7 +71,7 @@ export function parseLeadQuery(params: RawSearchParams): LeadQuery {
   return {
     filters: {
       search: (one(params[PARAM.search]) ?? '').slice(0, 200),
-      view: viewForTab(one(params[PARAM.view])) ?? 'leads',
+      view: viewForTab(one(params[PARAM.view]), custom) ?? 'leads',
       state: oneOf<AuState>(params[PARAM.state], AU_STATES) ?? 'all',
       // Any source in the data, typed by staff included: matched by name, never built into SQL unescaped.
       source: (one(params[PARAM.source]) ?? '').trim().slice(0, 100) || 'all',
@@ -99,7 +100,7 @@ export function buildLeadQuery(filters: LeadFilterState, page: number = 1): stri
   const search = filters.search.trim()
 
   if (search) params.set(PARAM.search, search)
-  if (filters.view !== 'all' && filters.view !== 'leads') params.set(PARAM.view, LEAD_VIEWS[filters.view].tab)
+  if (filters.view !== 'all' && filters.view !== 'leads') params.set(PARAM.view, viewDef(filters.view).tab)
   if (filters.state !== 'all') params.set(PARAM.state, filters.state)
   if (filters.source !== 'all') params.set(PARAM.source, filters.source)
   if (filters.debtFloor !== null) params.set(PARAM.debtFloor, String(filters.debtFloor))

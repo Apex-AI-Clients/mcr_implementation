@@ -8,8 +8,8 @@ import {
   mightBeInState,
   type LeadFilterState,
 } from '../filter'
-import type { Lead, LeadStage } from '@/types/leads'
-import { ALL_STAGES, ALL_VIEWS, LEAD_VIEWS } from '../constants'
+import type { CustomStage, Lead, LeadStage } from '@/types/leads'
+import { ALL_STAGES, allViews, viewForStage, viewForTab, viewStages } from '../constants'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z')
 const DAY_MS = 86_400_000
@@ -387,11 +387,32 @@ describe('filterLeads — source by the name the list shows', () => {
 })
 
 describe('lead tabs', () => {
+  const CUSTOM: CustomStage[] = [
+    { key: 'custom_aaaa1111', label: 'Waiting on accountant', position: 1, hiddenAt: null },
+    { key: 'custom_bbbb2222', label: 'Old idea', position: 2, hiddenAt: '2026-11-01T00:00:00Z' },
+  ]
+
   it('puts every stage in exactly one tab, so no lead can disappear', () => {
-    const stages: LeadStage[] = ['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact']
+    const stages: LeadStage[] = [...ALL_STAGES, 'custom_aaaa1111']
+    expect(ALL_STAGES).toHaveLength(8)
     for (const stage of stages) {
-      expect(ALL_VIEWS.filter((view) => LEAD_VIEWS[view].stages.includes(stage))).toHaveLength(1)
+      expect(allViews(CUSTOM).filter((view) => viewStages(view).includes(stage))).toHaveLength(1)
     }
-    expect(ALL_VIEWS.flatMap((view) => LEAD_VIEWS[view].stages).sort()).toEqual([...ALL_STAGES].sort())
+    expect(allViews(CUSTOM).flatMap((view) => viewStages(view)).sort()).toEqual([...stages].sort())
+  })
+
+  it('gives a stage staff added its own tab, after the built-in ones, and none once hidden', () => {
+    const views = allViews(CUSTOM)
+    expect(views.at(-1)).toBe('custom_aaaa1111')
+    expect(views).not.toContain('custom_bbbb2222')
+    expect(viewForTab('custom_aaaa1111', CUSTOM)).toBe('custom_aaaa1111')
+    expect(viewForTab('custom_bbbb2222', CUSTOM)).toBeNull()
+    expect(viewForStage('custom_aaaa1111')).toBe('custom_aaaa1111')
+  })
+
+  it('has a tab for each new built-in stage', () => {
+    expect(viewForTab('unresponsive')).toBe('unresponsive')
+    expect(viewForTab('contact-in-30-days')).toBe('contact_in_30_days')
+    expect(viewForStage('contact_in_30_days')).toBe('contact_in_30_days')
   })
 })

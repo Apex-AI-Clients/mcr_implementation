@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Download, Plus, Search, Trash2, X } from 'lucide-react'
+import { Download, EyeOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Pagination } from '@/components/ui/Pagination'
 import { Select } from '@/components/ui/Select'
@@ -14,10 +14,13 @@ import { AddLeadDialog } from '@/components/leads/AddLeadDialog'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
 import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
+import { useLeadStages } from '@/components/leads/LeadStages'
+import { StageNameDialog } from '@/components/leads/StageNameDialog'
+import { useToast } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
 import { PER_PAGE_OPTIONS, pageRangeLabel, type PerPage } from '@/lib/leads/pagination'
-import { ALL_VIEWS, LEAD_VIEWS, type LeadView } from '@/lib/leads/constants'
+import { allViews, isCustomStage, stageLabel, viewDef, viewStages, type LeadView } from '@/lib/leads/constants'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/types/leads'
 import type { LeadNote } from '@/lib/leads/notes'
@@ -39,7 +42,7 @@ interface LeadsPageClientProps {
   page: number
   pageCount: number
   pageSize: number
-  /** The header tab: which stages are listed (LEAD_VIEWS). None: every stage. */
+  /** The header tab: which stages are listed (LEAD_VIEWS, or a custom stage's). None: every stage. */
   view?: LeadView
   /** The Source filter's options, from the data. */
   sources?: string[]
@@ -74,9 +77,14 @@ export function LeadsPageClient({
   counts,
   notes,
 }: LeadsPageClientProps) {
-  const screen = view ? LEAD_VIEWS[view] : null
+  const screenStages = view ? viewStages(view) : null
   const router = useRouter()
   const { getLead, syncFromServer } = useLeads()
+  const { custom, addStage, renameStage, hideStage } = useLeadStages()
+  const { toast } = useToast()
+  // The stage-name box: adding a stage from the tab bar, or renaming this tab's.
+  const [stageDialog, setStageDialog] = useState<'add' | 'rename' | null>(null)
+  const [hiding, setHiding] = useState(false)
 
   const [term, setTerm] = useState(filters.search)
   const [addOpen, setAddOpen] = useState(false)
@@ -176,6 +184,27 @@ export function LeadsPageClient({
     startTransition(() => router.refresh())
   }
 
+  async function handleAddStage(label: string) {
+    // A name already taken is thrown, and shows in the dialog.
+    const stage = await addStage(label)
+    toast(`Stage "${stage.label}" added.`)
+    startTransition(() => router.push(leadsHref({ ...filters, view: stage.key }, 1)))
+  }
+
+  async function handleHideStage() {
+    if (!view || !isCustomStage(view)) return
+    setHiding(true)
+    try {
+      await hideStage(view)
+      toast(`Stage "${stageLabel(view, custom)}" hidden.`)
+      startTransition(() => router.push(leadsHref({ ...filters, view: 'leads' }, 1)))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That did not save.', { tone: 'error' })
+    } finally {
+      setHiding(false)
+    }
+  }
+
   const active = hasActiveFilters(filters)
 
   // Server order, store values. The store wins on a field somebody has just
@@ -183,8 +212,8 @@ export function LeadsPageClient({
   // whose stage has just changed to another screen's leaves this one.
   const current = useMemo(() => leads.map((lead) => getLead(lead.id) ?? lead), [leads, getLead])
   const rows = useMemo(
-    () => (screen ? current.filter((lead) => screen.stages.includes(lead.stage)) : current),
-    [current, screen],
+    () => (screenStages ? current.filter((lead) => screenStages.includes(lead.stage)) : current),
+    [current, screenStages],
   )
   // Re-read once per lead that left, so the counts are right and the page
   // fills up again — once, not on every render while the re-read is on its way.
@@ -229,11 +258,12 @@ export function LeadsPageClient({
         </div>
       </div>
 
-      {/* One tab per group of stages, each with its count. The tab is in the
-          URL (?tab=), so it can be bookmarked; the other filters carry over. */}
+      {/* One tab per group of stages, each with its count, then one per stage
+          staff added. The tab is in the URL (?tab=), so it can be bookmarked;
+          the other filters carry over. */}
       {counts && (
         <nav aria-label="Lead stages" className="-mt-2 mb-4 flex flex-wrap gap-1 border-b border-border">
-          {ALL_VIEWS.map((tab) => {
+          {allViews(custom).map((tab) => {
             const selected = tab === (view ?? 'leads')
             return (
               <Link
@@ -247,19 +277,78 @@ export function LeadsPageClient({
                     : 'border-transparent text-foreground/60 hover:text-foreground',
                 )}
               >
-                {LEAD_VIEWS[tab].label}
+                {viewDef(tab, custom).label}
                 <span
                   className={cn(
                     'rounded-full px-1.5 text-xs tabular-nums',
                     selected ? 'bg-accent/15 text-accent' : 'bg-surface text-foreground/50',
                   )}
                 >
-                  {counts[tab]}
+                  {/* A stage added a moment ago has no count until the re-read lands. */}
+                  {counts[tab] ?? 0}
                 </span>
               </Link>
             )
           })}
+          <button
+            type="button"
+            onClick={() => setStageDialog('add')}
+            className="-mb-px inline-flex cursor-pointer items-center gap-1 border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add stage
+          </button>
         </nav>
+      )}
+
+      {/* A stage staff added can be renamed, and hidden once nobody is in it:
+          hiding one with leads in it would leave them on no tab. */}
+      {counts && view && isCustomStage(view) && (
+        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-2 text-xs text-foreground/50">
+          <span>Added by staff.</span>
+          <button
+            type="button"
+            onClick={() => setStageDialog('rename')}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 hover:bg-surface hover:text-foreground"
+          >
+            <Pencil className="h-3 w-3" aria-hidden="true" />
+            Rename
+          </button>
+          <button
+            type="button"
+            onClick={handleHideStage}
+            disabled={hiding || (counts[view] ?? 0) > 0}
+            title={(counts[view] ?? 0) > 0 ? 'Move its leads to another stage first' : undefined}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <EyeOff className="h-3 w-3" aria-hidden="true" />
+            Hide this stage
+          </button>
+          {(counts[view] ?? 0) > 0 && <span>Hide it once its leads have moved to another stage.</span>}
+        </div>
+      )}
+
+      <StageNameDialog
+        open={stageDialog === 'add'}
+        onClose={() => setStageDialog(null)}
+        title="Add a stage"
+        description="It gets its own tab here, and can be picked in any lead's Stage."
+        submitLabel="Add stage"
+        onSubmit={handleAddStage}
+      />
+      {view && isCustomStage(view) && (
+        <StageNameDialog
+          open={stageDialog === 'rename'}
+          onClose={() => setStageDialog(null)}
+          title="Rename this stage"
+          description="Its leads stay in it. Earlier entries in their activity keep the old name."
+          initial={stageLabel(view, custom)}
+          submitLabel="Rename"
+          onSubmit={async (label) => {
+            await renameStage(view, label)
+            toast(`Stage renamed to ${label}.`)
+          }}
+        />
       )}
 
       {/* Search and filters read as one toolbar rather than controls adrift on

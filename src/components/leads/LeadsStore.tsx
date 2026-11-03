@@ -10,7 +10,8 @@ import type {
   LeadStage,
 } from '@/types/leads'
 import { needsFollowUp } from '@/lib/leads/followUp'
-import { CONVERSION_ACTIVITY_BODY, STAGE_META } from '@/lib/leads/constants'
+import { CONVERSION_ACTIVITY_BODY, stageLabel } from '@/lib/leads/constants'
+import { useLeadStages } from '@/components/leads/LeadStages'
 import { stateColumns } from '@/lib/leads/format'
 import { useToast } from '@/components/ui/Toast'
 
@@ -382,6 +383,7 @@ export function LeadsStoreProvider({
     activities: initialActivities,
   })
   const { toast } = useToast()
+  const { custom } = useLeadStages()
 
   const getLead = useCallback(
     (leadId: string) => state.leads.find((lead) => lead.id === leadId),
@@ -562,7 +564,7 @@ export function LeadsStoreProvider({
         id: newId(),
         leadId,
         type: 'stage_change',
-        body: `Stage changed from ${STAGE_META[previous.stage].label} to ${STAGE_META[stage].label}.`,
+        body: `Stage changed from ${stageLabel(previous.stage, custom)} to ${stageLabel(stage, custom)}.`,
         author,
         createdAt: at,
       }
@@ -577,7 +579,7 @@ export function LeadsStoreProvider({
         throw error
       }
     },
-    [state.leads, author, persistence],
+    [state.leads, author, persistence, custom],
   )
 
   const markConverted = useCallback(

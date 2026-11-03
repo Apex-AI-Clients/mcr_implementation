@@ -1,6 +1,7 @@
-import { Ban, Check } from 'lucide-react'
-import { OFF_RAMP_STAGES, STAGE_META, STAGE_PATH } from '@/lib/leads/constants'
+import { Ban, CalendarClock, Check } from 'lucide-react'
+import { contactAgain, STAGE_META, STAGE_PATH, stageLabel } from '@/lib/leads/constants'
 import { formatFullDate } from '@/lib/leads/format'
+import { useLeadStages } from '@/components/leads/LeadStages'
 import type { Lead } from '@/types/leads'
 
 interface StageProgressProps {
@@ -19,10 +20,12 @@ type StepState = 'done' | 'current' | 'pending' | 'abandoned'
  * the thing the eye reads first — how far along this is — and loose chevrons
  * could not carry that.
  *
- * Only the four progression stages are on the rail. "Non-proceeding" and "Do
- * not contact" are exits, not steps; a lead that stops shows the rail greyed
- * with the exit called out underneath, rather than as a step somebody is
- * working towards.
+ * Only the four progression stages are on the rail. Every other stage —
+ * Unresponsive, Non-proceeding, Do not contact again, the ones staff added —
+ * is an exit, not a step; a lead that stops shows the rail greyed with the
+ * exit called out underneath, rather than as a step somebody is working
+ * towards. "Contact in 30 days" is a pause, called out the same way with the
+ * day the call is due.
  *
  * Dates appear only where they are actually known: the lead's own created date
  * for the first step, and `stage_since` for the step it is on now.
@@ -31,7 +34,9 @@ type StepState = 'done' | 'current' | 'pending' | 'abandoned'
  * pairing the two would be invention.
  */
 export function StageProgress({ lead, embedded = false }: StageProgressProps) {
-  const abandoned = OFF_RAMP_STAGES.includes(lead.stage) ? lead.stage : null
+  const { custom } = useLeadStages()
+  const abandoned = STAGE_PATH.includes(lead.stage) ? null : lead.stage
+  const contact = contactAgain(lead)
   const currentIndex = abandoned ? -1 : STAGE_PATH.indexOf(lead.stage)
   const lastIndex = STAGE_PATH.length - 1
 
@@ -108,7 +113,7 @@ export function StageProgress({ lead, embedded = false }: StageProgressProps) {
                         : 'text-foreground/35'
                   }`}
                 >
-                  {STAGE_META[stage].label}
+                  {stageLabel(stage, custom)}
                 </p>
                 {date && (
                   <p className="mt-0.5 text-[10px] tabular-nums leading-tight text-foreground/40 sm:text-xs">
@@ -121,7 +126,19 @@ export function StageProgress({ lead, embedded = false }: StageProgressProps) {
         })}
       </ol>
 
-      {abandoned && (
+      {abandoned && contact && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5">
+          <CalendarClock className={`h-4 w-4 shrink-0 ${contact.due ? 'text-warning' : 'text-muted'}`} aria-hidden="true" />
+          <p className="text-sm text-foreground/70">
+            Paused at <span className="font-medium text-foreground">{STAGE_META.contact_in_30_days.label}</span>
+            <span aria-hidden="true"> · </span>
+            {contact.due ? 'due a call since ' : 'call again on '}
+            <span className="tabular-nums text-foreground">{formatFullDate(contact.by.toISOString())}</span>
+          </p>
+        </div>
+      )}
+
+      {abandoned && !contact && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5">
           <Ban
             className={`h-4 w-4 shrink-0 ${
@@ -131,7 +148,7 @@ export function StageProgress({ lead, embedded = false }: StageProgressProps) {
           />
           <p className="text-sm text-foreground/70">
             Stopped at{' '}
-            <span className="font-medium text-foreground">{STAGE_META[abandoned].label}</span>
+            <span className="font-medium text-foreground">{stageLabel(abandoned, custom)}</span>
             <span aria-hidden="true"> · </span>
             <span className="tabular-nums text-foreground/40">
               {formatFullDate(lead.stageSince)}

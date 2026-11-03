@@ -320,18 +320,38 @@ describe('LeadsPageClient', () => {
     renderList({
       view: 'prospects',
       filters: { view: 'prospects', state: 'NSW' },
-      counts: { leads: 27, prospects: 2, clients: 9, converted: 4, non_proceeding: 2, do_not_contact: 0 },
+      counts: {
+        leads: 27,
+        prospects: 2,
+        clients: 9,
+        unresponsive: 3,
+        do_not_contact: 0,
+        contact_in_30_days: 1,
+        non_proceeding: 2,
+        converted: 4,
+      },
     })
     const nav = screen.getByRole('navigation', { name: 'Lead stages' })
     const tabs = Array.from(nav.querySelectorAll('a'))
-    expect(tabs.map((a) => a.textContent)).toEqual(['Leads27', 'Prospects2', 'Clients9', 'Converted4', 'Non-proceeding2', 'Do not contact0'])
+    expect(tabs.map((a) => a.textContent)).toEqual([
+      'Leads27',
+      'Prospects2',
+      'Clients9',
+      'Unresponsive3',
+      'Do not contact again0',
+      'Contact in 30 days1',
+      'Non-proceeding – other2',
+      'Converted4',
+    ])
     expect(tabs.map((a) => a.getAttribute('href'))).toEqual([
       '/leads?state=NSW',
       '/leads?tab=prospects&state=NSW',
       '/leads?tab=clients&state=NSW',
-      '/leads?tab=converted&state=NSW',
-      '/leads?tab=non-proceeding&state=NSW',
+      '/leads?tab=unresponsive&state=NSW',
       '/leads?tab=do-not-contact&state=NSW',
+      '/leads?tab=contact-in-30-days&state=NSW',
+      '/leads?tab=non-proceeding&state=NSW',
+      '/leads?tab=converted&state=NSW',
     ])
     expect(tabs[1].getAttribute('aria-current')).toBe('page')
   })
@@ -349,7 +369,19 @@ describe('LeadsPageClient', () => {
     renderList()
     const select = inTable().getByLabelText('Stage for Marcus Oyelaran')
     const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label)
-    expect(groups).toEqual(['Pipeline', 'Closed'])
+    expect(groups).toEqual(['Pipeline', 'Closed', 'New'])
+    const options = Array.from(select.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual([
+      'Lead',
+      'Prospect',
+      'Client',
+      'Contact in 30 days',
+      'Unresponsive',
+      'Converted',
+      'Non-proceeding – other',
+      'Do not contact again',
+      '+ Add a stage…',
+    ])
   })
 
   it('opens the add-lead dialog with no company field', async () => {

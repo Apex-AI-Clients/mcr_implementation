@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 // import { FollowUpBadge } from '@/components/leads/FollowUpBadge'
-import { STAGE_META } from '@/lib/leads/constants'
+import { stageMeta } from '@/lib/leads/constants'
+import { useLeadStages } from '@/components/leads/LeadStages'
 import { formatFullDate, formatLeadSource } from '@/lib/leads/format'
 // import { needsFollowUp } from '@/lib/leads/followUp'
 import type { Lead } from '@/types/leads'
@@ -16,7 +17,7 @@ interface LeadRecordHeaderProps {
 }
 
 export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
-  const stage = STAGE_META[lead.stage]
+  const stage = stageMeta(lead.stage, useLeadStages().custom)
 
   return (
     <div className="mb-6">

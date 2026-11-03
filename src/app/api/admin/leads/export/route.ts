@@ -4,6 +4,7 @@ import { getActivitiesForLeads, getLeadsForExport } from '@/lib/leads/queries'
 import { parseLeadQuery, type RawSearchParams } from '@/lib/leads/searchParams'
 import { leadsToCsv } from '@/lib/leads/format'
 import { buildLeadsWorkbook } from '@/lib/leads/workbook'
+import { getCustomStages } from '@/lib/leads/customStages'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,8 @@ export async function GET(req: NextRequest) {
   if (!staff) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const params: RawSearchParams = Object.fromEntries(req.nextUrl.searchParams.entries())
-  const { filters } = parseLeadQuery(params)
+  const custom = await getCustomStages()
+  const { filters } = parseLeadQuery(params, custom)
   const wantsCsv = req.nextUrl.searchParams.get('format') === 'csv'
 
   const leads = await getLeadsForExport(filters)
@@ -55,7 +57,7 @@ export async function GET(req: NextRequest) {
     // Excel does not read a CSV as UTF-8 unless the file says so. Without the
     // mark it falls back to the system codepage and every non-ASCII character
     // arrives mangled.
-    return new NextResponse(`${UTF8_BOM}${leadsToCsv(leads, activities)}`, {
+    return new NextResponse(`${UTF8_BOM}${leadsToCsv(leads, activities, custom)}`, {
       headers: {
         ...shared,
         'Content-Type': 'text/csv; charset=utf-8',
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const workbook = await buildLeadsWorkbook(leads, activities)
+  const workbook = await buildLeadsWorkbook(leads, activities, custom)
 
   return new NextResponse(new Uint8Array(workbook), {
     headers: {

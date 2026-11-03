@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 import { stateColumns } from '@/lib/leads/format'
+import { ALL_STAGES, isCustomStage } from '@/lib/leads/constants'
+import type { BuiltInStage, CustomStageKey } from '@/types/leads'
 import type { Database } from '@/types/database'
 
 /**
@@ -78,8 +80,16 @@ const PatchSchema = z.object({
   message: z.string().max(5000).nullable().optional(),
   preferredCallTime: z.string().max(200).nullable().optional(),
   nextStep: z.string().nullable().optional(),
+  /**
+   * A built-in stage, or one staff added (custom_…), which must exist and not
+   * be hidden — checked below against lead_stages. The foreign key on
+   * leads.stage would refuse an unknown key anyway, but with a 500.
+   */
   stage: z
-    .enum(['lead', 'prospect', 'client', 'converted', 'non_proceeding', 'do_not_contact'])
+    .union([
+      z.enum(ALL_STAGES as [BuiltInStage, ...BuiltInStage[]]),
+      z.string().regex(/^custom_[a-z0-9]+$/, 'Unknown stage') as z.ZodType<CustomStageKey>,
+    ])
     .optional(),
   convertedClientId: z.string().uuid().nullable().optional(),
   dismissReenquiry: z.literal(true).optional(),
@@ -157,6 +167,16 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (patch.dismissReenquiry) {
       update.reenquiry_dismissed_at = new Date().toISOString()
       update.reenquiry_dismissed_by = staffAuthorName(staff)
+    }
+    if (patch.stage !== undefined && isCustomStage(patch.stage)) {
+      const { data: custom, error: stageError } = await supabase
+        .from('lead_stages')
+        .select('key')
+        .eq('key', patch.stage)
+        .is('hidden_at', null)
+        .maybeSingle()
+      if (stageError) throw stageError
+      if (!custom) return NextResponse.json({ error: 'That stage no longer exists' }, { status: 400 })
     }
     if (patch.stage !== undefined) {
       update.stage = patch.stage

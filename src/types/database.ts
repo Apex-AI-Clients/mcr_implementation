@@ -1068,6 +1068,39 @@ export type Database = {
           },
         ]
       }
+      lead_stages: {
+        Row: {
+          built_in: boolean
+          created_at: string
+          created_by: string | null
+          hidden_at: string | null
+          key: string
+          label: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          built_in?: boolean
+          created_at?: string
+          created_by?: string | null
+          hidden_at?: string | null
+          key: string
+          label: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          built_in?: boolean
+          created_at?: string
+          created_by?: string | null
+          hidden_at?: string | null
+          key?: string
+          label?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           company: string | null
@@ -1193,6 +1226,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_stage_fkey"
+            columns: ["stage"]
+            isOneToOne: false
+            referencedRelation: "lead_stages"
+            referencedColumns: ["key"]
           },
         ]
       }

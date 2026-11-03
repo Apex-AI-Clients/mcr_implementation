@@ -5,6 +5,8 @@ import { normaliseClientPhone } from '@/lib/clients/phone'
 import { CompanyDetailsSchema, companyDetailsInsert } from '@/lib/clients/companyDetails'
 import { staffAuthorName } from '@/lib/auth/staff'
 import { conversionBody } from '@/lib/leads/clientDeleted'
+import { getCustomStages } from '@/lib/leads/customStages'
+import { isCustomStage } from '@/lib/leads/constants'
 import type { LeadStage } from '@/types/leads'
 
 /**
@@ -166,7 +168,10 @@ export async function POST(req: NextRequest) {
         leadId,
         type: 'stage_change' as const,
         // With the stage it came from: a deleted client file sets the lead back to it.
-        body: conversionBody(leadStage as LeadStage | null),
+        body: conversionBody(
+          leadStage as LeadStage | null,
+          leadStage && isCustomStage(leadStage) ? await getCustomStages() : [],
+        ),
         // From the session, so a request cannot claim to be somebody else.
         author: staffAuthorName(staff),
         createdAt: at,
