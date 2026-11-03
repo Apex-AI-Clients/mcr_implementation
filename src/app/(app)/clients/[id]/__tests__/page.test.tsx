@@ -17,6 +17,8 @@ vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: ()
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
 vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
+// The director's risk reads the statements and ATO accounts: its own tests cover it.
+vi.mock('@/lib/cvl/directorRiskStore', () => ({ loadDirectorRisk: vi.fn(async () => null) }))
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
