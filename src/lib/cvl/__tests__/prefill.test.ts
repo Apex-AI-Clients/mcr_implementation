@@ -64,7 +64,10 @@ describe('Form 509', () => {
     expect(value(p, 'd_val')).toBe(3204.17)
     expect(value(p, 'e_val')).toBe(8900)
     expect(value(p, 'g_val')).toBe(22500)
-    expect(value(p, 'share_issued')).toBe(100)
+    // Share capital is a book value too: Valuation column only.
+    expect(value(p, 'share_issued_val')).toBe(100)
+    expect(value(p, 'share_paid_val')).toBe(100)
+    expect(p.fields.share_issued).toBeUndefined()
     for (const erv of ['a_erv', 'b_erv', 'c_erv', 'd_erv', 'e_erv', 'g_erv', 'h_erv', 's2_erv', 'total_erv']) expect(p.fields[erv]).toBeUndefined()
     expect(p.fields.b_val.source.from.join(' ')).toContain('“Trade Debtors” printed 12,480.50 — page 2 of fy26.pdf')
     expect(p.fields.b_val.source.link).toEqual({ kind: 'pdf', documentId: 'doc-fy26', page: 2 })

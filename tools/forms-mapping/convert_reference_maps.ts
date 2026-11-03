@@ -120,6 +120,20 @@ const assetRows: [string, string, number][] = [
   ['s2', '2 Assets subject to specific charges less amounts owing', 220.5],
 ]
 
+/** Liability lines on page 2: key (second column), the form's own words, the row's bottom rule. */
+const liabilityRows: [string, string, number][] = [
+  ['r3', '3 Less preferential creditors entitled to priority over the holders of debentures under any floating charge', 305.7],
+  ['r4', '4 Less amounts owing and secured by debenture or floating charge over company’s assets', 340.1],
+  ['r5', '5 Less preferential creditors estimated amount available for unsecured creditors', 374.5],
+  ['r6', '6 Creditors (unsecured) amount claimed', 398.0],
+  // One line on the form, its words over two rows: one box per column, mid-row.
+  ['r7_claims', '7 Balances owing to partly secured creditors total claims security held', 427.0],
+  ['r8', '8 Contingent assets estimated to produce', 455.9],
+  ['r9', '9 Contingent liabilities estimated to rank for estimated deficiency/surplus (subject to costs of administration/liquidation)', 490.3],
+  ['share_issued', 'Share capital issued', 512.9],
+  ['share_paid', 'Share capital paid up', 524.7],
+]
+
 const f509Fields: FormField[] = [
   text509('contact_name', LODGE, 'Name (who ASIC should contact)', 1, tb(177.4, 223.1, 389.3)),
   text509('agent_number', LODGE, 'ASIC registered agent number (if applicable)', 1, tb(177.4, 252.3, 389.3)),
@@ -136,19 +150,18 @@ const f509Fields: FormField[] = [
     money(`${k}_val`, ASSETS, `${label}: Valuation`, 'val', bottom),
     money(`${k}_erv`, ASSETS, `${label}: Estimated realisable value`, 'erv', bottom),
   ]),
-  money('total_assets', ASSETS, 'TOTAL assets (valuation)', 'val', 246.0),
-  money('total_erv', ASSETS, 'TOTAL estimated realisable values', 'erv', 271.4),
-  money('r3', LIAB, '3 Less preferential creditors (priority over floating charge)', 'erv', 305.7),
-  text509('r4_to', LIAB, '4 Secured by debenture/floating charge: to whom', 2, tb(316.5, 330.6, 82, 10.5), { size: 7 }),
-  money('r4', LIAB, '4 Less amounts owing and secured by debenture/floating charge', 'erv', 340.1),
-  money('r5', LIAB, '5 Estimated amount available for unsecured creditors', 'erv', 374.5),
-  money('r6', LIAB, '6 Creditors (unsecured) amount claimed', 'erv', 398.0),
-  money('r7_claims', LIAB, '7 Partly secured creditors: total claims', 'erv', 421.6),
-  money('r7_security', LIAB, '7 Partly secured creditors: security held', 'erv', 432.4),
-  money('r8', LIAB, '8 Contingent assets estimated to produce', 'erv', 455.9),
-  money('r9', LIAB, '9 Estimated deficiency/surplus', 'erv', 490.3),
-  money('share_issued', LIAB, 'Share capital issued', 'erv', 512.9),
-  money('share_paid', LIAB, 'Share capital paid up', 'erv', 524.7),
+  // The totals each have one box: TOTAL assets in Valuation, TOTAL estimated
+  // realisable values in the second column.
+  money('total_assets', ASSETS, 'TOTAL assets: Valuation', 'val', 246.0),
+  money('total_erv', ASSETS, 'TOTAL estimated realisable values: Estimated realisable value', 'erv', 271.4),
+  text509('r4_to', LIAB, '4 To whom (debenture or floating charge holder)', 2, tb(316.5, 330.6, 82, 10.5), { size: 7 }),
+  // Every liability line has a box in both columns, labelled in the form's own
+  // words. The second column keeps the original keys (r3, r6 …); the Valuation
+  // boxes are the same keys with _val.
+  ...liabilityRows.flatMap(([k, label, bottom]) => [
+    money(`${k}_val`, LIAB, `${label}: Valuation`, 'val', bottom),
+    money(k, LIAB, `${label}: Estimated realisable value`, 'erv', bottom),
+  ]),
   text509('signer_name', SIGN, 'Name of person signing', 2, tb(177.4, 588.7, 389.3)),
   text509('capacity', SIGN, 'Capacity (director or secretary)', 2, tb(177.4, 617.8, 389.3)),
   // tb(177.4, 647.0, 389.3, 22.2) is the signature: signed by hand, and so is its date.

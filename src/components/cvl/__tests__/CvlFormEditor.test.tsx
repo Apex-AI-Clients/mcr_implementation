@@ -138,7 +138,7 @@ describe('CvlFormEditor — Form 509 summary', () => {
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
 
-  it('puts each amount under the column it prints in', () => {
+  it('puts each amount under the column it prints in, in the form’s own words', () => {
     render509()
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toContain('Estimated realisable value')
     const debtors = row('1(b) Sundry debtors')
@@ -149,11 +149,28 @@ describe('CvlFormEditor — Form 509 summary', () => {
     expect(row('TOTAL assets').valuation?.placeholder).toBe('Adds up if blank')
     expect(row('TOTAL estimated realisable values')).toMatchObject({ valuation: null })
     expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
-    // Every liability: the second column only.
-    for (const label of ['3 Less preferential creditors (priority over floating charge)', '6 Creditors (unsecured) amount claimed', '9 Estimated deficiency/surplus', 'Share capital issued']) {
-      expect(row(label).valuation, label).toBeNull()
+    // Every liability line, as the form words it, with a box in both columns.
+    for (const label of [
+      '3 Less preferential creditors entitled to priority over the holders of debentures under any floating charge',
+      '4 Less amounts owing and secured by debenture or floating charge over company’s assets',
+      '5 Less preferential creditors estimated amount available for unsecured creditors',
+      '6 Creditors (unsecured) amount claimed',
+      '7 Balances owing to partly secured creditors total claims security held',
+      '8 Contingent assets estimated to produce',
+      '9 Contingent liabilities estimated to rank for estimated deficiency/surplus (subject to costs of administration/liquidation)',
+      'Share capital issued',
+      'Share capital paid up',
+    ]) {
+      expect(row(label).valuation, label).not.toBeNull()
       expect(row(label).erv, label).not.toBeNull()
     }
+    // The book share capital goes in Valuation.
+    expect(row('Share capital issued').valuation?.value).toBe('100')
+    expect(row('Share capital issued').erv?.value).toBe('')
+    // Line 7 is one line on the form: one row here, not two.
+    expect(screen.getAllByRole('cell').filter((c) => c.textContent?.startsWith('7 Balances owing'))).toHaveLength(1)
+    // "To whom" for line 4 is asked too.
+    expect(screen.getByLabelText('4 To whom (debenture or floating charge holder)')).toBeTruthy()
   })
 
   it('types amounts from the left', () => {

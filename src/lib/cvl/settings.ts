@@ -40,7 +40,7 @@ export const PLACEMENTS = {
   },
   financed_vehicles: {
     label: 'Financed vehicles and equipment (chattel mortgage, hire purchase)',
-    options: { s2_val: '2 Assets subject to specific charges less amounts owing', r7_claims: '7 Partly secured creditors: total claims', none: 'Leave off the form' },
+    options: { s2_val: '2 Assets subject to specific charges less amounts owing', r7_claims: '7 Balances owing to partly secured creditors', none: 'Leave off the form' },
   },
   super_payable: {
     label: 'Superannuation payable',

@@ -309,8 +309,9 @@ function prefill509(ctx: CvlContext, out: Prefill) {
   const share = ctx.balanceSheet.share_capital
   if (share) {
     const source = balanceSheetSource('Share capital, as printed (issued; paid up taken as the same — check).', share, ctx.clientId)
-    put(out, 'share_issued', share.amount, source)
-    put(out, 'share_paid', share.amount, source)
+    // Book values: the Valuation column only.
+    put(out, 'share_issued_val', share.amount, source)
+    put(out, 'share_paid_val', share.amount, source)
   }
   out.warnings.push('Estimated realisable values are left blank: they are the liquidator’s estimate, not the books.')
 
