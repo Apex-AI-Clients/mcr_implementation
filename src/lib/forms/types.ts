@@ -173,4 +173,6 @@ export interface FillResult {
   pdf: Uint8Array
   warnings: FormWarning[]
   pages: number
+  /** For each output page, the template page it is a copy of (1-based): where a field or table lands. */
+  pageSources: number[]
 }

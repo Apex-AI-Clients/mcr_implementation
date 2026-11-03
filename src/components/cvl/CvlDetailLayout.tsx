@@ -1,12 +1,11 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, Pencil, Printer, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, ListChecks, Pencil, Printer, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
-import { CvlStatusControl } from './CvlStatusControl'
 import { CvlDeleteButton } from './CvlDeleteButton'
 import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
@@ -14,6 +13,7 @@ import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
 import { formatPhone } from '@/lib/leads/format'
 import { formatDob } from '@/lib/asic/dates'
 import { formatDate } from '@/lib/utils'
+import { aud } from '@/lib/sources'
 import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'
 import type { DpnPanelData } from '@/lib/dpn/view'
 import type { AccountantDetails, CompanyDetails, DocumentRecord } from '@/types/app'
@@ -30,6 +30,19 @@ interface CvlDetailLayoutProps {
   atoAccounts: AtoAccountsOverview
   runningJob: { id: string; created_at: string } | null
 }
+
+interface Analysis {
+  href: string
+  icon: LucideIcon
+  title: string
+  what: string
+  /** What is on file now, in a few words. */
+  status: string
+  ok: boolean
+}
+
+/** The upload slots holding financial statements (new and pre-0031). */
+const FINANCIAL_CATEGORIES: string[] = ['financial_statements', 'current_financials', 'historical_financials']
 
 const SHORT: Record<string, string> = { '509': 'Form 509', '507a': 'Form 507 Part A', '507b': 'Form 507 Part B' }
 
@@ -65,15 +78,47 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
       }
     }),
   )
-  const started = forms.filter((f) => f.draft).length
-  const next =
-    cvlCase.status === 'printed'
-      ? 'Printed. Nothing more to do here unless the forms change.'
-      : cvlCase.status === 'forms_prepared'
-        ? 'Forms are saved for printing. Print them, then mark them printed.'
-        : started === 0
-          ? 'Check the forms: what the file has is filled in already. Fill any blank box, then save them for printing.'
-          : `${started} of ${forms.length} forms opened. Finish the rest, then save them for printing.`
+  // The analyses the forms draw on, each with what is on file now.
+  const statements = documents.filter((d) => FINANCIAL_CATEGORIES.includes(d.docCategory)).length
+  const activity = atoAccounts.accounts.filter((a) => a.kind === 'activity_statement')
+  const owing = atoAccounts.totalDebt
+  const notices = dpn.notices.length
+  const analyses: Analysis[] = [
+    {
+      href: `${base}/financials-comparison`,
+      icon: BarChart3,
+      title: 'Financial statements',
+      what: 'The statements as printed, years side by side.',
+      status: statements ? `${statements} ${statements === 1 ? 'file' : 'files'} on file` : 'No statements uploaded',
+      ok: statements > 0,
+    },
+    {
+      href: `${base}/financials-comparison/mapping`,
+      icon: ListChecks,
+      title: 'Form 509 values',
+      what: 'Confirm which printed lines are cash, debtors, stock, plant and share capital.',
+      status: statements ? 'Confirm the lines once' : 'Needs the statements first',
+      ok: false,
+    },
+    {
+      href: `${base}/lodgement-compliance-analysis`,
+      icon: Landmark,
+      title: 'ATO accounts',
+      what: 'Lodgement history and what is owed to the ATO.',
+      status: atoAccounts.accounts.length
+        ? `${atoAccounts.accounts.length} ${atoAccounts.accounts.length === 1 ? 'account' : 'accounts'}${owing !== null ? ` · ${aud(owing, { cents: false })} owing` : ''}`
+        : 'No ATO account uploaded',
+      ok: activity.length > 0,
+    },
+    {
+      href: `${base}/director-penalty-notices`,
+      icon: ShieldAlert,
+      title: 'Director penalty notices',
+      what: 'Each notice, its deadline, and what each director owes.',
+      status: notices ? `${notices} ${notices === 1 ? 'notice' : 'notices'} on file` : dpn.noneIssued ? 'None issued (confirmed)' : 'None uploaded',
+      ok: notices > 0 || !!dpn.noneIssued,
+    },
+  ]
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -118,14 +163,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
         </div>
       </div>
 
-      {/* Where it stands */}
-      <div className="mb-6 space-y-2">
-        <CvlStatusControl caseId={cvlCase.id} status={cvlCase.status} formsPreparedAt={cvlCase.formsPreparedAt} printedAt={cvlCase.printedAt} />
-        <p className="flex items-center gap-1.5 px-1 text-xs text-foreground/60">
-          <ArrowRight className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-          {next}
-        </p>
-      </div>
+      <div className="mb-6" />
 
       {runningJob && <ComparisonJobStatus key={runningJob.id} clientId={client.id} basePath={base} jobId={runningJob.id} startedAt={runningJob.created_at} />}
 
@@ -182,6 +220,37 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
               ))}
             </ul>
           </Card>
+
+          {/* The analyses the forms draw on */}
+          <section aria-labelledby="cvl-analyses">
+            <h2 id="cvl-analyses" className="mb-3 text-sm font-semibold text-foreground/80">
+              Analyses
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {analyses.map((a) => (
+                <Link
+                  key={a.href}
+                  href={a.href}
+                  className="group flex items-start gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/40 hover:bg-surface/60"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                    <a.icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2 text-sm font-medium text-foreground">
+                      {a.title}
+                      <ArrowRight className="h-3.5 w-3.5 text-foreground/30 transition-colors group-hover:text-accent" aria-hidden="true" />
+                    </span>
+                    <span className="mt-0.5 block text-xs text-foreground/50">{a.what}</span>
+                    <span className={`mt-2 inline-flex items-center gap-1 text-[11px] font-medium ${a.ok ? 'text-success' : 'text-foreground/40'}`}>
+                      {a.ok ? <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> : <Circle className="h-3 w-3" aria-hidden="true" />}
+                      {a.status}
+                    </span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
 
           {/* The documents the forms draw on */}
           <section>
@@ -279,34 +348,14 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             )}
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Analyses</CardTitle>
-            </CardHeader>
-            <ul className="space-y-2 text-xs">
-              {[
-                [`${base}/financials-comparison`, 'Financial statements comparison'],
-                [`${base}/financials-comparison/mapping`, 'Confirm key figures (Form 509 values)'],
-                [`${base}/lodgement-compliance-analysis`, 'ATO activity statement account'],
-                [`${base}/director-penalty-notices`, 'Director penalty notices'],
-              ].map(([href, label]) => (
-                <li key={href}>
-                  <Link href={href} className="inline-flex items-center gap-1.5 text-accent hover:underline">
-                    {label}
-                    <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            {cvlCase.origin === 'sbr_client' && (
-              <p className="mt-3 border-t border-border pt-3 text-[11px] text-foreground/40">
-                Moved from SBR{cvlCase.sbrArchivedAt ? ` on ${formatDate(cvlCase.sbrArchivedAt)}` : ''}.{' '}
-                <Link href={`/sbr/archive/${client.id}`} className="text-accent hover:underline">
-                  SBR record (read-only)
-                </Link>
-              </p>
-            )}
-          </Card>
+          {cvlCase.origin === 'sbr_client' && (
+            <p className="px-1 text-[11px] text-foreground/40">
+              Moved from SBR{cvlCase.sbrArchivedAt ? ` on ${formatDate(cvlCase.sbrArchivedAt)}` : ''}.{' '}
+              <Link href={`/sbr/archive/${client.id}`} className="text-accent hover:underline">
+                SBR record (read-only)
+              </Link>
+            </p>
+          )}
         </aside>
       </div>
     </div>

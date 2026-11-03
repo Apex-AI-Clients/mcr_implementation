@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Check, Eye, PenLine, Plus, Printer, RotateCcw, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, Loader2, PenLine, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -29,12 +29,19 @@ interface CvlFormEditorProps {
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const blank = (v: FieldValue) => v === null || v === undefined || v === ''
 
+/** How long after the last keystroke the preview is filled again. */
+const PREVIEW_DELAY_MS = 600
+
 /**
- * One ASIC form's entry screen, in the form's own question order and
- * numbering. Every answer can be changed; a pre-filled one carries an ⓘ
- * saying where it came from until staff change it. Every Yes/No starts at
- * "No". Answers written by hand on the printout (signatures, the dates beside
- * them, B6 log-ins, the B1 address) are shown but cannot be typed or saved.
+ * One ASIC form's entry screen: the questions on the left, in the form's own
+ * order and numbering, and on the right the official page as it will print,
+ * filled again a moment after each change and turned to the page being
+ * edited.
+ *
+ * Every answer can be changed; a pre-filled one carries an ⓘ saying where it
+ * came from until staff change it. Every Yes/No starts at "No". Answers
+ * written by hand on the printout (signatures, the dates beside them, B6
+ * log-ins, the B1 address) are shown but cannot be typed or saved.
  */
 export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefill, initial, saved: savedAtOpen }: CvlFormEditorProps) {
   const router = useRouter()
@@ -43,41 +50,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const [saved, setSaved] = useState(savedAtOpen)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // The PDF as it would print now, answers on screen included (not saved).
-  const [preview, setPreview] = useState<{ url: string; warnings: string[] } | null>(null)
-  const [previewing, setPreviewing] = useState(false)
-
-  // A preview's object URL is let go when it is replaced or closed.
-  useEffect(() => () => {
-    if (preview) URL.revokeObjectURL(preview.url)
-  }, [preview])
-
-  async function showPreview() {
-    setPreviewing(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ form: map.code, subject, answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy } }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Could not make the preview')
-      }
-      let warnings: string[] = []
-      try {
-        warnings = JSON.parse(decodeURIComponent(res.headers.get('X-Cvl-Warnings') ?? '%5B%5D'))
-      } catch {
-        warnings = []
-      }
-      setPreview({ url: URL.createObjectURL(await res.blob()), warnings })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setPreviewing(false)
-    }
-  }
+  // The template page being edited: the preview turns to it.
+  const [editingPage, setEditingPage] = useState<number | null>(null)
   const dirty = !same(state, savedState)
 
   // A warning before leaving with changes not saved.
@@ -156,37 +130,25 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     return pre && !state.editedKeys.includes(key) && same(pre.value, state.fields[key]) ? pre.source : null
   }
 
+  // The page of whatever is focused on the left, for the preview.
+  function onFocusIn(e: React.FocusEvent<HTMLDivElement>) {
+    const holder = (e.target as HTMLElement).closest('[data-page]') as HTMLElement | null
+    if (holder?.dataset.page) setEditingPage(Number(holder.dataset.page))
+  }
+
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <Link href={`/cvl/${clientId}`} className="mb-4 inline-flex items-center gap-1.5 text-xs text-foreground/40 transition-colors hover:text-foreground">
+    <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6">
+      <Link href={`/cvl/${clientId}`} className="mb-3 inline-flex items-center gap-1.5 text-xs text-foreground/40 transition-colors hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to the CVL file
       </Link>
 
-      <div className="sticky top-0 z-10 -mx-4 mb-6 flex flex-wrap items-start justify-between gap-3 border-b border-border bg-primary/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+      <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-foreground">{map.title}</h1>
-          <p className="text-xs text-foreground/50">
-            ASIC version {map.version}
-            {saved ? ` · draft saved ${formatDate(saved.at)} by ${saved.by}` : ' · not saved yet'}
-            {saved && saved.version !== map.version ? ` · written against version ${saved.version}` : ''}
-          </p>
+          <p className="font-mono text-[11px] uppercase tracking-wider text-foreground/40">ASIC · version {map.version}</p>
+          <h1 className="text-xl font-semibold text-foreground">{map.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {subjects.length > 1 && (
-            <nav className="flex flex-wrap gap-1" aria-label="Director">
-              {subjects.map((s) => (
-                <Link
-                  key={s.subject}
-                  href={`/cvl/${clientId}/forms/${map.code}?subject=${encodeURIComponent(s.subject)}`}
-                  aria-current={s.subject === subject ? 'page' : undefined}
-                  className={`rounded-lg px-2.5 py-1 text-xs ${s.subject === subject ? 'bg-accent/10 font-medium text-foreground' : 'text-foreground/50 hover:text-foreground'}`}
-                >
-                  {s.label}
-                </Link>
-              ))}
-            </nav>
-          )}
           <Link
             href={`/cvl/${clientId}/print`}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
@@ -194,51 +156,45 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             <Printer className="h-3.5 w-3.5" />
             Print page
           </Link>
-          <Button type="button" size="sm" variant="accent" onClick={showPreview} loading={previewing} disabled={saving}>
-            <Eye className="h-3.5 w-3.5" />
-            Preview
-          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
             <RotateCcw className="h-3.5 w-3.5" />
             Back to pre-filled
           </Button>
           <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty}>
-            {dirty ? 'Save draft' : (
+            {dirty ? (
+              'Save draft'
+            ) : (
               <>
                 <Check className="h-3.5 w-3.5" /> Saved
               </>
             )}
           </Button>
         </div>
-        {error && <p className="w-full text-xs text-destructive">{error}</p>}
+      </header>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+        {subjects.length > 1 &&
+          subjects.map((s) => (
+            <Link
+              key={s.subject}
+              href={`/cvl/${clientId}/forms/${map.code}?subject=${encodeURIComponent(s.subject)}`}
+              aria-current={s.subject === subject ? 'page' : undefined}
+              className={`rounded-full border px-3 py-1 ${s.subject === subject ? 'border-accent bg-accent/10 font-medium text-foreground' : 'border-border text-foreground/50 hover:text-foreground'}`}
+            >
+              {s.label}
+            </Link>
+          ))}
+        <span className={`rounded-full px-3 py-1 ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
+          {dirty ? 'Changes not saved' : saved ? `Draft saved ${formatDate(saved.at)} by ${saved.by}` : 'Pre-filled, not saved yet'}
+        </span>
+        {saved && saved.version !== map.version && (
+          <span className="rounded-full bg-warning/15 px-3 py-1 text-warning">Written against version {saved.version}</span>
+        )}
+        {error && <span className="text-destructive">{error}</span>}
       </div>
 
-      {preview && (
-        <section className="mb-6 rounded-xl border border-border bg-card p-3" aria-label="Preview">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-foreground/60">
-              As it would print now, with the answers on screen{dirty ? ' (not saved yet)' : ''}. Fill in any blank box above, then preview again.
-            </p>
-            <button type="button" onClick={() => setPreview(null)} className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground">
-              <X className="h-3.5 w-3.5" /> Close preview
-            </button>
-          </div>
-          {preview.warnings.length > 0 && (
-            <ul className="mb-2 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-foreground/80">
-              {preview.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-1.5">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
-                  {w}
-                </li>
-              ))}
-            </ul>
-          )}
-          <iframe title={`Preview of ${map.title}`} src={preview.url} className="h-[80vh] w-full rounded-lg border border-border bg-white" />
-        </section>
-      )}
-
       {prefill.warnings.length > 0 && (
-        <ul className="mb-6 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground/80">
+        <ul className="mb-4 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground/80">
           {prefill.warnings.map((w) => (
             <li key={w} className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
@@ -248,8 +204,21 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         </ul>
       )}
 
-      <div className={prefill.candidates.length ? 'grid gap-6 lg:grid-cols-[1fr_300px]' : ''}>
-        <div className="space-y-6">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        {/* The questions */}
+        <div className="min-w-0 space-y-3" onFocus={onFocusIn}>
+          <nav aria-label="Questions" className="flex flex-wrap gap-1">
+            {map.sections.map((s) => (
+              <a
+                key={s.q}
+                href={`#q-${s.q}`}
+                className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-foreground/50 hover:border-accent hover:text-accent"
+              >
+                {s.q.length > 6 ? s.q.split(' ').map((w) => w[0]).join('') : s.q}
+              </a>
+            ))}
+          </nav>
+
           {map.hasTables && (
             <section className="rounded-xl border border-border bg-card p-4">
               <label htmlFor="signed-by" className="text-xs font-medium text-muted">
@@ -269,10 +238,10 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           )}
 
           {map.sections.map((s) => (
-            <section key={s.q} className="rounded-xl border border-border bg-card p-4" aria-labelledby={`q-${s.q}`}>
-              <h2 id={`q-${s.q}`} className="mb-3 text-sm font-semibold text-foreground">
-                <span className="mr-2 text-accent">{s.q}</span>{' '}
-                {s.text}
+            <section key={s.q} className="scroll-mt-4 rounded-xl border border-border bg-card p-4" aria-labelledby={`q-${s.q}`}>
+              <h2 id={`q-${s.q}`} className="mb-3 flex items-baseline gap-2.5 text-sm font-medium text-foreground">
+                <span className="min-w-[2.6em] font-mono font-semibold text-accent">{s.q}</span>{' '}
+                <span className="flex-1">{s.text}</span>
               </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {s.fields.map((f) => (
@@ -299,9 +268,187 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           ))}
         </div>
 
-        {prefill.candidates.length > 0 && <Candidates candidates={prefill.candidates} />}
+        {/* The official page, as it will print */}
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-4">
+          <LivePreview caseId={caseId} code={map.code} subject={subject} state={state} editingPage={editingPage} title={map.title} />
+          {prefill.candidates.length > 0 && <Candidates candidates={prefill.candidates} />}
+        </div>
       </div>
     </div>
+  )
+}
+
+/* ---------------- the live preview ---------------- */
+
+interface Filled {
+  pdf: Uint8Array
+  /** Template page of each output page. */
+  pageSources: number[]
+  warnings: string[]
+}
+
+/**
+ * The form as it will print with the answers on screen (not yet saved),
+ * filled again on the server a moment after each change and drawn here page
+ * by page. Turns to the page of whatever is being edited.
+ */
+function LivePreview({
+  caseId,
+  code,
+  subject,
+  state,
+  editingPage,
+  title,
+}: {
+  caseId: string
+  code: string
+  subject: string
+  state: EntryState
+  editingPage: number | null
+  title: string
+}) {
+  const [filled, setFilled] = useState<Filled | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const request = useRef(0)
+  const answers = JSON.stringify({ fields: state.fields, tables: state.tables, signedBy: state.signedBy })
+
+  // Fill again shortly after the last change; an older answer never overwrites a newer one.
+  useEffect(() => {
+    const id = ++request.current
+    const timer = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ form: code, subject, answers: JSON.parse(answers) }),
+        })
+        if (!res.ok) throw new Error('The preview could not be filled.')
+        const pdf = new Uint8Array(await res.arrayBuffer())
+        let warnings: string[] = []
+        let pageSources: number[] = []
+        try {
+          warnings = JSON.parse(decodeURIComponent(res.headers.get('X-Cvl-Warnings') ?? '%5B%5D'))
+          pageSources = JSON.parse(res.headers.get('X-Cvl-Pages') ?? '[]')
+        } catch {
+          // The PDF still shows without them.
+        }
+        if (id !== request.current) return
+        setFilled({ pdf, pageSources, warnings })
+        setError(null)
+      } catch (err) {
+        if (id === request.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
+      } finally {
+        if (id === request.current) setLoading(false)
+      }
+    }, PREVIEW_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [caseId, code, subject, answers])
+
+  const pages = filled ? Math.max(1, filled.pageSources.length) : 0
+
+  // Turn to the page of the field being edited.
+  useEffect(() => {
+    if (!filled || editingPage === null) return
+    const at = filled.pageSources.indexOf(editingPage)
+    if (at >= 0) setPage(at + 1)
+  }, [editingPage, filled])
+
+  const shown = Math.min(page, pages || 1)
+
+  // Draw the page shown.
+  const draw = useCallback(async () => {
+    if (!filled || !canvas.current) return
+    try {
+      // pdf.js itself (unpdf's browser-ready build), loaded only when a preview is drawn.
+      const { getDocument } = await import('unpdf/pdfjs')
+      const task = getDocument({ data: filled.pdf.slice(), useSystemFonts: true })
+      const doc = await task.promise
+      const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
+      const scale = Math.min(2.2, (window.devicePixelRatio || 1) * 1.4)
+      const viewport = pdfPage.getViewport({ scale })
+      const off = document.createElement('canvas')
+      off.width = viewport.width
+      off.height = viewport.height
+      const ctx = off.getContext('2d')
+      if (!ctx) return
+      await pdfPage.render({ canvas: off, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
+      const target = canvas.current
+      if (!target) return
+      target.width = off.width
+      target.height = off.height
+      target.getContext('2d')?.drawImage(off, 0, 0)
+      await task.destroy()
+    } catch {
+      setError('The preview could not be drawn. Open the PDF instead.')
+    }
+  }, [filled, shown])
+
+  useEffect(() => {
+    void draw()
+  }, [draw])
+
+  // A link to the same PDF, to open whole in a new tab.
+  const [href, setHref] = useState<string | null>(null)
+  useEffect(() => {
+    if (!filled) return
+    const url = URL.createObjectURL(new Blob([filled.pdf.slice()], { type: 'application/pdf' }))
+    setHref(url)
+    return () => URL.revokeObjectURL(url)
+  }, [filled])
+
+  return (
+    <section aria-label={`Preview of ${title}`} className="space-y-2">
+      <div className="flex flex-wrap items-center gap-1 text-xs">
+        <span className="mr-1 text-foreground/50">Page</span>
+        {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setPage(n)}
+            aria-current={n === shown ? 'page' : undefined}
+            className={`min-w-[2em] rounded border px-1.5 py-0.5 font-mono tabular-nums ${n === shown ? 'border-accent bg-accent text-white' : 'border-border bg-card text-foreground/60 hover:border-accent'}`}
+          >
+            {n}
+          </button>
+        ))}
+        <span className="ml-auto flex items-center gap-2 text-foreground/40">
+          {loading && (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
+            </span>
+          )}
+          {href && (
+            <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+              <ExternalLink className="h-3 w-3" aria-hidden="true" /> Open PDF
+            </a>
+          )}
+        </span>
+      </div>
+      <div className="overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]">
+        {filled ? (
+          <canvas ref={canvas} className="block h-auto w-full" aria-label={`Page ${shown} of ${pages}`} />
+        ) : (
+          <div className="flex aspect-[1/1.414] items-center justify-center text-xs text-neutral-500">
+            {error ?? 'Filling the form…'}
+          </div>
+        )}
+      </div>
+      {filled && error && <p className="text-xs text-destructive">{error}</p>}
+      {filled && filled.warnings.length > 0 && (
+        <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-foreground/80">
+          {filled.warnings.map((w) => (
+            <li key={w} className="flex items-start gap-1.5">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 
@@ -329,7 +476,7 @@ function FieldInput({
 
   if (f.handwritten) {
     return (
-      <div className={wide ? 'sm:col-span-2' : ''}>
+      <div className={wide ? 'sm:col-span-2' : ''} data-page={f.page}>
         <p className="mb-1.5 text-xs font-medium text-muted">{f.label}</p>
         <p className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-foreground/50">
           <PenLine className="h-3.5 w-3.5" aria-hidden="true" />
@@ -342,13 +489,21 @@ function FieldInput({
   let control: React.ReactNode
   if (f.type === 'yesno') {
     control = (
-      <div role="radiogroup" aria-labelledby={`${id}-label`} className="flex gap-4 pt-1 text-sm">
-        {(['yes', 'no'] as const).map((v) => (
-          <label key={v} className="flex cursor-pointer items-center gap-1.5">
-            <input type="radio" name={id} checked={String(value ?? 'no').toLowerCase() === v} onChange={() => onChange(v)} className="accent-accent" />
-            {v === 'yes' ? 'Yes' : 'No'}
-          </label>
-        ))}
+      <div className="flex items-center gap-1">
+        <div role="radiogroup" aria-labelledby={`${id}-label`} className="inline-flex overflow-hidden rounded-md border border-border text-xs">
+          {(['yes', 'no'] as const).map((v) => {
+            const on = String(value ?? 'no').toLowerCase() === v
+            return (
+              <label
+                key={v}
+                className={`cursor-pointer px-3.5 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-accent/40 ${v === 'no' ? 'border-l border-border' : ''} ${on ? 'bg-accent font-medium text-white' : 'bg-input-bg text-foreground/60 hover:text-foreground'}`}
+              >
+                <input type="radio" name={id} checked={on} onChange={() => onChange(v)} className="sr-only" />
+                {v === 'yes' ? 'Yes' : 'No'}
+              </label>
+            )
+          })}
+        </div>
         {info}
       </div>
     )
@@ -397,9 +552,9 @@ function FieldInput({
   }
 
   return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
+    <div className={f.type === 'yesno' ? 'sm:col-span-2' : wide ? 'sm:col-span-2' : ''} data-page={f.page}>
       {f.type === 'yesno' ? (
-        <p id={`${id}-label`} className="text-xs font-medium text-muted">
+        <p id={`${id}-label`} className="mb-1.5 text-sm text-foreground/80">
           {f.label}
         </p>
       ) : (
@@ -419,7 +574,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
   const set = (i: number, key: string, v: FieldValue) => onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   const pages = Math.max(1, Math.ceil(rows.length / table.rowsPerPage))
   return (
-    <div className="mt-4">
+    <div className="mt-4" data-page={table.page}>
       <p className="mb-2 text-xs font-medium text-foreground/70">
         Table {table.id.replace('_', ' ')}: {table.title}
         <span className="ml-2 font-normal text-foreground/40">
@@ -498,7 +653,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
 
 function Candidates({ candidates }: { candidates: Candidate[] }) {
   return (
-    <aside className="h-fit space-y-3 rounded-xl border border-border bg-card p-4 lg:sticky lg:top-24">
+    <aside className="h-fit space-y-3 rounded-xl border border-border bg-card p-4">
       <h2 className="text-sm font-semibold text-foreground">Amounts not placed on the form</h2>
       <p className="text-xs text-foreground/50">Where each goes on Form 509 is to be confirmed (CVL settings).</p>
       <ul className="space-y-3 text-xs">

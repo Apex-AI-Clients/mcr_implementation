@@ -319,13 +319,12 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.queryByRole('button', { name: /Mark printed/ })).toBeNull()
   })
 
-  it('shows the CVL page: status with its date, the forms, and the analyses inside CVL', async () => {
+  it('shows the CVL page: the forms per director, the analyses as tiles inside CVL, no status bar', async () => {
     mockDb(IN_CVL, COMPANY, CASE)
     render(await CvlClientPage(PARAMS))
     expect(screen.getByRole('heading', { level: 1, name: 'Dean Whitlock' })).toBeTruthy()
-    const step = screen.getByText('Forms prepared', { selector: '[aria-current="step"]' })
-    expect(step.textContent).toMatch(/2026/)
-    expect(screen.getByRole('button', { name: 'Mark printed' })).toBeTruthy()
+    // The status (Draft, Forms prepared, Printed) lives on the print page, not here.
+    expect(screen.queryByRole('button', { name: 'Mark printed' })).toBeNull()
     // Form 509 and Part A for the company, a Part B for each director, each to fill in or preview.
     const fillIn = screen.getAllByRole('link', { name: /Fill in/ }).map((l) => l.getAttribute('href'))
     expect(fillIn).toEqual([
@@ -338,7 +337,10 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getByText('— Raj Example')).toBeTruthy()
     expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
     expect(screen.getByRole('link', { name: /Preview and print/ }).getAttribute('href')).toBe('/cvl/cl_1/print')
-    expect(screen.getByText(/Forms are saved for printing/)).toBeTruthy()
+    // Each analysis says what is on file.
+    const tile = screen.getByRole('link', { name: /Director penalty notices/ })
+    expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
+    expect(screen.getByRole('link', { name: /Form 509 values/ }).getAttribute('href')).toBe('/cvl/cl_1/financials-comparison/mapping')
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',

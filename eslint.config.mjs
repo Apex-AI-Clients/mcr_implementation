@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The reference project, unpacked locally (gitignored): not part of this app.
+    "reference/**",
   ]),
 ]);
 

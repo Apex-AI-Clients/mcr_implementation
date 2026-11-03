@@ -105,6 +105,11 @@ describe('fill', () => {
     const r = await fillOfficialForm('507a', SAMPLE_PARTA)
     // 6 form pages + appendix cover + A4, A5, A6 (both grids on one page), A7
     expect(r.pages).toBe(11)
+    // Which template page each output page is: the form pages, the appendix cover, then each table's page.
+    const { map } = formVersion('507a')
+    expect(r.pageSources).toHaveLength(r.pages)
+    expect(r.pageSources.slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, map.appendixCoverPage])
+    expect(new Set(r.pageSources.slice(7))).toEqual(new Set(map.tables.map((t) => t.page)))
     const withA = await fillOfficialForm('507a', SAMPLE_PARTA, { include: ['507a'] })
     expect(withA.pages).toBe(12)
     const texts = await pageTexts(r.pdf)

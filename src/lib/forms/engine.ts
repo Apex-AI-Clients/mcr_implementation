@@ -416,6 +416,7 @@ export async function fillForm(
   const include = new Set(opts.include ?? [])
   const printed = [...map.formPages, ...(map.optionalPages ?? []).filter((p) => include.has(p.id)).map((p) => p.page)]
   const copies = await out.copyPages(src, printed.map((p) => p - 1))
+  const pageSources = [...printed]
   const pens = new Map<number, Pen>()
   printed.forEach((p, i) => {
     out.addPage(copies[i])
@@ -441,6 +442,7 @@ export async function fillForm(
     if (pages.length && map.appendixCoverPage) {
       const [cover] = await out.copyPages(src, [map.appendixCoverPage - 1])
       out.addPage(cover)
+      pageSources.push(map.appendixCoverPage)
     }
     for (const g of pages) {
       const chunks = Math.max(1, ...g.tables.map((t, i) => Math.ceil(g.rows[i].length / t.rows.length)))
@@ -456,6 +458,7 @@ export async function fillForm(
       for (let k = 0; k < chunks; k++) {
         const [pg] = await out.copyPages(src, [g.page - 1])
         out.addPage(pg)
+        pageSources.push(g.page)
         const pen: Pen = { page: pg, font, ink, warnings }
         if (!g.rows.some((r) => r.length > 0)) continue // "all": a blank table stays as printed
         drawTableHeader(pen, g.tables[0], k + 1, chunks, data, map.formPageTotal)
@@ -472,7 +475,7 @@ export async function fillForm(
   out.setTitle(map.title)
   out.setSubject(`${map.form} (${map.version})`)
   out.setProducer('pdf-lib: official ASIC pages unchanged, answers written on top')
-  return { pdf: await out.save(), warnings: dedupe(warnings), pages: out.getPageCount() }
+  return { pdf: await out.save(), warnings: dedupe(warnings), pages: out.getPageCount(), pageSources }
 }
 
 function columnTotals(t: FormTable, rows: TableRow[]): TableRow | null {

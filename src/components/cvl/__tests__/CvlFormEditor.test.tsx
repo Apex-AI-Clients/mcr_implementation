@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
+// The preview's drawing is pdf.js on a canvas, which jsdom has not got.
+vi.mock('unpdf/pdfjs', () => ({ getDocument: vi.fn(() => ({ promise: Promise.reject(new Error('no canvas in tests')), destroy: async () => {} })) }))
 
 import { CvlFormEditor } from '../CvlFormEditor'
 import { entryMap } from '@/lib/cvl/entryMap'
@@ -12,6 +14,21 @@ import { formVersion } from '@/lib/forms/registry'
 import { context } from '@/lib/cvl/__tests__/fixtures'
 
 /** The Part B entry screen. Synthetic client file only. */
+
+/** Answers the preview with a tiny PDF and the page each output page is, and records every call. */
+function stubFetch(onPut?: Response) {
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === 'PUT'
+      ? (onPut ?? new Response(JSON.stringify({ ok: true, formVersion: '20220801', updatedAt: '2026-11-03T00:00:00Z', updatedBy: 'Casey' })))
+      : new Response(new Uint8Array([37, 80, 68, 70]), { headers: { 'X-Cvl-Pages': '[1,2,3,4,5,6,7,8,9]', 'X-Cvl-Warnings': encodeURIComponent('["B14: Answer is longer than the lines"]') } }),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+beforeEach(() => {
+  stubFetch()
+})
 
 afterEach(() => {
   cleanup()
@@ -73,13 +90,12 @@ describe('CvlFormEditor', () => {
 
   it('saves the answers and the changed keys', async () => {
     const user = userEvent.setup({ delay: null })
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, formVersion: '20220801', updatedAt: '2026-10-29T00:00:00Z', updatedBy: 'Casey' })))
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = stubFetch()
     renderPartB()
     await user.click(within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes'))
     await user.click(screen.getByRole('button', { name: 'Save draft' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+    const [url, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT') as unknown as [string, RequestInit]
     expect(url).toBe('/api/admin/cvl/case-1/forms/507b')
     const body = JSON.parse(init.body as string)
     expect(body.subject).toBe('director:1')
@@ -87,5 +103,18 @@ describe('CvlFormEditor', () => {
     expect(body.editedKeys).toEqual(['b2'])
     expect('b6_password' in body.answers.fields).toBe(false)
     expect(await screen.findByRole('button', { name: /Saved/ })).toBeTruthy()
+  })
+
+  it('fills the preview again with the answers on screen, and shows what to check', async () => {
+    const fetchMock = stubFetch()
+    renderPartB()
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/admin/cvl/case-1/preview')).toBe(true), { timeout: 3000 })
+    const [, init] = fetchMock.mock.calls.find(([u]) => String(u) === '/api/admin/cvl/case-1/preview')!
+    const body = JSON.parse(init!.body as string)
+    expect(body).toMatchObject({ form: '507b', subject: 'director:1' })
+    expect(body.answers.fields.b1_name).toBe('Jordan Sample')
+    // Page tabs for each output page, and the form's warnings beside it.
+    expect(await screen.findByText('B14: Answer is longer than the lines')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9)
   })
 })

@@ -88,6 +88,8 @@ describe('preview', () => {
     expect(res.headers.get('cache-control')).toBe('no-store')
     const warnings = JSON.parse(decodeURIComponent(res.headers.get('x-cvl-warnings')!))
     expect(warnings).toContain('Never opened: printed from the pre-filled answers.')
+    // The template page of each output page: Part B prints its 9 form pages first.
+    expect(JSON.parse(res.headers.get('x-cvl-pages')!).slice(0, 9)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(await text(res)).toContain('Casey Example')
     expect(upload).not.toHaveBeenCalled()
     expect(insert).not.toHaveBeenCalled()

@@ -21,19 +21,21 @@ export const maxDuration = 60
  *   POST { form, subject, answers }  the answers on screen, not yet saved
  *
  * The things to check before printing come back in the X-Cvl-Warnings header
- * (URI-encoded JSON). Answers sent are cleaned as a draft is: nothing written
+ * (URI-encoded JSON); for one form, X-Cvl-Pages says which template page each
+ * output page is (JSON), so the entry screen can show the page being edited. Answers sent are cleaned as a draft is: nothing written
  * by hand is ever drawn.
  */
 
 const Body = z.object({ form: z.string(), subject: z.string(), answers: z.unknown() })
 
-function pdfResponse(pdf: Uint8Array, warnings: string[], name: string) {
+function pdfResponse(pdf: Uint8Array, warnings: string[], name: string, pageSources?: number[]) {
   return new NextResponse(Buffer.from(pdf), {
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${name}"`,
       'Cache-Control': 'no-store',
       'X-Cvl-Warnings': encodeURIComponent(JSON.stringify(warnings)),
+      ...(pageSources ? { 'X-Cvl-Pages': JSON.stringify(pageSources) } : {}),
     },
   })
 }
@@ -65,7 +67,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Unknown form' }, { status: 404 })
     }
     const filled = await fillJob(jobFor(ctx, drafts, code, subject))
-    return pdfResponse(filled.fill.pdf, filled.warnings, `${code}-preview.pdf`)
+    return pdfResponse(filled.fill.pdf, filled.warnings, `${code}-preview.pdf`, filled.fill.pageSources)
   } catch (err) {
     console.error('[GET /api/admin/cvl/[caseId]/preview]', err instanceof Error ? err.message : 'unknown')
     return NextResponse.json({ error: 'Could not make the preview' }, { status: 500 })
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     // The pre-fill only for its warnings and amounts not placed; the answers are the ones sent.
     const job = { ...jobFor(ctx, [], code, body.data.subject), answers, fromDraft: true, version: CURRENT_VERSION[code] }
     const filled = await fillJob(job)
-    return pdfResponse(filled.fill.pdf, filled.warnings, `${code}-preview.pdf`)
+    return pdfResponse(filled.fill.pdf, filled.warnings, `${code}-preview.pdf`, filled.fill.pageSources)
   } catch (err) {
     console.error('[POST /api/admin/cvl/[caseId]/preview]', err instanceof Error ? err.message : 'unknown')
     return NextResponse.json({ error: 'Could not make the preview' }, { status: 500 })

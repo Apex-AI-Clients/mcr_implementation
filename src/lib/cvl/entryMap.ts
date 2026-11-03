@@ -18,6 +18,8 @@ export interface EntryField {
   handwritten?: boolean
   /** Lines fields: how many printed lines there are. */
   lines?: number
+  /** The template page it is printed on: the preview shows it while it is edited. */
+  page: number
 }
 
 export interface EntryTable {
@@ -26,6 +28,8 @@ export interface EntryTable {
   columns: { key: string; label: string; type: 'text' | 'money' | 'date' | 'check' }[]
   /** Rows on one printed page; more go onto copies of the page. */
   rowsPerPage: number
+  /** The template page the table is printed on. */
+  page: number
 }
 
 export interface EntrySection {
@@ -76,6 +80,7 @@ export function entryMap(map: FormMap): EntryMap {
       key: f.key,
       label: f.label,
       type,
+      page: f.page,
       ...(f.type === 'choice' ? { options: Object.keys(f.options).map((k): [string, string] => [k, CHOICE_LABELS[k] ?? k.replace(/_/g, ' ')]) } : {}),
       ...(f.type === 'lines' ? { lines: f.lines.length } : {}),
       ...(f.handwritten ? { handwritten: true } : {}),
@@ -87,6 +92,7 @@ export function entryMap(map: FormMap): EntryMap {
       title: t.title,
       columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type })),
       rowsPerPage: t.rows.length,
+      page: t.page,
     })
   }
   return {
