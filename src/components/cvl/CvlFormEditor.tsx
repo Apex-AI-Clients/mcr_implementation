@@ -232,17 +232,28 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                 <span className="min-w-[2.6em] font-mono font-semibold text-accent">{s.q}</span>{' '}
                 <span className="flex-1">{s.text}</span>
               </h2>
+              {s.fields.some((f) => f.column) && (
+                <ColumnsTable
+                  fields={s.fields.filter((f) => f.column)}
+                  values={state.fields}
+                  sourceOf={sourceOf}
+                  notes={prefill.notes}
+                  onChange={setField}
+                />
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
-                {s.fields.map((f) => (
-                  <FieldInput
-                    key={f.key}
-                    field={f}
-                    value={state.fields[f.key]}
-                    source={sourceOf(f.key)}
-                    note={prefill.notes[f.key] ?? null}
-                    onChange={(v) => setField(f.key, v)}
-                  />
-                ))}
+                {s.fields
+                  .filter((f) => !f.column)
+                  .map((f) => (
+                    <FieldInput
+                      key={f.key}
+                      field={f}
+                      value={state.fields[f.key]}
+                      source={sourceOf(f.key)}
+                      note={prefill.notes[f.key] ?? null}
+                      onChange={(v) => setField(f.key, v)}
+                    />
+                  ))}
               </div>
               {s.tables.map((t) => (
                 <TableInput
@@ -520,7 +531,7 @@ function FieldInput({
               onChange(raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw)
             } else onChange(raw === '' ? null : raw)
           }}
-          className={`${inputClass} ${f.type === 'money' ? 'text-right tabular-nums' : ''}`}
+          className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''}`}
         />
         {info}
       </div>
@@ -540,6 +551,89 @@ function FieldInput({
       )}
       {control}
       {note && <p className="mt-1 text-xs text-warning">{note}</p>}
+    </div>
+  )
+}
+
+/* ---------------- Form 509's two columns ---------------- */
+
+/** Typed amount → stored value: a number when it reads as one, else the text as typed. */
+function moneyValue(raw: string): FieldValue {
+  const n = Number(raw.replace(/[$,\s]/g, ''))
+  return raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw
+}
+
+/**
+ * Form 509's summary of assets and liabilities as it is printed: one row per
+ * line of the form, its amount boxes under "Valuation" and "Estimated
+ * realisable value". A row has a box only in the column the form prints one
+ * in: the liabilities, and TOTAL estimated realisable values, in the second
+ * column only; TOTAL assets in the first only.
+ */
+function ColumnsTable({
+  fields,
+  values,
+  sourceOf,
+  notes,
+  onChange,
+}: {
+  fields: EntryField[]
+  values: Record<string, FieldValue>
+  sourceOf: (key: string) => AmountSource | null
+  notes: Record<string, string>
+  onChange: (key: string, v: FieldValue) => void
+}) {
+  const rows: { label: string; page: number; valuation?: EntryField; erv?: EntryField }[] = []
+  for (const f of fields) {
+    let row = rows.find((r) => r.label === f.row)
+    if (!row) {
+      row = { label: f.row ?? f.label, page: f.page }
+      rows.push(row)
+    }
+    row[f.column!] = f
+  }
+  const cell = (f: EntryField | undefined) => {
+    if (!f) return <span className="block px-2 text-xs text-foreground/25" aria-hidden="true">—</span>
+    const source = sourceOf(f.key)
+    const value = values[f.key]
+    return (
+      <div data-page={f.page}>
+        <div className="flex items-center gap-1">
+          <input
+            id={`f-${f.key}`}
+            aria-label={f.label}
+            inputMode="decimal"
+            value={value === null || value === undefined ? '' : String(value)}
+            placeholder={f.computed ? 'Adds up if blank' : undefined}
+            onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
+            className={`${inputClass} py-1.5 tabular-nums`}
+          />
+          {source && <SourceButton source={source} label={f.label} />}
+        </div>
+        {notes[f.key] && <p className="mt-1 text-xs text-warning">{notes[f.key]}</p>}
+      </div>
+    )
+  }
+  return (
+    <div className="mb-3 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-foreground/50">
+            <th className="pb-2 pr-3 font-medium" />
+            <th className="w-[34%] pb-2 pr-2 font-medium">Valuation</th>
+            <th className="w-[34%] pb-2 font-medium">Estimated realisable value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-t border-white/5">
+              <td className="py-1.5 pr-3 text-xs text-foreground/80">{r.label}</td>
+              <td className="py-1.5 pr-2">{cell(r.valuation)}</td>
+              <td className="py-1.5">{cell(r.erv)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -594,7 +688,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                           const n = Number(raw.replace(/[$,\s]/g, ''))
                           set(i, c.key, raw === '' ? null : c.type === 'money' && Number.isFinite(n) ? n : raw)
                         }}
-                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'text-right tabular-nums' : ''}`}
+                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''}`}
                       />
                     )}
                   </td>

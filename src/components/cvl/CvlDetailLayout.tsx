@@ -217,8 +217,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             </ul>
           </Card>
 
-          {risk && <DirectorRiskPanel clientId={client.id} risk={risk} />}
-
           {/* The analyses the forms draw on */}
           <section aria-labelledby="cvl-analyses">
             <h2 id="cvl-analyses" className="mb-3 text-sm font-semibold text-foreground/80">
@@ -356,6 +354,13 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
           )}
         </aside>
       </div>
+
+      {/* Last, full width: the director's personal risk. */}
+      {risk && (
+        <div className="mt-6">
+          <DirectorRiskPanel clientId={client.id} risk={risk} />
+        </div>
+      )}
     </div>
   )
 }

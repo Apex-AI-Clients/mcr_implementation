@@ -20,6 +20,14 @@ export interface EntryField {
   lines?: number
   /** The template page it is printed on: the preview shows it while it is edited. */
   page: number
+  /**
+   * Form 509's summary: the printed column the amount goes in, and the row it
+   * belongs to. Each row shows its boxes under the form's own two headings.
+   */
+  column?: 'valuation' | 'erv'
+  row?: string
+  /** Left blank, the form adds it up from the boxes above (Form 509 totals). */
+  computed?: boolean
 }
 
 export interface EntryTable {
@@ -58,7 +66,15 @@ const CHOICE_LABELS: Record<string, string> = {
   voluntary_administrator: 'Voluntary Administrator s438B(2) (507K)',
 }
 
+/** Form 509's two money columns: Valuation from x 400, Estimated realisable value from x 483. */
+const ERV_COLUMN_X0 = 480
+
+/** "1(b) Sundry debtors: Valuation" → "1(b) Sundry debtors". */
+const rowLabel = (label: string) =>
+  label.replace(/: (Valuation|Estimated realisable value)$/, '').replace(/ \(valuation\)$/, '')
+
 export function entryMap(map: FormMap): EntryMap {
+  const computed = new Set((map.computed ?? []).map((c) => c.key))
   const sections: EntrySection[] = []
   const byQ = new Map<string, EntrySection>()
   const section = (q: string) => {
@@ -81,6 +97,10 @@ export function entryMap(map: FormMap): EntryMap {
       label: f.label,
       type,
       page: f.page,
+      ...(map.code === '509' && f.type === 'money'
+        ? { column: f.x0 >= ERV_COLUMN_X0 ? ('erv' as const) : ('valuation' as const), row: rowLabel(f.label) }
+        : {}),
+      ...(computed.has(f.key) ? { computed: true } : {}),
       ...(f.type === 'choice' ? { options: Object.keys(f.options).map((k): [string, string] => [k, CHOICE_LABELS[k] ?? k.replace(/_/g, ' ')]) } : {}),
       ...(f.type === 'lines' ? { lines: f.lines.length } : {}),
       ...(f.handwritten ? { handwritten: true } : {}),

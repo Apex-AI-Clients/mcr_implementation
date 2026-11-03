@@ -13,6 +13,9 @@ import { prefillForm } from '@/lib/cvl/prefill'
 import { formVersion } from '@/lib/forms/registry'
 import { context } from '@/lib/cvl/__tests__/fixtures'
 
+// Each test renders a whole ASIC form; under full-suite load that can pass 20s.
+vi.setConfig({ testTimeout: 60_000 })
+
 /** The Part B entry screen. Synthetic client file only. */
 
 /** Answers the preview with a tiny PDF and the page each output page is, and records every call. */
@@ -117,5 +120,46 @@ describe('CvlFormEditor', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
     expect(screen.queryByText('B14: Answer is longer than the lines')).toBeNull()
     expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
+  })
+})
+
+describe('CvlFormEditor — Form 509 summary', () => {
+  function render509() {
+    const map = formVersion('509').map
+    const prefill = prefillForm('509', 'company', context())
+    render(
+      <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="company" subjects={[{ subject: 'company', label: 'Company' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />,
+    )
+  }
+  /** The row of the summary table whose first cell is this label, and its two amount cells. */
+  const row = (label: string) => {
+    const cell = screen.getAllByRole('cell').find((c) => c.textContent === label)!
+    const [valuation, erv] = [...(cell.parentElement as HTMLElement).querySelectorAll('td')].slice(1)
+    return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
+  }
+
+  it('puts each amount under the column it prints in', () => {
+    render509()
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toContain('Estimated realisable value')
+    const debtors = row('1(b) Sundry debtors')
+    expect(debtors.valuation?.value).toBe('12480.5')
+    expect(debtors.erv?.value).toBe('')
+    // TOTAL assets: Valuation only. TOTAL estimated realisable values: the second column only.
+    expect(row('TOTAL assets')).toMatchObject({ erv: null })
+    expect(row('TOTAL assets').valuation?.placeholder).toBe('Adds up if blank')
+    expect(row('TOTAL estimated realisable values')).toMatchObject({ valuation: null })
+    expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
+    // Every liability: the second column only.
+    for (const label of ['3 Less preferential creditors (priority over floating charge)', '6 Creditors (unsecured) amount claimed', '9 Estimated deficiency/surplus', 'Share capital issued']) {
+      expect(row(label).valuation, label).toBeNull()
+      expect(row(label).erv, label).not.toBeNull()
+    }
+  })
+
+  it('types amounts from the left', () => {
+    render509()
+    for (const input of [row('1(b) Sundry debtors').valuation!, row('6 Creditors (unsecured) amount claimed').erv!]) {
+      expect(input.className).not.toMatch(/text-right/)
+    }
   })
 })

@@ -18,7 +18,17 @@ vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => nu
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
 vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
 // The director's risk reads the statements and ATO accounts: its own tests cover it.
-vi.mock('@/lib/cvl/directorRiskStore', () => ({ loadDirectorRisk: vi.fn(async () => null) }))
+vi.mock('@/lib/cvl/directorRiskStore', () => ({
+  loadDirectorRisk: vi.fn(async () => ({
+    issued: [],
+    potential: [],
+    activityStatement: null,
+    sgAccounts: [],
+    loans: [],
+    totalAtoDebt: null,
+    accounts: [],
+  })),
+}))
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
@@ -340,14 +350,19 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
     expect(screen.getByRole('link', { name: /Preview and print/ }).getAttribute('href')).toBe('/cvl/cl_1/print')
     // Each analysis says what is on file.
-    const tile = screen.getByRole('link', { name: /Director penalty notices/ })
+    const tile = within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ })
     expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
     expect(screen.queryByRole('link', { name: /Form 509 values/ })).toBeNull()
     // Each form: Fill in first, then Preview.
     const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
     expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
+    // The director's personal risk comes last, after the documents and the side column.
+    const risk = screen.getByText('Director’s personal risk')
+    for (const before of ['Documents', 'Accountant']) {
+      expect(screen.getByText(before).compareDocumentPosition(risk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',
     )
     expect(screen.getByRole('link', { name: /Edit details/ }).getAttribute('href')).toBe('/cvl/cl_1/intake')
