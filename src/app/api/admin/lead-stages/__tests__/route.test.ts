@@ -10,10 +10,11 @@ vi.mock('@/lib/supabase/server', () => ({
 import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/server'
 import { POST } from '../route'
 import { PATCH } from '../[key]/route'
+import { POST as DELETE_STAGE } from '../[key]/delete/route'
 
 /**
  * Stages staff add by typing (lead_stages, migration 0042): adding, renaming
- * and hiding one, and the names they can't take. Synthetic data only.
+ * and deleting one, and the names they can't take. Synthetic data only.
  */
 
 interface StageRow {
@@ -30,10 +31,19 @@ const BUILT_IN: StageRow[] = [
 ]
 
 /** A fake lead_stages / leads pair, enough for the two routes' queries. */
-function mockDb({ stages = BUILT_IN, leadsInStage = 0, insertError = null as { code: string } | null } = {}) {
+function mockDb({
+  stages = BUILT_IN,
+  leadsInStage = 0,
+  insertError = null as { code: string } | null,
+  deleteError = null as { code: string } | null,
+} = {}) {
   const rows = stages.map((row) => ({ ...row }))
   const inserted: Record<string, unknown>[] = []
   const updates: { key: string; patch: Record<string, unknown> }[] = []
+  const deleted: string[] = []
+  const leadMoves: { from: string; patch: Record<string, unknown> }[] = []
+  const activities: Record<string, unknown>[] = []
+  const leadIds = Array.from({ length: leadsInStage }, (_, i) => ({ id: `lead-${i + 1}` }))
 
   const single = (row: StageRow | undefined) => ({ single: () => Promise.resolve({ data: row ?? null, error: null }) })
 
@@ -41,9 +51,24 @@ function mockDb({ stages = BUILT_IN, leadsInStage = 0, insertError = null as { c
     select: () => ({
       // POST reads every row; PATCH reads one by key.
       then: (resolve: (value: unknown) => void) => resolve({ data: rows, error: null }),
-      eq: (_column: string, key: string) => ({
-        maybeSingle: () => Promise.resolve({ data: rows.find((row) => row.key === key) ?? null, error: null }),
-      }),
+      eq: (_column: string, key: string) => {
+        const found = () => rows.find((row) => row.key === key)
+        return {
+          maybeSingle: () => Promise.resolve({ data: found() ?? null, error: null }),
+          is: () => ({
+            maybeSingle: () => {
+              const row = found()
+              return Promise.resolve({ data: row && !row.hidden_at ? row : null, error: null })
+            },
+          }),
+        }
+      },
+    }),
+    delete: () => ({
+      eq: (_column: string, key: string) => {
+        if (!deleteError) deleted.push(key)
+        return Promise.resolve({ error: deleteError })
+      },
     }),
     insert: (row: Record<string, unknown>) => {
       inserted.push(row)
@@ -69,11 +94,25 @@ function mockDb({ stages = BUILT_IN, leadsInStage = 0, insertError = null as { c
   }
   const leads = {
     select: () => ({ eq: () => Promise.resolve({ count: leadsInStage, error: null }) }),
+    update: (patch: Record<string, unknown>) => ({
+      eq: (_column: string, from: string) => ({
+        select: () => {
+          leadMoves.push({ from, patch })
+          return Promise.resolve({ data: leadIds, error: null })
+        },
+      }),
+    }),
+  }
+  const lead_activities = {
+    insert: (batch: Record<string, unknown>[]) => {
+      activities.push(...batch)
+      return Promise.resolve({ error: null })
+    },
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
-    from: (table: string) => ({ lead_stages, leads })[table],
+    from: (table: string) => ({ lead_stages, leads, lead_activities })[table],
   } as never)
-  return { inserted, updates }
+  return { inserted, updates, deleted, leadMoves, activities }
 }
 
 function request(method: string, url: string, body: unknown) {
@@ -158,26 +197,74 @@ describe('PATCH /api/admin/lead-stages/[key]', () => {
   it('never changes a built-in stage', async () => {
     mockDb({ stages: [...BUILT_IN, CUSTOM] })
     expect((await patch('unresponsive', { label: 'Ghosted' })).status).toBe(400)
-    expect((await patch('unresponsive', { hidden: true })).status).toBe(400)
-  })
-
-  it('hides a stage nobody is in', async () => {
-    const { updates } = mockDb({ stages: [...BUILT_IN, CUSTOM], leadsInStage: 0 })
-    const response = await patch('custom_aaaa1111', { hidden: true })
-    expect(response.status).toBe(200)
-    expect(updates[0].patch.hidden_at).toEqual(expect.any(String))
-  })
-
-  it('refuses to hide a stage with leads in it, so none is left on no tab', async () => {
-    const { updates } = mockDb({ stages: [...BUILT_IN, CUSTOM], leadsInStage: 2 })
-    const response = await patch('custom_aaaa1111', { hidden: true })
-    expect(response.status).toBe(409)
-    expect((await response.json()).error).toBe('Move its 2 leads to another stage first')
-    expect(updates).toHaveLength(0)
   })
 
   it('says so for a stage that does not exist', async () => {
     mockDb()
     expect((await patch('custom_ffff9999', { label: 'Anything' })).status).toBe(404)
+  })
+})
+
+describe('POST /api/admin/lead-stages/[key]/delete', () => {
+  const CUSTOM: StageRow = { key: 'custom_aaaa1111', label: 'Waiting', position: 1, hidden_at: null, built_in: false }
+  const OTHER: StageRow = { key: 'custom_bbbb2222', label: 'Parked', position: 2, hidden_at: null, built_in: false }
+  const remove = (key: string, body: unknown = {}) =>
+    DELETE_STAGE(request('POST', `http://localhost/api/admin/lead-stages/${key}/delete`, body), {
+      params: Promise.resolve({ key }),
+    })
+
+  it('deletes a stage nobody is in', async () => {
+    const { deleted, leadMoves } = mockDb({ stages: [...BUILT_IN, CUSTOM] })
+    const response = await remove('custom_aaaa1111')
+    expect(response.status).toBe(200)
+    expect(deleted).toEqual(['custom_aaaa1111'])
+    expect(leadMoves).toHaveLength(0)
+  })
+
+  it('asks where its leads go, rather than leaving them on no stage', async () => {
+    const { deleted } = mockDb({ stages: [...BUILT_IN, CUSTOM], leadsInStage: 2 })
+    const response = await remove('custom_aaaa1111')
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toBe('Choose a stage for its 2 leads')
+    expect(deleted).toHaveLength(0)
+  })
+
+  it('moves its leads first, each with a stage-change entry, then deletes it', async () => {
+    const { deleted, leadMoves, activities } = mockDb({ stages: [...BUILT_IN, CUSTOM], leadsInStage: 2 })
+    const response = await remove('custom_aaaa1111', { moveTo: 'unresponsive' })
+    expect(response.status).toBe(200)
+    expect((await response.json()).moved).toBe(2)
+    expect(leadMoves).toEqual([
+      { from: 'custom_aaaa1111', patch: { stage: 'unresponsive', stage_since: expect.any(String) } },
+    ])
+    expect(activities).toEqual([
+      { lead_id: 'lead-1', type: 'stage_change', body: 'Stage changed from Waiting to Unresponsive.', author: 'staff' },
+      { lead_id: 'lead-2', type: 'stage_change', body: 'Stage changed from Waiting to Unresponsive.', author: 'staff' },
+    ])
+    expect(deleted).toEqual(['custom_aaaa1111'])
+  })
+
+  it('can move them to another stage staff added, by its name', async () => {
+    const { activities } = mockDb({ stages: [...BUILT_IN, CUSTOM, OTHER], leadsInStage: 1 })
+    expect((await remove('custom_aaaa1111', { moveTo: 'custom_bbbb2222' })).status).toBe(200)
+    expect(activities[0].body).toBe('Stage changed from Waiting to Parked.')
+  })
+
+  it('will not move them to Client, to itself, or to a stage that is gone', async () => {
+    const { deleted } = mockDb({ stages: [...BUILT_IN, CUSTOM], leadsInStage: 1 })
+    expect((await remove('custom_aaaa1111', { moveTo: 'client' })).status).toBe(400)
+    expect((await remove('custom_aaaa1111', { moveTo: 'custom_aaaa1111' })).status).toBe(400)
+    expect((await remove('custom_aaaa1111', { moveTo: 'custom_ffff9999' })).status).toBe(400)
+    expect(deleted).toHaveLength(0)
+  })
+
+  it('never deletes a built-in stage', async () => {
+    mockDb()
+    expect((await remove('unresponsive')).status).toBe(400)
+  })
+
+  it('says so when a lead was moved in at the last moment', async () => {
+    mockDb({ stages: [...BUILT_IN, CUSTOM], deleteError: { code: '23503' } })
+    expect((await remove('custom_aaaa1111')).status).toBe(409)
   })
 })

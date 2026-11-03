@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Download, EyeOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Download, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Pagination } from '@/components/ui/Pagination'
 import { Select } from '@/components/ui/Select'
@@ -16,13 +16,15 @@ import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { useLeadStages } from '@/components/leads/LeadStages'
 import { StageNameDialog } from '@/components/leads/StageNameDialog'
+import { DeleteStageDialog } from '@/components/leads/DeleteStageDialog'
+import { StageTabStrip } from '@/components/leads/StageTabStrip'
 import { useToast } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
 import { PER_PAGE_OPTIONS, pageRangeLabel, type PerPage } from '@/lib/leads/pagination'
-import { allViews, isCustomStage, stageLabel, viewDef, viewStages, type LeadView } from '@/lib/leads/constants'
+import { allViews, isCustomStage, stageLabel, viewDef, viewForStage, viewStages, type LeadView } from '@/lib/leads/constants'
 import { cn } from '@/lib/utils'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadStage } from '@/types/leads'
 import type { LeadNote } from '@/lib/leads/notes'
 
 const SEARCH_DEBOUNCE_MS = 250
@@ -80,11 +82,10 @@ export function LeadsPageClient({
   const screenStages = view ? viewStages(view) : null
   const router = useRouter()
   const { getLead, syncFromServer } = useLeads()
-  const { custom, addStage, renameStage, hideStage } = useLeadStages()
+  const { custom, addStage, renameStage, deleteStage } = useLeadStages()
   const { toast } = useToast()
-  // The stage-name box: adding a stage from the tab bar, or renaming this tab's.
-  const [stageDialog, setStageDialog] = useState<'add' | 'rename' | null>(null)
-  const [hiding, setHiding] = useState(false)
+  // Adding a stage from the tab bar, or renaming or deleting this tab's.
+  const [stageDialog, setStageDialog] = useState<'add' | 'rename' | 'delete' | null>(null)
 
   const [term, setTerm] = useState(filters.search)
   const [addOpen, setAddOpen] = useState(false)
@@ -191,18 +192,17 @@ export function LeadsPageClient({
     startTransition(() => router.push(leadsHref({ ...filters, view: stage.key }, 1)))
   }
 
-  async function handleHideStage() {
+  async function handleDeleteStage(moveTo: LeadStage) {
     if (!view || !isCustomStage(view)) return
-    setHiding(true)
-    try {
-      await hideStage(view)
-      toast(`Stage "${stageLabel(view, custom)}" hidden.`)
-      startTransition(() => router.push(leadsHref({ ...filters, view: 'leads' }, 1)))
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'That did not save.', { tone: 'error' })
-    } finally {
-      setHiding(false)
-    }
+    const name = stageLabel(view, custom)
+    // A thrown error shows in the dialog.
+    const moved = await deleteStage(view, moveTo)
+    toast(
+      moved > 0
+        ? `Stage "${name}" deleted. ${moved} lead${moved === 1 ? '' : 's'} moved to ${stageLabel(moveTo, custom)}.`
+        : `Stage "${name}" deleted.`,
+    )
+    startTransition(() => router.push(leadsHref({ ...filters, view: viewForStage(moveTo) }, 1)))
   }
 
   const active = hasActiveFilters(filters)
@@ -260,49 +260,56 @@ export function LeadsPageClient({
 
       {/* One tab per group of stages, each with its count, then one per stage
           staff added. The tab is in the URL (?tab=), so it can be bookmarked;
-          the other filters carry over. */}
+          the other filters carry over. However many there are, they stay on
+          one line that scrolls (StageTabStrip). */}
       {counts && (
-        <nav aria-label="Lead stages" className="-mt-2 mb-4 flex flex-wrap gap-1 border-b border-border">
-          {allViews(custom).map((tab) => {
-            const selected = tab === (view ?? 'leads')
-            return (
-              <Link
-                key={tab}
-                href={leadsHref({ ...filters, view: tab }, 1)}
-                aria-current={selected ? 'page' : undefined}
-                className={cn(
-                  '-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors',
-                  selected
-                    ? 'border-accent font-medium text-foreground'
-                    : 'border-transparent text-foreground/60 hover:text-foreground',
-                )}
+        <nav aria-label="Lead stages">
+          <StageTabStrip
+            active={view ?? 'leads'}
+            trailing={
+              <button
+                type="button"
+                onClick={() => setStageDialog('add')}
+                className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
               >
-                {viewDef(tab, custom).label}
-                <span
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Add stage
+              </button>
+            }
+          >
+            {allViews(custom).map((tab) => {
+              const selected = tab === (view ?? 'leads')
+              return (
+                <Link
+                  key={tab}
+                  href={leadsHref({ ...filters, view: tab }, 1)}
+                  aria-current={selected ? 'page' : undefined}
                   className={cn(
-                    'rounded-full px-1.5 text-xs tabular-nums',
-                    selected ? 'bg-accent/15 text-accent' : 'bg-surface text-foreground/50',
+                    'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
+                    selected
+                      ? 'border-accent font-medium text-foreground'
+                      : 'border-transparent text-foreground/60 hover:text-foreground',
                   )}
                 >
-                  {/* A stage added a moment ago has no count until the re-read lands. */}
-                  {counts[tab] ?? 0}
-                </span>
-              </Link>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => setStageDialog('add')}
-            className="-mb-px inline-flex cursor-pointer items-center gap-1 border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            Add stage
-          </button>
+                  {viewDef(tab, custom).label}
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 text-xs tabular-nums',
+                      selected ? 'bg-accent/15 text-accent' : 'bg-surface text-foreground/50',
+                    )}
+                  >
+                    {/* A stage added a moment ago has no count until the re-read lands. */}
+                    {counts[tab] ?? 0}
+                  </span>
+                </Link>
+              )
+            })}
+          </StageTabStrip>
         </nav>
       )}
 
-      {/* A stage staff added can be renamed, and hidden once nobody is in it:
-          hiding one with leads in it would leave them on no tab. */}
+      {/* A stage staff added can be renamed or deleted. Deleting asks where its
+          leads go, so none is left on no tab. */}
       {counts && view && isCustomStage(view) && (
         <div className="-mt-2 mb-4 flex flex-wrap items-center gap-2 text-xs text-foreground/50">
           <span>Added by staff.</span>
@@ -316,15 +323,12 @@ export function LeadsPageClient({
           </button>
           <button
             type="button"
-            onClick={handleHideStage}
-            disabled={hiding || (counts[view] ?? 0) > 0}
-            title={(counts[view] ?? 0) > 0 ? 'Move its leads to another stage first' : undefined}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            onClick={() => setStageDialog('delete')}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 hover:bg-destructive/10 hover:text-destructive"
           >
-            <EyeOff className="h-3 w-3" aria-hidden="true" />
-            Hide this stage
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
+            Delete this stage
           </button>
-          {(counts[view] ?? 0) > 0 && <span>Hide it once its leads have moved to another stage.</span>}
         </div>
       )}
 
@@ -348,6 +352,16 @@ export function LeadsPageClient({
             await renameStage(view, label)
             toast(`Stage renamed to ${label}.`)
           }}
+        />
+      )}
+      {counts && view && isCustomStage(view) && (
+        <DeleteStageDialog
+          open={stageDialog === 'delete'}
+          onClose={() => setStageDialog(null)}
+          stage={view}
+          leadCount={counts[view] ?? 0}
+          filtered={active}
+          onDelete={handleDeleteStage}
         />
       )}
 

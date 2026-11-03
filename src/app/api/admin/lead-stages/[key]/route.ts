@@ -7,19 +7,13 @@ import { rowToCustomStage, STAGE_LABEL_MAX } from '@/lib/leads/customStages'
 import { builtInStageNamed } from '@/lib/leads/stageNames'
 
 /**
- * Rename or hide a stage staff added. Built-in stages are neither.
- *
- * Hiding is refused while any lead is in the stage, so no lead is ever left
- * in a stage with no tab. The row stays (hidden_at set): its name still reads
- * on old activity entries, and adding the name again brings it back.
+ * Rename a stage staff added. Built-in stages keep their names. Deleting one
+ * is ./delete.
  */
 
-const BodySchema = z.union([
-  z.object({
-    label: z.string().trim().min(1, 'Give the stage a name').max(STAGE_LABEL_MAX, `Keep it to ${STAGE_LABEL_MAX} characters`),
-  }),
-  z.object({ hidden: z.literal(true) }),
-])
+const BodySchema = z.object({
+  label: z.string().trim().min(1, 'Give the stage a name').max(STAGE_LABEL_MAX, `Keep it to ${STAGE_LABEL_MAX} characters`),
+})
 
 interface Props {
   params: Promise<{ key: string }>
@@ -47,28 +41,6 @@ export async function PATCH(req: NextRequest, { params }: Props) {
       .maybeSingle()
     if (readError) throw readError
     if (!existing || existing.built_in) return NextResponse.json({ error: 'Stage not found' }, { status: 404 })
-
-    if ('hidden' in parsed.data) {
-      const { count, error: countError } = await supabase
-        .from('leads')
-        .select('id', { count: 'exact', head: true })
-        .eq('stage', key)
-      if (countError) throw countError
-      if ((count ?? 0) > 0) {
-        return NextResponse.json(
-          { error: `Move its ${count} lead${count === 1 ? '' : 's'} to another stage first` },
-          { status: 409 },
-        )
-      }
-      const { data: hidden, error } = await supabase
-        .from('lead_stages')
-        .update({ hidden_at: new Date().toISOString() })
-        .eq('key', key)
-        .select('key, label, position, hidden_at')
-        .single()
-      if (error) throw error
-      return NextResponse.json({ stage: rowToCustomStage(hidden) })
-    }
 
     const label = parsed.data.label.replace(/\s+/g, ' ')
     if (builtInStageNamed(label)) {

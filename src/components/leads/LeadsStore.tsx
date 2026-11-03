@@ -313,7 +313,11 @@ interface LeadsContextValue {
   updateLead: (leadId: string, patch: Partial<Lead>) => void
   logActivity: (leadId: string, type: LeadActivityType, body: string) => void
   /** Optimistic — applies immediately and rolls back if persistence fails. */
-  changeStage: (leadId: string, stage: LeadStage) => Promise<void>
+  /**
+   * `label` names a stage added a moment ago, which this render's list of
+   * custom stages doesn't have yet; without it the entry would read "Custom stage".
+   */
+  changeStage: (leadId: string, stage: LeadStage, label?: string) => Promise<void>
   /** Rejects when the client file exists but the lead could not be updated. */
   markConverted: (leadId: string, clientId: string) => Promise<void>
   /**
@@ -555,7 +559,7 @@ export function LeadsStoreProvider({
   )
 
   const changeStage = useCallback(
-    async (leadId: string, stage: LeadStage) => {
+    async (leadId: string, stage: LeadStage, label?: string) => {
       const previous = state.leads.find((lead) => lead.id === leadId)
       if (!previous || previous.stage === stage) return
 
@@ -564,7 +568,7 @@ export function LeadsStoreProvider({
         id: newId(),
         leadId,
         type: 'stage_change',
-        body: `Stage changed from ${stageLabel(previous.stage, custom)} to ${stageLabel(stage, custom)}.`,
+        body: `Stage changed from ${stageLabel(previous.stage, custom)} to ${label ?? stageLabel(stage, custom)}.`,
         author,
         createdAt: at,
       }

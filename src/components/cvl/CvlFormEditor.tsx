@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Check, ExternalLink, Loader2, PenLine, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, ExternalLink, Loader2, PenLine, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -193,17 +193,6 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         {error && <span className="text-destructive">{error}</span>}
       </div>
 
-      {prefill.warnings.length > 0 && (
-        <ul className="mb-4 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground/80">
-          {prefill.warnings.map((w) => (
-            <li key={w} className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
-              {w}
-            </li>
-          ))}
-        </ul>
-      )}
-
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The questions */}
         <div className="min-w-0 space-y-3" onFocus={onFocusIn}>
@@ -284,7 +273,6 @@ interface Filled {
   pdf: Uint8Array
   /** Template page of each output page. */
   pageSources: number[]
-  warnings: string[]
 }
 
 /**
@@ -328,16 +316,14 @@ function LivePreview({
         })
         if (!res.ok) throw new Error('The preview could not be filled.')
         const pdf = new Uint8Array(await res.arrayBuffer())
-        let warnings: string[] = []
         let pageSources: number[] = []
         try {
-          warnings = JSON.parse(decodeURIComponent(res.headers.get('X-Cvl-Warnings') ?? '%5B%5D'))
           pageSources = JSON.parse(res.headers.get('X-Cvl-Pages') ?? '[]')
         } catch {
-          // The PDF still shows without them.
+          // The PDF still shows; it just cannot turn to the page being edited.
         }
         if (id !== request.current) return
-        setFilled({ pdf, pageSources, warnings })
+        setFilled({ pdf, pageSources })
         setError(null)
       } catch (err) {
         if (id === request.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
@@ -438,16 +424,6 @@ function LivePreview({
         )}
       </div>
       {filled && error && <p className="text-xs text-destructive">{error}</p>}
-      {filled && filled.warnings.length > 0 && (
-        <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-foreground/80">
-          {filled.warnings.map((w) => (
-            <li key={w} className="flex items-start gap-1.5">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
-              {w}
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   )
 }

@@ -105,7 +105,7 @@ describe('CvlFormEditor', () => {
     expect(await screen.findByRole('button', { name: /Saved/ })).toBeTruthy()
   })
 
-  it('fills the preview again with the answers on screen, and shows what to check', async () => {
+  it('fills the preview again with the answers on screen, with no warning boxes on the screen', async () => {
     const fetchMock = stubFetch()
     renderPartB()
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/admin/cvl/case-1/preview')).toBe(true), { timeout: 3000 })
@@ -113,8 +113,9 @@ describe('CvlFormEditor', () => {
     const body = JSON.parse(init!.body as string)
     expect(body).toMatchObject({ form: '507b', subject: 'director:1' })
     expect(body.answers.fields.b1_name).toBe('Jordan Sample')
-    // Page tabs for each output page, and the form's warnings beside it.
-    expect(await screen.findByText('B14: Answer is longer than the lines')).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9)
+    // Page tabs for each output page; the warnings are kept for the print page.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    expect(screen.queryByText('B14: Answer is longer than the lines')).toBeNull()
+    expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
   })
 })

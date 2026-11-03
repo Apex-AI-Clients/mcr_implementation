@@ -340,7 +340,10 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     // Each analysis says what is on file.
     const tile = screen.getByRole('link', { name: /Director penalty notices/ })
     expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
-    expect(screen.getByRole('link', { name: /Form 509 values/ }).getAttribute('href')).toBe('/cvl/cl_1/financials-comparison/mapping')
+    expect(screen.queryByRole('link', { name: /Form 509 values/ })).toBeNull()
+    // Each form: Fill in first, then Preview.
+    const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
+    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',

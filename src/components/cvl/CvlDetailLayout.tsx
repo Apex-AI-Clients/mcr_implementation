@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, ListChecks, Pencil, Printer, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, Pencil, Printer, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
@@ -91,14 +91,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
       what: 'The statements as printed, years side by side.',
       status: statements ? `${statements} ${statements === 1 ? 'file' : 'files'} on file` : 'No statements uploaded',
       ok: statements > 0,
-    },
-    {
-      href: `${base}/financials-comparison/mapping`,
-      icon: ListChecks,
-      title: 'Form 509 values',
-      what: 'Confirm which printed lines are cash, debtors, stock, plant and share capital.',
-      status: statements ? 'Confirm the lines once' : 'Needs the statements first',
-      ok: false,
     },
     {
       href: `${base}/lodgement-compliance-analysis`,
@@ -201,6 +193,12 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <Link
+                      href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> {f.draft ? 'Continue' : 'Fill in'}
+                    </Link>
                     <a
                       href={`/api/admin/cvl/${cvlCase.id}/preview?form=${f.code}&subject=${encodeURIComponent(f.subject)}`}
                       target="_blank"
@@ -209,12 +207,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                     >
                       <Eye className="h-3.5 w-3.5" /> Preview
                     </a>
-                    <Link
-                      href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20"
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> {f.draft ? 'Continue' : 'Fill in'}
-                    </Link>
                   </div>
                 </li>
               ))}

@@ -37,7 +37,7 @@ export function StageSelect({
   className,
 }: StageSelectProps) {
   const { changeStage } = useLeads()
-  const { custom, addStage } = useLeadStages()
+  const { custom, addStage, refresh } = useLeadStages()
   const { toast } = useToast()
   const [pending, setPending] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -53,7 +53,7 @@ export function StageSelect({
   async function moveTo(next: LeadStage, label: string) {
     setPending(true)
     try {
-      await changeStage(lead.id, next)
+      await changeStage(lead.id, next, label)
       toast(`Stage set to ${label.toLowerCase()}.`)
     } catch {
       toast("That didn't save. The stage has been put back.", { tone: 'error' })
@@ -85,9 +85,11 @@ export function StageSelect({
   }
 
   async function handleAdd(label: string) {
-    // Thrown errors (a name already taken) show in the dialog.
-    const stage = await addStage(label)
+    // Thrown errors (a name already taken) show in the dialog. The re-read
+    // waits for the move, or it could bring the lead back in its old stage.
+    const stage = await addStage(label, { refresh: false })
     await moveTo(stage.key, stage.label)
+    refresh()
   }
 
   return (
