@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { cleanAnswers, cleanEditedKeys, entryState, readDraft, toFormData } from '../drafts'
 import { entryMap } from '../entryMap'
@@ -7,6 +7,9 @@ import { prefillForm } from '../prefill'
 import { formVersion, handwrittenKeys } from '@/lib/forms/registry'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { context } from './fixtures'
+
+// Each test fills real ASIC PDFs; under full-suite load that can pass 20s.
+vi.setConfig({ testTimeout: 60_000 })
 
 /** Drafts of the CVL entry screens. Synthetic client file only. */
 

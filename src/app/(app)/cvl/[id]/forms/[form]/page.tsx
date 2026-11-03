@@ -37,7 +37,7 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
   if (!cvlCase) notFound()
 
   const ctx = await loadCvlContext(supabase, id)
-  const subjects = subjectsFor(code, { directors: ctx.company?.directors.length ?? 0, perDirector: ctx.settings.perDirector })
+  const subjects = subjectsFor(code, { directors: ctx.company?.directors.length ?? 0 })
   const asked = (await searchParams).subject ?? ''
   const subject: Subject = isSubject(asked) && subjects.includes(asked) ? asked : subjects[0]
 

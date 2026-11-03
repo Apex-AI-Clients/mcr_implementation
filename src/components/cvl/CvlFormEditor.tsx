@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Check, PenLine, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Eye, PenLine, Plus, Printer, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -43,6 +43,41 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const [saved, setSaved] = useState(savedAtOpen)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The PDF as it would print now, answers on screen included (not saved).
+  const [preview, setPreview] = useState<{ url: string; warnings: string[] } | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+
+  // A preview's object URL is let go when it is replaced or closed.
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview.url)
+  }, [preview])
+
+  async function showPreview() {
+    setPreviewing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ form: map.code, subject, answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy } }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Could not make the preview')
+      }
+      let warnings: string[] = []
+      try {
+        warnings = JSON.parse(decodeURIComponent(res.headers.get('X-Cvl-Warnings') ?? '%5B%5D'))
+      } catch {
+        warnings = []
+      }
+      setPreview({ url: URL.createObjectURL(await res.blob()), warnings })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setPreviewing(false)
+    }
+  }
   const dirty = !same(state, savedState)
 
   // A warning before leaving with changes not saved.
@@ -152,6 +187,17 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
               ))}
             </nav>
           )}
+          <Link
+            href={`/cvl/${clientId}/print`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Print page
+          </Link>
+          <Button type="button" size="sm" variant="accent" onClick={showPreview} loading={previewing} disabled={saving}>
+            <Eye className="h-3.5 w-3.5" />
+            Preview
+          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
             <RotateCcw className="h-3.5 w-3.5" />
             Back to pre-filled
@@ -166,6 +212,30 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         </div>
         {error && <p className="w-full text-xs text-destructive">{error}</p>}
       </div>
+
+      {preview && (
+        <section className="mb-6 rounded-xl border border-border bg-card p-3" aria-label="Preview">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-foreground/60">
+              As it would print now, with the answers on screen{dirty ? ' (not saved yet)' : ''}. Fill in any blank box above, then preview again.
+            </p>
+            <button type="button" onClick={() => setPreview(null)} className="inline-flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground">
+              <X className="h-3.5 w-3.5" /> Close preview
+            </button>
+          </div>
+          {preview.warnings.length > 0 && (
+            <ul className="mb-2 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-foreground/80">
+              {preview.warnings.map((w) => (
+                <li key={w} className="flex items-start gap-1.5">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
+                  {w}
+                </li>
+              ))}
+            </ul>
+          )}
+          <iframe title={`Preview of ${map.title}`} src={preview.url} className="h-[80vh] w-full rounded-lg border border-border bg-white" />
+        </section>
+      )}
 
       {prefill.warnings.length > 0 && (
         <ul className="mb-6 space-y-1 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground/80">
@@ -430,7 +500,7 @@ function Candidates({ candidates }: { candidates: Candidate[] }) {
   return (
     <aside className="h-fit space-y-3 rounded-xl border border-border bg-card p-4 lg:sticky lg:top-24">
       <h2 className="text-sm font-semibold text-foreground">Amounts not placed on the form</h2>
-      <p className="text-xs text-foreground/50">Where each goes on Form 509 is to be confirmed by Gabby (CVL settings).</p>
+      <p className="text-xs text-foreground/50">Where each goes on Form 509 is to be confirmed (CVL settings).</p>
       <ul className="space-y-3 text-xs">
         {candidates.map((c) => {
           const placement = c.target ? (PLACEMENTS[c.key].options as Record<string, string>)[c.target] : null

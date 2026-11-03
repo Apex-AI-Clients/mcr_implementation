@@ -10,18 +10,16 @@ import { ASIC_PDF_MIME } from '@/lib/asic/upload'
 import {
   LIQUIDATOR_FIELDS,
   MCR_COMPANY_FIELDS,
-  PER_DIRECTOR,
   PLACEMENTS,
   PLACEMENT_KEYS,
   type CvlSettings,
-  type PerDirector,
   type SettingKey,
 } from '@/lib/cvl/settings'
 
 /**
  * The CVL settings: everything waiting for Gabby. Each item is saved on its
- * own, with a "Confirmed by Gabby" tick; until it is ticked the item says
- * "To be confirmed by Gabby". Blank items leave their boxes on the forms blank.
+ * own, with a "Confirmed" tick; until it is ticked the item says
+ * "To be confirmed". Blank items leave their boxes on the forms blank.
  */
 export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
   const [settings, setSettings] = useState(initial)
@@ -49,23 +47,6 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
         values={settings.liquidator}
         settings={settings}
         save={save}
-      />
-      <Item
-        settingKey="parts_per_director"
-        title="Forms per director"
-        hint="Gabby's starting point: one Part B per director, one Part A per company."
-        settings={settings}
-        save={save}
-        render={(value, set) => (
-          <select value={String(value)} onChange={(e) => set(e.target.value as PerDirector)} className="h-10 w-full max-w-md rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground">
-            {Object.entries(PER_DIRECTOR).map(([k, label]) => (
-              <option key={k} value={k}>
-                {label}
-              </option>
-            ))}
-          </select>
-        )}
-        current={settings.perDirector}
       />
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-semibold text-foreground">Form 509: where each amount goes</h2>
@@ -97,11 +78,11 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
         </div>
       </section>
       <section className="rounded-xl border border-border bg-card p-4 text-xs text-foreground/60">
-        <h2 className="mb-1 text-sm font-semibold text-foreground">Also to be confirmed by Gabby</h2>
+        <h2 className="mb-1 text-sm font-semibold text-foreground">Also to be confirmed</h2>
         <ul className="list-disc space-y-1 pl-4">
           <li>Dates on the forms (appointment, summary, report, return-by): left blank, entered on each form with a date picker.</li>
           <li>Form 509 estimated realisable values: left blank; the book values go in the valuation column only.</li>
-          <li>Keeping the ASIC extract PDF on the client file (see CRM_CHANGES.md).</li>
+          <li>Anything the client file does not have: left blank, filled in on each form and checked in its preview.</li>
         </ul>
       </section>
     </div>
@@ -116,11 +97,11 @@ function Status({ settingKey, settings, blank }: { settingKey: SettingKey; setti
     <p className="flex flex-wrap items-center gap-2 text-xs">
       {settings.confirmed[settingKey] ? (
         <span className="inline-flex items-center gap-1 text-success">
-          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmed by Gabby
+          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmed
         </span>
       ) : (
         <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-warning">
-          <AlertTriangle className="h-3 w-3" /> To be confirmed by Gabby
+          <AlertTriangle className="h-3 w-3" /> To be confirmed
         </span>
       )}
       {blank && <span className="text-destructive">Not set: the boxes it fills stay blank.</span>}
@@ -165,7 +146,7 @@ function Item<V>({
         <h3 className={plain ? 'text-xs font-medium text-foreground/80' : 'text-sm font-semibold text-foreground'}>{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-foreground/50">{hint}</p>}
       </div>
-      <Status settingKey={settingKey} settings={settings} blank={blank && settingKey !== 'parts_per_director'} />
+      <Status settingKey={settingKey} settings={settings} blank={blank} />
       {render(value, (v) => {
         setValue(v)
         setState({ saving: false, error: null, done: false })
@@ -173,7 +154,7 @@ function Item<V>({
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-1.5 text-xs text-foreground/70">
           <input type="checkbox" checked={confirmed} disabled={blank} onChange={(e) => setConfirmed(e.target.checked)} className="accent-accent" />
-          Confirmed by Gabby
+          Confirmed
         </label>
         <Button
           type="button"

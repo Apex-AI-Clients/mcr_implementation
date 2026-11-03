@@ -5,7 +5,7 @@ import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
 import { splitAddress } from './address'
 import type { BalanceSheetFigure, CvlContext } from './context'
-import { PLACEMENTS, missingSettings, type PerDirector, type PlacementKey, type PlacementTarget } from './settings'
+import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
 
 /**
  * What each CVL entry screen starts with, and where every value comes from
@@ -94,7 +94,7 @@ function companySource(ctx: CvlContext, what: string, section: Section): AmountS
 const fileSource = (what: string, where: string): AmountSource => ({ from: [what, where] })
 
 const settingSource = (what: string, confirmed: boolean): AmountSource => ({
-  from: [what, `CVL settings${confirmed ? '' : ' — to be confirmed by Gabby'}.`],
+  from: [what, `CVL settings${confirmed ? '' : ' — to be confirmed'}.`],
   link: { kind: 'href', href: '/cvl/settings', label: 'Open CVL settings' },
 })
 
@@ -134,7 +134,9 @@ function putCompany(out: Prefill, ctx: CvlContext, nameKeyOnForm: string, acnKey
     return
   }
   put(out, nameKeyOnForm, c.companyName, companySource(ctx, 'Company name.', 'organisation'))
-  put(out, acnKeyOnForm, c.acn, companySource(ctx, 'ACN.', 'organisation'))
+  // As ASIC prints it: 123 456 780.
+  const acn = c.acn?.replace(/\D/g, '')
+  put(out, acnKeyOnForm, acn?.length === 9 ? acn.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : c.acn, companySource(ctx, 'ACN.', 'organisation'))
 }
 
 /**
@@ -163,7 +165,7 @@ function director(ctx: CvlContext, subject: Subject) {
 function settingsWarnings(out: Prefill, ctx: CvlContext) {
   const missing = missingSettings(ctx.settings)
   if (missing.length) {
-    out.warnings.push(`Not set yet in CVL settings (to be confirmed by Gabby): ${missing.join(', ')}. Those boxes stay blank.`)
+    out.warnings.push(`Not set yet in CVL settings (to be confirmed): ${missing.join(', ')}. Those boxes stay blank.`)
   }
 }
 
@@ -297,7 +299,7 @@ function prefill509(ctx: CvlContext, out: Prefill) {
   settingsWarnings(out, ctx)
 
   putCompany(out, ctx, 'company_name', 'company_acn')
-  out.notes.summary_date = 'Pick the date the summary is made up to (to be confirmed by Gabby).'
+  out.notes.summary_date = 'Pick the date the summary is made up to (to be confirmed).'
 
   // Book values in the valuation column only; estimated realisable values stay blank.
   for (const [key, meaning, label] of VALUATIONS) {
@@ -317,7 +319,7 @@ function prefill509(ctx: CvlContext, out: Prefill) {
     if (!c.target || c.target === 'none' || out.fields[c.target]) continue
     out.fields[c.target] = {
       value: c.amount,
-      source: { ...c.source, from: [...c.source.from, `Placed in ${PLACEMENTS[c.key].options[c.target as keyof (typeof PLACEMENTS)[typeof c.key]['options']]} by the CVL setting${c.confirmed ? '' : ' (to be confirmed by Gabby)'}.`] },
+      source: { ...c.source, from: [...c.source.from, `Placed in ${PLACEMENTS[c.key].options[c.target as keyof (typeof PLACEMENTS)[typeof c.key]['options']]} by the CVL setting${c.confirmed ? '' : ' (to be confirmed)'}.`] },
     }
   }
 
@@ -436,9 +438,9 @@ export function prefillForm(code: FormCode, subject: Subject, ctx: CvlContext): 
 }
 
 /** The forms a case needs, by subject: one Part B per director unless the setting says one per company. */
-export function subjectsFor(code: FormCode, { directors: n, perDirector }: { directors: number; perDirector: PerDirector }): Subject[] {
+export function subjectsFor(code: FormCode, { directors: n }: { directors: number }): Subject[] {
   if (code !== '507b') return ['company']
-  if (perDirector === 'one_part_b_per_company' || n <= 1) return ['director:1']
+  if (n <= 1) return ['director:1']
   return Array.from({ length: n }, (_, i) => `director:${i + 1}` as Subject)
 }
 

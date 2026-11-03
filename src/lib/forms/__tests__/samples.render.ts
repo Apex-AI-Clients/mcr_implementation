@@ -5,6 +5,8 @@ import { combinePdfs } from '../engine'
 import { fillOfficialForm } from '../fill'
 import { OVERFLOW_PARTB } from './fixtures/samples'
 import { SAMPLES } from './snapshots'
+import { caseJobs, fillAll } from '@/lib/cvl/generate'
+import { context } from '@/lib/cvl/__tests__/fixtures'
 
 /**
  * `npm run forms:samples`: writes the synthetic samples as PDFs to
@@ -25,5 +27,14 @@ describe('write the sample PDFs', () => {
     const overflow = await fillOfficialForm('507b', OVERFLOW_PARTB)
     writeFileSync(path.join(OUT, 'sample-overflow-form507-partb.pdf'), overflow.pdf)
     writeFileSync(path.join(OUT, 'sample-all-forms.pdf'), await combinePdfs(parts, 'CVL forms (synthetic sample)'))
+  })
+})
+
+describe('write a pre-filled CVL case', () => {
+  it('writes every form of a synthetic two-director case, as pre-fill alone prints it', async () => {
+    mkdirSync(OUT, { recursive: true })
+    const { pdf, filled } = await fillAll(caseJobs(context(), []), 'CVL forms (synthetic pre-filled case)')
+    writeFileSync(path.join(OUT, 'sample-cvl-case-prefilled-all-forms.pdf'), pdf)
+    expect(filled.map((f) => f.job.label)).toHaveLength(4)
   })
 })

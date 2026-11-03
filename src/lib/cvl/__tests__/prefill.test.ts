@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { creditorRows, prefillForm, subjectsFor } from '../prefill'
 import { splitAddress } from '../address'
-import { missingSettings, readCvlSettings, settingValue, PER_DIRECTOR_DEFAULT } from '../settings'
+import { missingSettings, readCvlSettings, settingValue } from '../settings'
 import { handwrittenKeys } from '@/lib/forms/registry'
 import { context } from './fixtures'
 
@@ -27,12 +27,11 @@ describe('splitAddress', () => {
 })
 
 describe('CVL settings', () => {
-  it('has no default except the per-director split, and nothing confirmed', () => {
+  it('has no defaults, and nothing confirmed', () => {
     const s = readCvlSettings([])
     expect(s.mcrCompany).toEqual({})
     expect(s.liquidator).toEqual({})
     expect(s.placements).toEqual({})
-    expect(s.perDirector).toBe(PER_DIRECTOR_DEFAULT)
     expect(Object.values(s.confirmed).every((c) => c === false)).toBe(true)
     expect(missingSettings(s)).toContain('Liquidator name')
   })
@@ -74,7 +73,7 @@ describe('Form 509', () => {
   it('leaves MCR and liquidator details blank until set, and says so', () => {
     const p = prefillForm('509', 'company', context())
     for (const key of ['contact_name', 'entity_name', 'entity_number', 'phone', 'email', 'postal_1']) expect(p.fields[key]).toBeUndefined()
-    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings \(to be confirmed by Gabby\)/)
+    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings \(to be confirmed\)/)
     expect(p.fields.summary_date).toBeUndefined()
   })
 
@@ -93,7 +92,7 @@ describe('Form 509', () => {
     const settings = readCvlSettings([{ key: 'f509_place.super_payable', value: 'r3', confirmed: false, updated_by: 'Casey', updated_at: '2026-10-29T00:00:00Z' }])
     const p = prefillForm('509', 'company', context({ settings }))
     expect(value(p, 'r3')).toBe(6400)
-    expect(p.fields.r3.source.from.at(-1)).toBe('Placed in 3 Preferential creditors by the CVL setting (to be confirmed by Gabby).')
+    expect(p.fields.r3.source.from.at(-1)).toBe('Placed in 3 Preferential creditors by the CVL setting (to be confirmed).')
   })
 
   it('fills the signer from the first director, never the date signed', () => {
@@ -199,10 +198,10 @@ describe('Part B', () => {
 })
 
 describe('subjectsFor', () => {
-  it('gives one Part B per director by default, one Part A and Form 509 per company', () => {
-    expect(subjectsFor('507b', { directors: 2, perDirector: 'one_part_b_per_director' })).toEqual(['director:1', 'director:2'])
-    expect(subjectsFor('507b', { directors: 2, perDirector: 'one_part_b_per_company' })).toEqual(['director:1'])
-    expect(subjectsFor('507b', { directors: 0, perDirector: 'one_part_b_per_director' })).toEqual(['director:1'])
-    expect(subjectsFor('507a', { directors: 3, perDirector: 'one_part_b_per_director' })).toEqual(['company'])
+  it('gives every director their own Part B, and one Part A and Form 509 per company', () => {
+    expect(subjectsFor('507b', { directors: 2 })).toEqual(['director:1', 'director:2'])
+    expect(subjectsFor('507b', { directors: 0 })).toEqual(['director:1'])
+    expect(subjectsFor('507a', { directors: 3 })).toEqual(['company'])
+    expect(subjectsFor('509', { directors: 3 })).toEqual(['company'])
   })
 })

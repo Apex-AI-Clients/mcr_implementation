@@ -2,14 +2,13 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { Json } from '@/types/database'
 
 /**
- * The CVL settings page (cvl_settings, migration 0039): every item waiting
- * for Gabby's confirmation, listed as "To be confirmed by Gabby" until she
- * does.
+ * The CVL settings page (cvl_settings, migration 0039): every item still to
+ * be confirmed, listed as "To be confirmed" until it is.
  *
  * None has a default. An item not set leaves its boxes on the forms blank
- * and says so beside them. The one exception is how the forms are split per
- * director, which Gabby asked to start as one Part B per director and one
- * Part A per company — still shown as to be confirmed.
+ * and says so beside them; staff can fill them on the form instead.
+ *
+ * Not a setting: every director has their own Part B (settled 3 Nov 2026).
  */
 
 export const LIQUIDATOR_FIELDS = [
@@ -57,29 +56,19 @@ export const PLACEMENT_KEYS = Object.keys(PLACEMENTS) as PlacementKey[]
 /** The Form 509 field a placement fills, or 'none'. */
 export type PlacementTarget = 'b_val' | 'h_val' | 's2_val' | 'r7_claims' | 'r3' | 'r6' | 'none'
 
-export const PER_DIRECTOR = {
-  one_part_b_per_director: 'One Part B per director, one Part A per company',
-  one_part_b_per_company: 'One Part B per company (signed by one director), one Part A per company',
-} as const
-export type PerDirector = keyof typeof PER_DIRECTOR
-/** Gabby's starting point, still to be confirmed. The only setting with a value before it is set. */
-export const PER_DIRECTOR_DEFAULT: PerDirector = 'one_part_b_per_director'
-
-export type SettingKey = 'mcr_company' | 'liquidator' | 'parts_per_director' | `f509_place.${PlacementKey}`
+export type SettingKey = 'mcr_company' | 'liquidator' | `f509_place.${PlacementKey}`
 
 export const SETTING_KEYS: SettingKey[] = [
   'mcr_company',
   'liquidator',
-  'parts_per_director',
   ...PLACEMENT_KEYS.map((k) => `f509_place.${k}` as const),
 ]
 
 export interface CvlSettings {
   mcrCompany: McrCompanyDetails
   liquidator: LiquidatorDetails
-  perDirector: PerDirector
   placements: Partial<Record<PlacementKey, PlacementTarget>>
-  /** Per setting: Gabby has confirmed it. False shows "To be confirmed by Gabby". */
+  /** Per setting: it has been confirmed. False shows "To be confirmed". */
   confirmed: Record<SettingKey, boolean>
   /** Who last changed each, and when. */
   updated: Partial<Record<SettingKey, { by: string | null; at: string }>>
@@ -106,11 +95,9 @@ export function readCvlSettings(
     const v = value(`f509_place.${k}`)
     if (typeof v === 'string' && v in PLACEMENTS[k].options) placements[k] = v as PlacementTarget
   }
-  const per = value('parts_per_director')
   return {
     mcrCompany: strings(value('mcr_company'), MCR_COMPANY_FIELDS),
     liquidator: strings(value('liquidator'), LIQUIDATOR_FIELDS),
-    perDirector: typeof per === 'string' && per in PER_DIRECTOR ? (per as PerDirector) : PER_DIRECTOR_DEFAULT,
     placements,
     confirmed: Object.fromEntries(SETTING_KEYS.map((k) => [k, byKey.get(k)?.confirmed === true])) as Record<SettingKey, boolean>,
     updated: Object.fromEntries(
@@ -124,10 +111,6 @@ export function settingValue(key: SettingKey, value: unknown): Json | null {
   if (value === null) return null
   if (key === 'mcr_company') return strings(value, MCR_COMPANY_FIELDS) as Json
   if (key === 'liquidator') return strings(value, LIQUIDATOR_FIELDS) as Json
-  if (key === 'parts_per_director') {
-    if (typeof value === 'string' && value in PER_DIRECTOR) return value
-    throw new Error('Unknown per-director split')
-  }
   const placement = key.slice('f509_place.'.length) as PlacementKey
   if (typeof value === 'string' && value in PLACEMENTS[placement].options) return value
   throw new Error('Unknown placement')

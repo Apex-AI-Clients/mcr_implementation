@@ -3,7 +3,6 @@ import { ArrowRight, FileText, Gavel } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
-import type { PerDirector } from '@/lib/cvl/settings'
 import { subjectsFor } from '@/lib/cvl/prefill'
 import type { Director } from '@/lib/asic/types'
 import { formatDate } from '@/lib/utils'
@@ -12,7 +11,6 @@ interface CvlFileCardProps {
   clientId: string
   cvlCase: CvlCase
   directors: Director[]
-  perDirector: PerDirector
   /** The drafts saved on this case: which form, for whom, when and by whom. */
   drafts: { form_code: string; subject: string; updated_at: string; updated_by: string }[]
 }
@@ -28,7 +26,7 @@ function versionLabel(version: string): string {
  * forms, and the analyses the forms draw on. The analyses open inside the
  * CVL workspace (/cvl/[id]/…), on the same pages SBR uses.
  */
-export function CvlFileCard({ clientId, cvlCase, directors, perDirector, drafts }: CvlFileCardProps) {
+export function CvlFileCard({ clientId, cvlCase, directors, drafts }: CvlFileCardProps) {
   const base = `/cvl/${clientId}`
   const draftOf = (code: string, subject: string) => drafts.find((d) => d.form_code === code && d.subject === subject)
   const subjectLabel = (subject: string) =>
@@ -70,7 +68,7 @@ export function CvlFileCard({ clientId, cvlCase, directors, perDirector, drafts 
           <ul className="space-y-2">
             {FORM_CODES.flatMap((code) => {
               const { map } = formVersion(code)
-              return subjectsFor(code, { directors: directors.length, perDirector }).map((subject) => {
+              return subjectsFor(code, { directors: directors.length }).map((subject) => {
                 const draft = draftOf(code, subject)
                 const who = subjectLabel(subject)
                 return (
@@ -91,6 +89,10 @@ export function CvlFileCard({ clientId, cvlCase, directors, perDirector, drafts 
               })
             })}
           </ul>
+          <Link href={`${base}/print`} className="mt-3 inline-flex items-center gap-1.5 font-medium text-accent hover:underline">
+            Preview and print
+            <ArrowRight className="h-3 w-3" aria-hidden="true" />
+          </Link>
         </div>
 
         <div>

@@ -12,7 +12,7 @@ export default async function CvlSettingsPage() {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-foreground">CVL settings</h1>
         <p className="mt-1 text-sm text-foreground/50">
-          To be confirmed by Gabby. Nothing here has a default: a blank item leaves its boxes on the forms blank, and says so beside them.
+          Nothing here has a default. A blank item leaves its boxes on the forms blank, and says so beside them; they can be filled in on the form itself.
         </p>
       </div>
       <CvlSettingsClient initial={settings} />
