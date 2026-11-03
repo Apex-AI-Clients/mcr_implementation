@@ -234,7 +234,8 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       if (isBlank(value)) return
       const text = formatAmount(value, f.currency)
       if (f.startX !== undefined) drawText(pen, text, f.startX, f.bot - 4.5, f.x1 - f.startX - 4, { warn })
-      else drawText(pen, text, f.x0 + 4, f.bot - 4.5, f.x1 - f.x0 - 8, { align: 'right', size: 8.5, warn })
+      // A column with no printed "$" (Form 509): from the left, under the column's own heading.
+      else drawText(pen, text, f.x0 + 5, f.bot - 4.5, f.x1 - f.x0 - 9, { size: 8.5, warn })
       return
     }
     case 'date':

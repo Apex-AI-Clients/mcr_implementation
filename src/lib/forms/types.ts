@@ -41,7 +41,7 @@ export type FormField =
   | (FieldBase & { type: 'lines'; lines: Box[] })
   | (FieldBase & Box & {
       type: 'money'
-      /** Where the text starts when a "$" is printed in the box; otherwise right-aligned. */
+      /** Where the text starts when a "$" is printed in the box; otherwise from the left of the box. */
       startX?: number
       /** Write the "$" ourselves (the box has none printed). */
       currency?: boolean

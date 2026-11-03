@@ -101,6 +101,18 @@ describe('fill', () => {
     expect(p2).toContain('$48,334.67') // computed total of the valuations
   })
 
+  it('starts Form 509 amounts at the left of their column, under its heading', async () => {
+    const r = await fillOfficialForm('509', SAMPLE_509)
+    const doc = await getDocumentProxy(new Uint8Array(r.pdf))
+    const items = (await (await doc.getPage(2)).getTextContent()).items.flatMap((i) => ('str' in i ? [i] : []))
+    const { map } = formVersion('509')
+    for (const [text, key] of [['$12,480.50', 'b_val'], ['$150', 'c_val'], ['$286,412.33', 'r6']] as const) {
+      const f = map.fields.find((x) => x.key === key)!
+      const x = items.find((i) => i.str === text)!.transform[4]
+      expect(x, key).toBeCloseTo((f as { x0: number }).x0 + 5, 0)
+    }
+  })
+
   it('prints Part A without Form 507A unless asked, with only the tables that have rows', async () => {
     const r = await fillOfficialForm('507a', SAMPLE_PARTA)
     // 6 form pages + appendix cover + A4, A5, A6 (both grids on one page), A7
