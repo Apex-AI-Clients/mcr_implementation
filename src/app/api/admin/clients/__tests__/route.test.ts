@@ -320,6 +320,14 @@ describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () =>
     expect(leadUpdate).not.toHaveBeenCalled()
   })
 
+  it('makes no CVL client while CVL is switched off', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CVL_ENABLED', '')
+    const { clientInsert } = mockDb()
+    expect((await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))).status).toBe(400)
+    expect(clientInsert).not.toHaveBeenCalled()
+    vi.unstubAllEnvs()
+  })
+
   it('refuses a workflow it does not know', async () => {
     mockDb()
     expect((await POST(post({ ...BODY, workflow: 'liquidation' }))).status).toBe(400)

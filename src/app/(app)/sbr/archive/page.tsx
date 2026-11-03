@@ -3,6 +3,7 @@ import { ClientsPageClient } from '@/components/admin/ClientsPageClient'
 import { CvlClientTable } from '@/components/cvl/CvlClientTable'
 import { getClientListPage } from '@/lib/clients/listing'
 import { getCvlListPage } from '@/lib/cvl/listing'
+import { cvlEnabled } from '@/lib/cvl/flag'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,14 +22,16 @@ interface Props {
  */
 export default async function ArchivePage({ searchParams }: Props) {
   const sp = await searchParams
-  const moved = sp.view === 'moved'
-  const workflow = sp.workflow === 'sbr' || sp.workflow === 'cvl' ? sp.workflow : undefined
+  // CVL switched off: one Archive list, as before CVL.
+  const cvl = cvlEnabled()
+  const moved = cvl && sp.view === 'moved'
+  const workflow = cvl && (sp.workflow === 'sbr' || sp.workflow === 'cvl') ? sp.workflow : undefined
 
   const tab = (active: boolean) =>
     `rounded-lg px-3 py-1.5 text-sm transition-colors ${
       active ? 'bg-surface font-medium text-foreground' : 'text-foreground/50 hover:text-foreground'
     }`
-  const tabs = (
+  const tabs = !cvl ? null : (
     <nav className="mb-6 flex flex-wrap gap-1" aria-label="Archive views">
       {(
         [

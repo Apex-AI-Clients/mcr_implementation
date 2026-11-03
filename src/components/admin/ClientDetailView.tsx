@@ -28,6 +28,7 @@ import { formatDate } from '@/lib/utils'
 import { atoFileInfo } from '@/lib/analysis/atoAccountKind'
 import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/app'
 import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
+import { cvlEnabled } from '@/lib/cvl/flag'
 import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
 import { loadDirectorRisk } from '@/lib/cvl/directorRiskStore'
 import { toCvlCase } from '@/lib/cvl/cases'
@@ -295,7 +296,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
             <ClientActions clientId={client.id} clientName={client.name} />
-            <ConvertToCvlButton clientId={client.id} clientName={client.name} />
+            {cvlEnabled() && <ConvertToCvlButton clientId={client.id} clientName={client.name} />}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link

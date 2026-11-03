@@ -14,6 +14,8 @@ export default defineConfig({
     testTimeout: 20_000,
     hookTimeout: 20_000,
     pool: 'vmThreads',
+    // CVL is tested switched on; tests of it switched off stub the variable (cvl/flag.ts).
+    env: { NEXT_PUBLIC_CVL_ENABLED: 'true' },
     // Database tests write to a real Supabase project; they run only through
     // `npm run test:db` (vitest.db.config.ts), never as part of `npm run test`.
     exclude: [...configDefaults.exclude, 'supabase/tests/**'],

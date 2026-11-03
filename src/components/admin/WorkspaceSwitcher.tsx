@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { WORKSPACES, type Workspace } from '@/lib/workspaces'
+import { cvlEnabled } from '@/lib/cvl/flag'
 
 interface WorkspaceSwitcherProps {
   current: Workspace
@@ -66,7 +67,7 @@ export function WorkspaceSwitcher({ current, variant = 'sidebar' }: WorkspaceSwi
           aria-label="Switch workspace"
           className="absolute left-0 top-full z-20 mt-1.5 w-44 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-lg"
         >
-          {WORKSPACES.map((workspace) => {
+          {WORKSPACES.filter((w) => w.id !== 'cvl' || cvlEnabled()).map((workspace) => {
             const Icon = workspace.icon
             const isCurrent = workspace.id === current.id
             return (

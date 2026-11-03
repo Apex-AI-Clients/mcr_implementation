@@ -27,7 +27,8 @@ export function lastWorkspaceForPath(pathname: string): LastWorkspace | null {
   return match ? match[1] : null
 }
 
-/** Where `/` sends someone: their last workspace, else Leads. */
+/** Where `/` sends someone: their last workspace, else Leads (never CVL while it is switched off). */
 export function homeFor(cookieValue: string | undefined): string {
+  if (cookieValue === 'cvl' && process.env.NEXT_PUBLIC_CVL_ENABLED !== 'true') return WORKSPACE_HOMES.leads
   return cookieValue && cookieValue in WORKSPACE_HOMES ? WORKSPACE_HOMES[cookieValue as LastWorkspace] : WORKSPACE_HOMES.leads
 }

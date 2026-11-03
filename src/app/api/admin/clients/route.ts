@@ -5,6 +5,7 @@ import { normaliseClientPhone } from '@/lib/clients/phone'
 import { CompanyDetailsSchema, companyDetailsInsert } from '@/lib/clients/companyDetails'
 import { staffAuthorName } from '@/lib/auth/staff'
 import { conversionBody } from '@/lib/leads/clientDeleted'
+import { cvlEnabled } from '@/lib/cvl/flag'
 import { getCustomStages } from '@/lib/leads/customStages'
 import { isCustomStage } from '@/lib/leads/constants'
 import type { LeadStage } from '@/types/leads'
@@ -137,6 +138,10 @@ export async function POST(req: NextRequest) {
     }
 
     const workflow = parsed.data.workflow ?? 'sbr'
+    // CVL switched off: there is no CVL client to make.
+    if (workflow === 'cvl' && !cvlEnabled()) {
+      return NextResponse.json({ error: 'Unknown workflow' }, { status: 400 })
+    }
     const { data: client, error: insertError } = await supabase
       .from('clients')
       .insert({ name, email, phone, status: 'in_progress', workflow })

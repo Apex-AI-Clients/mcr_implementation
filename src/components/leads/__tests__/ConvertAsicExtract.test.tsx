@@ -600,6 +600,15 @@ describe('Convert to client — what conversion sends', () => {
 })
 
 describe('Convert to client — SBR or CVL client (migration 0039)', () => {
+  it('offers no SBR / CVL choice while CVL is switched off', () => {
+    vi.stubEnv('NEXT_PUBLIC_CVL_ENABLED', '')
+    mockRoutes()
+    const dialog = renderDialog()
+    expect(within(dialog).queryByRole('radio', { name: /CVL client/ })).toBeNull()
+    expect(within(dialog).queryByText(/CVL/)).toBeNull()
+    vi.unstubAllEnvs()
+  })
+
   it('converts to an SBR client unless CVL is chosen', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = mockRoutes()

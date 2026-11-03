@@ -140,6 +140,7 @@ OPENROUTER_LABEL_MODEL=              # optional, anthropic/… (default anthropi
 
 # App
 NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no trailing slash)
+NEXT_PUBLIC_CVL_ENABLED=             # "true" shows the CVL workspace; unset hides it everywhere (/cvl answers 404). Build-time: redeploy after changing
 ```
 
 **Non-negotiable security rules:**

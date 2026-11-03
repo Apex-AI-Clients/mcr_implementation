@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { formatDate } from '@/lib/utils'
 import { archiveReasonLabel } from '@/lib/clients/archive'
+import { cvlEnabled } from '@/lib/cvl/flag'
 import type { ClientSummary } from '@/types/app'
 
 interface ClientTableProps {
@@ -209,7 +210,7 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
                 />
               </th>
               <th className="px-4 py-3 text-left font-medium text-foreground/50">Client</th>
-              {archived && <th className="px-4 py-3 text-left font-medium text-foreground/50">Workflow</th>}
+              {archived && cvlEnabled() && <th className="px-4 py-3 text-left font-medium text-foreground/50">Workflow</th>}
               <th className="px-4 py-3 text-left font-medium text-foreground/50">Documents</th>
               <th className="px-4 py-3 text-left font-medium text-foreground/50">
                 {archived ? 'Archived' : 'Created'}
@@ -248,7 +249,7 @@ export function ClientTable({ clients, mode = 'active' }: ClientTableProps) {
                     <p className="font-medium text-foreground">{client.name}</p>
                     <p className="text-xs text-foreground/40 mt-0.5">{client.email}</p>
                   </td>
-                  {archived && (
+                  {archived && cvlEnabled() && (
                     <td className="px-4 py-3.5">
                       <Badge variant={client.workflow === 'cvl' ? 'accent' : 'muted'}>
                         {client.workflow === 'cvl' ? 'CVL' : 'SBR'}

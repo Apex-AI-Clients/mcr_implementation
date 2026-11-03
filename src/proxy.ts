@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { LAST_WORKSPACE_COOKIE, lastWorkspaceForPath } from '@/lib/lastWorkspace'
+import { cvlEnabled, isCvlPath } from '@/lib/cvl/flag'
 
 /**
  * Single-role auth guard. Every page requires an authenticated staff user;
@@ -9,6 +10,13 @@ import { LAST_WORKSPACE_COOKIE, lastWorkspaceForPath } from '@/lib/lastWorkspace
  * is a protected page.
  */
 export async function proxy(request: NextRequest) {
+  // CVL switched off (NEXT_PUBLIC_CVL_ENABLED): its pages and API do not exist.
+  if (isCvlPath(request.nextUrl.pathname) && !cvlEnabled()) {
+    return new NextResponse('Not found', { status: 404 })
+  }
+  // The CVL API is only here for the check above; it authenticates itself.
+  if (request.nextUrl.pathname.startsWith('/api/')) return NextResponse.next({ request })
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -54,5 +62,5 @@ export const config = {
   // Protect every route except /login, /privacy (public legal page — crawlers
   // must reach it unauthenticated), the API (self-authed), Next internals, and
   // any path with a file extension (static assets).
-  matcher: ['/((?!api|_next|login|privacy|favicon.ico|.*\\.).*)'],
+  matcher: ['/((?!api|_next|login|privacy|favicon.ico|.*\\.).*)', '/api/admin/cvl/:path*'],
 }

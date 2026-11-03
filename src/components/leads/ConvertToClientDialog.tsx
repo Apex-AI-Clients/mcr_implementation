@@ -16,6 +16,7 @@ import { createClientFromLead } from '@/lib/leads/convert'
 import { keepAsicExtract } from '@/lib/asic/browser'
 import { emptyConversionForm, type ConversionForm } from '@/lib/leads/conversionForm'
 import { clientBase, type ClientWorkspace } from '@/lib/clients/workspace'
+import { cvlEnabled } from '@/lib/cvl/flag'
 import type { Lead } from '@/types/leads'
 
 interface ConvertToClientDialogProps {
@@ -169,7 +170,7 @@ export function ConvertToClientDialog({ lead, onClose }: ConvertToClientDialogPr
                     fill it: the company name, ACN and ABN where empty, the two
                     addresses and the directors. Never the lead's own name, and
                     never the trust — trusts are not registered with ASIC. */}
-                <WorkflowChoice value={workflow} disabled={working} onChange={setWorkflow} />
+                {cvlEnabled() && <WorkflowChoice value={workflow} disabled={working} onChange={setWorkflow} />}
 
                 <AsicExtractUpload
                   id="convert-asic-extract"
