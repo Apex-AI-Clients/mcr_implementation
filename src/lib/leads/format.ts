@@ -1,7 +1,7 @@
-import type { AuState, Lead, LeadActivity, LeadActivityType } from '@/types/leads'
+import type { AuState, CustomStage, Lead, LeadActivity, LeadActivityType } from '@/types/leads'
 import {
   AU_STATES,
-  STAGE_META,
+  stageLabel,
   SOURCE_META,
   ENTITY_TYPE_META,
   DEBT_PRESETS,
@@ -669,6 +669,8 @@ export function leadsToCsv(
    * whether the caller had the history to hand.
    */
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
+  /** The stages staff added, for the Stage column's names. */
+  custom: readonly CustomStage[] = [],
 ): string {
   const rows = leads.map((lead) =>
     [
@@ -685,7 +687,7 @@ export function leadsToCsv(
       // Collapsed, for the same reason the notes are: a newline the visitor
       // typed into the form makes this row as tall as their message.
       (lead.message ?? '').replace(/\s+/g, ' ').trim(),
-      STAGE_META[lead.stage].label,
+      stageLabel(lead.stage, custom),
       lead.sourceLabel ?? SOURCE_META[lead.source].label,
       formatIsoDate(lead.lastActionAt),
       String(countLeadNotes(activitiesByLead.get(lead.id) ?? [])),

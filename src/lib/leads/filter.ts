@@ -1,5 +1,5 @@
 import type { AuState, Lead } from '@/types/leads'
-import { LEAD_VIEWS, sourceName, type LeadView } from './constants'
+import { sourceName, viewStages, type LeadView } from './constants'
 import { needsFollowUp } from './followUp'
 import { compareByDebtDesc, normalisePhone, overlapsFloor } from './format'
 import { parseLooseDebt } from './ingest'
@@ -130,7 +130,7 @@ export function filterLeads(
   return leads
     .filter((lead) => {
       if (!matchesSearch(lead, filters.search)) return false
-      if (filters.view !== 'all' && !LEAD_VIEWS[filters.view].stages.includes(lead.stage)) return false
+      if (filters.view !== 'all' && !viewStages(filters.view).includes(lead.stage)) return false
       if (filters.state !== 'all' && !mightBeInState(lead, filters.state)) return false
       if (filters.source !== 'all' && sourceName(lead).toLowerCase() !== filters.source.trim().toLowerCase()) return false
       if (filters.debtFloor !== null && !overlapsFloor(lead, filters.debtFloor)) return false

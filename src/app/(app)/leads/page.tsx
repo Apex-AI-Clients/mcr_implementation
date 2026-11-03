@@ -1,6 +1,7 @@
 import { LeadsPageClient } from '@/components/leads/LeadsPageClient'
 import { getLeadSourceOptions, getLeadViewCounts, getLeadsPage, getNotesForLeads } from '@/lib/leads/queries'
 import { parseLeadQuery, type RawSearchParams } from '@/lib/leads/searchParams'
+import { getCustomStages } from '@/lib/leads/customStages'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,8 +10,8 @@ interface Props {
 }
 
 /**
- * Leads list, one tab in the header per group of stages (LEAD_VIEWS). It
- * opens on Leads: only the active leads.
+ * Leads list, one tab in the header per group of stages (LEAD_VIEWS), then
+ * one per stage staff added. It opens on Leads: only the active leads.
  *
  * The URL carries the whole view — tab, page, filters, search and sort — and
  * this component turns it into one database query. Nothing is narrowed in
@@ -18,12 +19,15 @@ interface Props {
  * "no matches" for leads that exist.
  */
 export default async function LeadsPage({ searchParams }: Props) {
-  const { filters, page } = parseLeadQuery(await searchParams)
+  // Read again here rather than taken from the layout's: a page and its
+  // layout render independently, and the tab has to parse against this list.
+  const custom = await getCustomStages()
+  const { filters, page } = parseLeadQuery(await searchParams, custom)
   const view = filters.view === 'all' ? 'leads' : filters.view
   const [result, sources, counts] = await Promise.all([
     getLeadsPage({ filters: { ...filters, view }, page }),
     getLeadSourceOptions(),
-    getLeadViewCounts(filters),
+    getLeadViewCounts(filters, custom),
   ])
 
   // Every tab shows each lead's notes.

@@ -3,9 +3,11 @@ import { redirect } from 'next/navigation'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { WorkspaceTopBar } from '@/components/admin/WorkspaceTopBar'
 import { LeadsStoreProvider } from '@/components/leads/LeadsStore'
+import { LeadStagesProvider } from '@/components/leads/LeadStages'
 import { ToastProvider } from '@/components/ui/Toast'
 import { leadsPersistence } from '@/lib/leads/persistence'
 import { staffAuthorName } from '@/lib/auth/staff'
+import { getCustomStages } from '@/lib/leads/customStages'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await getSupabaseAuthClient()
@@ -28,29 +30,33 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   const author = staffAuthorName(user)
+  // A handful of rows; read here so every leads screen has the same list.
+  const customStages = await getCustomStages()
 
   return (
     <ToastProvider>
-      {/* Mounted empty. Each lead route reads its own rows server-side and
-          syncs them in, so the browser holds the page on screen rather than
-          every lead in the database — which is what makes the list's paging,
-          filtering and sorting able to live in Postgres at all. The provider
-          stays up here so an optimistic edit survives moving between the list
-          and a record. */}
-      <LeadsStoreProvider author={author} persistence={leadsPersistence}>
-        {/* Fixed to the viewport rather than `h-screen`: the root layout leaves
-            body as `min-h-full` with no overflow rule, so a 100vh shell still
-            let the document keep a second scrollbar of its own next to
-            <main>'s. Taking the shell out of flow makes that impossible.
-            /login sits outside this route group and is unaffected. */}
-        <div className="fixed inset-0 flex overflow-hidden bg-primary">
-          <AdminSidebar userEmail={user.email ?? ''} signOut={signOut} />
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <WorkspaceTopBar userEmail={user.email ?? ''} signOut={signOut} />
-            <main className="flex-1 overflow-y-auto">{children}</main>
+      <LeadStagesProvider initial={customStages}>
+        {/* Mounted empty. Each lead route reads its own rows server-side and
+            syncs them in, so the browser holds the page on screen rather than
+            every lead in the database — which is what makes the list's paging,
+            filtering and sorting able to live in Postgres at all. The provider
+            stays up here so an optimistic edit survives moving between the list
+            and a record. */}
+        <LeadsStoreProvider author={author} persistence={leadsPersistence}>
+          {/* Fixed to the viewport rather than `h-screen`: the root layout leaves
+              body as `min-h-full` with no overflow rule, so a 100vh shell still
+              let the document keep a second scrollbar of its own next to
+              <main>'s. Taking the shell out of flow makes that impossible.
+              /login sits outside this route group and is unaffected. */}
+          <div className="fixed inset-0 flex overflow-hidden bg-primary">
+            <AdminSidebar userEmail={user.email ?? ''} signOut={signOut} />
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <WorkspaceTopBar userEmail={user.email ?? ''} signOut={signOut} />
+              <main className="flex-1 overflow-y-auto">{children}</main>
+            </div>
           </div>
-        </div>
-      </LeadsStoreProvider>
+        </LeadsStoreProvider>
+      </LeadStagesProvider>
     </ToastProvider>
   )
 }

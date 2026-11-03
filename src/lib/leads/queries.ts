@@ -3,12 +3,13 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { toLead, toLeadActivity, toLeadSubmission } from '@/lib/leads/rowMappers'
 import { normalisePhone } from '@/lib/leads/format'
 import { FOLLOW_UP_DAYS, OPEN_STAGES } from '@/lib/leads/followUp'
-import { ALL_SOURCES, ALL_VIEWS, DATE_RANGES, LEAD_VIEWS, sourceName, sourcesNamed, type LeadView } from '@/lib/leads/constants'
+import { ALL_SOURCES, allViews, DATE_RANGES, sourceName, sourcesNamed, viewStages, type LeadView } from '@/lib/leads/constants'
 import { LEADS_PAGE_SIZE, clampPage, pageCountFor, rangeFor } from '@/lib/leads/pagination'
 import { debtSearchAmount, type LeadFilterState } from '@/lib/leads/filter'
 import type { LeadNote } from '@/lib/leads/notes'
 import type {
   ConvertedClientDetails,
+  CustomStage,
   Lead,
   LeadActivity,
   LeadSource,
@@ -114,7 +115,7 @@ export function withFilters<T extends LeadsFilterable<T>>(
     )
   }
 
-  if (filters.view !== 'all') built = built.in('stage', LEAD_VIEWS[filters.view].stages)
+  if (filters.view !== 'all') built = built.in('stage', viewStages(filters.view))
   if (filters.state !== 'all') {
     // mightBeInState() in SQL: the state itself, or a grouping containing it.
     // filters.state is an AuState from searchParams' allow-list, so it is safe
@@ -510,8 +511,13 @@ export async function getLeadIdForClient(clientId: string): Promise<string | nul
 /**
  * How many leads each header tab holds, with the other filters (search,
  * state, source, …) as they are, so a search shows which tab its matches are in.
+ * One count per visible custom stage too (`custom`, from getCustomStages).
  */
-export async function getLeadViewCounts(filters: LeadFilterState, now: Date = new Date()): Promise<Record<LeadView, number>> {
+export async function getLeadViewCounts(
+  filters: LeadFilterState,
+  custom: readonly CustomStage[] = [],
+  now: Date = new Date(),
+): Promise<Record<LeadView, number>> {
   const supabase = getSupabaseServerClient()
   const labels = await sourceLabelsNamed(filters.source)
   async function count(view: LeadView): Promise<number> {
@@ -520,8 +526,9 @@ export async function getLeadViewCounts(filters: LeadFilterState, now: Date = ne
     if (error) console.error('[getLeadViewCounts]', error.message)
     return n ?? 0
   }
-  const counts = await Promise.all(ALL_VIEWS.map(count))
-  return Object.fromEntries(ALL_VIEWS.map((view, i) => [view, counts[i]])) as Record<LeadView, number>
+  const views = allViews(custom)
+  const counts = await Promise.all(views.map(count))
+  return Object.fromEntries(views.map((view, i) => [view, counts[i]])) as Record<LeadView, number>
 }
 
 /** Every staff-typed source, as stored. Few: typed by hand, one per lead at most. */
@@ -583,7 +590,7 @@ export async function getOpenLeadCount(): Promise<number> {
 
 /**
  * The notes staff wrote on each lead (activities of type "note"), newest
- * first, for the notes column on the Non-proceeding and Do not contact tabs.
+ * first, for the notes column on every tab.
  * Ids batched, as in getActivitiesForLeads, so "All" on a long tab still fits
  * in a URL. A failure leaves the notes out rather than failing the page.
  */

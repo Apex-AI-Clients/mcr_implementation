@@ -7,13 +7,30 @@ import type { Director } from '@/lib/asic/types'
  * The list and record UI arrive in Stage 2; persistence in Stage 4.
  */
 
-export type LeadStage =
+/** The stages that ship with the app; their labels and behaviour are in constants.ts. */
+export type BuiltInStage =
   | 'lead'
   | 'prospect'
   | 'client'
+  | 'unresponsive'
+  | 'contact_in_30_days'
   | 'converted'
   | 'non_proceeding'
   | 'do_not_contact'
+
+/** A stage staff added by typing its name (lead_stages, migration 0042). */
+export type CustomStageKey = `custom_${string}`
+
+export type LeadStage = BuiltInStage | CustomStageKey
+
+/** A stage staff added, as lead_stages holds it. */
+export interface CustomStage {
+  key: CustomStageKey
+  label: string
+  position: number
+  /** Set when hidden; a hidden stage has no tab and is not offered. */
+  hiddenAt: string | null
+}
 
 export type LeadSource = 'facebook' | 'website' | 'google_form' | 'manual'
 

@@ -1,4 +1,4 @@
-import type { Lead, LeadStage } from '@/types/leads'
+import type { BuiltInStage, Lead, LeadStage } from '@/types/leads'
 
 /**
  * Follow-up rule.
@@ -16,18 +16,27 @@ export const FOLLOW_UP_DAYS = 30
 
 const DAY_MS = 86_400_000
 
-/** Stages still in play. Exported so the stage select groups them as "Pipeline". */
-export const OPEN_STAGES: LeadStage[] = ['lead', 'prospect', 'client']
+/**
+ * Stages still in play. Exported so the stage select groups them as "Pipeline".
+ * "Contact in 30 days" too: parked, not finished. Its 30 days and the
+ * follow-up threshold are the same length, so it flags as it falls due.
+ * Stages staff add are never open (constants.ts, stageMeta).
+ */
+export const OPEN_STAGES: BuiltInStage[] = ['lead', 'prospect', 'client', 'contact_in_30_days']
+
+export function isOpenStage(stage: LeadStage): boolean {
+  return (OPEN_STAGES as readonly LeadStage[]).includes(stage)
+}
 
 export function needsFollowUp(lead: Lead, now: Date = new Date()): boolean {
-  if (!OPEN_STAGES.includes(lead.stage)) return false
+  if (!isOpenStage(lead.stage)) return false
   const elapsed = now.getTime() - new Date(lead.lastActionAt).getTime()
   return elapsed > FOLLOW_UP_DAYS * DAY_MS
 }
 
 /** Open leads — the "47 open" figure on the workspace chooser. */
 export function countOpenLeads(leads: Lead[]): number {
-  return leads.filter((lead) => OPEN_STAGES.includes(lead.stage)).length
+  return leads.filter((lead) => isOpenStage(lead.stage)).length
 }
 
 /** Open leads that have gone quiet past the threshold. */

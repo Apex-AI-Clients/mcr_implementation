@@ -20,6 +20,22 @@ describe('stageBeforeConversion', () => {
     expect(stageBeforeConversion([entry(conversionBody('client'), '2026-10-21T01:08:00Z')])).toBe('lead')
     expect(stageBeforeConversion([])).toBe('lead')
   })
+
+  it('still reads entries written before two stages were renamed (migration 0042)', () => {
+    const CONVERTED = 'Converted to a client file in the restructuring workspace.'
+    expect(stageBeforeConversion([entry(`${CONVERTED} Stage before: Non-proceeding.`, '2026-10-21T01:08:00Z')])).toBe('non_proceeding')
+    expect(stageBeforeConversion([entry(`${CONVERTED} Stage before: Do not contact.`, '2026-10-21T01:08:00Z')])).toBe('do_not_contact')
+    expect(stageBeforeConversion([entry(conversionBody('non_proceeding'), '2026-11-04T01:08:00Z')])).toBe('non_proceeding')
+  })
+
+  it('reads a stage staff added by its name, unless it has since been hidden', () => {
+    const waiting = { key: 'custom_aaaa1111' as const, label: 'Waiting', position: 1, hiddenAt: null }
+    const activities = [entry(conversionBody('custom_aaaa1111', [waiting]), '2026-11-04T01:08:00Z')]
+    expect(activities[0].body).toContain('Stage before: Waiting.')
+    expect(stageBeforeConversion(activities, [waiting])).toBe('custom_aaaa1111')
+    // Set back into a stage with no tab, the lead would be on no tab at all.
+    expect(stageBeforeConversion(activities, [{ ...waiting, hiddenAt: '2026-11-05T00:00:00Z' }])).toBe('lead')
+  })
 })
 
 describe('deletedNote', () => {

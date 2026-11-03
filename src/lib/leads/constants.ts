@@ -1,4 +1,7 @@
 import type {
+  BuiltInStage,
+  CustomStage,
+  CustomStageKey,
   LeadStage,
   LeadSource,
   LeadActivityType,
@@ -23,16 +26,57 @@ interface StageMeta {
   badge: 'success' | 'warning' | 'destructive' | 'muted' | 'accent'
 }
 
-export const STAGE_META: Record<LeadStage, StageMeta> = {
+/**
+ * The built-in stages. Staff can add more (lead_stages, migration 0042); those
+ * are read from the database and described by stageMeta() below.
+ */
+export const STAGE_META: Record<BuiltInStage, StageMeta> = {
   lead: { label: 'Lead', group: 'pipeline', badge: 'muted' },
   prospect: { label: 'Prospect', group: 'pipeline', badge: 'accent' },
   client: { label: 'Client', group: 'pipeline', badge: 'success' },
+  // Still in play: somebody calls them again when the 30 days are up.
+  contact_in_30_days: { label: 'Contact in 30 days', group: 'pipeline', badge: 'warning' },
+  unresponsive: { label: 'Unresponsive', group: 'closed', badge: 'muted' },
   converted: { label: 'Converted', group: 'closed', badge: 'success' },
-  non_proceeding: { label: 'Non-proceeding', group: 'closed', badge: 'muted' },
-  do_not_contact: { label: 'Do not contact', group: 'closed', badge: 'destructive' },
+  non_proceeding: { label: 'Non-proceeding – other', group: 'closed', badge: 'muted' },
+  do_not_contact: { label: 'Do not contact again', group: 'closed', badge: 'destructive' },
 }
 
-export const CLOSED_STAGES: LeadStage[] = (Object.keys(STAGE_META) as LeadStage[]).filter(
+/**
+ * What two stages were called before migration 0042. Activity entries written
+ * then still say "Stage before: Non-proceeding.", and clientDeleted.ts reads
+ * the stage back out of them by its label.
+ */
+export const FORMER_STAGE_LABELS: Partial<Record<BuiltInStage, string>> = {
+  non_proceeding: 'Non-proceeding',
+  do_not_contact: 'Do not contact',
+}
+
+/** A stage staff added, rather than one that ships with the app. */
+export function isCustomStage(stage: string): stage is CustomStageKey {
+  return stage.startsWith('custom_')
+}
+
+/** Any stage, built-in or one staff added: name, group and badge. */
+export function stageMeta(stage: LeadStage, custom: readonly CustomStage[] = []): StageMeta {
+  if (!isCustomStage(stage)) return STAGE_META[stage]
+  // Closed: a stage staff invent is a place to park leads, so it never flags
+  // for follow-up. Muted, so it reads as neither good nor bad news.
+  return { label: custom.find((c) => c.key === stage)?.label ?? 'Custom stage', group: 'closed', badge: 'muted' }
+}
+
+export function stageLabel(stage: LeadStage, custom: readonly CustomStage[] = []): string {
+  return stageMeta(stage, custom).label
+}
+
+/** The custom stages that have a tab and are offered, in tab order. */
+export function visibleCustomStages(custom: readonly CustomStage[]): CustomStage[] {
+  return custom
+    .filter((stage) => !stage.hiddenAt)
+    .sort((a, b) => a.position - b.position || a.label.localeCompare(b.label, 'en-AU'))
+}
+
+export const CLOSED_STAGES: BuiltInStage[] = (Object.keys(STAGE_META) as BuiltInStage[]).filter(
   (stage) => STAGE_META[stage].group === 'closed',
 )
 
@@ -43,19 +87,48 @@ export const STAGE_GROUPS: { label: string; stages: LeadStage[] }[] = [
   { label: 'Closed', stages: CLOSED_STAGES },
 ]
 
-export const ALL_STAGES: LeadStage[] = [...OPEN_STAGES, ...CLOSED_STAGES]
+/** STAGE_GROUPS, with the stages staff added as a group of their own. */
+export function stageGroups(custom: readonly CustomStage[]): { label: string; stages: LeadStage[] }[] {
+  const added = visibleCustomStages(custom).map((stage) => stage.key)
+  return added.length > 0 ? [...STAGE_GROUPS, { label: 'Added by staff', stages: added }] : STAGE_GROUPS
+}
+
+export const ALL_STAGES: BuiltInStage[] = [...OPEN_STAGES, ...CLOSED_STAGES]
 
 /**
  * The stages a lead passes through when everything goes right, in order.
  *
- * This is the track the progress stepper draws. It is NOT every stage: the two
- * below are exits, not steps, and putting them on a line implying progress
- * would read as though "Do not contact" were something to work towards.
+ * This is the track the progress stepper draws. It is NOT every stage: the
+ * others are exits or pauses, not steps, and putting them on a line implying
+ * progress would read as though "Do not contact again" were something to work
+ * towards.
  */
 export const STAGE_PATH: LeadStage[] = ['lead', 'prospect', 'client', 'converted']
 
-/** Terminal stages that end the track rather than advance it. */
-export const OFF_RAMP_STAGES: LeadStage[] = ['non_proceeding', 'do_not_contact']
+/** Built-in stages that end the track rather than advance it. Custom stages do too. */
+export const OFF_RAMP_STAGES: LeadStage[] = ['unresponsive', 'non_proceeding', 'do_not_contact']
+
+/** How long "Contact in 30 days" parks a lead before it is due a call. */
+export const CONTACT_AGAIN_DAYS = 30
+
+/**
+ * When a lead in "Contact in 30 days" is due a call: 30 days from when it was
+ * put there (stage_since). Null in any other stage. Nothing moves the lead
+ * when the day comes; the table and the record say it is due.
+ */
+export function contactAgainBy(lead: { stage: LeadStage; stageSince: string }): Date | null {
+  if (lead.stage !== 'contact_in_30_days') return null
+  return new Date(new Date(lead.stageSince).getTime() + CONTACT_AGAIN_DAYS * 86_400_000)
+}
+
+/** contactAgainBy(), and whether that day has come. Null in any other stage. */
+export function contactAgain(
+  lead: { stage: LeadStage; stageSince: string },
+  now: Date = new Date(),
+): { by: Date; due: boolean } | null {
+  const by = contactAgainBy(lead)
+  return by ? { by, due: by.getTime() <= now.getTime() } : null
+}
 
 // ============================================================
 // Screens
@@ -63,32 +136,71 @@ export const OFF_RAMP_STAGES: LeadStage[] = ['non_proceeding', 'do_not_contact']
 
 /**
  * The tabs in the Leads page header, one table and one count each (Gabby,
- * 21–22 Oct). The page opens on Leads, which holds only the working stage;
- * a lead moves to its tab when its stage changes. Every stage is in exactly
- * one tab (a test holds this). `tab` is the URL value, so a tab can be
- * bookmarked; Leads has none.
+ * 21–22 Oct; the new stages 3 Nov). The page opens on Leads, which holds only
+ * the working stage; a lead moves to its tab when its stage changes. Every
+ * stage is in exactly one tab (a test holds this). `tab` is the URL value, so
+ * a tab can be bookmarked; Leads has none.
+ *
+ * A stage staff added is its own tab, after these, keyed and bookmarked by its
+ * stage key (viewDef).
  */
-export type LeadView = 'leads' | 'prospects' | 'clients' | 'converted' | 'non_proceeding' | 'do_not_contact'
+export type BuiltInView =
+  | 'leads'
+  | 'prospects'
+  | 'clients'
+  | 'unresponsive'
+  | 'do_not_contact'
+  | 'contact_in_30_days'
+  | 'non_proceeding'
+  | 'converted'
 
-export const LEAD_VIEWS: Record<LeadView, { label: string; tab: string; stages: LeadStage[] }> = {
+export type LeadView = BuiltInView | CustomStageKey
+
+interface ViewDef {
+  label: string
+  tab: string
+  stages: LeadStage[]
+}
+
+export const LEAD_VIEWS: Record<BuiltInView, ViewDef> = {
   leads: { label: 'Leads', tab: 'leads', stages: ['lead'] },
   prospects: { label: 'Prospects', tab: 'prospects', stages: ['prospect'] },
   clients: { label: 'Clients', tab: 'clients', stages: ['client'] },
+  unresponsive: { label: 'Unresponsive', tab: 'unresponsive', stages: ['unresponsive'] },
+  do_not_contact: { label: 'Do not contact again', tab: 'do-not-contact', stages: ['do_not_contact'] },
+  contact_in_30_days: { label: 'Contact in 30 days', tab: 'contact-in-30-days', stages: ['contact_in_30_days'] },
+  non_proceeding: { label: 'Non-proceeding – other', tab: 'non-proceeding', stages: ['non_proceeding'] },
   converted: { label: 'Converted', tab: 'converted', stages: ['converted'] },
-  non_proceeding: { label: 'Non-proceeding', tab: 'non-proceeding', stages: ['non_proceeding'] },
-  do_not_contact: { label: 'Do not contact', tab: 'do-not-contact', stages: ['do_not_contact'] },
+}
+
+export const BUILT_IN_VIEWS = Object.keys(LEAD_VIEWS) as BuiltInView[]
+
+/** Any tab, built-in or a custom stage's. A custom stage's tab is its key. */
+export function viewDef(view: LeadView, custom: readonly CustomStage[] = []): ViewDef {
+  if (!isCustomStage(view)) return LEAD_VIEWS[view]
+  return { label: stageLabel(view, custom), tab: view, stages: [view] }
+}
+
+/** The stages a tab lists. Needs no custom list: a custom tab lists its own stage. */
+export function viewStages(view: LeadView): LeadStage[] {
+  return isCustomStage(view) ? [view] : LEAD_VIEWS[view].stages
+}
+
+/** Every tab, in order: the built-in ones, then each visible custom stage. */
+export function allViews(custom: readonly CustomStage[] = []): LeadView[] {
+  return [...BUILT_IN_VIEWS, ...visibleCustomStages(custom).map((stage) => stage.key)]
 }
 
 /** The tab a URL names, or null for none or an unknown one. */
-export function viewForTab(tab: string | null): LeadView | null {
-  return (Object.keys(LEAD_VIEWS) as LeadView[]).find((view) => LEAD_VIEWS[view].tab === tab) ?? null
+export function viewForTab(tab: string | null, custom: readonly CustomStage[] = []): LeadView | null {
+  if (tab === null) return null
+  return allViews(custom).find((view) => viewDef(view, custom).tab === tab) ?? null
 }
-
-export const ALL_VIEWS = Object.keys(LEAD_VIEWS) as LeadView[]
 
 /** The screen a lead in this stage is listed on. */
 export function viewForStage(stage: LeadStage): LeadView {
-  return ALL_VIEWS.find((view) => LEAD_VIEWS[view].stages.includes(stage)) ?? 'leads'
+  if (isCustomStage(stage)) return stage
+  return BUILT_IN_VIEWS.find((view) => LEAD_VIEWS[view].stages.includes(stage)) ?? 'leads'
 }
 
 // ============================================================

@@ -11,13 +11,14 @@ import { Select } from '@/components/ui/Select'
 import { MultiSelect } from '@/components/ui/MultiSelect'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads, type ExistingLead } from '@/components/leads/LeadsStore'
+import { useLeadStages } from '@/components/leads/LeadStages'
 import {
   ALL_ENTITY_TYPES,
   AU_STATES,
   DEBT_PRESETS,
   ENTITY_TYPE_META,
   SOURCE_META,
-  STAGE_META,
+  stageLabel,
 } from '@/lib/leads/constants'
 import { isValidEmail, isValidPhone } from '@/lib/leads/format'
 import type { AuState, EntityType } from '@/types/leads'
@@ -85,6 +86,7 @@ const ENTITY_OPTIONS = ALL_ENTITY_TYPES.map((type) => ({
 export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
   const router = useRouter()
   const { addLead, findLeadByEmail } = useLeads()
+  const { custom: customStages } = useLeadStages()
   const { toast } = useToast()
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -248,7 +250,7 @@ export function AddLeadDialog({ open, onClose, onAdded }: AddLeadDialogProps) {
           <div className="space-y-1.5">
             <p className="font-medium">A lead with this email already exists.</p>
             <p>
-              {existing.name} ({STAGE_META[existing.stage].label}) uses {form.email.trim()}. Adding
+              {existing.name} ({stageLabel(existing.stage, customStages)}) uses {form.email.trim()}. Adding
               anyway does not make a second lead: this is saved as a new enquiry on {existing.name},
               their details change to what you entered, and the earlier ones stay in Lead history.
             </p>

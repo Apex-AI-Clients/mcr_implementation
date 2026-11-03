@@ -3,6 +3,7 @@ import { render, screen, within, cleanup } from '@testing-library/react'
 import { LeadRecordClient } from '../LeadRecordClient'
 import { StageProgress } from '../StageProgress'
 import { LeadsStoreProvider } from '../LeadsStore'
+import { LeadStagesProvider } from '../LeadStages'
 import { ToastProvider } from '@/components/ui/Toast'
 import type { Lead, LeadActivity, LeadStage } from '@/types/leads'
 
@@ -246,15 +247,47 @@ describe('StageProgress', () => {
   it('treats a stopped lead as an exit, not a step', () => {
     const track = renderTrack(makeLead({ stage: 'do_not_contact' }))
     expect(screen.getByText(/Stopped at/)).toBeTruthy()
-    expect(screen.getByText('Do not contact')).toBeTruthy()
+    expect(screen.getByText('Do not contact again')).toBeTruthy()
     expect(within(track).getAllByRole('listitem')).toHaveLength(4)
     // Nothing is marked current or complete once it has stopped.
     expect(screen.queryByText('Completed')).toBeNull()
     expect(screen.queryByText(/current stage/)).toBeNull()
   })
 
-  it.each(['non_proceeding', 'do_not_contact'] as LeadStage[])('shows %s as a stop', (stage) => {
+  it.each(['unresponsive', 'non_proceeding', 'do_not_contact'] as LeadStage[])('shows %s as a stop', (stage) => {
     renderTrack(makeLead({ stage }))
     expect(screen.getByText(/Stopped at/)).toBeTruthy()
+  })
+
+  it('shows a stage staff added as a stop, by its name', () => {
+    render(
+      <LeadStagesProvider
+        initial={[{ key: 'custom_aaaa1111', label: 'Waiting on accountant', position: 1, hiddenAt: null }]}
+      >
+        <StageProgress lead={makeLead({ stage: 'custom_aaaa1111' })} />
+      </LeadStagesProvider>,
+    )
+    expect(screen.getByText(/Stopped at/)).toBeTruthy()
+    expect(screen.getByText('Waiting on accountant')).toBeTruthy()
+  })
+
+  it('shows "Contact in 30 days" as a pause, with the day the call is due', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-10T00:00:00Z'), toFake: ['Date'] })
+    try {
+      renderTrack(makeLead({ stage: 'contact_in_30_days', stageSince: '2026-11-03T00:00:00Z' }))
+      expect(screen.getByText(/Paused at/).textContent).toContain('call again on 3 Dec 2026')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says when "Contact in 30 days" has fallen due', () => {
+    vi.useFakeTimers({ now: new Date('2026-12-10T00:00:00Z'), toFake: ['Date'] })
+    try {
+      renderTrack(makeLead({ stage: 'contact_in_30_days', stageSince: '2026-11-03T00:00:00Z' }))
+      expect(screen.getByText(/Paused at/).textContent).toContain('due a call since 3 Dec 2026')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

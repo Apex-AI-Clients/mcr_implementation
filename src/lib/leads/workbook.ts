@@ -1,4 +1,4 @@
-import { STAGE_META, SOURCE_META } from './constants'
+import { stageLabel, SOURCE_META } from './constants'
 import {
   countLeadNotes,
   formatEntityType,
@@ -6,7 +6,7 @@ import {
   formatLeadNotes,
   formatPhone,
 } from './format'
-import type { Lead, LeadActivity } from '@/types/leads'
+import type { CustomStage, Lead, LeadActivity } from '@/types/leads'
 
 /**
  * The leads export as a real spreadsheet.
@@ -48,7 +48,8 @@ interface ColumnSpec {
   /** Character-ish width, as xlsx counts it. */
   width: number
   wrap?: boolean
-  value: (lead: Lead, activities: LeadActivity[]) => string | number | null
+  /** `custom`: the stages staff added, for the Stage column's names. */
+  value: (lead: Lead, activities: LeadActivity[], custom: readonly CustomStage[]) => string | number | null
   numeric?: boolean
 }
 
@@ -75,7 +76,7 @@ const COLUMNS: ColumnSpec[] = [
     value: (lead) => formatEntityType(lead) ?? '',
   },
   { header: 'State', width: 8, value: (lead) => lead.state ?? '' },
-  { header: 'Stage', width: 16, value: (lead) => STAGE_META[lead.stage].label },
+  { header: 'Stage', width: 16, value: (lead, _activities, custom) => stageLabel(lead.stage, custom) },
   { header: 'Source', width: 20, value: (lead) => lead.sourceLabel ?? SOURCE_META[lead.source].label },
   { header: 'Last action', width: 12, value: (lead) => formatIsoDate(lead.lastActionAt) },
   // The two prose columns, and the only two that wrap.
@@ -104,6 +105,7 @@ export const LEAD_SHEET_WIDTHS = COLUMNS.map((column) => ({ width: column.width 
 export function leadsSheetData(
   leads: Lead[],
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
+  custom: readonly CustomStage[] = [],
 ): SheetRow[] {
   const header: SheetCell[] = COLUMNS.map((column) => ({
     value: column.header,
@@ -114,7 +116,7 @@ export function leadsSheetData(
   const rows = leads.map((lead) => {
     const activities = activitiesByLead.get(lead.id) ?? []
     return COLUMNS.map((column): SheetCell | null => {
-      const value = column.value(lead, activities)
+      const value = column.value(lead, activities, custom)
       if (column.numeric) {
         // An empty cell, not a zero — an unknown debt is not a debt of
         // nothing, and a 0 would sort as though it were.
@@ -139,13 +141,14 @@ export function leadsSheetData(
 export async function buildLeadsWorkbook(
   leads: Lead[],
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
+  custom: readonly CustomStage[] = [],
 ): Promise<Buffer> {
   // Imported here rather than at module scope: it is only needed when an
   // export is actually requested, and it has no business being pulled in by
   // anything that merely imports this module for its types.
   const { default: writeXlsxFile } = await import('write-excel-file/node')
 
-  return writeXlsxFile(leadsSheetData(leads, activitiesByLead), {
+  return writeXlsxFile(leadsSheetData(leads, activitiesByLead, custom), {
     sheet: 'Leads',
     columns: LEAD_SHEET_WIDTHS,
     // The header stays put while someone scrolls a few hundred leads.

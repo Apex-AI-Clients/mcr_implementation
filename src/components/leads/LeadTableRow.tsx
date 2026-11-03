@@ -11,7 +11,7 @@ import { Copy, NotebookPen, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useToast } from '@/components/ui/Toast'
-import { ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { contactAgain, ENTITY_TYPE_META } from '@/lib/leads/constants'
 import {
   describeLatestEnquiry,
   enquiryCountLabel,
@@ -170,19 +170,20 @@ export function LeadTableRow({
           <NotesIcon notes={notes} />
         </td>
       )}
-      {/* "Non-proceeding" and "Do not contact" are 14 characters; with the
-          select's own padding and chevron they need ~150px of control, so a
-          narrower cell clipped the selected label and forced you to open the
-          dropdown to read it. */}
-      <td className="px-3 py-3.5 w-[188px] min-w-[188px]">
+      {/* "Non-proceeding – other" is 22 characters; with the select's own
+          padding and chevron it needs ~180px of control, so a narrower cell
+          clipped the selected label and forced you to open the dropdown to
+          read it. A longer name staff typed is cut, in full on hover. */}
+      <td className="px-3 py-3.5 w-[204px] min-w-[204px]">
         {/* min-w on the control as well as the cell: a w-full <select> has a
             min-content width of zero, so without it auto table layout crushes
             this column to the chevron alone once the table overflows. */}
         <StageSelect
           lead={lead}
           onRequestConvert={onRequestConvert}
-          className="min-w-[150px]"
+          className="min-w-[180px]"
         />
+        <ContactAgainDate lead={lead} className="mt-1" />
       </td>
       {/* The partner who ran the campaign, where one is known — "Facebook ·
           EPIC DM". Resolved from the campaign name captured at ingest, so it
@@ -302,6 +303,7 @@ export function LeadCard({
         selectSize="md"
         className="w-full"
       />
+      <ContactAgainDate lead={lead} />
     </div>
   )
 }
@@ -319,6 +321,22 @@ function EnquiryCount({ lead, inline = false }: { lead: Lead; inline?: boolean }
     >
       <span className="text-xs text-accent">{enquiryCountLabel(lead.enquiryCount)}</span>
     </Tooltip>
+  )
+}
+
+/**
+ * Under the stage, for a lead in "Contact in 30 days": the day it is due a
+ * call, amber once that day has come. Nothing else moves it; this is the
+ * reminder.
+ */
+function ContactAgainDate({ lead, className }: { lead: Lead; className?: string }) {
+  const contact = contactAgain(lead)
+  if (!contact) return null
+  return (
+    <p className={`text-xs tabular-nums ${contact.due ? 'font-medium text-warning' : 'text-foreground/50'} ${className ?? ''}`}>
+      {contact.due ? 'Due since ' : 'Call on '}
+      {formatShortDate(contact.by.toISOString())}
+    </p>
   )
 }
 
