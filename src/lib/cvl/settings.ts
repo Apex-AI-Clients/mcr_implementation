@@ -68,7 +68,7 @@ export interface CvlSettings {
   mcrCompany: McrCompanyDetails
   liquidator: LiquidatorDetails
   placements: Partial<Record<PlacementKey, PlacementTarget>>
-  /** Per setting: it has been confirmed. False shows "To be confirmed". */
+  /** Per setting: marked confirmed (kept for later; not shown on the settings page). */
   confirmed: Record<SettingKey, boolean>
   /** Who last changed each, and when. */
   updated: Partial<Record<SettingKey, { by: string | null; at: string }>>

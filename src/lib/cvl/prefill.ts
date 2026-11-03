@@ -93,8 +93,8 @@ function companySource(ctx: CvlContext, what: string, section: Section): AmountS
 
 const fileSource = (what: string, where: string): AmountSource => ({ from: [what, where] })
 
-const settingSource = (what: string, confirmed: boolean): AmountSource => ({
-  from: [what, `CVL settings${confirmed ? '' : ' — to be confirmed'}.`],
+const settingSource = (what: string): AmountSource => ({
+  from: [what, 'CVL settings.'],
   link: { kind: 'href', href: '/cvl/settings', label: 'Open CVL settings' },
 })
 
@@ -165,7 +165,7 @@ function director(ctx: CvlContext, subject: Subject) {
 function settingsWarnings(out: Prefill, ctx: CvlContext) {
   const missing = missingSettings(ctx.settings)
   if (missing.length) {
-    out.warnings.push(`Not set yet in CVL settings (to be confirmed): ${missing.join(', ')}. Those boxes stay blank.`)
+    out.warnings.push(`Not set yet in CVL settings: ${missing.join(', ')}. Those boxes stay blank.`)
   }
 }
 
@@ -287,19 +287,19 @@ function candidates509(ctx: CvlContext): Candidate[] {
 }
 
 function prefill509(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m, confirmed } = ctx.settings
-  put(out, 'contact_name', l.contactName, settingSource('Who ASIC should contact.', confirmed.liquidator))
-  put(out, 'agent_number', l.agentNumber, settingSource('ASIC registered agent number.', confirmed.liquidator))
-  put(out, 'entity_name', m.companyName, settingSource('MCR’s company name (from MCR’s ASIC extract).', confirmed.mcr_company))
-  put(out, 'entity_number', m.acn, settingSource('MCR’s ACN (from MCR’s ASIC extract).', confirmed.mcr_company))
-  put(out, 'phone', l.phone, settingSource('Liquidator’s phone.', confirmed.liquidator))
-  put(out, 'postal_1', l.postal1, settingSource('Liquidator’s postal address.', confirmed.liquidator))
-  put(out, 'postal_2', l.postal2, settingSource('Liquidator’s postal address.', confirmed.liquidator))
-  put(out, 'email', l.email, settingSource('Liquidator’s email.', confirmed.liquidator))
+  const { liquidator: l, mcrCompany: m } = ctx.settings
+  put(out, 'contact_name', l.contactName, settingSource('Who ASIC should contact.'))
+  put(out, 'agent_number', l.agentNumber, settingSource('ASIC registered agent number.'))
+  put(out, 'entity_name', m.companyName, settingSource('MCR’s company name (from MCR’s ASIC extract).'))
+  put(out, 'entity_number', m.acn, settingSource('MCR’s ACN (from MCR’s ASIC extract).'))
+  put(out, 'phone', l.phone, settingSource('Liquidator’s phone.'))
+  put(out, 'postal_1', l.postal1, settingSource('Liquidator’s postal address.'))
+  put(out, 'postal_2', l.postal2, settingSource('Liquidator’s postal address.'))
+  put(out, 'email', l.email, settingSource('Liquidator’s email.'))
   settingsWarnings(out, ctx)
 
   putCompany(out, ctx, 'company_name', 'company_acn')
-  out.notes.summary_date = 'Pick the date the summary is made up to (to be confirmed).'
+  out.notes.summary_date = 'Pick the date the summary is made up to.'
 
   // Book values in the valuation column only; estimated realisable values stay blank.
   for (const [key, meaning, label] of VALUATIONS) {
@@ -319,7 +319,7 @@ function prefill509(ctx: CvlContext, out: Prefill) {
     if (!c.target || c.target === 'none' || out.fields[c.target]) continue
     out.fields[c.target] = {
       value: c.amount,
-      source: { ...c.source, from: [...c.source.from, `Placed in ${PLACEMENTS[c.key].options[c.target as keyof (typeof PLACEMENTS)[typeof c.key]['options']]} by the CVL setting${c.confirmed ? '' : ' (to be confirmed)'}.`] },
+      source: { ...c.source, from: [...c.source.from, `Placed in ${PLACEMENTS[c.key].options[c.target as keyof (typeof PLACEMENTS)[typeof c.key]['options']]} by the CVL setting.`] },
     }
   }
 
@@ -333,15 +333,15 @@ function prefill509(ctx: CvlContext, out: Prefill) {
 /* ---------------- Part A ---------------- */
 
 function prefillPartA(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m, confirmed } = ctx.settings
-  put(out, 'ea_organisation', m.companyName, settingSource('MCR’s company name.', confirmed.mcr_company))
-  put(out, 'ea_liquidator_number', l.number, settingSource('Registered liquidator number.', confirmed.liquidator))
-  put(out, 'ea_name', l.name, settingSource('Liquidator.', confirmed.liquidator))
-  put(out, 'ea_contact', l.contactName, settingSource('Contact person.', confirmed.liquidator))
-  put(out, 'ea_phone', l.phone, settingSource('Liquidator’s phone.', confirmed.liquidator))
+  const { liquidator: l, mcrCompany: m } = ctx.settings
+  put(out, 'ea_organisation', m.companyName, settingSource('MCR’s company name.'))
+  put(out, 'ea_liquidator_number', l.number, settingSource('Registered liquidator number.'))
+  put(out, 'ea_name', l.name, settingSource('Liquidator.'))
+  put(out, 'ea_contact', l.contactName, settingSource('Contact person.'))
+  put(out, 'ea_phone', l.phone, settingSource('Liquidator’s phone.'))
   const office = splitAddress(m.address)
   if (office) {
-    const source = settingSource('MCR’s address (from MCR’s ASIC extract).', confirmed.mcr_company)
+    const source = settingSource('MCR’s address (from MCR’s ASIC extract).')
     put(out, 'ea_street', office.street, source)
     put(out, 'ea_suburb', office.suburb, source)
     put(out, 'ea_state', office.state, source)

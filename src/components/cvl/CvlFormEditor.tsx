@@ -630,8 +630,8 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
 function Candidates({ candidates }: { candidates: Candidate[] }) {
   return (
     <aside className="h-fit space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="text-sm font-semibold text-foreground">Amounts not placed on the form</h2>
-      <p className="text-xs text-foreground/50">Where each goes on Form 509 is to be confirmed (CVL settings).</p>
+      <h2 className="text-sm font-semibold text-foreground">Amounts to place on the form</h2>
+      <p className="text-xs text-foreground/50">From the client file. Type each one that belongs into its box on the left.</p>
       <ul className="space-y-3 text-xs">
         {candidates.map((c) => {
           const placement = c.target ? (PLACEMENTS[c.key].options as Record<string, string>)[c.target] : null
@@ -643,15 +643,12 @@ function Candidates({ candidates }: { candidates: Candidate[] }) {
                 <SourceButton source={c.source} label={c.label} />
               </p>
               <p className="mt-1 text-foreground/50">
-                {placement ? `Placed in ${placement}${c.confirmed ? '' : ' — pending confirmation'}` : 'Not placed yet — pending confirmation'}
+                {placement ? `Placed in ${placement}` : 'Not on the form yet'}
               </p>
             </li>
           )
         })}
       </ul>
-      <Link href="/cvl/settings" className="inline-block text-xs font-medium text-accent hover:underline">
-        Open CVL settings
-      </Link>
     </aside>
   )
 }

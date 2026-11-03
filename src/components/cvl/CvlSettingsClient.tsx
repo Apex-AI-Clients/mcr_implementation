@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileUp } from 'lucide-react'
+import { FileUp } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { formatDate } from '@/lib/utils'
@@ -10,16 +10,13 @@ import { ASIC_PDF_MIME } from '@/lib/asic/upload'
 import {
   LIQUIDATOR_FIELDS,
   MCR_COMPANY_FIELDS,
-  PLACEMENTS,
-  PLACEMENT_KEYS,
   type CvlSettings,
   type SettingKey,
 } from '@/lib/cvl/settings'
 
 /**
- * The CVL settings: everything waiting for Gabby. Each item is saved on its
- * own, with a "Confirmed" tick; until it is ticked the item says
- * "To be confirmed". Blank items leave their boxes on the forms blank.
+ * The CVL settings: MCR's company details and the liquidator's, each saved on
+ * its own. Blank items leave their boxes on the forms blank.
  */
 export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
   const [settings, setSettings] = useState(initial)
@@ -48,37 +45,8 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
         settings={settings}
         save={save}
       />
-      <section className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-sm font-semibold text-foreground">Form 509: where each amount goes</h2>
-        <p className="mt-1 text-xs text-foreground/50">
-          No placement is made until one is chosen here. Until then each amount is listed beside the form, not on it.
-        </p>
-        <div className="mt-4 space-y-4">
-          {PLACEMENT_KEYS.map((k) => (
-            <Item
-              key={k}
-              settingKey={`f509_place.${k}`}
-              title={PLACEMENTS[k].label}
-              settings={settings}
-              save={save}
-              current={settings.placements[k] ?? ''}
-              render={(value, set) => (
-                <select value={String(value)} onChange={(e) => set(e.target.value)} className="h-10 w-full max-w-md rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground">
-                  <option value="">Not placed (to be confirmed)</option>
-                  {Object.entries(PLACEMENTS[k].options).map(([v, label]) => (
-                    <option key={v} value={v}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              )}
-              plain
-            />
-          ))}
-        </div>
-      </section>
       <section className="rounded-xl border border-border bg-card p-4 text-xs text-foreground/60">
-        <h2 className="mb-1 text-sm font-semibold text-foreground">Also to be confirmed</h2>
+        <h2 className="mb-1 text-sm font-semibold text-foreground">Left blank on the forms</h2>
         <ul className="list-disc space-y-1 pl-4">
           <li>Dates on the forms (appointment, summary, report, return-by): left blank, entered on each form with a date picker.</li>
           <li>Form 509 estimated realisable values: left blank; the book values go in the valuation column only.</li>
@@ -95,15 +63,6 @@ function Status({ settingKey, settings, blank }: { settingKey: SettingKey; setti
   const updated = settings.updated[settingKey]
   return (
     <p className="flex flex-wrap items-center gap-2 text-xs">
-      {settings.confirmed[settingKey] ? (
-        <span className="inline-flex items-center gap-1 text-success">
-          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmed
-        </span>
-      ) : (
-        <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-warning">
-          <AlertTriangle className="h-3 w-3" /> To be confirmed
-        </span>
-      )}
       {blank && <span className="text-destructive">Not set: the boxes it fills stay blank.</span>}
       {updated && (
         <span className="text-foreground/40">
@@ -115,7 +74,7 @@ function Status({ settingKey, settings, blank }: { settingKey: SettingKey; setti
   )
 }
 
-/** One setting with one control, its confirmed tick and a save button. */
+/** One setting with one control and a save button. */
 function Item<V>({
   settingKey,
   title,
@@ -136,7 +95,6 @@ function Item<V>({
   plain?: boolean
 }) {
   const [value, setValue] = useState(current)
-  const [confirmed, setConfirmed] = useState(settings.confirmed[settingKey])
   const [state, setState] = useState<{ saving: boolean; error: string | null; done: boolean }>({ saving: false, error: null, done: false })
   const blank = value === '' || value === null
 
@@ -152,17 +110,13 @@ function Item<V>({
         setState({ saving: false, error: null, done: false })
       })}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-1.5 text-xs text-foreground/70">
-          <input type="checkbox" checked={confirmed} disabled={blank} onChange={(e) => setConfirmed(e.target.checked)} className="accent-accent" />
-          Confirmed
-        </label>
         <Button
           type="button"
           size="sm"
           loading={state.saving}
           onClick={async () => {
             setState({ saving: true, error: null, done: false })
-            const error = await save(settingKey, blank ? null : value, confirmed && !blank)
+            const error = await save(settingKey, blank ? null : value, settings.confirmed[settingKey] && !blank)
             setState({ saving: false, error, done: !error })
           }}
         >

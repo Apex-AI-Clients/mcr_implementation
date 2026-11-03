@@ -41,7 +41,7 @@ describe('warningsFor', () => {
     const [f509] = caseJobs(context(), [])
     const w = warningsFor(f509, [{ key: 'company_name', q: 'Company details', message: 'Answer is too long for the box and was cut off: attach an annexure.' }])
     expect(w).toEqual([
-      expect.stringMatching(/^Not set yet in CVL settings \(to be confirmed\)/),
+      expect.stringMatching(/^Not set yet in CVL settings: /),
       'Company details: Answer is too long for the box and was cut off: attach an annexure.',
       expect.stringMatching(/^Not placed on the form: Director loan/),
       'Never opened: printed from the pre-filled answers.',

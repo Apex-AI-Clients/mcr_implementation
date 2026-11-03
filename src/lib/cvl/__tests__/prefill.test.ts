@@ -73,7 +73,7 @@ describe('Form 509', () => {
   it('leaves MCR and liquidator details blank until set, and says so', () => {
     const p = prefillForm('509', 'company', context())
     for (const key of ['contact_name', 'entity_name', 'entity_number', 'phone', 'email', 'postal_1']) expect(p.fields[key]).toBeUndefined()
-    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings \(to be confirmed\)/)
+    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings: /)
     expect(p.fields.summary_date).toBeUndefined()
   })
 
@@ -88,11 +88,11 @@ describe('Form 509', () => {
     for (const key of ['h_val', 's2_val', 'r3', 'r6', 'r7_claims']) expect(p.fields[key]).toBeUndefined()
   })
 
-  it('places an amount once its setting says where, saying it is to be confirmed', () => {
+  it('places an amount once its setting says where, and says so', () => {
     const settings = readCvlSettings([{ key: 'f509_place.super_payable', value: 'r3', confirmed: false, updated_by: 'Casey', updated_at: '2026-10-29T00:00:00Z' }])
     const p = prefillForm('509', 'company', context({ settings }))
     expect(value(p, 'r3')).toBe(6400)
-    expect(p.fields.r3.source.from.at(-1)).toBe('Placed in 3 Preferential creditors by the CVL setting (to be confirmed).')
+    expect(p.fields.r3.source.from.at(-1)).toBe('Placed in 3 Preferential creditors by the CVL setting.')
   })
 
   it('fills the signer from the first director, never the date signed', () => {
