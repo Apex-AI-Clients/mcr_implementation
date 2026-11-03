@@ -150,11 +150,14 @@ const f509Fields: FormField[] = [
     money(`${k}_val`, ASSETS, `${label}: Valuation`, 'val', bottom),
     money(`${k}_erv`, ASSETS, `${label}: Estimated realisable value`, 'erv', bottom),
   ]),
-  // The totals each have one box: TOTAL assets in Valuation, TOTAL estimated
-  // realisable values in the second column.
+  // Both totals have a box in each column. TOTAL assets (Valuation) and TOTAL
+  // estimated realisable values (second column) add up when left blank.
   money('total_assets', ASSETS, 'TOTAL assets: Valuation', 'val', 246.0),
+  money('total_assets_erv', ASSETS, 'TOTAL assets: Estimated realisable value', 'erv', 246.0),
+  money('total_erv_val', ASSETS, 'TOTAL estimated realisable values: Valuation', 'val', 271.4),
   money('total_erv', ASSETS, 'TOTAL estimated realisable values: Estimated realisable value', 'erv', 271.4),
-  text509('r4_to', LIAB, '4 To whom (debenture or floating charge holder)', 2, tb(316.5, 330.6, 82, 10.5), { size: 7 }),
+  // The blank after line 4's "…over company's assets to:": who holds the debenture or charge.
+  text509('r4_to', LIAB, '4 … over company’s assets to: (who holds the debenture or charge)', 2, tb(316.5, 330.6, 82, 10.5), { size: 7 }),
   // Every liability line has a box in both columns, labelled in the form's own
   // words. The second column keeps the original keys (r3, r6 …); the Valuation
   // boxes are the same keys with _val.

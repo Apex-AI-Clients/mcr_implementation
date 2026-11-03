@@ -234,7 +234,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
               </h2>
               {s.fields.some((f) => f.column) && (
                 <ColumnsTable
-                  fields={s.fields.filter((f) => f.column)}
+                  fields={s.fields.filter((f) => f.column || f.inline)}
                   values={state.fields}
                   sourceOf={sourceOf}
                   notes={prefill.notes}
@@ -243,7 +243,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
               )}
               <div className="grid gap-3 sm:grid-cols-2">
                 {s.fields
-                  .filter((f) => !f.column)
+                  .filter((f) => !f.column && !f.inline)
                   .map((f) => (
                     <FieldInput
                       key={f.key}
@@ -583,14 +583,18 @@ function ColumnsTable({
   notes: Record<string, string>
   onChange: (key: string, v: FieldValue) => void
 }) {
-  const rows: { label: string; page: number; valuation?: EntryField; erv?: EntryField }[] = []
-  for (const f of fields) {
+  const rows: { label: string; page: number; valuation?: EntryField; erv?: EntryField; inline?: EntryField }[] = []
+  for (const f of fields.filter((x) => x.column)) {
     let row = rows.find((r) => r.label === f.row)
     if (!row) {
       row = { label: f.row ?? f.label, page: f.page }
       rows.push(row)
     }
     row[f.column!] = f
+  }
+  for (const f of fields.filter((x) => x.inline)) {
+    const row = rows.find((r) => r.label === f.row)
+    if (row) row.inline = f
   }
   const cell = (f: EntryField | undefined) => {
     if (!f) return <span className="block px-2 text-xs text-foreground/25" aria-hidden="true">—</span>
@@ -627,7 +631,24 @@ function ColumnsTable({
         <tbody>
           {rows.map((r) => (
             <tr key={r.label} className="border-t border-white/5">
-              <td className="py-1.5 pr-3 text-xs text-foreground/80">{r.label}</td>
+              <td className="py-1.5 pr-3 text-xs text-foreground/80">
+                {r.label}
+                {r.inline && (
+                  <span className="mt-1 flex items-center gap-1.5" data-page={r.inline.page}>
+                    <label htmlFor={`f-${r.inline.key}`} className="shrink-0 text-foreground/50">
+                      to:
+                    </label>
+                    <input
+                      id={`f-${r.inline.key}`}
+                      aria-label={r.inline.label}
+                      placeholder="Who holds the debenture or charge"
+                      value={values[r.inline.key] === null || values[r.inline.key] === undefined ? '' : String(values[r.inline.key])}
+                      onChange={(e) => onChange(r.inline!.key, e.target.value === '' ? null : e.target.value)}
+                      className={`${inputClass} py-1 text-xs`}
+                    />
+                  </span>
+                )}
+              </td>
               <td className="py-1.5 pr-2">{cell(r.valuation)}</td>
               <td className="py-1.5">{cell(r.erv)}</td>
             </tr>

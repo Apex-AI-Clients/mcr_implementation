@@ -133,7 +133,7 @@ describe('CvlFormEditor — Form 509 summary', () => {
   }
   /** The row of the summary table whose first cell is this label, and its two amount cells. */
   const row = (label: string) => {
-    const cell = screen.getAllByRole('cell').find((c) => c.textContent === label)!
+    const cell = screen.getAllByRole('cell').find((c) => c.textContent === label || c.textContent?.startsWith(`${label}to:`))!
     const [valuation, erv] = [...(cell.parentElement as HTMLElement).querySelectorAll('td')].slice(1)
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
@@ -144,11 +144,11 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const debtors = row('1(b) Sundry debtors')
     expect(debtors.valuation?.value).toBe('12480.5')
     expect(debtors.erv?.value).toBe('')
-    // TOTAL assets: Valuation only. TOTAL estimated realisable values: the second column only.
-    expect(row('TOTAL assets')).toMatchObject({ erv: null })
+    // Both totals have a box in each column; the one each column adds up says so.
     expect(row('TOTAL assets').valuation?.placeholder).toBe('Adds up if blank')
-    expect(row('TOTAL estimated realisable values')).toMatchObject({ valuation: null })
-    expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
+    expect(row('TOTAL assets').erv).not.toBeNull()
+    expect(row('TOTAL estimated realisable values').valuation).not.toBeNull()
+    expect(row('TOTAL estimated realisable values').erv?.placeholder).toBe('Adds up if blank')
     // Every liability line, as the form words it, with a box in both columns.
     for (const label of [
       '3 Less preferential creditors entitled to priority over the holders of debentures under any floating charge',
@@ -169,8 +169,9 @@ describe('CvlFormEditor — Form 509 summary', () => {
     expect(row('Share capital issued').erv?.value).toBe('')
     // Line 7 is one line on the form: one row here, not two.
     expect(screen.getAllByRole('cell').filter((c) => c.textContent?.startsWith('7 Balances owing'))).toHaveLength(1)
-    // "To whom" for line 4 is asked too.
-    expect(screen.getByLabelText('4 To whom (debenture or floating charge holder)')).toBeTruthy()
+    // Line 4's "…assets to:" blank is in line 4's own row, not a box of its own.
+    const to = screen.getByLabelText('4 … over company’s assets to: (who holds the debenture or charge)')
+    expect(to.closest('td')?.textContent).toMatch(/^4 Less amounts owing and secured by debenture or floating charge over company’s assetsto:/)
   })
 
   it('types amounts from the left', () => {

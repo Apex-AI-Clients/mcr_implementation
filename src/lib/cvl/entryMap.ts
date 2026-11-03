@@ -28,6 +28,8 @@ export interface EntryField {
   row?: string
   /** Left blank, the form adds it up from the boxes above (Form 509 totals). */
   computed?: boolean
+  /** Typed inside its row of the summary table (line 4's "…assets to:"), not on its own. */
+  inline?: boolean
 }
 
 export interface EntryTable {
@@ -101,6 +103,10 @@ export function entryMap(map: FormMap): EntryMap {
         ? { column: f.x0 >= ERV_COLUMN_X0 ? ('erv' as const) : ('valuation' as const), row: rowLabel(f.label) }
         : {}),
       ...(computed.has(f.key) ? { computed: true } : {}),
+      // Line 4's "to:" blank sits in line 4's row.
+      ...(map.code === '509' && f.key === 'r4_to'
+        ? { inline: true, row: rowLabel(map.fields.find((x) => x.key === 'r4')?.label ?? f.label) }
+        : {}),
       ...(f.type === 'choice' ? { options: Object.keys(f.options).map((k): [string, string] => [k, CHOICE_LABELS[k] ?? k.replace(/_/g, ' ')]) } : {}),
       ...(f.type === 'lines' ? { lines: f.lines.length } : {}),
       ...(f.handwritten ? { handwritten: true } : {}),

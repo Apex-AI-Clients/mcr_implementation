@@ -421,6 +421,30 @@
    "bot": 249.3
   },
   {
+   "key": "total_assets_erv",
+   "q": "Summary of assets",
+   "label": "TOTAL assets: Estimated realisable value",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 483.4,
+   "x1": 566.7,
+   "top": 236,
+   "bot": 249.3
+  },
+  {
+   "key": "total_erv_val",
+   "q": "Summary of assets",
+   "label": "TOTAL estimated realisable values: Valuation",
+   "type": "money",
+   "page": 2,
+   "currency": true,
+   "x0": 400.2,
+   "x1": 483.4,
+   "top": 261.4,
+   "bot": 274.7
+  },
+  {
    "key": "total_erv",
    "q": "Summary of assets",
    "label": "TOTAL estimated realisable values: Estimated realisable value",
@@ -435,7 +459,7 @@
   {
    "key": "r4_to",
    "q": "Summary of liabilities",
-   "label": "4 To whom (debenture or floating charge holder)",
+   "label": "4 … over company’s assets to: (who holds the debenture or charge)",
    "type": "text",
    "page": 2,
    "x0": 316.5,
