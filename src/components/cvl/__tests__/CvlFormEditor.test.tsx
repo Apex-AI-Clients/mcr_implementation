@@ -128,6 +128,27 @@ describe('CvlFormEditor', () => {
     expect(within(b6).getByLabelText('Provider name')).toBeTruthy()
   })
 
+  it('asks Part A’s appointment as tick boxes in the form’s words, any number ticked, 507D ticked to start', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    const map = formVersion('507a').map
+    const prefill = prefillForm('507a', 'company', context())
+    render(
+      <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="company" subjects={[{ subject: 'company', label: 'Company' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />,
+    )
+    const group = screen.getByRole('group', { name: /Please tick appropriate box/ })
+    const boxes = within(group).getAllByRole('checkbox') as HTMLInputElement[]
+    expect(boxes).toHaveLength(6)
+    expect(boxes.filter((b) => b.checked).map((b) => b.closest('label')?.textContent)).toEqual(['Liquidator – creditors’ voluntary winding up – s497(4) 507D'])
+    await user.click(within(group).getByLabelText('Liquidator/Provisional Liquidator appointed by the court - s475(1) 507C'))
+    expect(boxes.filter((b) => b.checked)).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+    const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT') as unknown as [string, RequestInit]
+    // Both, in the form's order.
+    expect(JSON.parse(init.body as string).answers.fields.ea_role).toBe('court_liquidator,cvl_liquidator')
+  })
+
   it('saves the answers and the changed keys', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()

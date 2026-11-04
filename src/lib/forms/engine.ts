@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib'
 import { pdfSafe } from '@/lib/pdfSafe'
+import { choiceValues } from './choice'
 import {
   CELL_LINE_SIZE,
   CELL_WRAP_SIZE,
@@ -195,9 +196,12 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       return
     }
     case 'choice': {
-      const box = typeof value === 'string' ? f.options[value] : undefined
-      if (box) tickGlyph(pen, box)
-      else if (!isBlank(value)) pen.warnings.push({ ...warn, message: `"${value}" is not one of the boxes for ${f.q}.` })
+      // One box or several ("a,b"): each named box is ticked.
+      for (const option of choiceValues(value)) {
+        const box = f.options[option]
+        if (box) tickGlyph(pen, box)
+        else pen.warnings.push({ ...warn, message: `"${option}" is not one of the boxes for ${f.q}.` })
+      }
       return
     }
     case 'text': {

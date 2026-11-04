@@ -10,6 +10,7 @@ import { aud, type AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
 import type { FieldValue, TableRow } from '@/lib/forms/types'
 import { overflowOf, type Room } from '@/lib/forms/fit'
+import { choiceValue, choiceValues } from '@/lib/forms/choice'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
 import type { Candidate, Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
@@ -679,16 +680,24 @@ function FieldInput({
       </div>
     )
   } else if (f.type === 'choice') {
+    // As on the form: a tick box per option, any number ticked.
+    const order = f.options!.map(([v]) => v)
+    const ticked = choiceValues(value)
     control = (
-      <div className="flex items-center gap-1">
-        <select id={id} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)} className={inputClass}>
-          <option value="">—</option>
+      <div className="flex items-start gap-1">
+        <div role="group" aria-labelledby={`${id}-label`} className="flex-1 space-y-1.5 rounded-lg border border-border bg-input-bg px-3 py-2.5">
           {f.options!.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
+            <label key={v} className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={ticked.includes(v)}
+                onChange={(e) => onChange(choiceValue(e.target.checked ? [...ticked, v] : ticked.filter((x) => x !== v), order))}
+                className="mt-0.5 accent-accent"
+              />
+              <span>{label}</span>
+            </label>
           ))}
-        </select>
+        </div>
         {info}
       </div>
     )
@@ -735,6 +744,10 @@ function FieldInput({
       {f.type === 'yesno' ? (
         <p id={`${id}-label`} className="mb-1.5 text-sm text-foreground/80">
           {f.label}
+        </p>
+      ) : f.type === 'choice' ? (
+        <p id={`${id}-label`} className="mb-1.5 block text-xs font-medium text-muted">
+          {f.label} <span className="font-normal text-foreground/40">(tick all that apply)</span>
         </p>
       ) : (
         <label htmlFor={id} className="mb-1.5 block text-xs font-medium text-muted">
