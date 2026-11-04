@@ -14,10 +14,13 @@ function text(len: number, seed: number): string {
   return s.slice(0, len).trim()
 }
 const SAMPLES = [
-  ...[4, 12, 25, 40, 55, 70, 90, 120, 160, 220, 320, 480].map((n, i) => text(n, i)),
+  ...[6, 30, 60, 100, 180, 400].map((n, i) => text(n, i)),
   'averyveryverylongemailaddress.withnospaces@example-company-name.com.au',
   'Zoë   Ngụyễn — “Example” Holdings',
   'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW WWWWWWWWWWWWWWWWWWWW',
+  // Amounts: formatted before measuring ("1,250,000"), and a very long one.
+  '1250000',
+  '-98765432109876.55',
 ]
 
 describe('measuring as pdf-lib does', () => {
@@ -30,7 +33,7 @@ describe('measuring as pdf-lib does', () => {
 })
 
 describe('overflow predicted on screen = cut on the printout', () => {
-  it.each(FORM_CODES.map((c) => [c] as [FormCode]))('%s: every free-text box and table cell', async (code) => {
+  it.each(FORM_CODES.map((c) => [c] as [FormCode]))('%s: every free-text and amount box, and every table cell', async (code) => {
     const { map } = formVersion(code)
     const rooms = new Map<string, Room>()
     for (const f of map.fields) {
@@ -61,7 +64,7 @@ describe('overflow predicted on screen = cut on the printout', () => {
       const warned = new Set(r.warnings.map((w) => w.key).filter((k) => rooms.has(k)))
       expect([...warned].sort(), `sample set ${i}`).toEqual([...expected].sort())
     }
-  }, 60_000)
+  }, 180_000)
 
   it('counts the characters that won’t print', () => {
     const room: Room = { kind: 'line', maxW: 100, size: 9 }

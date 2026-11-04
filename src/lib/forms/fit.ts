@@ -1,6 +1,6 @@
 import { pdfSafe } from '@/lib/pdfSafe'
 import { HELVETICA_KERNING, HELVETICA_WIDTHS } from './helveticaMetrics'
-import type { FormField, TableColumn } from './types'
+import type { FieldValue, FormField, TableColumn } from './types'
 
 /**
  * How text fits a box on an official form: the rules the PDF filler draws
@@ -70,7 +70,44 @@ export function fitLine(measure: Measure, raw: string, maxW: number, size = DEFA
 /* ---------------- the room each box gives ---------------- */
 
 /** The room an answer has on the form, for the entry screen to measure against. */
-export type Room = { kind: 'line'; maxW: number; size: number } | { kind: 'lines'; wrapW: number; lineWs: number[] } | { kind: 'cell'; maxW: number }
+export type Room =
+  | { kind: 'line'; maxW: number; size: number }
+  | { kind: 'lines'; wrapW: number; lineWs: number[] }
+  | { kind: 'cell'; maxW: number }
+  /** An amount box: the amount is formatted first ("12,345.60"); text that isn't an amount prints as typed. */
+  | { kind: 'money'; maxW: number; size: number; currency: boolean }
+
+/* ---------------- amounts ---------------- */
+
+export function toNumber(v: FieldValue): number | null {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null
+  const n = Number(String(v).replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+/** "12,345.60"; whole dollars without cents; negatives in brackets. */
+export function formatAmount(v: FieldValue, currency = false): string {
+  const n = toNumber(v)
+  if (n === null) return String(v ?? '').trim()
+  const cents = Math.round(n * 100) % 100 !== 0
+  const s = Math.abs(n).toLocaleString('en-AU', {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: 2,
+  })
+  const withSign = currency ? `$${s}` : s
+  return n < 0 ? `(${withSign})` : withSign
+}
+
+/** Amount boxes: from the printed "$" when there is one, else from the box's left (Form 509). */
+export function moneySpot(f: { x0: number; x1: number; startX?: number }): { x: number; maxW: number; size: number } {
+  return f.startX !== undefined ? { x: f.startX, maxW: f.x1 - f.startX - 4, size: DEFAULT_SIZE } : { x: f.x0 + 5, maxW: f.x1 - f.x0 - 9, size: 8.5 }
+}
+
+/** Table amount columns: after the printed "$". */
+export function moneyCellSpot(col: { x0: number; x1: number; dollar?: number }): { x: number; maxW: number; size: number } {
+  const x = (col.dollar ?? col.x0) + 9
+  return { x, maxW: col.x1 - x - 4, size: 8.5 }
+}
 
 /** A text box: its width less the padding. */
 export const textMaxW = (f: { x0: number; x1: number }, pad: number) => f.x1 - f.x0 - pad - 3
@@ -79,8 +116,12 @@ export const lineMaxW = (L: { x0: number; x1: number }) => L.x1 - L.x0 - 8
 /** A table text column, less its margins. */
 export const cellMaxW = (col: { x0: number; x1: number }) => col.x1 - col.x0 - 7
 
-/** The room for a typed answer, or null when it is not free text (dates, amounts, ticks). */
+/** The room for a typed answer, or null when there is nothing to measure (dates, ticks). */
 export function roomOf(f: FormField): Room | null {
+  if (f.type === 'money') {
+    const { maxW, size } = moneySpot(f)
+    return { kind: 'money', maxW, size, currency: !!f.currency }
+  }
   if (f.type === 'text' && f.format !== 'date')
     return {
       kind: 'line',
@@ -97,6 +138,10 @@ export function roomOf(f: FormField): Room | null {
 }
 
 export function cellRoomOf(col: TableColumn): Room | null {
+  if (col.type === 'money') {
+    const { maxW, size } = moneyCellSpot(col)
+    return { kind: 'money', maxW, size, currency: false }
+  }
   return col.type === 'text' ? { kind: 'cell', maxW: cellMaxW(col) } : null
 }
 
@@ -125,8 +170,9 @@ export function layoutCell(measure: Measure, str: string, maxW: number): { singl
  */
 export function overflowOf(room: Room, value: string, measure: Measure = measureHelvetica): number {
   if (!value.trim()) return 0
-  if (room.kind === 'line') {
-    const { str, out } = fitLine(measure, value, room.maxW, room.size)
+  if (room.kind === 'line' || room.kind === 'money') {
+    const text = room.kind === 'money' ? formatAmount(value, room.currency) : value
+    const { str, out } = fitLine(measure, text, room.maxW, room.size)
     return str.length - out.length
   }
   if (room.kind === 'lines') {

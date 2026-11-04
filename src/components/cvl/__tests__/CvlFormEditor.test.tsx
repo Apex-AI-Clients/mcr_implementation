@@ -345,4 +345,18 @@ describe('CvlFormEditor — Form 509 summary', () => {
       expect(input.className).not.toMatch(/text-right/)
     }
   })
+
+  it('warns when an amount box holds more than fits (text prints as typed)', async () => {
+    const user = userEvent.setup({ delay: null })
+    render509()
+    const erv = row('1(a) Interest in land').erv!
+    await user.click(erv)
+    await user.paste('d cmsd cm dsmv dsmv m vjnd vnjkdnvjkdnvjkdfvjdfnvjndfjvnjdvnjdfnvjdnvjdnvjnfvjndfvjndfjvnfdjvnjfkdnvj')
+    expect(erv.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(erv.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\./)
+    // An ordinary amount fits.
+    await user.clear(erv)
+    await user.type(erv, '1250000')
+    expect(erv.getAttribute('aria-invalid')).toBeNull()
+  })
 })

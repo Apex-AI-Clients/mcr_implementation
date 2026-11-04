@@ -793,6 +793,8 @@ function ColumnsTable({
     if (!f) return <span className="block px-2 text-xs text-foreground/25" aria-hidden="true">—</span>
     const source = sourceOf(f.key)
     const value = values[f.key]
+    const over = overflowFor(f.room, value)
+    const fitId = `f-${f.key}-fit`
     return (
       <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
@@ -802,10 +804,12 @@ function ColumnsTable({
             inputMode="decimal"
             value={value === null || value === undefined ? '' : String(value)}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
-            className={`${inputClass} py-1.5 tabular-nums`}
+            className={`${inputClass} py-1.5 tabular-nums ${over ? tooLongClass : ''}`}
+            {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}
           />
           {source && <SourceButton source={source} label={f.label} />}
         </div>
+        {f.room && <TooLong id={fitId} over={over} room={f.room} />}
         {notes[f.key] && <p className="mt-1 text-xs text-warning">{notes[f.key]}</p>}
       </div>
     )

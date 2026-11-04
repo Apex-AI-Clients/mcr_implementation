@@ -8,6 +8,10 @@ import {
   cellMaxW,
   cutToFit,
   fitSize as fitSizeBy,
+  formatAmount,
+  moneyCellSpot,
+  moneySpot,
+  toNumber,
   layoutCell,
   layoutLines,
   lineMaxW,
@@ -53,24 +57,8 @@ const CAP_MIDDLE = 0.359
 
 /* ---------------- value helpers ---------------- */
 
-export function toNumber(v: FieldValue): number | null {
-  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null
-  const n = Number(String(v).replace(/[$,\s]/g, ''))
-  return Number.isFinite(n) ? n : null
-}
-
-/** "12,345.60"; whole dollars without cents; negatives in brackets. */
-export function formatAmount(v: FieldValue, currency = false): string {
-  const n = toNumber(v)
-  if (n === null) return String(v ?? '').trim()
-  const cents = Math.round(n * 100) % 100 !== 0
-  const s = Math.abs(n).toLocaleString('en-AU', {
-    minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: 2,
-  })
-  const withSign = currency ? `$${s}` : s
-  return n < 0 ? `(${withSign})` : withSign
-}
+// Amounts are read and formatted in ./fit (pure), so the entry screen measures them the same way.
+export { formatAmount, toNumber }
 
 /** "2026-10-27" | "27/10/2026" → { d: "27", m: "10", y: "2026" }. */
 export function dateParts(v: FieldValue): { d: string; m: string; y: string } | null {
@@ -225,10 +213,9 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
     }
     case 'money': {
       if (isBlank(value)) return
-      const text = formatAmount(value, f.currency)
-      if (f.startX !== undefined) drawText(pen, text, f.startX, f.bot - 4.5, f.x1 - f.startX - 4, { warn })
-      // A column with no printed "$" (Form 509): from the left, under the column's own heading.
-      else drawText(pen, text, f.x0 + 5, f.bot - 4.5, f.x1 - f.x0 - 9, { size: 8.5, warn })
+      // After the printed "$"; a column with none (Form 509): from the left, under the column's own heading.
+      const spot = moneySpot(f)
+      drawText(pen, formatAmount(value, f.currency), spot.x, f.bot - 4.5, spot.maxW, { size: spot.size, warn })
       return
     }
     case 'date':
@@ -311,8 +298,8 @@ function drawCell(pen: Pen, t: FormTable, col: FormTable['columns'][number], top
   if (isBlank(v)) return
   const warn = { key: `${t.id}.${col.key}`, q: t.q }
   if (col.type === 'money') {
-    const x = (col.dollar ?? col.x0) + 9
-    drawText(pen, formatAmount(v), x, bot - 5, col.x1 - x - 4, { size: 8.5, warn })
+    const spot = moneyCellSpot(col)
+    drawText(pen, formatAmount(v), spot.x, bot - 5, spot.maxW, { size: spot.size, warn })
     return
   }
   if (col.type === 'date' && col.slashes) {
