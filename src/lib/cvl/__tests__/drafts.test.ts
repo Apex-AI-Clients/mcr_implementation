@@ -78,14 +78,18 @@ describe('cleanAnswers', () => {
 })
 
 describe('entryMap', () => {
-  it('lists the questions in the form’s order and numbering, without page coordinates', () => {
+  it('lists the questions in the form’s order and numbering, without box geometry', () => {
     const m = entryMap(partA)
     expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['External Administrator', 'A2', 'A3', 'A4'])
     const role = m.sections[0].fields.find((f) => f.key === 'ea_role')!
     expect(role.type).toBe('choice')
     expect(role.options).toContainEqual(['cvl_liquidator', 'Liquidator, creditors’ voluntary winding up s497(4) (507D)'])
     expect(m.sections.find((s) => s.q === 'A9')!.fields.find((f) => f.key === 'a9_date')!.handwritten).toBe(true)
-    expect(JSON.stringify(m)).not.toMatch(/"x0"|"top"/)
+    // Only where each answer starts on its page (for the preview to follow), never the boxes themselves.
+    expect(JSON.stringify(m)).not.toMatch(/"x0"|"x1"|"bot"|"slashes"|"cells"/)
+    const name = m.sections.find((s) => s.q === 'A3')!.fields.find((f) => f.key === 'company_name')!
+    expect(name.page).toBe(3)
+    expect(name.top).toBeGreaterThan(0)
     expect(m.sections.find((s) => s.q === 'A7')!.tables[0]).toMatchObject({ id: 'A7', rowsPerPage: 6 })
   })
 })
