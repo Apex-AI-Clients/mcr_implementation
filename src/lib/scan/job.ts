@@ -4,7 +4,7 @@ import { SCAN_PAGE_PROMPT } from '@/lib/ai/prompts'
 import type { PrintedRead } from '@/lib/printed/types'
 import { tesseractEngine } from './ocr'
 import { readScannedPdf, type PageReading, type SecondReader } from './readScanned'
-export { latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
+export { closeDeadScanJobs, latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
  * Server-only. The background reading of a PDF's scanned pages (B3, B8): one
@@ -63,7 +63,8 @@ export async function runScanJob(
     .select('id')
     .single()
   if (jobError || !job) {
-    console.error('[scan] could not start a job:', jobError?.message)
+    // 23505: this file is already being read (migration 0045): that reading carries on, this one stops.
+    if (jobError?.code !== '23505') console.error('[scan] could not start a job:', jobError?.message)
     return
   }
   const progress = async (stage: string, done: number, total: number) => {

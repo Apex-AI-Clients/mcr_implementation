@@ -2,13 +2,15 @@ import { after, NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { loadFinancialDocuments, loadStoredReads, READER_VERSION } from '@/lib/printed/store'
-import { latestScanJob, runScanJob, scanJobAlive } from '@/lib/scan/job'
+import { closeDeadScanJobs, latestScanJob, runScanJob, scanJobAlive } from '@/lib/scan/job'
 
 /**
  * POST — reads the client's scanned statement pages (src/lib/scan): every
  * financial PDF whose read says 'scan_pending' and has no reading running.
  * Answers at once; the reading runs after the response, one file after
  * another (progress: GET scan-jobs). A failed or dead reading is started again.
+ * Two requests at once never read a file twice: the database allows one
+ * running reading per file (migration 0045).
  *
  * The only route that carries the scan reader: Tesseract and its English
  * model are traced into this function alone (next.config.ts).
@@ -26,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const { id: clientId } = await params
   const supabase = getSupabaseServerClient()
   try {
-    const [docs, reads] = await Promise.all([loadFinancialDocuments(supabase, clientId), loadStoredReads(supabase, clientId)])
+    const [docs, reads] = await Promise.all([loadFinancialDocuments(supabase, clientId), loadStoredReads(supabase, clientId), closeDeadScanJobs(supabase, clientId)])
     const waiting: typeof docs = []
     for (const doc of docs) {
       if (reads.get(doc.id)?.read.status !== 'scan_pending') continue

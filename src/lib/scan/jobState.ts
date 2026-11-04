@@ -33,5 +33,16 @@ export async function latestScanJob(supabase: ServerClient, documentId: string, 
   return { id: data.id, status: data.status as ScanJob['status'], stage: data.stage, done: data.done, total: data.total, message: data.message, createdAt: data.created_at }
 }
 
+/** Readings still marked running past the time limit were stopped with their function: closed, so they never block a new one. */
+export async function closeDeadScanJobs(supabase: ServerClient, clientId: string): Promise<void> {
+  const before = new Date(Date.now() - SCAN_JOB_MAX_AGE_MS).toISOString()
+  await supabase
+    .from('scan_read_jobs')
+    .update({ status: 'failed', message: 'Stopped before it finished.', finished_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('client_id', clientId)
+    .eq('status', 'running')
+    .lt('created_at', before)
+}
+
 export const scanJobAlive = (job: ScanJob | null, now = Date.now()) => !!job && job.status === 'running' && now - Date.parse(job.createdAt) < SCAN_JOB_MAX_AGE_MS
 

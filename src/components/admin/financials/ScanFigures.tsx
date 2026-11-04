@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ScanLine } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -148,16 +148,21 @@ interface Job {
   total: number
 }
 
-/** A scan waiting to be read: starts its reading, shows progress, then the page refreshes itself. */
-export function ScanProgress({ clientId, pending }: { clientId: string; pending: boolean }) {
+/** A scan waiting to be read: starts its reading (once per page load), shows progress per file, then the page refreshes itself. */
+export function ScanProgress({ clientId, pending, files = {} }: { clientId: string; pending: boolean; files?: Record<string, string> }) {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
+  const started = useRef(false)
   useEffect(() => {
     if (!pending) return
     let stopped = false
     let seenRunning = false
-    // Starts the reading of any scan waiting for it (it runs on the server, after this request).
-    void fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' }).catch(() => undefined)
+    // Starts the reading of any scan waiting for it (it runs on the server, after this request). Once:
+    // React runs this effect twice in development, and the server refuses a second reading anyway (0045).
+    if (!started.current) {
+      started.current = true
+      void fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' }).catch(() => undefined)
+    }
     const poll = async () => {
       try {
         const res = await fetch(`/api/admin/clients/${clientId}/scan-jobs`)
@@ -179,11 +184,25 @@ export function ScanProgress({ clientId, pending }: { clientId: string; pending:
   }, [clientId, pending, router])
   if (!pending) return null
   return (
-    <div className="no-print flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/5 p-3 text-xs text-foreground/80" aria-live="polite">
-      <ScanLine className="h-4 w-4 text-accent" aria-hidden />
-      {jobs.length === 0
-        ? 'Scanned pages are waiting to be read.'
-        : jobs.map((j) => (j.stage === 'selecting' ? `Finding the statement pages (${j.done} of ${j.total})…` : `Reading the statement pages (${j.done} of ${j.total})…`)).join(' ')}
+    <div className="no-print flex items-start gap-2 rounded-lg border border-accent/40 bg-accent/5 p-3 text-xs text-foreground/80" aria-live="polite">
+      <ScanLine className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+      <div className="space-y-0.5">
+        <p className="font-medium text-foreground">Reading scanned statements — this page refreshes when it is done.</p>
+        {jobs.length === 0 ? (
+          <p>Waiting to start…</p>
+        ) : (
+          jobs.map((j) => (
+            <p key={j.documentId}>
+              {files[j.documentId] ?? 'A scanned file'}:{' '}
+              {j.stage === 'selecting'
+                ? `looking for the profit and loss and balance sheet pages (page ${j.done} of ${j.total})`
+                : j.stage === 'reading'
+                  ? `reading the statement pages (${j.done} of ${j.total})`
+                  : 'starting'}
+            </p>
+          ))
+        )}
+      </div>
     </div>
   )
 }
