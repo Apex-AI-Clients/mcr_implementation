@@ -22,6 +22,9 @@ export { scannedPages }
  *       compilation reports are skipped, with why
  *   B3  each statement page: Tesseract's words, and Claude's transcription of
  *       the page image, each through the same as-printed reader
+ *   B8  a page Claude has already transcribed (same file, model and prompt,
+ *       `reuse`) is not sent again: re-reading a scan after a reader fix costs
+ *       nothing and gives the same second reading
  *   B8  Claude reads at most `secondPagesAllowed` pages (the daily cap); the
  *       rest, or every page when Claude is unavailable, are single readings
  */
@@ -81,6 +84,8 @@ export type SecondReader = ((image: PageImage, page: number) => Promise<{ text: 
 export interface PageReading {
   page: number
   reader: 'tesseract' | 'claude'
+  /** A transcription kept from an earlier reading: nothing was sent, nothing paid. */
+  reused?: boolean
   lines?: BandedLine[]
   answer?: ScanPageAnswer
   model?: string
@@ -113,7 +118,15 @@ export async function readScannedPdf(
     second,
     secondPagesAllowed,
     onProgress,
-  }: { ocr: OcrEngine; second: SecondReader; secondPagesAllowed: number; onProgress?: (p: ScanProgress) => void | Promise<void> },
+    reuse = new Map(),
+  }: {
+    ocr: OcrEngine
+    second: SecondReader
+    secondPagesAllowed: number
+    onProgress?: (p: ScanProgress) => void | Promise<void>
+    /** Claude's earlier transcriptions of this file's pages (same model and prompt), by page. */
+    reuse?: Map<number, SecondReading>
+  },
 ): Promise<ScannedResult | null> {
   const { textPages, scanned } = await scannedPages(bytes)
   if (scanned.length === 0) return null
@@ -170,6 +183,13 @@ export async function readScannedPdf(
     ocrLinesByPage.set(page, lines)
     readings.push({ page, reader: 'tesseract', lines })
 
+    const kept = reuse.get(page)
+    if (kept) {
+      model = kept.model
+      readings.push({ page, reader: 'claude', reused: true, answer: kept.answer, model: kept.model, generationId: kept.generationId })
+      claudeLinesByPage.set(page, answerToLines(kept.answer))
+      continue
+    }
     if (!second || secondPages >= secondPagesAllowed) {
       secondMissing.add(page)
       continue

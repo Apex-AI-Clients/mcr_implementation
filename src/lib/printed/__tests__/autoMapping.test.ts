@@ -181,3 +181,35 @@ describe('auto-selection', () => {
     expect(sameChoices([a], [{ ...a, rowKey: 'j' }])).toBe(false)
   })
 })
+
+describe('beneficiary accounts and loans naming a person', () => {
+  it('counts beneficiary accounts in owed BY, as their own labelled line', () => {
+    const c = trustComparison([r(NCL, "Beneficiaries' Accounts", 'line', 1001505)])
+    const { entries } = autoMapping(c, [], { parties: PARTIES })
+    const line = entries.find((e) => e.label === "Beneficiaries' Accounts")!
+    expect(line.meaning).toBe('loan_payable')
+    expect(line.autoRule).toMatch(/^Beneficiary accounts — unpaid distributions/)
+  })
+
+  it('never auto-selects a loan naming a person who is not on file: it is a possible line', () => {
+    const c = trustComparison([r(NCL, 'Loan - Aaron Peters', 'line', 5000), r(NCL, 'Profit Distribution - Sam Other', 'line', 100)])
+    const { entries, possible } = autoMapping(c, [], { parties: PARTIES })
+    expect(entries.some((e) => e.label === 'Loan - Aaron Peters')).toBe(false)
+    expect(possible.loan_payable?.map((p) => p.label)).toEqual(['Loan - Aaron Peters'])
+    // The other owed-BY lines are still auto-selected.
+    expect(entries.filter((e) => e.meaning === 'loan_payable')).toHaveLength(3)
+  })
+
+  it('related-party words are never an unknown person', () => {
+    const c = trustComparison([r(NCL, 'Loan - Related Parties', 'line', 5000)])
+    const { entries, possible } = autoMapping(c, [], { parties: PARTIES })
+    expect(entries.some((e) => e.label === 'Loan - Related Parties')).toBe(true)
+    expect(possible.loan_payable).toBeUndefined()
+  })
+
+  it('a loan naming a beneficiary the statements name is related, not unknown', () => {
+    const c = trustComparison([r(NCL, 'Loan - Sam Other', 'line', 5000), r(NCL, 'Profit Distribution - Sam Other', 'line', 100)])
+    const { entries } = autoMapping(c, [], { parties: PARTIES })
+    expect(entries.some((e) => e.label === 'Loan - Sam Other')).toBe(true)
+  })
+})

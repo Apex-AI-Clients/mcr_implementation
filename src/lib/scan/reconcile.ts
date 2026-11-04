@@ -15,9 +15,12 @@ import type { BandedLine } from './ocrLines'
  *             the figure shown is the second reading's until staff choose
  *   single    no second reading (Claude unavailable or over the cap)
  *
- * The labels, sections and styles come from the second reading where both
- * have the line (Claude reads words better; Tesseract is the check on the
- * figures); a line only one reading has keeps that reading's.
+ * The sections and styles come from Tesseract's reading: they follow where
+ * each line is printed on the page (its indent), which is exact and the same
+ * every time; Claude's layout ("indent") varies from one reading to the next
+ * and once filed a section under the wrong heading. The words come from
+ * Claude where both have the line (it reads words better), headings in each
+ * line's path included. A line only one reading has keeps that reading's.
  */
 
 export interface ReconcileInput {
@@ -126,8 +129,8 @@ export function reconcileReads({ ocr, claude, scannedPages, secondMissing = new 
       statements.push(withScan(st, st.rows.map((r) => [r, null]), status, keyFor, ocrLines, claudeLines))
       continue
     }
-    // Both readings: the second reading's statement is the frame.
-    statements.push(withScan({ ...other, pages: [...new Set([...st.pages, ...other.pages])].sort((a, b) => a - b) }, align(st.rows, other.rows), 'disagree', keyFor, ocrLines, claudeLines))
+    // Both readings: Tesseract's statement (where lines are printed) is the frame.
+    statements.push(withScan({ ...st, pages: [...new Set([...st.pages, ...other.pages])].sort((a, b) => a - b) }, align(st.rows, other.rows), 'disagree', keyFor, ocrLines, claudeLines))
   }
   // A scanned statement only the second reading found: every figure is one reading against none.
   for (const st of claude?.statements ?? []) {
@@ -154,8 +157,13 @@ function withScan(
   claudeLines: Map<number, BandedLine[]>,
 ): PrintedStatement {
   const columns = frame.columns.length
+  // Headings as Claude spells them, for the paths of Tesseract's lines.
+  const spelling = new Map<string, string>()
+  for (const [o, c] of pairs) if (o && c && o.style === 'heading' && c.label.trim()) spelling.set(o.label, c.label)
+  const respell = (path: string[]) => path.map((h) => spelling.get(h) ?? h)
   const rows: PrintedRow[] = pairs.map(([o, c]) => {
-    const base = (c ?? o)!
+    // Tesseract's place in the structure, Claude's words.
+    const base: PrintedRow = o ? { ...o, path: respell(o.path), label: c && c.label.trim() ? c.label : o.label } : c!
     if (base.style === 'heading') return { ...base, scan: undefined }
     const cells: ScanCell[] = Array.from({ length: columns }, (_, i) => {
       const ov = o ? o.amounts[i] : undefined

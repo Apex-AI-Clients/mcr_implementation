@@ -1,4 +1,5 @@
-import { it } from 'vitest'
+import { beforeAll, it } from 'vitest'
+import { replayDocuments, scanAliases } from './scanReplay'
 import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { LATE_LODGEMENT_SCOPE, type LateLodgementScope } from '@/lib/analysis/config'
@@ -19,6 +20,8 @@ import {
   comparePrintedFigures,
   predictionInputs,
   printedAliases,
+  registerReplay,
+  replayedAliases,
   type PrintedFiguresSpec,
   type LodgementFigures,
   type Snapshot,
@@ -52,14 +55,19 @@ interface Expected {
   lodgement?: LodgementFigures
   dpnNotices?: Partial<Record<'paygw' | 'gst' | 'sgc', NoticeColumns>>
   /** Printed lines in one column, and the loan and ATO figures the mapping makes of them. */
-  printedFigures?: PrintedFiguresSpec
+  printedFigures?: PrintedFiguresSpec | PrintedFiguresSpec[]
 }
 
 const OTHER_SCOPE: LateLodgementScope = LATE_LODGEMENT_SCOPE === 'originals_only' ? 'originals_and_amendments' : 'originals_only'
 
+// Clients with scanned statements: their comparison, replayed offline (no model call).
+beforeAll(async () => {
+  for (const alias of scanAliases()) registerReplay(alias, await replayDocuments(alias))
+}, 600_000)
+
 it('compares the lodgement, ATO debt and DPN figures with the verified figures', () => {
   // Every client: a snapshot, an ATO account CSV, or (deleted from the database) verified printed statements.
-  const aliases = [...new Set([...snapshotAliases(), ...icaCsvAliases(), ...printedAliases()])].sort()
+  const aliases = [...new Set([...snapshotAliases(), ...icaCsvAliases(), ...printedAliases(), ...replayedAliases()])].sort()
   if (aliases.length === 0) {
     out('No snapshots in verified-figures/. Run `npm run figures:snapshot` first.')
     return
@@ -95,9 +103,9 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
     }
 
     // Figures as printed in one column, and what the confirmed mapping makes of them.
-    if (expectedFile?.printedFigures) {
-      const printed = comparePrintedFigures(snapshot, alias, expectedFile.printedFigures)
-      out(`  printed figures (${expectedFile.printedFigures.column}): ${printed.length === 0 ? 'all match' : `${printed.length} difference(s)`}`)
+    for (const spec of [expectedFile?.printedFigures ?? []].flat()) {
+      const printed = comparePrintedFigures(snapshot, alias, spec)
+      out(`  printed figures (${spec.column}): ${printed.length === 0 ? `all ${Object.keys(spec.lines).length} match` : `${printed.length} difference(s)`}`)
       differences.push(...printed)
     }
 

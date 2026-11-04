@@ -105,4 +105,28 @@ describe('scanned statements', () => {
     expect(res!.secondPages).toBe(1)
     expect(res!.read.scan!.message).toMatch(/one reader only/)
   }, 120_000)
+
+  it('reuses a page Claude has already transcribed: nothing is sent, the reading is the same', async () => {
+    const pdf = await scannedPdf([profitAndLoss()])
+    const { parseScanAnswer } = await import('../claudeReader')
+    const reuse = new Map([[1, { answer: parseScanAnswer(profitAndLossAnswer()), model: 'anthropic/claude-sonnet-5.5', generationId: 'gen-kept', tokensIn: 0, tokensOut: 0 }]])
+    const never: SecondReader = async () => {
+      throw new Error('Claude must not be asked again')
+    }
+    const res = await readScannedPdf(pdf, { ocr, second: never, secondPagesAllowed: 60, reuse })
+    expect(res!.secondPages).toBe(0)
+    expect(res!.readings.find((r) => r.reader === 'claude')).toMatchObject({ reused: true, generationId: 'gen-kept' })
+    expect(res!.read.statements[0].rows.filter((r) => r.scan).every((r) => r.scan!.cells.every((c) => c.status === 'agree'))).toBe(true)
+  }, 120_000)
+
+  it("takes the sections from where lines are printed (Tesseract), not from Claude's indents", async () => {
+    const pdf = await scannedPdf([profitAndLoss()])
+    // Claude files every line at the left margin: no sections at all.
+    const flat = JSON.parse(profitAndLossAnswer()) as { rows: { indent: number }[] }
+    flat.rows.forEach((r) => (r.indent = 0))
+    const res = await readScannedPdf(pdf, { ocr, second: claudeSays(JSON.stringify(flat)), secondPagesAllowed: 60 })
+    const rent = res!.read.statements[0].rows.find((r) => r.label === 'Rent')!
+    expect(rent.path).toEqual(['Expenses'])
+    expect(verifyStatements(res!.read.statements).filter((c) => c.status === 'mismatch' || c.status === 'wrong_column')).toEqual([])
+  }, 120_000)
 })

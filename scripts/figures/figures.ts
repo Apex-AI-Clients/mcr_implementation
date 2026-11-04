@@ -301,7 +301,16 @@ export function printedAliases(): string[] {
  * printed files (as printed, checked by hand), no confirmed mapping (so the
  * suggested one), and the notices in its old snapshot, if any.
  */
+/** Comparisons built before the checks run (scanReplay.ts): clients with scanned statements. */
+const replayed = new Map<string, ComparisonDocument[]>()
+export function registerReplay(alias: string, documents: ComparisonDocument[]) {
+  replayed.set(alias, documents)
+}
+export const replayedAliases = () => [...replayed.keys()]
+
 function localPrediction(alias: string, snapshot: Snapshot | null): PredictionSnapshot | null {
+  const replay = replayed.get(alias)
+  if (replay) return { documents: replay, mapping: [], directors: [], dpnOnFile: null, savedDpn: null }
   const dir = path.join(DIR, 'printed', alias)
   if (!existsSync(dir)) return null
   const documents: ComparisonDocument[] = readdirSync(dir)
@@ -325,26 +334,39 @@ function localPrediction(alias: string, snapshot: Snapshot | null): PredictionSn
  */
 export interface PrintedFiguresSpec {
   column: string
-  lines: Record<string, number>
+  /**
+   * Label as printed -> figure (null: printed nil "-"). A label printed twice
+   * takes its heading: "Chattel Mortgages - Current > Chattel Mortgages".
+   */
+  lines: Record<string, number | null>
+  /** The column is only a later report's comparative ("Show earlier years"). */
+  comparativeYears?: boolean
   derived?: Partial<Record<'loanReceivable' | 'loanPayable' | 'atoRelated', number>>
 }
 
 export function comparePrintedFigures(snapshot: Snapshot | null, alias: string, spec: PrintedFiguresSpec): string[] {
   const p = snapshot?.prediction ?? localPrediction(alias, snapshot)
   if (!p) return ['printed  no statements for this client']
-  const comparison = buildPrintedComparison(p.documents)
+  const comparison = buildPrintedComparison(p.documents, { comparativeYears: spec.comparativeYears ?? false })
   const index = comparison.columns.findIndex((c) => c.key === spec.column)
   if (index < 0) return [`printed  no "${spec.column}" column (columns: ${comparison.columns.map((c) => c.key).join(', ')})`]
   const rows = comparison.tables.flatMap((t) => t.rows)
   const differences: string[] = []
-  const check = (key: string, want: number, got: number | null | undefined) => {
-    if (typeof got !== 'number' || Math.abs(got - want) >= 0.005) differences.push(`printed  ${key}: verified ${want}, now ${got ?? 'missing'}`)
+  const check = (key: string, want: number | null, got: number | null | undefined) => {
+    const same = want === null ? got === null : typeof got === 'number' && Math.abs(got - want) < 0.005
+    if (!same) differences.push(`printed  ${key}: verified ${want ?? '-'}, now ${got === null ? '-' : (got ?? 'missing')}`)
   }
-  for (const [label, want] of Object.entries(spec.lines)) {
+  for (const [key, want] of Object.entries(spec.lines)) {
     // Rows merge across years: the label may carry another year's capitals.
-    const matches = rows.filter((r) => r.label.trim().toLowerCase() === label.toLowerCase() && r.cells[index].printed)
-    if (matches.length !== 1) differences.push(`printed  "${label}": ${matches.length} printed lines with that label in ${spec.column}`)
-    else check(`"${label}"`, want, matches[0].cells[index].value as number | null)
+    const [heading, label] = key.includes(' > ') ? (key.split(' > ') as [string, string]) : [null, key]
+    const matches = rows.filter(
+      (r) =>
+        r.label.trim().toLowerCase() === label.toLowerCase() &&
+        (heading === null || (r.path[r.path.length - 1] ?? '').toLowerCase() === heading.toLowerCase()) &&
+        r.cells[index].printed,
+    )
+    if (matches.length !== 1) differences.push(`printed  "${key}": ${matches.length} printed lines with that label in ${spec.column}`)
+    else check(`"${key}"`, want, matches[0].cells[index].value as number | null)
   }
   if (spec.derived) {
     // The prediction reads the latest balance sheet: the derived figures are that column's.

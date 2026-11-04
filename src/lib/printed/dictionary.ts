@@ -51,7 +51,14 @@ const printedAnywhere = (r: ComparisonRow) => r.cells.some((c) => c.printed && t
 const ATO = /\b(ato|bas|gst|payg|activity statement|taxation office|integrated client account)\b/i
 const INCOME_TAX = /\b(income tax|provision for (income )?tax)\b|^taxation$/i
 const SUPER = /\bsuper/i
-const RELATED = /\b(directors?|shareholders?|unitholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced|quarantined)\b|^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
+const RELATED = /\b(directors?|shareholders?|unitholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced|quarantined)\b/i
+/** "Loan - Aaron Peters": a loan naming a person (two or three words, no lender, vehicle or asset). */
+const PERSON_NAME_LOAN = /^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
+/** A trust's beneficiary accounts: unpaid distributions, shown as their own labelled line so staff can untick them. */
+const BENEFICIARY_ACCOUNT = /\bbeneficiar(y|ies)'?s?'?\s+(current\s+)?accounts?\b/i
+export const isBeneficiaryAccount = (label: string) => BENEFICIARY_ACCOUNT.test(label)
+/** Names the statements give a trust's beneficiaries: "Profit Distribution - Jane Example", "Beneficiary - Jane Example". */
+const BENEFICIARY_NAMED = /\b(distributions?|beneficiar(y|ies)'?s?'?(\s+accounts?)?)\s*[-–:]\s*(.+)$/i
 const LOAN_OWED_TO = /\b(loans?|accounts?)\b|^loan\b/i
 /** A loan with no lender, vehicle or person named: "Loan 2019", "Loan - 2023", "Loans" (old reader: director-related). */
 const UNNAMED_LOAN = /^loans?(\s*[-–]?\s*(19|20)\d{2})?$/i
@@ -193,6 +200,29 @@ export function suggestMapping(comparison: PrintedComparison, names: RelatedName
 export interface SuggestedLine {
   rowKey: string
   rule: string
+  /**
+   * A loan naming a person who is not the client, a director, a beneficiary
+   * (as the statements name them) or the trustee company: never auto-selected,
+   * offered as a possible line (autoMapping.ts).
+   */
+  unknownPerson?: boolean
+}
+
+/** A loan line that names a person not on file: "Loan - Aaron Peters", "Loan from Aaron Peters". */
+export function namesUnknownPerson(label: string, { directors = [], parties = [] }: RelatedNames): boolean {
+  const t = label.trim()
+  if (!PERSON_NAME_LOAN.test(t) && !PERSON_LOAN.test(t)) return false
+  // "Loan - Related Parties", "Loan - Director Smith": related-party words, not an unknown person.
+  if (EQUIPMENT_OR_LENDER.test(t) || RELATED.test(t)) return false
+  return !namesDirector(t, directors) && !namesParty(t, parties)
+}
+
+/** The beneficiaries the balance sheet names ("Profit Distribution - Jane Example"): related parties of a trust. */
+export function beneficiaryNames(labels: string[]): string[] {
+  return [...new Set(labels.flatMap((l) => {
+    const m = BENEFICIARY_NAMED.exec(l.trim())
+    return m ? [m[4].trim()] : []
+  }))].filter((n) => /[a-z]/i.test(n))
 }
 
 /** Whether a balance sheet line is a related-party loan, and why: null when it is not one. */
@@ -204,7 +234,9 @@ export function relatedLoanReason(label: string, { directors = [], parties = [] 
   if (EQUIPMENT_OR_LENDER.test(label)) return null
   if (namesDirector(label, directors)) return 'Names a director on file.'
   if (PERSON_LOAN.test(label.trim())) return 'A loan from (or loan account of) a person.'
+  if (isBeneficiaryAccount(label)) return 'Beneficiary accounts — unpaid distributions owed to the beneficiaries.'
   if (RELATED.test(label)) return 'Labelled as a director, shareholder, related-party, owner or beneficiary account.'
+  if (PERSON_NAME_LOAN.test(label.trim())) return 'A loan naming a person.'
   return null
 }
 
@@ -220,9 +252,12 @@ const RULE: Partial<Record<Meaning, string>> = {
   trade_suppliers: 'A liability labelled trade creditors, accounts payable or creditors.',
 }
 
-export function suggestMappingWithRules(comparison: PrintedComparison, { directors = [], parties = [] }: RelatedNames = {}): Record<Meaning, SuggestedLine[]> {
+export function suggestMappingWithRules(comparison: PrintedComparison, names: RelatedNames = {}): Record<Meaning, SuggestedLine[]> {
   const pl = comparison.tables.find((t) => t.kind === 'profit_and_loss')?.rows ?? []
   const bs = comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? []
+  const directors = names.directors ?? []
+  // A trust's beneficiaries, as its balance sheet names them, are related parties too.
+  const parties = [...(names.parties ?? []), ...beneficiaryNames(bs.map((r) => r.label))]
   const n = comparison.columns.length
   const lines = bs.filter((r) => r.style === 'line' && printedAnywhere(r))
   const taken = new Set<string>()
@@ -300,16 +335,25 @@ export function suggestMappingWithRules(comparison: PrintedComparison, { directo
     const why = relatedLoanReason(r.label, { directors, parties }) ?? 'A loan with no lender, vehicle or person named.'
     const side = isLiability(r) ? 'liabilities' : 'assets'
     const sign = latest(r) < 0 ? 'negative' : 'positive'
-    const div7a = isDiv7A(r.label) ? 'Div 7A loan (counted; untick it if it should not be). ' : ''
+    const div7a = isDiv7A(r.label)
+      ? 'Div 7A loan (counted; untick it if it should not be). '
+      : isBeneficiaryAccount(r.label)
+        ? 'Beneficiary accounts — unpaid distributions (counted; untick it if it should not be). '
+        : ''
     return `${div7a}${why} Printed ${sign} under ${side}, so it is owed ${meaning === 'loan_receivable' ? 'TO' : 'BY'} the company.`
   }
   return Object.fromEntries(
     (Object.keys(keys) as Meaning[]).map((m) => [
       m,
-      keys[m].map((rowKey) => ({
-        rowKey,
-        rule: m === 'loan_receivable' || m === 'loan_payable' ? loanRule(m, rowKey) : (RULE[m] ?? 'Matched by its printed label.'),
-      })),
+      keys[m].map((rowKey) => {
+        const loan = m === 'loan_receivable' || m === 'loan_payable'
+        const label = byKey.get(rowKey)?.label ?? ''
+        return {
+          rowKey,
+          rule: loan ? loanRule(m, rowKey) : (RULE[m] ?? 'Matched by its printed label.'),
+          ...(loan && namesUnknownPerson(label, { directors, parties }) ? { unknownPerson: true } : {}),
+        }
+      }),
     ]),
   ) as Record<Meaning, SuggestedLine[]>
 }

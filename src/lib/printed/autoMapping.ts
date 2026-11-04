@@ -10,6 +10,9 @@ import { PLAUSIBLE } from './picker'
  * only change what is wrong:
  *
  *   the dictionary matched printed lines   those lines, "Auto-selected"
+ *   a loan naming a person not on file     a "Possible line — Use it?", never
+ *   (not the client, a director, a         auto-selected (the other lines of
+ *   beneficiary or the trustee company)    that meaning still are)
  *   no line matched, none looks like it    "Not printed", auto-selected
  *   no line matched, but a printed line    nothing selected: each such line is
  *   LOOKS like it (a loan, director,       a "Possible line — Use it?", and the
@@ -140,8 +143,18 @@ export function autoMapping(
     // No statement of that kind read yet: nothing to select from.
     if (rows.length === 0) continue
 
-    if (suggested[m].length > 0) {
-      for (const l of suggested[m]) {
+    // A loan naming a person not on file is never auto-selected: staff decide ("Use it?").
+    const unknown = suggested[m].filter((l) => l.unknownPerson)
+    if (unknown.length > 0) {
+      possible[m] = unknown.flatMap((l) => {
+        const r = rows.find((x) => x.key === l.rowKey)
+        return r ? [describe(r, 'A loan naming a person who is not the client, a director, a beneficiary or the trustee company on file.')] : []
+      })
+    }
+    const certain = suggested[m].filter((l) => !l.unknownPerson)
+    if (unknown.length > 0 && certain.length === 0) continue
+    if (certain.length > 0) {
+      for (const l of certain) {
         const r = rows.find((x) => x.key === l.rowKey)
         if (!r) continue
         entries.push({ meaning: m, rowKey: r.key, label: r.label || '(no label)', nonePrinted: false, confirmedBy: AUTO_BY, confirmedAt: '', autoRule: l.rule })

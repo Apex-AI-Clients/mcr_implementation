@@ -428,6 +428,7 @@ export type Database = {
           reader: string
           tokens_in: number | null
           tokens_out: number | null
+          prompt_version: string | null
         }
         Insert: {
           client_id: string
@@ -444,6 +445,7 @@ export type Database = {
           reader: string
           tokens_in?: number | null
           tokens_out?: number | null
+          prompt_version?: string | null
         }
         Update: {
           client_id?: string
@@ -460,6 +462,7 @@ export type Database = {
           reader?: string
           tokens_in?: number | null
           tokens_out?: number | null
+          prompt_version?: string | null
         }
         Relationships: [
           {

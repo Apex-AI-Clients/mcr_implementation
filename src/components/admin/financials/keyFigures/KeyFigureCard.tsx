@@ -12,7 +12,7 @@ import type { MappingEntry } from '@/lib/printed/mapping'
 import type { MappingSelection } from '@/lib/printed/mappingStore'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
 import { formatPrinted } from '@/lib/printed/csv'
-import { isDiv7A } from '@/lib/printed/dictionary'
+import { isBeneficiaryAccount, isDiv7A } from '@/lib/printed/dictionary'
 import { KeyFigurePicker } from './KeyFigurePicker'
 import { YearValues, rowValues, totalsPerYear } from './YearValues'
 
@@ -152,6 +152,11 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
                       Div 7A
                     </Badge>
                   )}
+                  {isBeneficiaryAccount(row.label) && (
+                    <Badge variant="muted" className="ml-1.5 align-middle">
+                      Beneficiary accounts — unpaid distributions
+                    </Badge>
+                  )}
                   <span className="text-foreground/50"> — {where}</span>
                 </p>
                 <YearValues columns={comparison.columns} values={rowValues(row)} className="mt-1" />
@@ -191,7 +196,7 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
               )}
               <span className="block text-[11px] text-foreground/55">{p.why}</span>
             </p>
-            <Button size="sm" variant="ghost" loading={saving} disabled={saving} onClick={() => save({ rowKeys: [p.rowKey] })}>
+            <Button size="sm" variant="ghost" loading={saving} disabled={saving} onClick={() => save({ rowKeys: info.multiple && !nonePrinted ? [...new Set([...entries.map((e) => e.rowKey).filter(Boolean), p.rowKey])] : [p.rowKey] })}>
               Use it?
             </Button>
           </div>

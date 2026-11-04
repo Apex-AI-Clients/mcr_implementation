@@ -142,6 +142,8 @@ export function ScanChecksPanel({ clientId, comparison }: { clientId: string; co
 }
 
 interface Job {
+  /** The reading's own id: unique even if one file were being read twice. */
+  id: string
   documentId: string
   stage: string | null
   done: number
@@ -192,7 +194,7 @@ export function ScanProgress({ clientId, pending, files = {} }: { clientId: stri
           <p>Waiting to start…</p>
         ) : (
           jobs.map((j) => (
-            <p key={j.documentId}>
+            <p key={j.id}>
               {files[j.documentId] ?? 'A scanned file'}:{' '}
               {j.stage === 'selecting'
                 ? `looking for the profit and loss and balance sheet pages (page ${j.done} of ${j.total})`

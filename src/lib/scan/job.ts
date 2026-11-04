@@ -1,9 +1,11 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
-import { askClaudeImage, scanReadingEnabled } from '@/lib/ai/openrouterClient'
+import { askClaudeImage, claudeModel, scanReadingEnabled } from '@/lib/ai/openrouterClient'
+import { createHash } from 'node:crypto'
 import { SCAN_PAGE_PROMPT } from '@/lib/ai/prompts'
+import { parseScanAnswer } from './claudeReader'
 import type { PrintedRead } from '@/lib/printed/types'
 import { tesseractEngine } from './ocr'
-import { readScannedPdf, type PageReading, type SecondReader } from './readScanned'
+import { readScannedPdf, type PageReading, type SecondReader, type SecondReading } from './readScanned'
 export { closeDeadScanJobs, latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
@@ -26,6 +28,42 @@ export const SCAN_DAILY_PAGE_CAP = 60
 /** Claude Sonnet 5.5 list price, US$ per million tokens (input, output), for the cost log. */
 const PRICE_PER_MTOK = { in: 2, out: 10 }
 export const pageCost = (tokensIn: number, tokensOut: number) => Math.round(((tokensIn * PRICE_PER_MTOK.in + tokensOut * PRICE_PER_MTOK.out) / 1e6) * 10000) / 10000
+
+/** Which prompt a transcription answered (migration 0046): a changed prompt is never matched with an old answer. */
+export const SCAN_PROMPT_VERSION = createHash('sha256').update(SCAN_PAGE_PROMPT).digest('hex').slice(0, 12)
+
+/**
+ * Claude's earlier transcriptions of this file's pages, same model and prompt:
+ * the latest good one per page. Reused instead of sending the page again.
+ * None before migration 0046.
+ */
+export async function keptTranscriptions(supabase: ServerClient, documentId: string): Promise<Map<number, SecondReading>> {
+  const out = new Map<number, SecondReading>()
+  let model: string
+  try {
+    model = claudeModel('scan')
+  } catch {
+    return out
+  }
+  const { data, error } = await supabase
+    .from('scan_page_readings')
+    .select('page, model, generation_id, output, created_at')
+    .eq('document_id', documentId)
+    .eq('reader', 'claude')
+    .eq('prompt_version', SCAN_PROMPT_VERSION)
+    .is('error', null)
+    .order('created_at', { ascending: false })
+  if (error) return out
+  for (const r of data ?? []) {
+    if (out.has(r.page) || !r.output || r.model !== model) continue
+    try {
+      out.set(r.page, { answer: parseScanAnswer(JSON.stringify(r.output)), model: r.model, generationId: r.generation_id ?? '', tokensIn: 0, tokensOut: 0 })
+    } catch {
+      // Not the schema any more: transcribe it again.
+    }
+  }
+  return out
+}
 
 function sydneyDayStart(now = new Date()): string {
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
@@ -83,6 +121,7 @@ export async function runScanJob(
       ocr,
       second,
       secondPagesAllowed: allowed,
+      reuse: await keptTranscriptions(supabase, documentId),
       onProgress: (p) => progress(p.stage, p.done, p.total),
     })
     if (!result) throw new Error('No scanned pages were found after all.')
@@ -105,9 +144,11 @@ export async function runScanJob(
 }
 
 async function keepReadings(supabase: ServerClient, ids: { jobId: string; clientId: string; documentId: string }, readings: PageReading[]) {
-  if (readings.length === 0) return
+  // A reused transcription was kept already (and is not a new page against the daily cap).
+  const fresh = readings.filter((r) => !r.reused)
+  if (fresh.length === 0) return
   const { error } = await supabase.from('scan_page_readings').insert(
-    readings.map((r) => ({
+    fresh.map((r) => ({
       job_id: ids.jobId,
       client_id: ids.clientId,
       document_id: ids.documentId,
@@ -120,6 +161,7 @@ async function keepReadings(supabase: ServerClient, ids: { jobId: string; client
       cost_usd: r.reader === 'claude' && r.tokensIn !== undefined ? pageCost(r.tokensIn, r.tokensOut ?? 0) : null,
       output: (r.lines ?? r.answer ?? null) as never,
       error: r.error ?? null,
+      ...(r.reader === 'claude' ? { prompt_version: SCAN_PROMPT_VERSION } : {}),
     })),
   )
   if (error) console.error('[scan] could not keep the page readings:', error.message)
