@@ -1,13 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { FileUp } from 'lucide-react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { formatDate } from '@/lib/utils'
-import { uploadAsicExtract } from '@/lib/asic/browser'
-import { ASIC_PDF_MIME } from '@/lib/asic/upload'
-import { splitAddress } from '@/lib/cvl/address'
 import {
   EA_FIELDS,
   LODGEMENT_FIELDS,
@@ -131,7 +127,6 @@ function TextGroup<K extends string>({
   values,
   settings,
   save,
-  extra,
 }: {
   settingKey: SettingKey
   title: string
@@ -140,7 +135,6 @@ function TextGroup<K extends string>({
   values: Partial<Record<K, string>>
   settings: CvlSettings
   save: Save
-  extra?: (set: (v: Partial<Record<K, string>>) => void) => React.ReactNode
 }) {
   return (
     <Item
@@ -154,7 +148,6 @@ function TextGroup<K extends string>({
         const v = (value ?? {}) as Partial<Record<K, string>>
         return (
           <div className="space-y-3">
-            {extra?.((next) => set({ ...v, ...next }))}
             <div className="grid gap-3 sm:grid-cols-2">
               {fields.map(([k, label]) => (
                 <Input
@@ -176,14 +169,8 @@ function TextGroup<K extends string>({
   )
 }
 
-/**
- * Part A's External Administrator box, one field per box on the form. MCR's
- * own ASIC extract can fill the organisation and its address (read here,
- * never stored); the rest is typed.
- */
+/** Part A's External Administrator box, one field per box on the form, typed in. */
 function ExternalAdministrator({ settings, save }: { settings: CvlSettings; save: Save }) {
-  const input = useRef<HTMLInputElement>(null)
-  const [read, setRead] = useState<{ status: 'idle' | 'reading' | 'failed'; message?: string }>({ status: 'idle' })
   return (
     <TextGroup
       settingKey="external_administrator"
@@ -193,41 +180,6 @@ function ExternalAdministrator({ settings, save }: { settings: CvlSettings; save
       values={settings.externalAdministrator}
       settings={settings}
       save={save}
-      extra={(set) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={input}
-            type="file"
-            accept={ASIC_PDF_MIME}
-            className="sr-only"
-            aria-label="MCR's ASIC extract PDF"
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              if (!file) return
-              setRead({ status: 'reading' })
-              const result = await uploadAsicExtract(file)
-              if (!result.ok) {
-                setRead({ status: 'failed', message: result.message })
-                return
-              }
-              setRead({ status: 'idle' })
-              const x = result.extract
-              const office = splitAddress(x.registeredOffice ?? x.principalPlaceOfBusiness ?? null)
-              set({
-                organisation: x.companyName ?? '',
-                ...(office ? { street: office.street, suburb: office.suburb, state: office.state, postcode: office.postcode } : {}),
-              })
-            }}
-          />
-          <Button type="button" size="sm" variant="accent" loading={read.status === 'reading'} onClick={() => input.current?.click()}>
-            <FileUp className="h-3.5 w-3.5" />
-            Fill from MCR&rsquo;s ASIC extract
-          </Button>
-          <span className="text-xs text-foreground/40">Read here only; the PDF is not kept.</span>
-          {read.status === 'failed' && <span className="text-xs text-destructive">{read.message}</span>}
-        </div>
-      )}
     />
   )
 }

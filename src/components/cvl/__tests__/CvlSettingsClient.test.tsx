@@ -29,7 +29,8 @@ describe('CvlSettingsClient', () => {
       'State/Territory',
       'Postcode',
     ])
-    expect(within(ea).getByRole('button', { name: /Fill from MCR’s ASIC extract/ })).toBeTruthy()
+    expect(within(ea).queryByRole('button', { name: /ASIC extract/ })).toBeNull()
+    expect(screen.queryByText(/the PDF is not kept/)).toBeNull()
     expect(screen.queryByText(/where each amount goes/i)).toBeNull()
     expect(screen.queryByText(/to be confirmed/i)).toBeNull()
     expect(screen.queryByRole('checkbox', { name: /Confirmed/ })).toBeNull()
