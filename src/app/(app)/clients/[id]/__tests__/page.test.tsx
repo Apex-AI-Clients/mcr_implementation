@@ -323,7 +323,7 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     mockDb(IN_CVL, COMPANY, CASE)
     render(await CvlClientPage(PARAMS))
     expect(screen.getByRole('heading', { level: 1, name: 'Dean Whitlock' })).toBeTruthy()
-    // The status (Draft, Forms prepared, Printed) lives on the print page, not here.
+    // No status controls on this page.
     expect(screen.queryByRole('button', { name: 'Mark printed' })).toBeNull()
     // Form 509 and Part A for the company, a Part B for each director, each to fill in or preview.
     const fillIn = screen.getAllByRole('link', { name: /Fill in/ }).map((l) => l.getAttribute('href'))
@@ -336,14 +336,18 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getByText('— Jane Sample')).toBeTruthy()
     expect(screen.getByText('— Raj Example')).toBeTruthy()
     expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
-    expect(screen.getByRole('link', { name: /Preview and print/ }).getAttribute('href')).toBe('/cvl/cl_1/print')
+    // No print page: each form downloads from its own row.
+    expect(screen.queryByRole('link', { name: /Preview and print/ })).toBeNull()
+    const download = screen.getByRole('link', { name: 'Download Form 507 Part B — Raj Example' })
+    expect(download.getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=507b&subject=director%3A2&download=1')
+    expect(download.hasAttribute('download')).toBe(true)
     // Each analysis says what is on file.
     const tile = within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ })
     expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
     expect(screen.queryByRole('link', { name: /Form 509 values/ })).toBeNull()
-    // Each form: Fill in first, then Preview.
+    // Each form: Fill in first, then Preview, then Download.
     const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
-    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview'])
+    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview', 'Download'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
     // No director's personal risk section on this page.
     expect(screen.queryByText('Director’s personal risk')).toBeNull()

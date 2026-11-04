@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, Pencil, Printer, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
@@ -145,13 +145,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             <Pencil className="h-3.5 w-3.5" />
             Edit details
           </Link>
-          <Link
-            href={`${base}/print`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Preview and print
-          </Link>
         </div>
       </div>
 
@@ -206,6 +199,14 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
                     >
                       <Eye className="h-3.5 w-3.5" /> Preview
+                    </a>
+                    <a
+                      href={`/api/admin/cvl/${cvlCase.id}/preview?form=${f.code}&subject=${encodeURIComponent(f.subject)}&download=1`}
+                      download
+                      aria-label={`Download ${f.short} — ${f.who}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download
                     </a>
                   </div>
                 </li>
