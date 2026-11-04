@@ -1,5 +1,8 @@
 import { inflateSync } from 'node:zlib'
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, type PDFObject } from 'pdf-lib'
+import { PDFName, PDFNumber, type PDFDocument } from 'pdf-lib'
+import { filters, largestImage, name } from './detect'
+
+export { openPdf, pageImageInfo, type PageImageInfo } from './detect'
 import sharp from 'sharp'
 
 /**
@@ -18,55 +21,6 @@ export interface PageImage {
   mediaType: 'image/jpeg' | 'image/png'
   width: number
   height: number
-}
-
-export interface PageImageInfo {
-  /** Page size in PDF points. */
-  widthPt: number
-  heightPt: number
-  /** The page's largest image, and whether its shape matches the page (a full-page scan). */
-  image: { width: number; height: number; fullPage: boolean; format: string } | null
-}
-
-const name = (o: PDFObject | undefined) => (o instanceof PDFName ? o.decodeText() : null)
-const filters = (o: PDFObject | undefined): string[] =>
-  o instanceof PDFArray ? o.asArray().map((x) => name(x) ?? '') : o instanceof PDFName ? [o.decodeText()] : []
-
-function largestImage(doc: PDFDocument, pageIndex: number): PDFRawStream | null {
-  const page = doc.getPage(pageIndex)
-  const resources = page.node.Resources()
-  const xobjects = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict)
-  if (!xobjects) return null
-  let best: PDFRawStream | null = null
-  let bestArea = 0
-  for (const [, ref] of xobjects.entries()) {
-    const stream = doc.context.lookup(ref)
-    if (!(stream instanceof PDFRawStream) || name(stream.dict.get(PDFName.of('Subtype'))) !== 'Image') continue
-    const w = (stream.dict.lookup(PDFName.of('Width')) as PDFNumber | undefined)?.asNumber() ?? 0
-    const h = (stream.dict.lookup(PDFName.of('Height')) as PDFNumber | undefined)?.asNumber() ?? 0
-    if (w * h > bestArea) {
-      best = stream
-      bestArea = w * h
-    }
-  }
-  return best
-}
-
-export async function openPdf(bytes: Uint8Array): Promise<PDFDocument> {
-  return PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
-}
-
-export function pageImageInfo(doc: PDFDocument, pageIndex: number): PageImageInfo {
-  const { width: widthPt, height: heightPt } = doc.getPage(pageIndex).getSize()
-  const stream = largestImage(doc, pageIndex)
-  if (!stream) return { widthPt, heightPt, image: null }
-  const width = (stream.dict.lookup(PDFName.of('Width')) as PDFNumber).asNumber()
-  const height = (stream.dict.lookup(PDFName.of('Height')) as PDFNumber).asNumber()
-  // A full-page scan has the page's shape (either way round) and real resolution.
-  const ratio = width / height
-  const pageRatio = widthPt / heightPt
-  const fullPage = Math.min(width, height) >= 800 && (Math.abs(ratio - pageRatio) / pageRatio < 0.06 || Math.abs(1 / ratio - pageRatio) / pageRatio < 0.06)
-  return { widthPt, heightPt, image: { width, height, fullPage, format: filters(stream.dict.get(PDFName.of('Filter'))).join('+') || 'none' } }
 }
 
 export class UnsupportedScanImageError extends Error {

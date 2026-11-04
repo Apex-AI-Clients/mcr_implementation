@@ -903,9 +903,14 @@ Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
   and compilation reports are skipped, and the Files read panel says which.
 - Each statement page is read twice, independently: by Tesseract on our server,
   and by Claude from the **page image** (the only statement content ever sent to
-  a model), through the existing OpenRouter client: Anthropic only, no data
-  collection, zero retention, no fallbacks, nothing logged but ids and token
-  counts. No other page, figure or file is sent.
+  a model), through the existing OpenRouter client. No other page, figure or
+  file is sent. Nothing is logged but ids, provider and token counts.
+- **Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.**
+  (Option A, in writing. It replaces the earlier zero-retention requirement,
+  which OpenRouter cannot meet for any Claude model, and applies to every
+  Claude call: scanned-page reading, AI summaries and label suggestions. If
+  OpenRouter cannot honour Anthropic-only with no training, the call fails;
+  it is never routed elsewhere.)
 - Figures both readings agree on are accepted ("Read from a scan"). Where they
   differ, staff see both and a crop of the printed line (made on our server,
   never stored) and choose one or type the figure; who and when are kept. The

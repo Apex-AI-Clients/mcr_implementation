@@ -4,6 +4,7 @@ import { SCAN_PAGE_PROMPT } from '@/lib/ai/prompts'
 import type { PrintedRead } from '@/lib/printed/types'
 import { tesseractEngine } from './ocr'
 import { readScannedPdf, type PageReading, type SecondReader } from './readScanned'
+export { latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
  * Server-only. The background reading of a PDF's scanned pages (B3, B8): one
@@ -26,9 +27,6 @@ export const SCAN_DAILY_PAGE_CAP = 60
 const PRICE_PER_MTOK = { in: 2, out: 10 }
 export const pageCost = (tokensIn: number, tokensOut: number) => Math.round(((tokensIn * PRICE_PER_MTOK.in + tokensOut * PRICE_PER_MTOK.out) / 1e6) * 10000) / 10000
 
-/** A job older than this that never finished is dead (maxDuration 800s, as jobLiveness.ts). */
-export const SCAN_JOB_MAX_AGE_MS = 14 * 60 * 1000
-
 function sydneyDayStart(now = new Date()): string {
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
   // Midnight in Sydney, as an instant: search back from now in hours (DST-safe).
@@ -50,31 +48,6 @@ export async function claudePagesLeftToday(supabase: ServerClient, clientId: str
   if (error) return 0
   return Math.max(0, SCAN_DAILY_PAGE_CAP - (count ?? 0))
 }
-
-export interface ScanJob {
-  id: string
-  status: 'running' | 'done' | 'failed'
-  stage: string | null
-  done: number
-  total: number
-  message: string | null
-  createdAt: string
-}
-
-export async function latestScanJob(supabase: ServerClient, documentId: string, readerVersion: string): Promise<ScanJob | null> {
-  const { data, error } = await supabase
-    .from('scan_read_jobs')
-    .select('id, status, stage, done, total, message, created_at')
-    .eq('document_id', documentId)
-    .eq('reader_version', readerVersion)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (error || !data) return null
-  return { id: data.id, status: data.status as ScanJob['status'], stage: data.stage, done: data.done, total: data.total, message: data.message, createdAt: data.created_at }
-}
-
-export const scanJobAlive = (job: ScanJob | null, now = Date.now()) => !!job && job.status === 'running' && now - Date.parse(job.createdAt) < SCAN_JOB_MAX_AGE_MS
 
 /**
  * Reads the document's scanned pages and keeps the result. Never throws: a

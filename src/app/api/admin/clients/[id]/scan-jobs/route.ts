@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { READER_VERSION } from '@/lib/printed/store'
-import { scanJobAlive, SCAN_JOB_MAX_AGE_MS } from '@/lib/scan/job'
+import { scanJobAlive, SCAN_JOB_MAX_AGE_MS } from '@/lib/scan/jobState'
 
 /** GET — the client's scanned-page readings in progress, for the page to show and poll. */
 

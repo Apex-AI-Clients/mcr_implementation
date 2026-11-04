@@ -148,7 +148,7 @@ interface Job {
   total: number
 }
 
-/** While scanned pages are being read: progress, then the page refreshes itself. */
+/** A scan waiting to be read: starts its reading, shows progress, then the page refreshes itself. */
 export function ScanProgress({ clientId, pending }: { clientId: string; pending: boolean }) {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
@@ -156,6 +156,8 @@ export function ScanProgress({ clientId, pending }: { clientId: string; pending:
     if (!pending) return
     let stopped = false
     let seenRunning = false
+    // Starts the reading of any scan waiting for it (it runs on the server, after this request).
+    void fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' }).catch(() => undefined)
     const poll = async () => {
       try {
         const res = await fetch(`/api/admin/clients/${clientId}/scan-jobs`)

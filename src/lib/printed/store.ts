@@ -1,12 +1,10 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
-import { after } from 'next/server'
 import { PdfTooLongError, PdfUnreadableError, readPrintedStatements } from './readPdf'
 import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from './compare'
 import { readStatements } from './readStatements'
 import type { PrintedRead, ScanSummary } from './types'
-import { scannedPages } from '@/lib/scan/readScanned'
-import { latestScanJob, runScanJob, scanJobAlive } from '@/lib/scan/job'
+import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
 
 /**
@@ -86,7 +84,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
   try {
     const { data: blob, error } = await supabase.storage.from('documents').download(doc.file_path)
     if (error || !blob) throw new Error('The file could not be downloaded.')
-    read = await readOrQueueScan(supabase, clientId, doc, new Uint8Array(await blob.arrayBuffer()))
+    read = await readOrQueueScan(new Uint8Array(await blob.arrayBuffer()))
   } catch (err) {
     const message =
       err instanceof PdfTooLongError
@@ -128,12 +126,13 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
 
 /**
  * A PDF with scanned pages (src/lib/scan): its text-layer pages are read now,
- * as always; the scanned pages are read twice in the background, and the read
- * says 'scan_pending' until they are. Without scanned pages: the reader as
+ * as always; the read says 'scan_pending' until the scanned pages are read
+ * twice by /api/admin/clients/[id]/scan-read (the page starts it). The scan
+ * reader (Tesseract and its model) lives in that route only. Without scanned pages: the reader as
  * before. If the scan check itself fails (a PDF pdf-lib cannot open), the
  * file is read as before.
  */
-async function readOrQueueScan(supabase: ServerClient, clientId: string, doc: FinancialDocumentRow, bytes: Uint8Array): Promise<PrintedRead> {
+async function readOrQueueScan(bytes: Uint8Array): Promise<PrintedRead> {
   let found: Awaited<ReturnType<typeof scannedPages>> | null = null
   try {
     found = await scannedPages(bytes)
@@ -143,7 +142,6 @@ async function readOrQueueScan(supabase: ServerClient, clientId: string, doc: Fi
   if (!found || found.scanned.length === 0) return readPrintedStatements(bytes)
   const scanned = new Set(found.scanned)
   const digital = readStatements(found.textPages.map((lines, i) => (scanned.has(i + 1) ? [] : lines)))
-  startScanJob(supabase, clientId, doc)
   return {
     ...digital,
     status: 'scan_pending',
@@ -155,27 +153,6 @@ async function readOrQueueScan(supabase: ServerClient, clientId: string, doc: Fi
       model: null,
       message: `${found.scanned.length} scanned page(s) are being read.`,
     },
-  }
-}
-
-/** Runs the scanned pages' reading after the response (Next.js after()); outside a request, nothing (the next page load starts it). */
-function startScanJob(supabase: ServerClient, clientId: string, doc: FinancialDocumentRow) {
-  try {
-    after(() => runScanJob(supabase, { clientId, documentId: doc.id, filePath: doc.file_path, readerVersion: READER_VERSION }))
-  } catch {
-    // Not in a request (a script): the page starts it when opened.
-  }
-}
-
-/** A 'scan_pending' read whose job is not running (it died, or never started): start it again. */
-async function restartStalledScans(supabase: ServerClient, clientId: string, docs: FinancialDocumentRow[], reads: Map<string, StoredRead>) {
-  for (const doc of docs) {
-    if (reads.get(doc.id)?.read.status !== 'scan_pending') continue
-    const job = await latestScanJob(supabase, doc.id, READER_VERSION)
-    if (scanJobAlive(job)) continue
-    // A job that finished keeps its read; one that failed or died is tried again.
-    if (job?.status === 'done') continue
-    startScanJob(supabase, clientId, doc)
   }
 }
 
@@ -222,7 +199,6 @@ export async function loadPrintedComparison(
     for (const doc of docs) {
       if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
     }
-    if (!force) await restartStalledScans(supabase, clientId, docs, reads)
   }
   // Staff choices where the two readings of a scan differ (scan_figure_choices).
   const choices = await loadScanChoices(supabase, clientId)

@@ -7,13 +7,18 @@
  * rule 12): the page IMAGE of a SCANNED statement page, for the second,
  * independent reading of a scan (askClaudeImage, src/lib/scan). Nothing else.
  *
+ * Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.
+ *
  * Every request is pinned to Anthropic with OpenRouter's provider preferences
- * (CLAUDE_ONLY): only Anthropic, no fallback to any other provider, no
- * provider that collects data, and Zero Data Retention endpoints only. If
- * OpenRouter cannot honour all of that it refuses the request, and the call
- * fails: the feature degrades (no summary, no AI suggestion) rather than the
+ * (CLAUDE_ONLY): only Anthropic, no fallback to any other provider, and no
+ * provider that trains on or collects the data (data_collection: 'deny').
+ * Prompt logging is off on MCR's OpenRouter account (an account setting, not
+ * a request field). If OpenRouter cannot honour Anthropic-only with no data
+ * collection it refuses the request, and the call fails: the feature degrades
+ * (no summary, no AI suggestion, a single reading of a scan) rather than the
  * data going anywhere else. An answer reported as served by anyone but
- * Anthropic is thrown away.
+ * Anthropic is thrown away. Zero data retention is not required (option A,
+ * Gabby, 4 Nov 2026): no zero-retention Claude endpoint is offered.
  *
  * Off unless AI_SUMMARIES_ENABLED is "true" and OPENROUTER_API_KEY is set.
  * Logs the generation id, model and token counts only, never the content.
@@ -39,7 +44,6 @@ export const CLAUDE_ONLY = {
   only: ['anthropic'],
   allow_fallbacks: false,
   data_collection: 'deny',
-  zdr: true,
 } as const
 
 /** The AI features are off (flag or key missing), or the call could not be made safely. */
@@ -62,6 +66,15 @@ export function claudeModel(purpose: ClaudePurpose): string {
   if (!model.startsWith('anthropic/')) throw new AiUnavailableError(`Only Claude models may be used: "${model}" is not one.`)
   return model
 }
+
+/**
+ * Current Claude models think before they answer, and the thinking counts
+ * against max_tokens: a 300-token answer budget could be spent before any text.
+ * Callers give the answer's length; this much room is added for the thinking,
+ * which is kept short (OpenRouter `reasoning`: low effort, not returned).
+ */
+const THINKING_ROOM = 4000
+const REASONING = { effort: 'low', exclude: true } as const
 
 export interface ClaudeAnswer {
   text: string
@@ -97,10 +110,10 @@ export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs =
   const model = claudeModel(purpose)
   const response = await client(timeoutMs).chat.completions.create({
     model,
-    max_tokens: maxTokens,
+    max_tokens: maxTokens + THINKING_ROOM,
     messages: [{ role: 'user', content: prompt }],
-    // OpenRouter's extension: not in the OpenAI SDK's types.
-    ...({ provider: CLAUDE_ONLY } as object),
+    // OpenRouter's extensions: not in the OpenAI SDK's types.
+    ...({ provider: CLAUDE_ONLY, reasoning: REASONING } as object),
   })
 
   const served = (response as unknown as { provider?: string }).provider
@@ -109,7 +122,7 @@ export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs =
     throw new AiUnavailableError('The answer did not come from Anthropic, so it was not used.')
   }
   const usage = response.usage
-  console.log(`[ai] ${label} generation=${response.id} model=${response.model} tokens_in=${usage?.prompt_tokens ?? '?'} tokens_out=${usage?.completion_tokens ?? '?'}`)
+  console.log(`[ai] ${label} generation=${response.id} provider=${served ?? 'unknown'} model=${response.model} tokens_in=${usage?.prompt_tokens ?? '?'} tokens_out=${usage?.completion_tokens ?? '?'}`)
 
   const text = response.choices[0]?.message?.content?.trim() ?? ''
   if (!text) throw new Error(`${label}: the model returned no text.`)
@@ -128,7 +141,7 @@ export interface ImageAnswer extends ClaudeAnswer {
 
 /**
  * One scanned statement page image to Claude, with the same routing as
- * askClaude: Anthropic only, no fallback, no data collection, zero retention;
+ * askClaude: Anthropic only, no fallback, no data collection (no training);
  * an answer served by anyone else is thrown away. Only for src/lib/scan.
  * Logs the generation id, model and token counts, never the image or the answer.
  */
@@ -161,7 +174,7 @@ export async function askClaudeImage({
         ],
       },
     ],
-    ...({ provider: CLAUDE_ONLY } as object),
+    ...({ provider: CLAUDE_ONLY, reasoning: REASONING } as object),
   })
   const served = (response as unknown as { provider?: string }).provider
   if ((served && !/anthropic/i.test(served)) || !response.model?.startsWith('anthropic/')) {
@@ -170,7 +183,7 @@ export async function askClaudeImage({
   }
   const tokensIn = response.usage?.prompt_tokens ?? 0
   const tokensOut = response.usage?.completion_tokens ?? 0
-  console.log(`[ai] ${label} generation=${response.id} model=${response.model} tokens_in=${tokensIn} tokens_out=${tokensOut}`)
+  console.log(`[ai] ${label} generation=${response.id} provider=${served ?? 'unknown'} model=${response.model} tokens_in=${tokensIn} tokens_out=${tokensOut}`)
   const text = response.choices[0]?.message?.content?.trim() ?? ''
   if (!text) throw new Error(`${label}: the model returned no text.`)
   return { text, model: response.model, generationId: response.id, tokensIn, tokensOut }

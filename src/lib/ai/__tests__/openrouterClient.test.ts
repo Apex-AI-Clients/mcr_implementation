@@ -32,12 +32,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('askClaude', () => {
-  it('sends every request to Anthropic only, with no data collection and zero data retention', async () => {
+  it('sends every request to Anthropic only, with no fallback and no data collection', async () => {
     create.mockResolvedValue(answer())
     const out = await askClaude({ purpose: 'summary', prompt: 'Summarise.', maxTokens: 300, label: 'test' })
     expect(out).toEqual({ text: 'The summary.', model: 'anthropic/claude-sonnet-5.5', generationId: 'gen-123' })
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: DEFAULT_SUMMARY_MODEL, max_tokens: 300, provider: CLAUDE_ONLY }))
-    expect(CLAUDE_ONLY).toEqual({ only: ['anthropic'], allow_fallbacks: false, data_collection: 'deny', zdr: true })
+    // The answer's 300 tokens plus room for the model's (short, unreturned) thinking.
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: DEFAULT_SUMMARY_MODEL, max_tokens: 4300, provider: CLAUDE_ONLY, reasoning: { effort: 'low', exclude: true } }),
+    )
+    expect(CLAUDE_ONLY).toEqual({ only: ['anthropic'], allow_fallbacks: false, data_collection: 'deny' })
   })
 
   it('logs the generation id and token counts, never the prompt or the answer', async () => {
@@ -45,6 +48,7 @@ describe('askClaude', () => {
     await askClaude({ purpose: 'summary', prompt: 'SECRET FIGURES 123,456', maxTokens: 300, label: 'test' })
     const logged = vi.mocked(console.log).mock.calls.flat().join(' ')
     expect(logged).toContain('generation=gen-123')
+    expect(logged).toContain('provider=')
     expect(logged).toContain('tokens_in=100')
     expect(logged).not.toContain('SECRET')
     expect(logged).not.toContain('The summary')

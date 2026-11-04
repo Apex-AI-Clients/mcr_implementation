@@ -3,9 +3,6 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { loadPrintedComparison } from '@/lib/printed/store'
 
-// Scanned pages are read in the background after the response (src/lib/scan, after()).
-export const maxDuration = 800
-
 /**
  * POST — "Read the PDFs again": every financial statements PDF of the client
  * read as printed (src/lib/printed), on our own server, no model. Each takes

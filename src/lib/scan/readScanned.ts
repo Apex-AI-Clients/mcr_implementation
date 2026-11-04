@@ -1,6 +1,3 @@
-import type { PdfLine } from '@/lib/pdf/pageLines'
-import { readPdfPageCells } from '@/lib/pdf/pageLines'
-import { MAX_FINANCIALS_PAGES } from '@/lib/printed/readPdf'
 import { OTHER_TITLE, readStatements, statementKind } from '@/lib/printed/readStatements'
 import type { PrintedRead, ScanPageInfo } from '@/lib/printed/types'
 import { answerToLines, parseScanAnswer, ScanAnswerError, type ScanPageAnswer } from './claudeReader'
@@ -8,6 +5,9 @@ import { ocrToLines, type BandedLine, type OcrLine } from './ocrLines'
 import type { OcrEngine } from './ocr'
 import { extractPageImage, openPdf, pageImageInfo, UnsupportedScanImageError, type PageImage } from './pageImages'
 import { reconcileReads } from './reconcile'
+import { scannedPages } from './detect'
+
+export { scannedPages }
 
 /**
  * A PDF with scanned pages, read twice, independently, and reconciled
@@ -66,8 +66,6 @@ function withTitle(lines: BandedLine[], title: string | null): BandedLine[] {
   return [{ text: title, cells: [{ x: 57, right: 57 + title.length * 5, text: title }], band: [0, 0] }, ...lines]
 }
 
-/** Fewer text characters than this and a full-page image: a scan. */
-const SCANNED_MAX_TEXT = 20
 
 export interface SecondReading {
   answer: ScanPageAnswer
@@ -106,19 +104,6 @@ export interface ScanProgress {
   stage: 'selecting' | 'reading'
   done: number
   total: number
-}
-
-/** Pages that are scans (1-based), from the text layer and the images. Cheap: no OCR. */
-export async function scannedPages(bytes: Uint8Array): Promise<{ textPages: PdfLine[][]; scanned: number[] }> {
-  const { pages: textPages } = await readPdfPageCells(bytes, MAX_FINANCIALS_PAGES)
-  const doc = await openPdf(bytes)
-  const scanned: number[] = []
-  textPages.forEach((lines, i) => {
-    const chars = lines.reduce((n, l) => n + l.text.replace(/\s/g, '').length, 0)
-    if (chars >= SCANNED_MAX_TEXT) return
-    if (pageImageInfo(doc, i).image?.fullPage) scanned.push(i + 1)
-  })
-  return { textPages, scanned }
 }
 
 export async function readScannedPdf(
