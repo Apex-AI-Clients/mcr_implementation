@@ -359,6 +359,9 @@ interface Filled {
   pageSources: number[]
 }
 
+/** Where the preview remembers whole page or fit width (this browser only). */
+const FIT_KEY = 'cvl.preview.fit'
+
 /** A place on the form: a template page, and how far down it (points). */
 interface Spot {
   page: number
@@ -427,6 +430,24 @@ function LivePreview({
   const [pageHeight, setPageHeight] = useState<number | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const sheet = useRef<HTMLDivElement>(null)
+  // The whole page in view (the default), or the page as wide as the column,
+  // scrolled to what is being edited. Remembered in this browser.
+  const [fit, setFit] = useState<'page' | 'width'>('page')
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(FIT_KEY) === 'width') setFit('width')
+    } catch {
+      // Storage blocked: the whole page.
+    }
+  }, [])
+  const chooseFit = (next: 'page' | 'width') => {
+    setFit(next)
+    try {
+      window.localStorage.setItem(FIT_KEY, next)
+    } catch {
+      // Not remembered: fine.
+    }
+  }
   const latest = useRef(0)
 
   // Fill once per request (on opening, on Save, before a download): never while typing.
@@ -581,6 +602,24 @@ function LivePreview({
           </button>
         ))}
         <span className="ml-auto flex items-center gap-2">
+          <span role="group" aria-label="Preview size" className="inline-flex overflow-hidden rounded border border-border">
+            {(
+              [
+                ['page', 'Whole page'],
+                ['width', 'Fit width'],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={fit === v}
+                onClick={() => chooseFit(v)}
+                className={`px-2 py-0.5 ${v === 'width' ? 'border-l border-border' : ''} ${fit === v ? 'bg-accent text-white' : 'bg-card text-foreground/60 hover:text-foreground'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
           {loading ? (
             <span className="inline-flex items-center gap-1 text-foreground/40">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
@@ -592,10 +631,17 @@ function LivePreview({
       </div>
       <div
         ref={sheet}
-        className="max-h-[calc(100vh-7rem)] overflow-y-auto overflow-x-hidden rounded-sm bg-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
+        data-fit={fit}
+        className={`rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)] ${
+          fit === 'page' ? 'mx-auto w-fit max-w-full' : 'max-h-[calc(100vh-9rem)] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+        }`}
       >
         {filled ? (
-          <canvas ref={canvas} className="block h-auto w-full" aria-label={`Page ${shown} of ${pages}`} />
+          <canvas
+            ref={canvas}
+            className={fit === 'page' ? 'block h-auto max-h-[calc(100vh-9rem)] w-auto max-w-full' : 'block h-auto w-full'}
+            aria-label={`Page ${shown} of ${pages}`}
+          />
         ) : (
           <div className="flex aspect-[1/1.414] items-center justify-center text-xs text-neutral-500">
             {error ?? 'Filling the form…'}

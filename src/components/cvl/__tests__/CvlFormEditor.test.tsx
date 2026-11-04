@@ -253,14 +253,27 @@ describe('CvlFormEditor', () => {
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })
 
-  it('scrolls the preview without showing a scrollbar', async () => {
+  it('shows the whole page to start; Fit width makes it column-wide, scrolling without a scrollbar, and is remembered', async () => {
+    const user = userEvent.setup({ delay: null })
     stubFetch()
+    window.localStorage.removeItem('cvl.preview.fit')
     renderPartB()
     const canvas = await screen.findByLabelText(/^Page 1 of /)
     const sheet = canvas.parentElement as HTMLElement
+    // Whole page: the page is never taller than the window, and nothing is hidden below.
+    expect(sheet.dataset.fit).toBe('page')
+    expect(canvas.className).toContain('max-h-[calc(100vh-9rem)]')
+    expect(sheet.className).not.toContain('overflow-y-auto')
+    expect(screen.getByRole('button', { name: 'Whole page' }).getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: 'Fit width' }))
+    expect(sheet.dataset.fit).toBe('width')
+    expect(canvas.className).toContain('w-full')
     expect(sheet.className).toContain('overflow-y-auto')
     expect(sheet.className).toContain('[scrollbar-width:none]')
     expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
+    expect(window.localStorage.getItem('cvl.preview.fit')).toBe('width')
+    window.localStorage.removeItem('cvl.preview.fit')
   })
 
   it('shows Part B’s question numbers as they are', () => {
