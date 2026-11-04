@@ -287,16 +287,17 @@ function candidates509(ctx: CvlContext): Candidate[] {
 }
 
 function prefill509(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m } = ctx.settings
-  put(out, 'contact_name', l.contactName, settingSource('Who ASIC should contact.'))
-  put(out, 'agent_number', l.agentNumber, settingSource('ASIC registered agent number.'))
-  put(out, 'entity_name', m.companyName, settingSource('MCR’s company name (from MCR’s ASIC extract).'))
-  put(out, 'entity_number', m.acn, settingSource('MCR’s ACN (from MCR’s ASIC extract).'))
-  put(out, 'phone', l.phone, settingSource('Liquidator’s phone.'))
-  put(out, 'postal_1', l.postal1, settingSource('Liquidator’s postal address.'))
-  put(out, 'postal_2', l.postal2, settingSource('Liquidator’s postal address.'))
-  put(out, 'email', l.email, settingSource('Liquidator’s email.'))
-  settingsWarnings(out, ctx)
+  // Lodgement details: always the CVL settings' "Form 509 lodgement details"
+  // (as on the Form 509 MCR lodges with, until changed there).
+  const lodge = ctx.settings.lodgement
+  put(out, 'entity_name', lodge.firm, settingSource('Firm/organisation (CVL settings: Form 509 lodgement details).'))
+  put(out, 'entity_number', lodge.entityNumber, settingSource('ACN/ABN (CVL settings: Form 509 lodgement details).'))
+  put(out, 'agent_number', lodge.agentNumber, settingSource('ASIC registered agent number (CVL settings: Form 509 lodgement details).'))
+  put(out, 'contact_name', lodge.contactName, settingSource('Who ASIC should contact (CVL settings: Form 509 lodgement details).'))
+  put(out, 'phone', lodge.phone, settingSource('Telephone number (CVL settings: Form 509 lodgement details).'))
+  put(out, 'email', lodge.email, settingSource('Email address (CVL settings: Form 509 lodgement details).'))
+  put(out, 'postal_1', lodge.postal1, settingSource('Postal address (CVL settings: Form 509 lodgement details).'))
+  put(out, 'postal_2', lodge.postal2, settingSource('Postal address (CVL settings: Form 509 lodgement details).'))
 
   putCompany(out, ctx, 'company_name', 'company_acn')
   out.notes.summary_date = 'Pick the date the summary is made up to.'

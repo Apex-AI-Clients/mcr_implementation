@@ -9,14 +9,16 @@ import { uploadAsicExtract } from '@/lib/asic/browser'
 import { ASIC_PDF_MIME } from '@/lib/asic/upload'
 import {
   LIQUIDATOR_FIELDS,
+  LODGEMENT_FIELDS,
   MCR_COMPANY_FIELDS,
   type CvlSettings,
   type SettingKey,
 } from '@/lib/cvl/settings'
 
 /**
- * The CVL settings: MCR's company details and the liquidator's, each saved on
- * its own. Blank items leave their boxes on the forms blank.
+ * The CVL settings: Form 509's lodgement details, MCR's company details and
+ * the liquidator's, each saved on its own. Blank items leave their boxes on
+ * the forms blank (the lodgement details go back to their starting values).
  */
 export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
   const [settings, setSettings] = useState(initial)
@@ -35,11 +37,20 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
 
   return (
     <div className="space-y-6">
+      <TextGroup
+        settingKey="lodgement"
+        title="Form 509 lodgement details"
+        hint="Pre-filled on every Form 509 (who lodges it, and who ASIC should contact). Starts as on the Form 509 MCR lodges with; change and save to use other details. Clearing every box brings those back."
+        fields={LODGEMENT_FIELDS}
+        values={settings.lodgement}
+        settings={settings}
+        save={save}
+      />
       <McrCompany settings={settings} save={save} />
       <TextGroup
         settingKey="liquidator"
         title="Liquidator details"
-        hint="Form 509 lodgement details and the Part A External Administrator box. Blank until given."
+        hint="The Part A External Administrator box. Blank until given."
         fields={LIQUIDATOR_FIELDS}
         values={settings.liquidator}
         settings={settings}
@@ -182,7 +193,7 @@ function McrCompany({ settings, save }: { settings: CvlSettings; save: Save }) {
     <TextGroup
       settingKey="mcr_company"
       title="MCR company details"
-      hint="Form 509 lodgement details and the Part A External Administrator box. Filled from MCR's own ASIC extract, then checked."
+      hint="The Part A External Administrator box. Filled from MCR's own ASIC extract, then checked."
       fields={MCR_COMPANY_FIELDS}
       values={settings.mcrCompany}
       settings={settings}

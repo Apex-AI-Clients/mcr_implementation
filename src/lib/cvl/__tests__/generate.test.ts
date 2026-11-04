@@ -37,11 +37,10 @@ describe('caseJobs', () => {
 })
 
 describe('warningsFor', () => {
-  it('lists blank settings, overflow, amounts not placed, and forms never opened', () => {
+  it('lists overflow, amounts not placed, and forms never opened (Form 509’s lodgement details have starting values)', () => {
     const [f509] = caseJobs(context(), [])
     const w = warningsFor(f509, [{ key: 'company_name', q: 'Company details', message: 'Answer is too long for the box and was cut off: attach an annexure.' }])
     expect(w).toEqual([
-      expect.stringMatching(/^Not set yet in CVL settings: /),
       'Company details: Answer is too long for the box and was cut off: attach an annexure.',
       expect.stringMatching(/^Not placed on the form: Director loan/),
       'Never opened: printed from the pre-filled answers.',

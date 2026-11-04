@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { creditorRows, prefillForm, subjectsFor } from '../prefill'
 import { splitAddress } from '../address'
-import { missingSettings, readCvlSettings, settingValue } from '../settings'
+import { LODGEMENT_DEFAULTS, missingSettings, readCvlSettings, settingValue } from '../settings'
 import { handwrittenKeys } from '@/lib/forms/registry'
 import { context } from './fixtures'
 
@@ -73,11 +73,34 @@ describe('Form 509', () => {
     expect(p.fields.b_val.source.link).toEqual({ kind: 'pdf', documentId: 'doc-fy26', page: 2 })
   })
 
-  it('leaves MCR and liquidator details blank until set, and says so', () => {
+  it('always fills the lodgement details from the settings: their starting values until changed', () => {
     const p = prefillForm('509', 'company', context())
-    for (const key of ['contact_name', 'entity_name', 'entity_number', 'phone', 'email', 'postal_1']) expect(p.fields[key]).toBeUndefined()
-    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings: /)
+    const value = (k: string) => p.fields[k]?.value
+    expect(value('entity_name')).toBe(LODGEMENT_DEFAULTS.firm)
+    expect(value('contact_name')).toBe(LODGEMENT_DEFAULTS.contactName)
+    expect(value('phone')).toBe(LODGEMENT_DEFAULTS.phone)
+    expect(value('email')).toBe(LODGEMENT_DEFAULTS.email)
+    expect(value('postal_1')).toBe(LODGEMENT_DEFAULTS.postal1)
+    expect(value('postal_2')).toBe(LODGEMENT_DEFAULTS.postal2)
+    // Not on the form MCR lodges with: blank until set.
+    expect(p.fields.entity_number).toBeUndefined()
+    expect(p.fields.agent_number).toBeUndefined()
+    // Each says where it came from.
+    expect(p.fields.entity_name?.source.from.join(' ')).toMatch(/Form 509 lodgement details/)
+    // The liquidator and MCR company settings are not Form 509's: no warning about them here.
+    expect(p.warnings.join(' ')).not.toMatch(/Not set yet in CVL settings/)
     expect(p.fields.summary_date).toBeUndefined()
+  })
+
+  it('uses the lodgement details as changed on the settings page, and their starting values again once cleared', () => {
+    const row = (value: unknown) => ({ key: 'lodgement', value: value as never, confirmed: false, updated_by: 'staff', updated_at: '2026-11-04T00:00:00Z' })
+    const changed = prefillForm('509', 'company', context({ settings: readCvlSettings([row({ firm: 'Example Advisory', phone: '02 0000 0000' })]) }))
+    expect(changed.fields.entity_name?.value).toBe('Example Advisory')
+    expect(changed.fields.phone?.value).toBe('02 0000 0000')
+    // Saved without them: those boxes are blank, not the starting values.
+    expect(changed.fields.contact_name).toBeUndefined()
+    const cleared = prefillForm('509', 'company', context({ settings: readCvlSettings([row(null)]) }))
+    expect(cleared.fields.entity_name?.value).toBe(LODGEMENT_DEFAULTS.firm)
   })
 
   it('lists the amounts not placed beside the form, and places none without a setting', () => {

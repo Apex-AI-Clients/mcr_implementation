@@ -5,8 +5,9 @@ import type { Json } from '@/types/database'
  * The CVL settings page (cvl_settings, migration 0039): every item still to
  * be confirmed, listed as "To be confirmed" until it is.
  *
- * None has a default. An item not set leaves its boxes on the forms blank
- * and says so beside them; staff can fill them on the form instead.
+ * None has a default but Form 509's lodgement details (LODGEMENT_DEFAULTS).
+ * An item not set leaves its boxes on the forms blank and says so beside
+ * them; staff can fill them on the form instead.
  *
  * Not a setting: every director has their own Part B (settled 3 Nov 2026).
  */
@@ -23,6 +24,34 @@ export const LIQUIDATOR_FIELDS = [
 ] as const
 export type LiquidatorField = (typeof LIQUIDATOR_FIELDS)[number][0]
 export type LiquidatorDetails = Partial<Record<LiquidatorField, string>>
+
+/** Form 509's "Lodgement details": who lodges the form and who ASIC should contact. */
+export const LODGEMENT_FIELDS = [
+  ['firm', 'Firm/organisation'],
+  ['entityNumber', 'ACN/ABN'],
+  ['agentNumber', 'ASIC registered agent number'],
+  ['contactName', 'Contact name/position'],
+  ['phone', 'Telephone number'],
+  ['email', 'Email address'],
+  ['postal1', 'Postal address (line 1)'],
+  ['postal2', 'Postal address (line 2)'],
+] as const
+export type LodgementField = (typeof LODGEMENT_FIELDS)[number][0]
+export type LodgementDetails = Partial<Record<LodgementField, string>>
+
+/**
+ * The lodgement details every Form 509 carries until changed on the settings
+ * page: as on the Form 509 MCR lodges with (given 4 Nov 2026). The one
+ * setting with a default; saving it replaces these, clearing it brings them back.
+ */
+export const LODGEMENT_DEFAULTS: LodgementDetails = {
+  firm: 'BCR ADVISORY',
+  contactName: 'Tom Vandermeer',
+  phone: '02 9128 3838',
+  email: 'Tom.Vandermeer@bcradvisory.com.au',
+  postal1: 'Level 2, 60 Castlereagh Street',
+  postal2: 'Sydney NSW 2000',
+}
 
 export const MCR_COMPANY_FIELDS = [
   ['companyName', 'Company name'],
@@ -56,17 +85,20 @@ export const PLACEMENT_KEYS = Object.keys(PLACEMENTS) as PlacementKey[]
 /** The Form 509 field a placement fills, or 'none'. */
 export type PlacementTarget = 'b_val' | 'h_val' | 's2_val' | 'r7_claims' | 'r3' | 'r6' | 'none'
 
-export type SettingKey = 'mcr_company' | 'liquidator' | `f509_place.${PlacementKey}`
+export type SettingKey = 'mcr_company' | 'liquidator' | 'lodgement' | `f509_place.${PlacementKey}`
 
 export const SETTING_KEYS: SettingKey[] = [
   'mcr_company',
   'liquidator',
+  'lodgement',
   ...PLACEMENT_KEYS.map((k) => `f509_place.${k}` as const),
 ]
 
 export interface CvlSettings {
   mcrCompany: McrCompanyDetails
   liquidator: LiquidatorDetails
+  /** Form 509's lodgement details: as saved, or LODGEMENT_DEFAULTS until then. */
+  lodgement: LodgementDetails
   placements: Partial<Record<PlacementKey, PlacementTarget>>
   /** Per setting: marked confirmed (kept for later; not shown on the settings page). */
   confirmed: Record<SettingKey, boolean>
@@ -98,6 +130,7 @@ export function readCvlSettings(
   return {
     mcrCompany: strings(value('mcr_company'), MCR_COMPANY_FIELDS),
     liquidator: strings(value('liquidator'), LIQUIDATOR_FIELDS),
+    lodgement: value('lodgement') === null ? { ...LODGEMENT_DEFAULTS } : strings(value('lodgement'), LODGEMENT_FIELDS),
     placements,
     confirmed: Object.fromEntries(SETTING_KEYS.map((k) => [k, byKey.get(k)?.confirmed === true])) as Record<SettingKey, boolean>,
     updated: Object.fromEntries(
@@ -111,6 +144,7 @@ export function settingValue(key: SettingKey, value: unknown): Json | null {
   if (value === null) return null
   if (key === 'mcr_company') return strings(value, MCR_COMPANY_FIELDS) as Json
   if (key === 'liquidator') return strings(value, LIQUIDATOR_FIELDS) as Json
+  if (key === 'lodgement') return strings(value, LODGEMENT_FIELDS) as Json
   const placement = key.slice('f509_place.'.length) as PlacementKey
   if (typeof value === 'string' && value in PLACEMENTS[placement].options) return value
   throw new Error('Unknown placement')
