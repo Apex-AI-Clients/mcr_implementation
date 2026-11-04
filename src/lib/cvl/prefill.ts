@@ -335,20 +335,19 @@ function prefill509(ctx: CvlContext, out: Prefill) {
 /* ---------------- Part A ---------------- */
 
 function prefillPartA(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m } = ctx.settings
-  put(out, 'ea_organisation', m.companyName, settingSource('MCR’s company name.'))
-  put(out, 'ea_liquidator_number', l.number, settingSource('Registered liquidator number.'))
-  put(out, 'ea_name', l.name, settingSource('Liquidator.'))
-  put(out, 'ea_contact', l.contactName, settingSource('Contact person.'))
-  put(out, 'ea_phone', l.phone, settingSource('Liquidator’s phone.'))
-  const office = splitAddress(m.address)
-  if (office) {
-    const source = settingSource('MCR’s address (from MCR’s ASIC extract).')
-    put(out, 'ea_street', office.street, source)
-    put(out, 'ea_suburb', office.suburb, source)
-    put(out, 'ea_state', office.state, source)
-    put(out, 'ea_postcode', office.postcode, source)
-  }
+  // The External Administrator box: box for box from the CVL settings' "External Administrator".
+  const ea = ctx.settings.externalAdministrator
+  const from = (what: string) => settingSource(`${what} (CVL settings: External Administrator).`)
+  put(out, 'ea_organisation', ea.organisation, from('Organisation'))
+  put(out, 'ea_liquidator_number', ea.liquidatorNumber, from('ASIC Registered Liquidator number'))
+  put(out, 'ea_name', ea.name, from('Name of External Administrator'))
+  put(out, 'ea_contact', ea.contact, from('Contact person'))
+  put(out, 'ea_phone', ea.phone, from('Phone number'))
+  put(out, 'ea_address', ea.address, from('Address'))
+  put(out, 'ea_street', ea.street, from('Street/Unit number and name'))
+  put(out, 'ea_suburb', ea.suburb, from('Suburb/City'))
+  put(out, 'ea_state', ea.state, from('State/Territory'))
+  put(out, 'ea_postcode', ea.postcode, from('Postcode'))
   settingsWarnings(out, ctx)
   out.fields.ea_role = {
     value: 'cvl_liquidator',

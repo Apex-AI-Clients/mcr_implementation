@@ -7,17 +7,17 @@ import { Input } from '@/components/ui/Input'
 import { formatDate } from '@/lib/utils'
 import { uploadAsicExtract } from '@/lib/asic/browser'
 import { ASIC_PDF_MIME } from '@/lib/asic/upload'
+import { splitAddress } from '@/lib/cvl/address'
 import {
-  LIQUIDATOR_FIELDS,
+  EA_FIELDS,
   LODGEMENT_FIELDS,
-  MCR_COMPANY_FIELDS,
   type CvlSettings,
   type SettingKey,
 } from '@/lib/cvl/settings'
 
 /**
- * The CVL settings: Form 509's lodgement details, MCR's company details and
- * the liquidator's, each saved on its own. Blank items leave their boxes on
+ * The CVL settings: Form 509's lodgement details and Part A's External
+ * Administrator, each saved on its own. Blank items leave their boxes on
  * the forms blank (the lodgement details go back to their starting values).
  */
 export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
@@ -46,16 +46,7 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
         settings={settings}
         save={save}
       />
-      <McrCompany settings={settings} save={save} />
-      <TextGroup
-        settingKey="liquidator"
-        title="Liquidator details"
-        hint="The Part A External Administrator box. Blank until given."
-        fields={LIQUIDATOR_FIELDS}
-        values={settings.liquidator}
-        settings={settings}
-        save={save}
-      />
+      <ExternalAdministrator settings={settings} save={save} />
     </div>
   )
 }
@@ -185,17 +176,21 @@ function TextGroup<K extends string>({
   )
 }
 
-/** MCR's own company details, filled from MCR's ASIC extract (read here, never stored). */
-function McrCompany({ settings, save }: { settings: CvlSettings; save: Save }) {
+/**
+ * Part A's External Administrator box, one field per box on the form. MCR's
+ * own ASIC extract can fill the organisation and its address (read here,
+ * never stored); the rest is typed.
+ */
+function ExternalAdministrator({ settings, save }: { settings: CvlSettings; save: Save }) {
   const input = useRef<HTMLInputElement>(null)
   const [read, setRead] = useState<{ status: 'idle' | 'reading' | 'failed'; message?: string }>({ status: 'idle' })
   return (
     <TextGroup
-      settingKey="mcr_company"
-      title="MCR company details"
-      hint="The Part A External Administrator box. Filled from MCR's own ASIC extract, then checked."
-      fields={MCR_COMPANY_FIELDS}
-      values={settings.mcrCompany}
+      settingKey="external_administrator"
+      title="External Administrator (Form 507 Part A)"
+      hint="Pre-filled in the External Administrator box of every Part A, box for box. Blank until given."
+      fields={EA_FIELDS}
+      values={settings.externalAdministrator}
       settings={settings}
       save={save}
       extra={(set) => (
@@ -218,7 +213,11 @@ function McrCompany({ settings, save }: { settings: CvlSettings; save: Save }) {
               }
               setRead({ status: 'idle' })
               const x = result.extract
-              set({ companyName: x.companyName ?? '', acn: x.acn, address: x.registeredOffice ?? x.principalPlaceOfBusiness ?? '' })
+              const office = splitAddress(x.registeredOffice ?? x.principalPlaceOfBusiness ?? null)
+              set({
+                organisation: x.companyName ?? '',
+                ...(office ? { street: office.street, suburb: office.suburb, state: office.state, postcode: office.postcode } : {}),
+              })
             }}
           />
           <Button type="button" size="sm" variant="accent" loading={read.status === 'reading'} onClick={() => input.current?.click()}>

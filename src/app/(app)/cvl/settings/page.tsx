@@ -4,7 +4,7 @@ import { CvlSettingsClient } from '@/components/cvl/CvlSettingsClient'
 
 export const dynamic = 'force-dynamic'
 
-/** CVL settings (settings.ts): Form 509's lodgement details (with starting values), MCR's company and the liquidator. */
+/** CVL settings (settings.ts): Form 509's lodgement details (with starting values) and Part A's External Administrator. */
 export default async function CvlSettingsPage() {
   const settings = await loadCvlSettings(getSupabaseServerClient())
   return (

@@ -100,8 +100,8 @@ describe('PUT /api/admin/cvl/settings', () => {
 
   it('cannot confirm a blank setting, and refuses unknown keys and values', async () => {
     const { upsert } = mockDb()
-    await putSetting(putReq({ key: 'liquidator', value: null, confirmed: true }))
-    expect(upsert.mock.calls[0][0]).toMatchObject({ key: 'liquidator', value: null, confirmed: false })
+    await putSetting(putReq({ key: 'external_administrator', value: null, confirmed: true }))
+    expect(upsert.mock.calls[0][0]).toMatchObject({ key: 'external_administrator', value: null, confirmed: false })
     expect((await putSetting(putReq({ key: 'nonsense', value: 'x', confirmed: false }))).status).toBe(400)
     expect((await putSetting(putReq({ key: 'f509_place.director_loan', value: 'r6', confirmed: false }))).status).toBe(400)
   })
