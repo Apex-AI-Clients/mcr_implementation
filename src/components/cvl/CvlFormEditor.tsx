@@ -627,7 +627,7 @@ function TooLong({ id, over, room }: { id: string; over: number; room: Room }) {
   const where = room.kind === 'lines' ? `the ${room.lineWs.length} lines on the form` : 'its box on the form'
   return (
     <p id={id} className="mt-1 text-xs text-destructive">
-      Too long for {where}: the last {chars(over)} won’t print. Shorten it, or attach an annexure.
+      Too long for {where}: the last {chars(over)} won’t print.
     </p>
   )
 }

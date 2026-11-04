@@ -98,7 +98,7 @@ describe('CvlFormEditor', () => {
     expect(name.value).toBe(long)
     expect(name.getAttribute('aria-invalid')).toBe('true')
     const warning = document.getElementById(name.getAttribute('aria-describedby')!)!
-    expect(warning.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\. Shorten it, or attach an annexure\.$/)
+    expect(warning.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\.$/)
     // Short enough again: the warning goes.
     await user.clear(name)
     await user.type(name, 'Jordan Sample')
