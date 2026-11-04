@@ -10,7 +10,9 @@ import type { PrintedAmount, PrintedRowStyle, PrintedStatementKind } from './typ
  *   "Total …" (or a figures-only line) closes a section: the open one whose
  *   name it repeats ("Total Bank Accounts"), else the innermost.
  *   "Gross profit", "Net profit…", "Net assets"… are results: they close
- *   nothing. So is a "Total …" with no section open ("Total Income" after
+ *   nothing. A result starts with Total / Net / Gross, or ("Profit before
+ *   tax") is printed with no section open; a "Profit / Loss from sale of
+ *   assets" line inside a section is a line, never a result. So is a "Total …" with no section open ("Total Income" after
  *   Income and Other Income have closed).
  */
 
@@ -33,7 +35,9 @@ const RESULT: Record<PrintedStatementKind, RegExp> = {
   balance_sheet: /^net (assets|liabilities)\b/i,
 }
 
-const nameKey = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '')
+const TOTAL_WORD = /^(total|net|gross)\b/i
+
+const nameKey =(s: string) => s.toLowerCase().replace(/[^a-z]/g, '')
 
 export function structureRows<T extends UnstructuredRow>(kind: PrintedStatementKind, rows: T[]): (T & StructuredRow)[] {
   const stack: { label: string; x: number; lines: number }[] = []
@@ -53,7 +57,11 @@ export function structureRows<T extends UnstructuredRow>(kind: PrintedStatementK
       out.push({ ...row, path: labels(), style: 'ratio' })
       continue
     }
-    const result = RESULT[kind].test(row.label)
+    // A label that only mentions profit or loss ("Profit / Loss from sale of
+    // assets" under Other Income) is an ordinary line while a section is open:
+    // a result starts with Total / Net / Gross, or is printed outside every
+    // section, as a result is laid out.
+    const result = RESULT[kind].test(row.label) && (TOTAL_WORD.test(row.label) || stack.length === 0)
     const totalish = row.label === '' || /^total\b/i.test(row.label)
     if (totalish && !result && stack.length) {
       const key = nameKey(row.label.replace(/^total\s*/i, ''))

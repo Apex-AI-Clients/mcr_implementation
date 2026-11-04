@@ -14,8 +14,15 @@ import type { PrintedRead } from './types'
  * read cannot be kept (the table not there yet), it is still used.
  */
 
-/** Bump when the reader changes what it reads: every PDF is then read again. */
-export const READER_VERSION = '2026-10-25.1'
+/**
+ * Bump when the reader changes what it reads: every PDF is then read again.
+ * A re-read that prints exactly what the last read did keeps that read's
+ * time, so a staff "I've checked these figures" tick (hardChecks.ts) resets
+ * only for a client whose figures changed.
+ *
+ * 2026-11-04.1: "Profit / Loss from sale of assets" inside a section is a line.
+ */
+export const READER_VERSION = '2026-11-04.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -98,6 +105,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     if (error) console.error('[printed-reads] could not keep a failed read:', error.message)
     return { documentId: doc.id, read, readAt }
   }
+  const keptAt = await unchangedReadAt(supabase, doc.id, read)
   const { error } = await supabase.from('printed_reads').upsert({
     document_id: doc.id,
     client_id: clientId,
@@ -106,10 +114,29 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     page_count: read.pageCount,
     statements: read.statements as unknown as never,
     issues: read.issues as unknown as never,
-    read_at: readAt,
+    read_at: keptAt ?? readAt,
   })
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
-  return { documentId: doc.id, read, readAt }
+  return { documentId: doc.id, read, readAt: keptAt ?? readAt }
+}
+
+/** The kept read's time when the new read prints exactly the same (an older reader version included); else null. */
+async function unchangedReadAt(supabase: ServerClient, documentId: string, read: PrintedRead): Promise<string | null> {
+  const { data, error } = await supabase.from('printed_reads').select('status, page_count, statements, issues, read_at').eq('document_id', documentId).maybeSingle()
+  if (error || !data) return null
+  const same =
+    data.status === read.status &&
+    (data.page_count ?? 0) === read.pageCount &&
+    canonical(data.statements) === canonical(read.statements) &&
+    canonical(data.issues) === canonical(read.issues)
+  return same ? data.read_at : null
+}
+
+/** JSON with object keys sorted: jsonb does not keep key order. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v,
+  )
 }
 
 export interface LoadedComparison {

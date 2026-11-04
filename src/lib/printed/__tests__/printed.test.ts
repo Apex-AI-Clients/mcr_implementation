@@ -152,6 +152,39 @@ describe('readStatements', () => {
     expect(checks.filter((c) => c.status !== 'ok')).toEqual([])
   })
 
+  it('reads "Profit / Loss from sale of assets" inside Other Income as a line, not a total', () => {
+    const R1 = [470]
+    const read = readStatements([
+      [
+        line([25, 120, 'Profit and Loss']),
+        line([25, 200, 'Example Trust']),
+        line([25, 200, 'For the year ended 30 June 2025']),
+        line([440, 470, '2025']),
+        line([25, 90, 'Trading Income']),
+        row(35, 'Sales', R1, '1,000.00'),
+        row(25, 'Total Trading Income', R1, '1,000.00'),
+        row(25, 'Gross Profit', R1, '1,000.00'),
+        line([25, 90, 'Other Income']),
+        row(35, 'Interest Income', R1, '50.00'),
+        row(35, 'Profit / Loss from sale of assets', R1, '200.00'),
+        row(35, 'Profit on disposal', R1, '25.00'),
+        row(25, 'Total Other Income', R1, '275.00'),
+        line([25, 90, 'Operating Expenses']),
+        row(35, 'Rent', R1, '300.00'),
+        row(25, 'Total Operating Expenses', R1, '300.00'),
+        row(25, 'Net Profit', R1, '975.00'),
+      ],
+    ])
+    expect(read.issues).toEqual([])
+    const rows = read.statements[0].rows.map((r) => [r.style, r.path.join(' > '), r.label])
+    expect(rows).toContainEqual(['line', 'Other Income', 'Profit / Loss from sale of assets'])
+    expect(rows).toContainEqual(['line', 'Other Income', 'Profit on disposal'])
+    expect(rows).toContainEqual(['subtotal', 'Other Income', 'Total Other Income'])
+    expect(rows).toContainEqual(['total', '', 'Gross Profit'])
+    expect(rows).toContainEqual(['total', '', 'Net Profit'])
+    expect(verifyStatements(read.statements).filter((c) => c.status !== 'ok')).toEqual([])
+  })
+
   it('reads indented sections, a statement continued overleaf, notes columns and running footers', () => {
     const R = [539]
     const page = (n: number, body: PdfLine[]) => [

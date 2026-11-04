@@ -14,6 +14,8 @@ import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
 import { columnTitle, comparisonCsv, formatPrinted } from '@/lib/printed/csv'
+import type { PossibleLine } from '@/lib/printed/autoMapping'
+import type { Meaning } from '@/lib/printed/meanings'
 import { printedHardChecks } from '@/lib/printed/review'
 import type { PrintedComparison } from '@/lib/printed/compare'
 
@@ -29,6 +31,8 @@ interface Props {
   /** The lines staff confirmed (mapping.ts), and the suggestions shown until they do. */
   mapping: MappingEntry[]
   suggestions: Suggestions
+  /** Lines that look like a key figure the dictionary did not match (autoMapping.ts). */
+  possible?: Partial<Record<Meaning, PossibleLine[]>>
   /** Showing the years printed only as a comparative column. */
   earlierYears?: boolean
   /** The AI summary is on (AI_SUMMARIES_ENABLED and a key): show its card. */
@@ -41,7 +45,7 @@ interface Props {
  * guessed; a printed total that does not add up shows Needs review and locks
  * the PDF and CSV until a staff member ticks that they checked it.
  */
-export function PrintedComparisonClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, earlierYears = false, aiSummaryEnabled = false }: Props) {
+export function PrintedComparisonClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, builtAt, initialFiguresChecked, mapping, suggestions, possible = {}, earlierYears = false, aiSummaryEnabled = false }: Props) {
   const router = useRouter()
   const [figuresChecked, setFiguresChecked] = useState<FiguresChecked | null>(initialFiguresChecked)
   const [selected, setSelected] = useState<SelectedFigure | null>(null)
@@ -129,7 +133,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
           {comparison.annualYears < 2 && (
             <p className="text-xs text-foreground/60">Only one financial year is on file so far: upload the earlier years to compare.</p>
           )}
-          <HeadlineTiles clientId={clientId} basePath={basePath} comparison={comparison} mapping={mapping} suggestions={suggestions} />
+          <HeadlineTiles clientId={clientId} basePath={basePath} comparison={comparison} mapping={mapping} suggestions={suggestions} possible={possible} />
           {aiSummaryEnabled && (
             <ComparisonSummaryCard
               clientId={clientId}

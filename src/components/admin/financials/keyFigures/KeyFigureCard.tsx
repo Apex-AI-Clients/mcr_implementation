@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCircle2, Pencil } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle2, Pencil, Wand2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { describeLine } from '@/lib/printed/picker'
@@ -10,6 +10,8 @@ import { MEANING, type Meaning } from '@/lib/printed/meanings'
 import type { ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { MappingSelection } from '@/lib/printed/mappingStore'
+import type { PossibleLine } from '@/lib/printed/autoMapping'
+import { formatPrinted } from '@/lib/printed/csv'
 import { KeyFigurePicker } from './KeyFigurePicker'
 import { YearValues, rowValues, totalsPerYear } from './YearValues'
 
@@ -53,6 +55,9 @@ export function keyFigureStatus(entries: MappingEntry[], suggestion: string[]): 
   return entries.length ? 'confirmed' : suggestion.length ? 'suggested' : 'not_found'
 }
 
+/** Auto-selected (autoMapping.ts), not chosen by staff: counts as confirmed, labelled "Auto-selected". */
+export const isAutoSelected = (entries: MappingEntry[]) => entries.length > 0 && entries.every((e) => !!e.autoRule)
+
 interface Props {
   clientId: string
   comparison: PrintedComparison
@@ -63,6 +68,8 @@ interface Props {
   suggestion: string[]
   /** The suggestion is Claude's, from the label only (labelSuggestions.ts), not the dictionary's. */
   aiSuggested?: boolean
+  /** Printed lines that look like this figure and were not matched: "Possible line — Use it?" (autoMapping.ts). */
+  possible?: PossibleLine[]
   /** Open with the picker showing (from a tile's "Suggested — check"). */
   choosing?: boolean
   onDone?: () => void
@@ -74,7 +81,7 @@ interface Props {
  * staff say "Yes, that's right" or choose another; then Confirmed, by whom
  * and when, with "Change".
  */
-export function KeyFigureCard({ clientId, comparison, meaning, entries, suggestion, aiSuggested = false, choosing = false, onDone }: Props) {
+export function KeyFigureCard({ clientId, comparison, meaning, entries, suggestion, aiSuggested = false, possible = [], choosing = false, onDone }: Props) {
   const info = MEANING[meaning]
   const { confirm, saving, error } = useConfirmKeyFigures(clientId)
   const [picking, setPicking] = useState(choosing)
@@ -85,6 +92,8 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
   const lines = keys.map((k) => rows.find((r) => r.key === k)).filter((r): r is ComparisonRow => !!r)
   const missing = keys.length - lines.length
   const confirmedBy = entries[0]
+  const auto = isAutoSelected(entries)
+  const rules = [...new Set(entries.map((e) => e.autoRule).filter((r): r is string => !!r))]
 
   async function save(answer: NonNullable<MappingSelection[Meaning]>) {
     if (await confirm({ [meaning]: answer })) {
@@ -105,13 +114,20 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
         </div>
         {/* The status stays top-right, beside the title, however long the explanation. */}
         <div className="shrink-0">
-          {status === 'confirmed' ? (
+          {status === 'confirmed' && auto ? (
+            <Badge variant="accent">
+              <Wand2 className="h-3 w-3" aria-hidden />
+              Auto-selected
+            </Badge>
+          ) : status === 'confirmed' ? (
             <Badge variant="success">
               <CheckCircle2 className="h-3 w-3" aria-hidden />
               Confirmed by {confirmedBy.confirmedBy}, {shortDate(confirmedBy.confirmedAt)}
             </Badge>
           ) : status === 'suggested' ? (
             <Badge variant="warning">{aiSuggested ? 'Suggested by AI' : 'Suggested'}</Badge>
+          ) : possible.length > 0 ? (
+            <Badge variant="warning">Check the possible line</Badge>
           ) : (
             <Badge variant="destructive">Not found</Badge>
           )}
@@ -120,7 +136,7 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
 
       <div className="mt-3 space-y-2">
         {nonePrinted ? (
-          <p className="text-xs text-foreground/70">The statements don&apos;t print this.</p>
+          <p className="text-xs text-foreground/70">{auto ? 'Not printed.' : "The statements don't print this."}</p>
         ) : lines.length === 0 ? (
           <p className="text-xs text-foreground/60">No printed line was matched. Choose the line, or say the statements don&apos;t print it.</p>
         ) : (
@@ -144,6 +160,31 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
           </div>
         )}
         {missing > 0 && <p className="text-xs text-warning">A chosen line is no longer printed. Choose again.</p>}
+        {auto && rules.length > 0 && (
+          <p className="text-[11px] text-foreground/55">
+            Auto-selected: {rules.join(' ')} Counts as confirmed; change it if it is wrong.
+          </p>
+        )}
+        {possible.map((p) => (
+          <div key={p.rowKey} className="flex flex-wrap items-center justify-between gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+            <p className="min-w-0">
+              <AlertCircle className="mr-1 inline h-3.5 w-3.5 text-warning" aria-hidden />
+              <span className="font-medium text-warning">Possible line:</span>{' '}
+              <span className="font-medium text-foreground">“{p.label}”</span>
+              {p.value !== null && (
+                <span className="tabular-nums text-foreground/70">
+                  {' '}
+                  ${formatPrinted(p.value)}
+                  {p.column ? ` (${p.column})` : ''}
+                </span>
+              )}
+              <span className="block text-[11px] text-foreground/55">{p.why}</span>
+            </p>
+            <Button size="sm" variant="ghost" loading={saving} disabled={saving} onClick={() => save({ rowKeys: [p.rowKey] })}>
+              Use it?
+            </Button>
+          </div>
+        ))}
         {status === 'suggested' && aiSuggested && (
           <p className="text-xs text-foreground/60">Suggested by Claude from the printed label and headings only. Check the figures before confirming.</p>
         )}
@@ -159,7 +200,7 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
           )}
           <Button size="sm" variant={status === 'confirmed' ? 'accent' : 'ghost'} onClick={() => setPicking(true)} disabled={saving}>
             {status === 'confirmed' && <Pencil className="h-3.5 w-3.5" aria-hidden />}
-            {status === 'confirmed' ? 'Change' : status === 'suggested' ? 'Choose another' : 'Choose the line'}
+            {status === 'confirmed' ? 'Change' : status === 'suggested' ? 'Choose another' : possible.length > 0 ? 'Choose the line, or say it is not printed' : 'Choose the line'}
           </Button>
         </div>
       )}

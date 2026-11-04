@@ -264,6 +264,7 @@ export type Database = {
           label: string | null
           meaning: string
           row_key: string
+          rule: string | null
         }
         Insert: {
           action: string
@@ -274,6 +275,7 @@ export type Database = {
           label?: string | null
           meaning: string
           row_key: string
+          rule?: string | null
         }
         Update: {
           action?: string
@@ -284,6 +286,7 @@ export type Database = {
           label?: string | null
           meaning?: string
           row_key?: string
+          rule?: string | null
         }
         Relationships: [
           {
@@ -297,6 +300,7 @@ export type Database = {
       }
       client_line_mappings: {
         Row: {
+          auto_rule: string | null
           client_id: string
           confirmed_at: string
           confirmed_by: string
@@ -308,6 +312,7 @@ export type Database = {
           statement: string | null
         }
         Insert: {
+          auto_rule?: string | null
           client_id: string
           confirmed_at?: string
           confirmed_by: string
@@ -319,6 +324,7 @@ export type Database = {
           statement?: string | null
         }
         Update: {
+          auto_rule?: string | null
           client_id?: string
           confirmed_at?: string
           confirmed_by?: string

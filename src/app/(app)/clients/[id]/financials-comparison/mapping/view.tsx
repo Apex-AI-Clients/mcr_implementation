@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping, loadMappingChanges, loadDirectorNames } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadMapping, loadMappingChanges, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { LineMappingClient } from './LineMappingClient'
@@ -22,12 +22,15 @@ export async function LineMappingView({ id, workspace }: ClientPageView) {
   const elsewhere = sharedPageRedirect(client, workspace, '/financials-comparison/mapping')
   if (elsewhere) redirect(elsewhere)
 
-  const [{ comparison }, mapping, changes, directors] = await Promise.all([
+  const [loaded, stored, names] = await Promise.all([
     loadPrintedComparison(supabase, id, { readMissing: true }),
     loadMapping(supabase, id),
-    loadMappingChanges(supabase, id),
-    loadDirectorNames(supabase, id),
+    loadRelatedNames(supabase, id),
   ])
+  // Every meaning staff have not confirmed is auto-selected (autoMapping.ts); the log follows it.
+  const { comparison } = loaded
+  const { mapping, possible } = await applyAutoMapping(supabase, id, loaded, stored, names)
+  const changes = await loadMappingChanges(supabase, id)
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
@@ -37,7 +40,8 @@ export async function LineMappingView({ id, workspace }: ClientPageView) {
         clientName={client.name}
         comparison={comparison}
         mapping={mapping}
-        suggestions={suggestMapping(comparison, { directors })}
+        suggestions={suggestMapping(comparison, names)}
+        possible={possible}
         changes={changes}
         aiEnabled={aiSummariesEnabled()}
       />

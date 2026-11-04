@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { directorLoanInput } from '@/lib/sbr/directorLoan'
 import { predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
@@ -38,7 +38,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
   // The reads run together (one after another, each waited a round trip to
   // the database); what is worked out from them is unchanged. A file that
   // belongs elsewhere is redirected once they are back.
-  const [{ data: client }, lodgement, printed, mapping, cached, imports, directors, readiness] = await Promise.all([
+  const [{ data: client }, lodgement, printed, stored, cached, imports, names, readiness] = await Promise.all([
     supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle(),
     supabase
       .from('lodgement_analyses')
@@ -58,7 +58,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // When the historical cases last changed: a saved prediction older than
     // that is stale (staleness.ts).
     supabase.from('sbr_case_imports').select('uploaded_at, undone_at, counts'),
-    loadDirectorNames(supabase, id),
+    loadRelatedNames(supabase, id),
     // What the prediction is waiting for, and its DPN factor (readiness.ts).
     loadReadiness(supabase, id),
   ])
@@ -82,7 +82,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
   ])
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
-  const financials = predictionFinancials(printed.comparison, mapping, { directors })
+  // Staff choices, and the auto-selections for the rest (autoMapping.ts).
+  const { mapping } = await applyAutoMapping(supabase, id, printed, stored, names)
+  const financials = predictionFinancials(printed.comparison, mapping, names)
   // The loan account figures the predict route uses (sbr/directorLoan.ts): gross by default.
   const loanInput = directorLoanInput(financials)
   const bsColumn = financials.balanceSheet?.column ?? null

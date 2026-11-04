@@ -1,6 +1,6 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadMapping, withAutoMapping } from '@/lib/printed/mappingStore'
 import { columnSourceLabel, resolveMeaning, type MappedLine, type MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedComparison } from '@/lib/printed/compare'
 import type { Meaning } from '@/lib/printed/meanings'
@@ -78,7 +78,7 @@ export function latestBalanceSheet(comparison: PrintedComparison, mapping: Mappi
 }
 
 export async function loadCvlContext(supabase: ServerClient, clientId: string): Promise<CvlContext> {
-  const [client, company, extract, accountant, comparison, mapping, atoAccounts, prediction, settings] = await Promise.all([
+  const [client, company, extract, accountant, comparison, stored, atoAccounts, prediction, settings] = await Promise.all([
     supabase.from('clients').select('name, email, phone').eq('id', clientId).single(),
     supabase.from('company_details').select('*').eq('client_id', clientId).maybeSingle(),
     supabase
@@ -97,6 +97,8 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
     supabase.from('sbr_outcome_predictions').select('creditors').eq('client_id', clientId).maybeSingle(),
     loadCvlSettings(supabase),
   ])
+  // Staff choices, and the auto-selections for the rest (printed/autoMapping.ts).
+  const { mapping } = await withAutoMapping(supabase, clientId, comparison, stored)
   const c = company.data
   return {
     clientId,
