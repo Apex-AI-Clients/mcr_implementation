@@ -1,22 +1,20 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { FileUp } from 'lucide-react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { formatDate } from '@/lib/utils'
-import { uploadAsicExtract } from '@/lib/asic/browser'
-import { ASIC_PDF_MIME } from '@/lib/asic/upload'
 import {
-  LIQUIDATOR_FIELDS,
-  MCR_COMPANY_FIELDS,
+  EA_FIELDS,
+  LODGEMENT_FIELDS,
   type CvlSettings,
   type SettingKey,
 } from '@/lib/cvl/settings'
 
 /**
- * The CVL settings: MCR's company details and the liquidator's, each saved on
- * its own. Blank items leave their boxes on the forms blank.
+ * The CVL settings: Form 509's lodgement details and Part A's External
+ * Administrator, each saved on its own. Blank items leave their boxes on
+ * the forms blank (the lodgement details go back to their starting values).
  */
 export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
   const [settings, setSettings] = useState(initial)
@@ -35,16 +33,16 @@ export function CvlSettingsClient({ initial }: { initial: CvlSettings }) {
 
   return (
     <div className="space-y-6">
-      <McrCompany settings={settings} save={save} />
       <TextGroup
-        settingKey="liquidator"
-        title="Liquidator details"
-        hint="Form 509 lodgement details and the Part A External Administrator box. Blank until given."
-        fields={LIQUIDATOR_FIELDS}
-        values={settings.liquidator}
+        settingKey="lodgement"
+        title="Form 509 lodgement details"
+        hint="Pre-filled on every Form 509 (who lodges it, and who ASIC should contact). Starts as on the Form 509 MCR lodges with; change and save to use other details. Clearing every box brings those back."
+        fields={LODGEMENT_FIELDS}
+        values={settings.lodgement}
         settings={settings}
         save={save}
       />
+      <ExternalAdministrator settings={settings} save={save} />
     </div>
   )
 }
@@ -129,7 +127,6 @@ function TextGroup<K extends string>({
   values,
   settings,
   save,
-  extra,
 }: {
   settingKey: SettingKey
   title: string
@@ -138,7 +135,6 @@ function TextGroup<K extends string>({
   values: Partial<Record<K, string>>
   settings: CvlSettings
   save: Save
-  extra?: (set: (v: Partial<Record<K, string>>) => void) => React.ReactNode
 }) {
   return (
     <Item
@@ -152,7 +148,6 @@ function TextGroup<K extends string>({
         const v = (value ?? {}) as Partial<Record<K, string>>
         return (
           <div className="space-y-3">
-            {extra?.((next) => set({ ...v, ...next }))}
             <div className="grid gap-3 sm:grid-cols-2">
               {fields.map(([k, label]) => (
                 <Input
@@ -174,50 +169,17 @@ function TextGroup<K extends string>({
   )
 }
 
-/** MCR's own company details, filled from MCR's ASIC extract (read here, never stored). */
-function McrCompany({ settings, save }: { settings: CvlSettings; save: Save }) {
-  const input = useRef<HTMLInputElement>(null)
-  const [read, setRead] = useState<{ status: 'idle' | 'reading' | 'failed'; message?: string }>({ status: 'idle' })
+/** Part A's External Administrator box, one field per box on the form, typed in. */
+function ExternalAdministrator({ settings, save }: { settings: CvlSettings; save: Save }) {
   return (
     <TextGroup
-      settingKey="mcr_company"
-      title="MCR company details"
-      hint="Form 509 lodgement details and the Part A External Administrator box. Filled from MCR's own ASIC extract, then checked."
-      fields={MCR_COMPANY_FIELDS}
-      values={settings.mcrCompany}
+      settingKey="external_administrator"
+      title="External Administrator (Form 507 Part A)"
+      hint="Pre-filled in the External Administrator box of every Part A, box for box. Blank until given."
+      fields={EA_FIELDS}
+      values={settings.externalAdministrator}
       settings={settings}
       save={save}
-      extra={(set) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={input}
-            type="file"
-            accept={ASIC_PDF_MIME}
-            className="sr-only"
-            aria-label="MCR's ASIC extract PDF"
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              if (!file) return
-              setRead({ status: 'reading' })
-              const result = await uploadAsicExtract(file)
-              if (!result.ok) {
-                setRead({ status: 'failed', message: result.message })
-                return
-              }
-              setRead({ status: 'idle' })
-              const x = result.extract
-              set({ companyName: x.companyName ?? '', acn: x.acn, address: x.registeredOffice ?? x.principalPlaceOfBusiness ?? '' })
-            }}
-          />
-          <Button type="button" size="sm" variant="accent" loading={read.status === 'reading'} onClick={() => input.current?.click()}>
-            <FileUp className="h-3.5 w-3.5" />
-            Fill from MCR&rsquo;s ASIC extract
-          </Button>
-          <span className="text-xs text-foreground/40">Read here only; the PDF is not kept.</span>
-          {read.status === 'failed' && <span className="text-xs text-destructive">{read.message}</span>}
-        </div>
-      )}
     />
   )
 }

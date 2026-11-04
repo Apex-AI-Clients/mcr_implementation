@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { creditorRows, prefillForm, subjectsFor } from '../prefill'
 import { splitAddress } from '../address'
-import { missingSettings, readCvlSettings, settingValue } from '../settings'
+import { LODGEMENT_DEFAULTS, missingSettings, readCvlSettings, settingValue } from '../settings'
 import { handwrittenKeys } from '@/lib/forms/registry'
 import { context } from './fixtures'
 
@@ -27,32 +27,33 @@ describe('splitAddress', () => {
 })
 
 describe('CVL settings', () => {
-  it('has no defaults, and nothing confirmed', () => {
+  it('has no External Administrator until given, and nothing confirmed', () => {
     const s = readCvlSettings([])
-    expect(s.mcrCompany).toEqual({})
-    expect(s.liquidator).toEqual({})
+    expect(s.externalAdministrator).toEqual({})
     expect(s.placements).toEqual({})
     expect(Object.values(s.confirmed).every((c) => c === false)).toBe(true)
-    expect(missingSettings(s)).toContain('Liquidator name')
+    expect(missingSettings(s)).toContain('External Administrator: Name of External Administrator')
+    // The extra address line and the number "if applicable" are not asked for.
+    expect(missingSettings(s).join(' ')).not.toMatch(/Address \(office|Liquidator number/)
   })
 
   it('reads stored values, and ignores what it does not know', () => {
     const at = '2026-10-29T00:00:00Z'
     const s = readCvlSettings([
-      { key: 'liquidator', value: { name: 'Alex Liquidator', phone: ' ', bogus: 'x' }, confirmed: true, updated_by: 'Casey', updated_at: at },
+      { key: 'external_administrator', value: { name: 'Alex Liquidator', phone: ' ', bogus: 'x' }, confirmed: true, updated_by: 'Casey', updated_at: at },
       { key: 'f509_place.super_payable', value: 'r3', confirmed: false, updated_by: 'Casey', updated_at: at },
       { key: 'f509_place.director_loan', value: 'r9', confirmed: false, updated_by: 'Casey', updated_at: at },
     ])
-    expect(s.liquidator).toEqual({ name: 'Alex Liquidator' })
-    expect(s.confirmed.liquidator).toBe(true)
+    expect(s.externalAdministrator).toEqual({ name: 'Alex Liquidator' })
+    expect(s.confirmed.external_administrator).toBe(true)
     expect(s.placements).toEqual({ super_payable: 'r3' })
   })
 
   it('checks a value against its setting', () => {
     expect(settingValue('f509_place.unsecured_creditors', 'r6')).toBe('r6')
     expect(() => settingValue('f509_place.unsecured_creditors', 'b_val')).toThrow()
-    expect(settingValue('liquidator', { name: ' A ', email: '' })).toEqual({ name: 'A' })
-    expect(settingValue('mcr_company', null)).toBeNull()
+    expect(settingValue('external_administrator', { name: ' A ', phone: '' })).toEqual({ name: 'A' })
+    expect(settingValue('external_administrator', null)).toBeNull()
   })
 })
 
@@ -73,11 +74,34 @@ describe('Form 509', () => {
     expect(p.fields.b_val.source.link).toEqual({ kind: 'pdf', documentId: 'doc-fy26', page: 2 })
   })
 
-  it('leaves MCR and liquidator details blank until set, and says so', () => {
+  it('always fills the lodgement details from the settings: their starting values until changed', () => {
     const p = prefillForm('509', 'company', context())
-    for (const key of ['contact_name', 'entity_name', 'entity_number', 'phone', 'email', 'postal_1']) expect(p.fields[key]).toBeUndefined()
-    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings: /)
+    const value = (k: string) => p.fields[k]?.value
+    expect(value('entity_name')).toBe(LODGEMENT_DEFAULTS.firm)
+    expect(value('contact_name')).toBe(LODGEMENT_DEFAULTS.contactName)
+    expect(value('phone')).toBe(LODGEMENT_DEFAULTS.phone)
+    expect(value('email')).toBe(LODGEMENT_DEFAULTS.email)
+    expect(value('postal_1')).toBe(LODGEMENT_DEFAULTS.postal1)
+    expect(value('postal_2')).toBe(LODGEMENT_DEFAULTS.postal2)
+    // Not on the form MCR lodges with: blank until set.
+    expect(p.fields.entity_number).toBeUndefined()
+    expect(p.fields.agent_number).toBeUndefined()
+    // Each says where it came from.
+    expect(p.fields.entity_name?.source.from.join(' ')).toMatch(/Form 509 lodgement details/)
+    // The liquidator and MCR company settings are not Form 509's: no warning about them here.
+    expect(p.warnings.join(' ')).not.toMatch(/Not set yet in CVL settings/)
     expect(p.fields.summary_date).toBeUndefined()
+  })
+
+  it('uses the lodgement details as changed on the settings page, and their starting values again once cleared', () => {
+    const row = (value: unknown) => ({ key: 'lodgement', value: value as never, confirmed: false, updated_by: 'staff', updated_at: '2026-11-04T00:00:00Z' })
+    const changed = prefillForm('509', 'company', context({ settings: readCvlSettings([row({ firm: 'Example Advisory', phone: '02 0000 0000' })]) }))
+    expect(changed.fields.entity_name?.value).toBe('Example Advisory')
+    expect(changed.fields.phone?.value).toBe('02 0000 0000')
+    // Saved without them: those boxes are blank, not the starting values.
+    expect(changed.fields.contact_name).toBeUndefined()
+    const cleared = prefillForm('509', 'company', context({ settings: readCvlSettings([row(null)]) }))
+    expect(cleared.fields.entity_name?.value).toBe(LODGEMENT_DEFAULTS.firm)
   })
 
   it('lists the amounts not placed beside the form, and places none without a setting', () => {
@@ -114,6 +138,44 @@ describe('Part A', () => {
     expect(value(p, 'a3_principal_postcode')).toBe('2000')
     expect(p.fields.company_name.source.link).toEqual({ kind: 'href', href: '/api/admin/clients/cl_1/asic-extract/ex-1?page=1', label: 'Open the ASIC extract at page 1' })
     expect(p.fields.company_name.source.from[1]).toBe('ASIC extract dated 23 September 2026.')
+  })
+
+  it('fills the External Administrator box, box for box, from its one setting', () => {
+    const ea = {
+      organisation: 'Example Insolvency Pty Ltd',
+      liquidatorNumber: '123456',
+      name: 'Alex Liquidator',
+      contact: 'Sam Contact',
+      phone: '02 0000 0000',
+      address: 'Level 1',
+      street: '10 Sample Street',
+      suburb: 'Sydney',
+      state: 'NSW',
+      postcode: '2000',
+    }
+    const settings = readCvlSettings([{ key: 'external_administrator', value: ea, confirmed: false, updated_by: 'staff', updated_at: '2026-11-04T00:00:00Z' }])
+    const p = prefillForm('507a', 'company', context({ settings }))
+    const boxes = {
+      ea_organisation: ea.organisation,
+      ea_liquidator_number: ea.liquidatorNumber,
+      ea_name: ea.name,
+      ea_contact: ea.contact,
+      ea_phone: ea.phone,
+      ea_address: ea.address,
+      ea_street: ea.street,
+      ea_suburb: ea.suburb,
+      ea_state: ea.state,
+      ea_postcode: ea.postcode,
+    }
+    for (const [key, expected] of Object.entries(boxes)) expect(value(p, key), key).toBe(expected)
+    expect(p.fields.ea_name.source.from.join(' ')).toMatch(/CVL settings: External Administrator/)
+    expect(p.warnings.join(' ')).not.toMatch(/Not set yet/)
+  })
+
+  it('leaves the External Administrator box blank until set, and says which boxes', () => {
+    const p = prefillForm('507a', 'company', context())
+    expect(p.fields.ea_name).toBeUndefined()
+    expect(p.warnings.join(' ')).toMatch(/Not set yet in CVL settings: External Administrator: Organisation/)
   })
 
   it('fills "commenced trading" with the registration date, saying it is the registration date', () => {

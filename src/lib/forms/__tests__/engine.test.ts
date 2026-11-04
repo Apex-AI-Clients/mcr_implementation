@@ -185,6 +185,19 @@ describe('fill', () => {
     const r = await fillOfficialForm('507a', { fields: { ea_role: 'trustee' } })
     expect(r.warnings).toEqual([expect.objectContaining({ key: 'ea_role' })])
   })
+
+  it('ticks every box chosen in a choice field, and warns only about the one with no box', async () => {
+    const size = async (ea_role: string) => (await fillOfficialForm('507a', { fields: { ea_role } })).pdf.length
+    const one = await fillOfficialForm('507a', { fields: { ea_role: 'cvl_liquidator' } })
+    const two = await fillOfficialForm('507a', { fields: { ea_role: 'cvl_liquidator,court_liquidator' } })
+    expect(one.warnings).toEqual([])
+    expect(two.warnings).toEqual([])
+    // A second tick is drawn: more on the page than with one.
+    expect(two.pdf.length).toBeGreaterThan(one.pdf.length)
+    expect(await size('court_liquidator,cvl_liquidator')).toBe(two.pdf.length)
+    const mixed = await fillOfficialForm('507a', { fields: { ea_role: 'cvl_liquidator,trustee' } })
+    expect(mixed.warnings).toEqual([expect.objectContaining({ key: 'ea_role', message: expect.stringContaining('"trustee"') })])
+  })
 })
 
 describe('overflow', () => {

@@ -4,6 +4,7 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { cleanAnswers, cleanEditedKeys, entryState, readDraft, toFormData } from '../drafts'
 import { entryMap } from '../entryMap'
 import { prefillForm } from '../prefill'
+import { readCvlSettings } from '../settings'
 import { formVersion, handwrittenKeys } from '@/lib/forms/registry'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { context } from './fixtures'
@@ -27,14 +28,28 @@ describe('entryState', () => {
     expect(s.editedKeys).toEqual([])
   })
 
-  it('takes the draft’s answer over the pre-filled one, blank included', () => {
+  it('takes the draft’s answer over the pre-filled one where it was typed in, blank included', () => {
     const draft = { fields: { b1_name: 'Jordan A. Sample', b1_phone: null, b2: 'yes' }, tables: {}, signedBy: null, editedKeys: ['b1_name', 'b1_phone', 'b2'] }
     const s = entryState(partB, prefillForm('507b', 'director:1', context()), draft)
     expect(s.fields.b1_name).toBe('Jordan A. Sample')
     expect(s.fields.b1_phone).toBeNull()
     expect(s.fields.b2).toBe('yes')
-    expect(s.signedBy).toBeNull()
+    // The name on the tables was never typed: it follows the pre-fill.
+    expect(s.signedBy).toBe('Jordan Sample')
     expect(s.editedKeys).toEqual(['b1_name', 'b1_phone', 'b2'])
+  })
+
+  it('fills a box never typed in from the pre-fill as it is now, though the draft was saved before (a CVL setting changed later)', () => {
+    // Saved while the External Administrator was not set: its boxes blank, none typed in.
+    const draft = { fields: { ea_name: null, ea_phone: null, ea_contact: 'Typed Contact' }, tables: {}, signedBy: null, editedKeys: ['ea_contact'] }
+    const settings = readCvlSettings([
+      { key: 'external_administrator', value: { name: 'Alex Liquidator', phone: '02 0000 0000', contact: 'Sam Contact' }, confirmed: false, updated_by: 'staff', updated_at: '2026-11-04T00:00:00Z' },
+    ])
+    const s = entryState(partA, prefillForm('507a', 'company', context({ settings })), draft)
+    expect(s.fields.ea_name).toBe('Alex Liquidator')
+    expect(s.fields.ea_phone).toBe('02 0000 0000')
+    // Typed in on the form: kept, over the setting.
+    expect(s.fields.ea_contact).toBe('Typed Contact')
   })
 
   it('never carries a handwritten field', () => {
@@ -78,14 +93,27 @@ describe('cleanAnswers', () => {
 })
 
 describe('entryMap', () => {
-  it('lists the questions in the form’s order and numbering, without page coordinates', () => {
+  it('lists the questions in the form’s order and numbering, without box geometry', () => {
     const m = entryMap(partA)
     expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['External Administrator', 'A2', 'A3', 'A4'])
     const role = m.sections[0].fields.find((f) => f.key === 'ea_role')!
     expect(role.type).toBe('choice')
-    expect(role.options).toContainEqual(['cvl_liquidator', 'Liquidator, creditors’ voluntary winding up s497(4) (507D)'])
+    // Asked and labelled in the form's own words (no "Type of appointment" on the form).
+    expect(role.label).toBe('Please tick appropriate box')
+    expect(role.options).toEqual([
+      ['receiver_manager', 'Receiver and Manager - s421A(1) 507G'],
+      ['managing_controller', 'Managing Controller of property - s421A(1) 507H'],
+      ['controller_director_report', 'Receiver, Receiver and Manager or Controller (Director Report) - s429(2)(b) 507F'],
+      ['court_liquidator', 'Liquidator/Provisional Liquidator appointed by the court - s475(1) 507C'],
+      ['cvl_liquidator', 'Liquidator – creditors’ voluntary winding up – s497(4) 507D'],
+      ['voluntary_administrator', 'Voluntary Administrator - s438B(2) 507K'],
+    ])
     expect(m.sections.find((s) => s.q === 'A9')!.fields.find((f) => f.key === 'a9_date')!.handwritten).toBe(true)
-    expect(JSON.stringify(m)).not.toMatch(/"x0"|"top"/)
+    // Only where each answer starts on its page (for the preview to follow), never the boxes themselves.
+    expect(JSON.stringify(m)).not.toMatch(/"x0"|"x1"|"bot"|"slashes"|"cells"/)
+    const name = m.sections.find((s) => s.q === 'A3')!.fields.find((f) => f.key === 'company_name')!
+    expect(name.page).toBe(3)
+    expect(name.top).toBeGreaterThan(0)
     expect(m.sections.find((s) => s.q === 'A7')!.tables[0]).toMatchObject({ id: 'A7', rowsPerPage: 6 })
   })
 })

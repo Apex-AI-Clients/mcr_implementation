@@ -27,27 +27,31 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
   const code = form as FormCode
   const supabase = getSupabaseServerClient()
 
-  const { data: client } = await supabase.from('clients').select('id, archived_at, workflow').eq('id', id).maybeSingle()
+  // Everything the page reads, all at once (one after another, each waited a
+  // round trip to the database). The drafts of this form for every subject
+  // come back together; the one for the subject shown is picked below, once
+  // the directors are known.
+  const [{ data: client }, { data: cvlCase }, ctx, { subject: asked = '' }, { data: draftRows }] = await Promise.all([
+    supabase.from('clients').select('id, archived_at, workflow').eq('id', id).maybeSingle(),
+    supabase.from('cvl_cases').select('id').eq('client_id', id).maybeSingle(),
+    loadCvlContext(supabase, id),
+    searchParams,
+    supabase
+      .from('cvl_form_answers')
+      .select('subject, answers, edited_keys, form_version, updated_by, updated_at, cvl_cases!inner(client_id)')
+      .eq('cvl_cases.client_id', id)
+      .eq('form_code', code),
+  ])
   if (!client) notFound()
   const elsewhere = sharedPageRedirect(client, 'cvl', `/forms/${code}`)
   // Forms are CVL only: an SBR file opens its client page, not an SBR form page.
   if (elsewhere) redirect(elsewhere.startsWith('/clients/') ? `/clients/${id}` : elsewhere)
-
-  const { data: cvlCase } = await supabase.from('cvl_cases').select('id').eq('client_id', id).maybeSingle()
   if (!cvlCase) notFound()
 
-  const ctx = await loadCvlContext(supabase, id)
   const subjects = subjectsFor(code, { directors: ctx.company?.directors.length ?? 0 })
-  const asked = (await searchParams).subject ?? ''
   const subject: Subject = isSubject(asked) && subjects.includes(asked) ? asked : subjects[0]
 
-  const { data: draftRow } = await supabase
-    .from('cvl_form_answers')
-    .select('answers, edited_keys, form_version, updated_by, updated_at')
-    .eq('case_id', cvlCase.id)
-    .eq('form_code', code)
-    .eq('subject', subject)
-    .maybeSingle()
+  const draftRow = (draftRows ?? []).find((r) => r.subject === subject) ?? null
   const draft = draftRow ? readDraft(draftRow.answers) : null
 
   // A draft written against an older version opens on that version's map.

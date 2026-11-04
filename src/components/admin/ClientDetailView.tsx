@@ -30,7 +30,6 @@ import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/
 import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
-import { loadDirectorRisk } from '@/lib/cvl/directorRiskStore'
 import { toCvlCase } from '@/lib/cvl/cases'
 import { clientBase, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
@@ -56,46 +55,32 @@ interface ClientDetailViewProps {
 export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   const supabase = getSupabaseServerClient()
 
-  const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
-  if (!client) notFound()
-  const workspace = workspaceOf(client)
-  // The CVL case, for a file in CVL: its status, and whether it was an SBR client.
-  const cvlCase =
-    workspace === 'cvl'
-      ? await supabase
-          .from('cvl_cases')
-          .select('*')
-          .eq('client_id', id)
-          .maybeSingle()
-          .then(({ data }) => (data ? toCvlCase(data) : null))
-      : null
-  // The CVL page's forms: which are drafted.
-  const cvlDrafts =
-    mode === 'cvl' && cvlCase
-      ? ((await supabase.from('cvl_form_answers').select('form_code, subject, updated_at, updated_by').eq('case_id', cvlCase.id)).data ?? [])
-      : []
-  // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
-  const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'
-
-  // Each page shows only files in its own state.
-  if (mode === 'active' && (client.archived_at || movedToCvl)) redirect(`/sbr/archive/${client.id}`)
-  if (mode !== 'archived' && !client.archived_at && workspace !== (mode === 'cvl' ? 'cvl' : 'sbr')) {
-    redirect(clientBase(client.id, workspace))
-  }
-  if (mode === 'cvl' && client.archived_at) redirect(`/sbr/archive/${client.id}`)
-  if (mode === 'archived' && !client.archived_at && !movedToCvl) redirect(clientBase(client.id, workspace))
   const archived = mode === 'archived'
-  const cvl = mode === 'cvl'
-  const base = clientBase(client.id, cvl ? 'cvl' : 'sbr')
 
+  // Everything the page reads, all at once: no read needs another's answer.
+  // (Read one after another, each waited a round trip to the database.) A
+  // file that turns out to belong on another page is redirected below; the
+  // reads are only thrown away then.
   const [
+    { data: client },
+    { data: caseRow },
+    { data: draftRows },
     { data: rawDocs },
     { data: rawAccountant },
     { data: rawCompany },
     originLeadId,
     comparisonJob,
     { data: noticeRows },
+    atoAccounts,
+    firstReadiness,
+    unanalysedAccounts,
   ] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', id).single(),
+    supabase.from('cvl_cases').select('*').eq('client_id', id).maybeSingle(),
+    // The CVL page's forms: which are drafted (found through the file's CVL case).
+    mode === 'cvl'
+      ? supabase.from('cvl_form_answers').select('form_code, subject, updated_at, cvl_cases!inner(client_id)').eq('cvl_cases.client_id', id)
+      : Promise.resolve({ data: [] as { form_code: string; subject: string; updated_at: string }[] }),
     supabase
       .from('documents')
       .select('*')
@@ -110,12 +95,33 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     // files cannot start one.
     archived ? null : findLiveComparisonJob(supabase, id).catch(() => null),
     supabase.from('director_penalty_notices').select('*').eq('client_id', id),
+    // Each ATO account's newest balance, and the total (atoAccount/store.ts).
+    loadAtoAccounts(supabase, id),
+    // What the prediction still needs. Archived files are read-only: no checklist.
+    archived ? null : loadReadiness(supabase, id),
+    // ATO account CSVs with no analysis yet: waiting work (see below).
+    archived ? false : hasUnanalysedAtoAccounts(supabase, id),
   ])
-  // Each ATO account's newest balance, and the total (atoAccount/store.ts).
-  const atoAccounts = await loadAtoAccounts(supabase, id)
+  if (!client) notFound()
+  const workspace = workspaceOf(client)
+  // The CVL case, for a file in CVL: its status, and whether it was an SBR client.
+  const cvlCase = workspace === 'cvl' && caseRow ? toCvlCase(caseRow) : null
+  const cvlDrafts = cvlCase ? (draftRows ?? []).map(({ form_code, subject, updated_at }) => ({ form_code, subject, updated_at })) : []
+  // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
+  const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'
+
+  // Each page shows only files in its own state.
+  if (mode === 'active' && (client.archived_at || movedToCvl)) redirect(`/sbr/archive/${client.id}`)
+  if (mode !== 'archived' && !client.archived_at && workspace !== (mode === 'cvl' ? 'cvl' : 'sbr')) {
+    redirect(clientBase(client.id, workspace))
+  }
+  if (mode === 'cvl' && client.archived_at) redirect(`/sbr/archive/${client.id}`)
+  if (mode === 'archived' && !client.archived_at && !movedToCvl) redirect(clientBase(client.id, workspace))
+  const cvl = mode === 'cvl'
+  const base = clientBase(client.id, cvl ? 'cvl' : 'sbr')
+
   let runningJob: { id: string; created_at: string } | null = comparisonJob
-  // What the prediction still needs. Archived files are read-only: no checklist.
-  let readiness = archived ? null : await loadReadiness(supabase, id)
+  let readiness = firstReadiness
   // Work waiting with nothing running (a file a run had no time left for, or
   // one uploaded before runs were automatic): start it now, in the background,
   // rather than leave it for someone to press Run now. Files already read are
@@ -123,7 +129,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   // retried here. Read again so the checklist shows it running.
   // ATO account CSVs with no analysis yet (uploaded before migration 0038, or
   // a run that ran out of time) count as waiting work too.
-  const unanalysedAccounts = await hasUnanalysedAtoAccounts(supabase, id)
   if (!archived && (readiness?.items.some((item) => item.status === 'not_started') || unanalysedAccounts)) {
     try {
       const { started, jobId } = await scheduleClientAnalysis(supabase, id, (task) => after(task))
@@ -194,11 +199,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
 
   // A CVL file has its own layout: status and next step first, then the forms.
   if (cvl && cvlCase) {
-    // The director's risk: never stops the page loading.
-    const risk = await loadDirectorRisk(supabase, id, { dpn, atoAccounts }).catch((err) => {
-      console.error('[cvl page] director risk failed', err instanceof Error ? err.name : 'unknown')
-      return null
-    })
     return (
       <CvlDetailLayout
         client={{ id: client.id, name: client.name, email: client.email, phone: client.phone }}
@@ -211,7 +211,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         dpn={dpn}
         atoAccounts={atoAccounts}
         runningJob={runningJob}
-        risk={risk}
       />
     )
   }

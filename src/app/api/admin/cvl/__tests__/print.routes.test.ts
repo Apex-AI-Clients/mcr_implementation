@@ -74,6 +74,7 @@ const json = (url: string, body: unknown) => new NextRequest(url, { method: 'POS
 const text = async (res: Response) => (await extractText(await getDocumentProxy(new Uint8Array(await res.arrayBuffer())), { mergePages: true })).text
 
 beforeEach(() => {
+  vi.mocked(loadCvlContext).mockClear()
   vi.mocked(requireStaffUser).mockResolvedValue({ id: 's1', email: 'casey@example.com', user_metadata: { full_name: 'Casey Staff' } } as never)
   vi.mocked(loadCvlContext).mockResolvedValue(context())
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -95,6 +96,18 @@ describe('preview', () => {
     expect(insert).not.toHaveBeenCalled()
   })
 
+  it('downloads a form as a file named for the form and the director, saving nothing', async () => {
+    const { upload, insert } = mockDb()
+    const res = await preview(new NextRequest('http://localhost/api/admin/cvl/case-1/preview?form=507b&subject=director:2&download=1'), PARAMS)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toMatch(/^attachment; filename="[a-z0-9-]+-casey-example\.pdf"$/)
+    expect(upload).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
+    // Without it, the preview opens in the browser as before.
+    const inline = await preview(new NextRequest('http://localhost/api/admin/cvl/case-1/preview?form=509&subject=company'), PARAMS)
+    expect(inline.headers.get('content-disposition')).toMatch(/^inline;/)
+  })
+
   it('answers 404 for a director the file does not have', async () => {
     mockDb()
     expect((await preview(new NextRequest('http://localhost/api/admin/cvl/case-1/preview?form=507b&subject=director:5'), PARAMS)).status).toBe(404)
@@ -111,6 +124,8 @@ describe('preview', () => {
       PARAMS,
     )
     expect(res.status).toBe(200)
+    // Only the answers sent are filled: the client file is not read (a light request).
+    expect(loadCvlContext).not.toHaveBeenCalled()
     const t = await text(res)
     expect(t).toContain('Typed On Screen')
     expect(t).not.toContain('hunter2')

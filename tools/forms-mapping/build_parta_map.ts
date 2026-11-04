@@ -86,7 +86,7 @@ text('ea_phone', EA, 'Phone number during business hours', P, 'b5')
 text('ea_address', EA, 'Address', P, 'b6')
 address('ea', EA, P, 'b7', 'b8', 172.32, 246.58)
 fields.push({
-  key: 'ea_role', q: EA, label: 'Type of appointment', type: 'choice', page: P,
+  key: 'ea_role', q: EA, label: 'Please tick appropriate box', type: 'choice', page: P,
   options: {
     receiver_manager: box(P, 'c9'),
     managing_controller: box(P, 'c11'),

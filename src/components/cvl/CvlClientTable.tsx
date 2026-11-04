@@ -5,6 +5,7 @@ import { formatDate } from '@/lib/utils'
 import { CVL_ORIGIN_LABELS, CVL_STATUS_LABELS, type CvlStatus } from '@/lib/cvl/cases'
 import type { CvlListPage } from '@/lib/cvl/listing'
 import { CvlDeleteButton } from './CvlDeleteButton'
+import { CvlRowCheckbox, CvlSelectAll, CvlSelectionProvider } from './CvlBulkDelete'
 
 const STATUS_VARIANT: Record<CvlStatus, 'muted' | 'warning' | 'success'> = {
   draft: 'muted',
@@ -22,7 +23,7 @@ interface CvlClientTableProps {
   rowHref: (clientId: string) => string
   /** "Moved to CVL": show when and by whom, instead of status. */
   moved?: boolean
-  /** A Delete on each row (the CVL client list; never the SBR Archive's "Moved to CVL"). */
+  /** A Delete on each row, and ticking several to delete together (the CVL client list; never the SBR Archive's "Moved to CVL"). */
   deletable?: boolean
   empty: string
 }
@@ -57,20 +58,31 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
           {list.query ? 'No CVL clients match that search.' : empty}
         </div>
       ) : (
+        <Selectable on={deletable} rows={list.rows.map((r) => ({ id: r.clientId, name: r.name }))}>
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/8 text-left text-xs text-foreground/50">
+                {deletable && (
+                  <th className="w-10 px-4 py-3">
+                    <CvlSelectAll />
+                  </th>
+                )}
                 <th className="px-4 py-3 font-medium">Client</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'Moved to CVL' : 'Status'}</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'By' : 'Came from'}</th>
-                <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Opened'}</th>
+                <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Became CVL client'}</th>
                 {deletable && <th className="w-12 px-4 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody>
               {list.rows.map((r) => (
                 <tr key={r.caseId} className="border-b border-white/8 last:border-0 hover:bg-surface/60">
+                  {deletable && (
+                    <td className="px-4 py-3">
+                      <CvlRowCheckbox id={r.clientId} name={r.name} />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <Link href={rowHref(r.clientId)} className="font-medium text-foreground hover:text-accent">
                       {r.name}
@@ -89,11 +101,6 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                     <>
                       <td className="px-4 py-3">
                         <Badge variant={STATUS_VARIANT[r.status]}>{CVL_STATUS_LABELS[r.status]}</Badge>
-                        {r.status === 'printed' && r.printedAt ? (
-                          <span className="ml-2 text-xs tabular-nums text-foreground/50">{formatDate(r.printedAt)}</span>
-                        ) : r.status === 'forms_prepared' && r.formsPreparedAt ? (
-                          <span className="ml-2 text-xs tabular-nums text-foreground/50">{formatDate(r.formsPreparedAt)}</span>
-                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-foreground/70">{CVL_ORIGIN_LABELS[r.origin]}</td>
                       <td className="px-4 py-3 tabular-nums text-foreground/70">{formatDate(r.createdAt)}</td>
@@ -109,6 +116,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
             </tbody>
           </table>
         </div>
+        </Selectable>
       )}
 
       {pages > 1 && (
@@ -124,4 +132,9 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
       )}
     </div>
   )
+}
+
+/** The selection (and its "Delete selected" bar) around the table, when rows can be deleted. */
+function Selectable({ on, rows, children }: { on: boolean; rows: { id: string; name: string }[]; children: React.ReactNode }) {
+  return on ? <CvlSelectionProvider rows={rows}>{children}</CvlSelectionProvider> : <>{children}</>
 }

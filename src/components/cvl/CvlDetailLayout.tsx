@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Eye, FileText, Gavel, Landmark, Pencil, Printer, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
@@ -7,9 +7,7 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { CvlDeleteButton } from './CvlDeleteButton'
-import { DirectorRiskPanel } from './DirectorRiskPanel'
-import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
-import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
+import { FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
 import { formatPhone } from '@/lib/leads/format'
@@ -24,15 +22,13 @@ interface CvlDetailLayoutProps {
   client: { id: string; name: string; email: string; phone: string | null }
   originLeadId: string | null
   cvlCase: CvlCase
-  drafts: { form_code: string; subject: string; updated_at: string; updated_by: string }[]
+  drafts: { form_code: string; subject: string; updated_at: string }[]
   company: CompanyDetails | null
   accountant: AccountantDetails | null
   documents: DocumentRecord[]
   dpn: DpnPanelData
   atoAccounts: AtoAccountsOverview
   runningJob: { id: string; created_at: string } | null
-  /** The director's personal risk; null when it could not be worked out. */
-  risk: DirectorRiskData | null
 }
 
 interface Analysis {
@@ -55,18 +51,12 @@ const formatAcn = (acn: string | null) => {
   return d.length === 9 ? d.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : acn || null
 }
 
-/** "1 Aug 2022" from ASIC's "20220801"; a year alone as it is. */
-const versionLabel = (v: string) => {
-  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(v)
-  return m ? formatDate(`${m[1]}-${m[2]}-${m[3]}`) : v
-}
-
 /**
  * A CVL client file, laid out for the job: where it stands and what to do
  * next first, then the ASIC forms (one Part B per director), the company and
  * its directors at a glance, and the documents and analyses the forms draw on.
  */
-export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob, risk }: CvlDetailLayoutProps) {
+export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob }: CvlDetailLayoutProps) {
   const base = `/cvl/${client.id}`
   const directors = company?.directors ?? []
   const forms = FORM_CODES.flatMap((code) =>
@@ -147,14 +137,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:bg-primary"
           >
             <Pencil className="h-3.5 w-3.5" />
-            Edit details
-          </Link>
-          <Link
-            href={`${base}/print`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Preview and print
+            Edit client details
           </Link>
         </div>
       </div>
@@ -191,8 +174,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       </p>
                       <p className="text-xs text-foreground/40">
                         <span className="sr-only">{f.title}. </span>
-                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)} by ${f.draft.updated_by}` : 'Not opened yet'} · ASIC version{' '}
-                        {versionLabel(CURRENT_VERSION[f.code])}
+                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)}` : 'Not opened yet'}
                       </p>
                     </div>
                   </div>
@@ -210,6 +192,14 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
                     >
                       <Eye className="h-3.5 w-3.5" /> Preview
+                    </a>
+                    <a
+                      href={`/api/admin/cvl/${cvlCase.id}/preview?form=${f.code}&subject=${encodeURIComponent(f.subject)}&download=1`}
+                      download
+                      aria-label={`Download ${f.short} — ${f.who}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download
                     </a>
                   </div>
                 </li>
@@ -319,7 +309,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                 ))}
               </ul>
             ) : (
-              <p className="text-xs italic text-foreground/40">No directors on file: add them in Edit details. Each gets their own Part B.</p>
+              <p className="text-xs italic text-foreground/40">No directors on file: add them in Edit client details. Each gets their own Part B.</p>
             )}
           </Card>
 
@@ -354,13 +344,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
           )}
         </aside>
       </div>
-
-      {/* Last, full width: the director's personal risk. */}
-      {risk && (
-        <div className="mt-6">
-          <DirectorRiskPanel clientId={client.id} risk={risk} />
-        </div>
-      )}
     </div>
   )
 }

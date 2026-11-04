@@ -17,18 +17,6 @@ vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: ()
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
 vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
-// The director's risk reads the statements and ATO accounts: its own tests cover it.
-vi.mock('@/lib/cvl/directorRiskStore', () => ({
-  loadDirectorRisk: vi.fn(async () => ({
-    issued: [],
-    potential: [],
-    activityStatement: null,
-    sgAccounts: [],
-    loans: [],
-    totalAtoDebt: null,
-    accounts: [],
-  })),
-}))
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
@@ -97,12 +85,18 @@ const COMPANY = {
   company_details_source: 'asic_pdf_edited',
 }
 
-function mockDb(client: Record<string, unknown>, company: Record<string, unknown> | null, cvlCase: Record<string, unknown> | null = null) {
+function mockDb(
+  client: Record<string, unknown>,
+  company: Record<string, unknown> | null,
+  cvlCase: Record<string, unknown> | null = null,
+  drafts: Record<string, unknown>[] = [],
+) {
   const rows: Record<string, unknown> = {
     cvl_cases: cvlCase,
     clients: client,
     company_details: company,
     accountant_details: null,
+    cvl_form_answers: drafts,
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => {
@@ -113,6 +107,8 @@ function mockDb(client: Record<string, unknown>, company: Record<string, unknown
         order: () => Promise.resolve(result),
         single: () => Promise.resolve(result),
         maybeSingle: () => Promise.resolve(result),
+        // A query awaited straight after its filters (no single/order).
+        then: (resolve: (r: typeof result) => unknown) => resolve(result),
       }
       return chain
     },
@@ -331,11 +327,21 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.queryByRole('button', { name: /Mark printed/ })).toBeNull()
   })
 
+  it('shows which forms have a saved draft (read together with the rest of the page)', async () => {
+    mockDb(IN_CVL, COMPANY, CASE, [{ form_code: '509', subject: 'company', updated_at: '2026-11-03T02:00:00Z', cvl_cases: { client_id: 'cl_1' } }])
+    render(await CvlClientPage(PARAMS))
+    const links = screen.getAllByRole('link', { name: /Fill in|Continue/ })
+    expect(links[0].textContent?.trim()).toBe('Continue')
+    expect(links[0].getAttribute('href')).toBe('/cvl/cl_1/forms/509?subject=company')
+    expect(links.slice(1).every((l) => l.textContent?.trim() === 'Fill in')).toBe(true)
+    expect(screen.getByText(/^Draft saved/)).toBeTruthy()
+  })
+
   it('shows the CVL page: the forms per director, the analyses as tiles inside CVL, no status bar', async () => {
     mockDb(IN_CVL, COMPANY, CASE)
     render(await CvlClientPage(PARAMS))
     expect(screen.getByRole('heading', { level: 1, name: 'Dean Whitlock' })).toBeTruthy()
-    // The status (Draft, Forms prepared, Printed) lives on the print page, not here.
+    // No status controls on this page.
     expect(screen.queryByRole('button', { name: 'Mark printed' })).toBeNull()
     // Form 509 and Part A for the company, a Part B for each director, each to fill in or preview.
     const fillIn = screen.getAllByRole('link', { name: /Fill in/ }).map((l) => l.getAttribute('href'))
@@ -348,24 +354,28 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getByText('— Jane Sample')).toBeTruthy()
     expect(screen.getByText('— Raj Example')).toBeTruthy()
     expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
-    expect(screen.getByRole('link', { name: /Preview and print/ }).getAttribute('href')).toBe('/cvl/cl_1/print')
+    // Each form's line says only where it stands: no ASIC version, no who saved it.
+    expect(screen.queryByText(/ASIC version/)).toBeNull()
+    expect(screen.queryByText(/Draft saved .* by /)).toBeNull()
+    // No print page: each form downloads from its own row.
+    expect(screen.queryByRole('link', { name: /Preview and print/ })).toBeNull()
+    const download = screen.getByRole('link', { name: 'Download Form 507 Part B — Raj Example' })
+    expect(download.getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=507b&subject=director%3A2&download=1')
+    expect(download.hasAttribute('download')).toBe(true)
     // Each analysis says what is on file.
     const tile = within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ })
     expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
     expect(screen.queryByRole('link', { name: /Form 509 values/ })).toBeNull()
-    // Each form: Fill in first, then Preview.
+    // Each form: Fill in first, then Preview, then Download.
     const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
-    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview'])
+    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview', 'Download'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
-    // The director's personal risk comes last, after the documents and the side column.
-    const risk = screen.getByText('Director’s personal risk')
-    for (const before of ['Documents', 'Accountant']) {
-      expect(screen.getByText(before).compareDocumentPosition(risk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
+    // No director's personal risk section on this page.
+    expect(screen.queryByText('Director’s personal risk')).toBeNull()
     expect(within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',
     )
-    expect(screen.getByRole('link', { name: /Edit details/ }).getAttribute('href')).toBe('/cvl/cl_1/intake')
+    expect(screen.getByRole('link', { name: 'Edit client details' }).getAttribute('href')).toBe('/cvl/cl_1/intake')
     expect(screen.getByRole('link', { name: /CVL clients/ }).getAttribute('href')).toBe('/cvl')
     // SBR only: no prediction checklist, no Continue intake.
     expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()

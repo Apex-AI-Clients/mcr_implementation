@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { formatCents } from './view'
+import { pdfSafe } from '@/lib/pdfSafe'
 import {
   DPN_EXPORT_SOURCE_NOTE,
   DPN_TABLE_LEGEND,
@@ -13,6 +14,8 @@ import {
 } from './summary'
 import type { DpnExportMeta } from './exportCsv'
 import type { DpnAmounts } from './types'
+
+export { pdfSafe }
 
 /**
  * The DPN summary as a PDF of real text (pdf-lib), not a screenshot: it can
@@ -33,21 +36,6 @@ const INK = rgb(0.1, 0.1, 0.12)
 const MUTED = rgb(0.4, 0.4, 0.45)
 const RULE = rgb(0.78, 0.78, 0.8)
 const RED = rgb(0.75, 0.15, 0.12)
-
-/**
- * The standard fonts encode WinAnsi only. A name with characters outside it
- * would make pdf-lib throw, so accents are folded and anything else becomes
- * "?" rather than failing the export.
- */
-export function pdfSafe(text: string): string {
-  return text
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, '-')
-    .replace(/[^\x20-\x7e\xa0-\xff]/g, '?')
-}
 
 function wrap(font: PDFFont, text: string, size: number, width: number): string[] {
   const lines: string[] = []

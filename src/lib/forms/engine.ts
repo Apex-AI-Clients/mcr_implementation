@@ -1,5 +1,24 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib'
-import { pdfSafe } from '@/lib/dpn/exportPdf'
+import { pdfSafe } from '@/lib/pdfSafe'
+import { choiceValues } from './choice'
+import {
+  CELL_LINE_SIZE,
+  CELL_WRAP_SIZE,
+  DEFAULT_SIZE,
+  MIN_SIZE,
+  cellMaxW,
+  cutToFit,
+  fitSize as fitSizeBy,
+  formatAmount,
+  moneyCellSpot,
+  moneySpot,
+  toNumber,
+  layoutCell,
+  layoutLines,
+  lineMaxW,
+  textMaxW,
+  type Measure,
+} from './fit'
 import type {
   Box,
   FieldValue,
@@ -29,8 +48,6 @@ import type {
  * warning names the question, so staff can attach an annexure.
  */
 
-const DEFAULT_SIZE = 9
-const MIN_SIZE = 6
 /** Centre of the checkbox square inside a ❑/❏ glyph box. */
 const CHECK_DX = 5.5
 const CHECK_DY = 7.2
@@ -41,24 +58,8 @@ const CAP_MIDDLE = 0.359
 
 /* ---------------- value helpers ---------------- */
 
-export function toNumber(v: FieldValue): number | null {
-  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null
-  const n = Number(String(v).replace(/[$,\s]/g, ''))
-  return Number.isFinite(n) ? n : null
-}
-
-/** "12,345.60"; whole dollars without cents; negatives in brackets. */
-export function formatAmount(v: FieldValue, currency = false): string {
-  const n = toNumber(v)
-  if (n === null) return String(v ?? '').trim()
-  const cents = Math.round(n * 100) % 100 !== 0
-  const s = Math.abs(n).toLocaleString('en-AU', {
-    minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: 2,
-  })
-  const withSign = currency ? `$${s}` : s
-  return n < 0 ? `(${withSign})` : withSign
-}
+// Amounts are read and formatted in ./fit (pure), so the entry screen measures them the same way.
+export { formatAmount, toNumber }
 
 /** "2026-10-27" | "27/10/2026" → { d: "27", m: "10", y: "2026" }. */
 export function dateParts(v: FieldValue): { d: string; m: string; y: string } | null {
@@ -104,25 +105,11 @@ function y(pen: Pen, top: number): number {
   return pen.page.getHeight() - top
 }
 
-function fitSize(font: PDFFont, text: string, maxW: number, size: number, min: number): number {
-  let s = size
-  while (s > min && font.widthOfTextAtSize(text, s) > maxW) s -= 0.25
-  return s
-}
+/** The font's own measure: the shared fitting rules (./fit) run on it. */
+const measureOf = (font: PDFFont): Measure => (text, size) => font.widthOfTextAtSize(text, size)
 
-function wrap(font: PDFFont, text: string, maxW: number, size: number): string[] {
-  const lines: string[] = []
-  let cur = ''
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    const next = cur ? `${cur} ${word}` : word
-    if (font.widthOfTextAtSize(next, size) <= maxW || !cur) cur = next
-    else {
-      lines.push(cur)
-      cur = word
-    }
-  }
-  if (cur) lines.push(cur)
-  return lines
+function fitSize(font: PDFFont, text: string, maxW: number, size: number, min: number): number {
+  return fitSizeBy(measureOf(font), text, maxW, size, min)
 }
 
 interface TextOpts {
@@ -138,8 +125,7 @@ function drawText(pen: Pen, raw: string, x: number, baseline: number, maxW: numb
   const str = pdfSafe(raw.replace(/\s+/g, ' ').trim())
   if (!str) return true
   const size = fitSize(pen.font, str, maxW, opts.size ?? DEFAULT_SIZE, opts.min ?? MIN_SIZE)
-  let out = str
-  while (out.length > 1 && pen.font.widthOfTextAtSize(out, size) > maxW + 0.5) out = out.slice(0, -1)
+  const out = cutToFit(measureOf(pen.font), str, size, maxW)
   const cut = out !== str
   if (cut && opts.warn) {
     pen.warnings.push({
@@ -201,10 +187,6 @@ function drawDate(pen: Pen, spot: DateSpot, value: FieldValue, warn?: { key: str
   drawText(pen, year, y0, spot.baseline, room, { size, min: MIN_SIZE })
 }
 
-function textWidthBox(f: Box, pad: number) {
-  return f.x1 - f.x0 - pad - 3
-}
-
 function drawField(pen: Pen, f: FormField, value: FieldValue) {
   const warn = { key: f.key, q: f.q }
   switch (f.type) {
@@ -214,9 +196,12 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       return
     }
     case 'choice': {
-      const box = typeof value === 'string' ? f.options[value] : undefined
-      if (box) tickGlyph(pen, box)
-      else if (!isBlank(value)) pen.warnings.push({ ...warn, message: `"${value}" is not one of the boxes for ${f.q}.` })
+      // One box or several ("a,b"): each named box is ticked.
+      for (const option of choiceValues(value)) {
+        const box = f.options[option]
+        if (box) tickGlyph(pen, box)
+        else pen.warnings.push({ ...warn, message: `"${option}" is not one of the boxes for ${f.q}.` })
+      }
       return
     }
     case 'text': {
@@ -227,15 +212,14 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
         const p = dateParts(value)
         if (p) text = `${p.d}/${p.m}/${p.y}`
       }
-      drawText(pen, text, f.x0 + pad, f.bot - 4.5, textWidthBox(f, pad), { size: f.size, align: f.align, warn })
+      drawText(pen, text, f.x0 + pad, f.bot - 4.5, textMaxW(f, pad), { size: f.size, align: f.align, warn })
       return
     }
     case 'money': {
       if (isBlank(value)) return
-      const text = formatAmount(value, f.currency)
-      if (f.startX !== undefined) drawText(pen, text, f.startX, f.bot - 4.5, f.x1 - f.startX - 4, { warn })
-      // A column with no printed "$" (Form 509): from the left, under the column's own heading.
-      else drawText(pen, text, f.x0 + 5, f.bot - 4.5, f.x1 - f.x0 - 9, { size: 8.5, warn })
+      // After the printed "$"; a column with none (Form 509): from the left, under the column's own heading.
+      const spot = moneySpot(f)
+      drawText(pen, formatAmount(value, f.currency), spot.x, f.bot - 4.5, spot.maxW, { size: spot.size, warn })
       return
     }
     case 'date':
@@ -257,24 +241,21 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
     case 'lines': {
       if (isBlank(value)) return
       const first = f.lines[0]
-      const maxW = first.x1 - first.x0 - 8
       const text = pdfSafe(String(value))
-      let size = DEFAULT_SIZE
-      let lines = wrap(pen.font, text, maxW, size)
-      while (lines.length > f.lines.length && size > 7) {
-        size -= 0.5
-        lines = wrap(pen.font, text, maxW, size)
-      }
+      const { lines, size } = layoutLines(measureOf(pen.font), text, lineMaxW(first), f.lines.length)
+      // A word too long for its line is cut too: one warning either way.
+      const cutWord = lines
+        .slice(0, f.lines.length)
+        .map((ln, i) => drawText(pen, ln, f.lines[i].x0 + 4, f.lines[i].bot - 4.5, lineMaxW(f.lines[i]), { size, min: size }))
+        .includes(false)
       if (lines.length > f.lines.length) {
         pen.warnings.push({
           ...warn,
           message: 'Answer is longer than the lines on the form; the rest was cut off: attach an annexure.',
         })
+      } else if (cutWord) {
+        pen.warnings.push({ ...warn, message: 'Answer is too long for the box and was cut off: attach an annexure.' })
       }
-      lines.slice(0, f.lines.length).forEach((ln, i) => {
-        const L = f.lines[i]
-        drawText(pen, ln, L.x0 + 4, L.bot - 4.5, L.x1 - L.x0 - 8, { size, min: size })
-      })
       return
     }
   }
@@ -321,29 +302,33 @@ function drawCell(pen: Pen, t: FormTable, col: FormTable['columns'][number], top
   if (isBlank(v)) return
   const warn = { key: `${t.id}.${col.key}`, q: t.q }
   if (col.type === 'money') {
-    const x = (col.dollar ?? col.x0) + 9
-    drawText(pen, formatAmount(v), x, bot - 5, col.x1 - x - 4, { size: 8.5, warn })
+    const spot = moneyCellSpot(col)
+    drawText(pen, formatAmount(v), spot.x, bot - 5, spot.maxW, { size: spot.size, warn })
     return
   }
   if (col.type === 'date' && col.slashes) {
     drawDate(pen, { s1: col.slashes[0], s2: col.slashes[1], baseline: bot - 5, x1: col.x1, size: 8 }, v, warn)
     return
   }
-  const maxW = col.x1 - col.x0 - 7
+  const maxW = cellMaxW(col)
   const str = pdfSafe(String(v).replace(/\s+/g, ' ').trim())
-  const size = 7
-  const all = wrap(pen.font, str, maxW, size)
+  const size = CELL_WRAP_SIZE
+  const cell = layoutCell(measureOf(pen.font), str, maxW)
+  const all = cell.lines
   // One line on the row's baseline (shrunk a little if need be, and centred
   // with the other cells): short entries, and single words such as an email
   // address that can't wrap. Cut and flagged if it still doesn't fit.
-  if (pen.font.widthOfTextAtSize(str, 8) <= maxW || all.length < 2) {
-    drawText(pen, str, col.x0 + 3.5, bot - 5.5, maxW, { size: 8, warn })
+  if (cell.single) {
+    drawText(pen, str, col.x0 + 3.5, bot - 5.5, maxW, { size: CELL_LINE_SIZE, warn })
     return
   }
   // Two lines in the cell, smaller; past that the rest is cut and flagged.
   const lh = Math.min(8.2, (bot - top - 4) / 2)
-  all.slice(0, 2).forEach((ln, k) => drawText(pen, ln, col.x0 + 3.5, top + 2 + lh * (k + 1) - 0.8, maxW, { size, min: 5.5 }))
-  if (all.length > 2) {
+  const cutWord = all
+    .slice(0, 2)
+    .map((ln, k) => drawText(pen, ln, col.x0 + 3.5, top + 2 + lh * (k + 1) - 0.8, maxW, { size, min: 5.5 }))
+    .includes(false)
+  if (all.length > 2 || cutWord) {
     pen.warnings.push({ ...warn, message: `A ${col.label} entry in table ${t.id} is too long for its cell: attach an annexure.` })
   }
 }

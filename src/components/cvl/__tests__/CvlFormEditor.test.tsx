@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, within, cleanup, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
@@ -36,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 function renderPartB() {
@@ -84,6 +85,39 @@ describe('CvlFormEditor', () => {
     expect(within(name.parentElement as HTMLElement).queryByRole('button')).toBeNull()
   })
 
+  it('warns while typing when an answer is too long for its box, without stopping the typing', async () => {
+    const user = userEvent.setup({ delay: null })
+    renderPartB()
+    const name = within(section('B1')).getByLabelText('Name') as HTMLInputElement
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+    await user.clear(name)
+    const long = 'Lorem ipsum dolor sit amet '.repeat(8).trim()
+    await user.click(name)
+    await user.paste(long)
+    // Everything typed is kept; the box says how much won't print.
+    expect(name.value).toBe(long)
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    const warning = document.getElementById(name.getAttribute('aria-describedby')!)!
+    expect(warning.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\.$/)
+    // Short enough again: the warning goes.
+    await user.clear(name)
+    await user.type(name, 'Jordan Sample')
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+    expect(within(section('B1')).queryByText(/Too long for/)).toBeNull()
+  })
+
+  it('warns on a table cell too long for its cell', async () => {
+    const user = userEvent.setup({ delay: null })
+    renderPartB()
+    const b21 = section('B21')
+    await user.click(within(b21).getByRole('button', { name: 'Add a row' }))
+    const how = within(b21).getByLabelText('How did creditor ask for payment, row 1') as HTMLInputElement
+    await user.click(how)
+    await user.paste('Lorem ipsum dolor sit amet '.repeat(10).trim())
+    expect(how.getAttribute('aria-invalid')).toBe('true')
+    expect(within(b21).getByText(/^Too long for its cell: the last \d+ characters won’t print\.$/)).toBeTruthy()
+  })
+
   it('leaves handwritten answers off the screen: nothing to type, nothing saved', () => {
     renderPartB()
     const b6 = section('B6')
@@ -94,12 +128,33 @@ describe('CvlFormEditor', () => {
     expect(within(b6).getByLabelText('Provider name')).toBeTruthy()
   })
 
+  it('asks Part A’s appointment as tick boxes in the form’s words, any number ticked, 507D ticked to start', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    const map = formVersion('507a').map
+    const prefill = prefillForm('507a', 'company', context())
+    render(
+      <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="company" subjects={[{ subject: 'company', label: 'Company' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />,
+    )
+    const group = screen.getByRole('group', { name: /Please tick appropriate box/ })
+    const boxes = within(group).getAllByRole('checkbox') as HTMLInputElement[]
+    expect(boxes).toHaveLength(6)
+    expect(boxes.filter((b) => b.checked).map((b) => b.closest('label')?.textContent)).toEqual(['Liquidator – creditors’ voluntary winding up – s497(4) 507D'])
+    await user.click(within(group).getByLabelText('Liquidator/Provisional Liquidator appointed by the court - s475(1) 507C'))
+    expect(boxes.filter((b) => b.checked)).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+    const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT') as unknown as [string, RequestInit]
+    // Both, in the form's order.
+    expect(JSON.parse(init.body as string).answers.fields.ea_role).toBe('court_liquidator,cvl_liquidator')
+  })
+
   it('saves the answers and the changed keys', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()
     renderPartB()
     await user.click(within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes'))
-    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
     const [url, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT') as unknown as [string, RequestInit]
     expect(url).toBe('/api/admin/cvl/case-1/forms/507b')
@@ -111,7 +166,7 @@ describe('CvlFormEditor', () => {
     expect(await screen.findByRole('button', { name: /Saved/ })).toBeTruthy()
   })
 
-  it('fills the preview again with the answers on screen, with no warning boxes on the screen', async () => {
+  it('fills the preview once on opening, with no warning boxes on the screen', async () => {
     const fetchMock = stubFetch()
     renderPartB()
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/admin/cvl/case-1/preview')).toBe(true), { timeout: 3000 })
@@ -123,6 +178,141 @@ describe('CvlFormEditor', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
     expect(screen.queryByText('B14: Answer is longer than the lines')).toBeNull()
     expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
+  })
+
+  it('never fills the preview while typing; Save saves and updates it, and says when it is out of date', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    renderPartB()
+    const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
+    await waitFor(() => expect(previews()).toHaveLength(1))
+
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    await new Promise((r) => setTimeout(r, 900))
+    expect(previews()).toHaveLength(1)
+    expect(screen.getByText(/Preview not updated/)).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(previews()).toHaveLength(2))
+    const order = fetchMock.mock.calls.map(([u, i]) => (i?.method === 'PUT' ? 'save' : String(u).endsWith('/preview') ? 'preview' : 'other'))
+    expect(order.slice(-2)).toEqual(['save', 'preview'])
+    expect(JSON.parse(previews()[1][1]!.body as string).answers.fields.b1_name).toBe('Jordan Sample Jr')
+    await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
+  })
+
+  /** A stand-in IntersectionObserver: each observer's callback and what it watches. */
+  function stubObservers() {
+    const observers: { report: (entries: { isIntersecting: boolean; target: Element; boundingClientRect: { top: number } }[]) => void; watched: Element[] }[] = []
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        watched: Element[] = []
+        constructor(report: (typeof observers)[number]['report']) {
+          observers.push({ report, watched: this.watched })
+        }
+        observe(el: Element) {
+          this.watched.push(el)
+        }
+        disconnect() {}
+      },
+    )
+    const watching = (pred: (el: Element) => boolean) => observers.find((o) => o.watched.some(pred))!
+    return { watching }
+  }
+
+  it('turns the preview to the page of the question scrolled to on the left', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+    // Every question section is watched.
+    expect(sections.watched.length).toBe(document.querySelectorAll('section[data-page]').length)
+    const b24 = section('B24')
+    expect(b24.dataset.page).toBe('8')
+    act(() => sections.report([{ isIntersecting: true, target: b24, boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+  })
+
+  it('shows the first question’s page from its very top when the questions are back at the top', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+    act(() => sections.report([{ isIntersecting: true, target: section('B24'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+
+    const top = watching((el) => el.hasAttribute('data-form-top'))
+    const marker = document.querySelector('[data-form-top]')!
+    act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
+    // Part B's first question is on page 2 (page 1 is ASIC's cover): that page, from its top.
+    expect(marker.getAttribute('data-page')).toBe('2')
+    await waitFor(() => expect(screen.getByRole('button', { name: '2' }).getAttribute('aria-current')).toBe('page'))
+    // The first section starts its page from the top, not at its own first box.
+    expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
+  })
+
+  it('shows the whole page to start; Fit width makes it column-wide, scrolling without a scrollbar, and is remembered', async () => {
+    const user = userEvent.setup({ delay: null })
+    stubFetch()
+    window.localStorage.removeItem('cvl.preview.fit')
+    renderPartB()
+    const canvas = await screen.findByLabelText(/^Page 1 of /)
+    const sheet = canvas.parentElement as HTMLElement
+    // Whole page: the page is never taller than the window, and nothing is hidden below.
+    expect(sheet.dataset.fit).toBe('page')
+    expect(canvas.className).toContain('max-h-[calc(100vh-9rem)]')
+    expect(sheet.className).not.toContain('overflow-y-auto')
+    expect(screen.getByRole('button', { name: 'Whole page' }).getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(screen.getByRole('button', { name: 'Fit width' }))
+    expect(sheet.dataset.fit).toBe('width')
+    expect(canvas.className).toContain('w-full')
+    expect(sheet.className).toContain('overflow-y-auto')
+    expect(sheet.className).toContain('[scrollbar-width:none]')
+    expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
+    expect(window.localStorage.getItem('cvl.preview.fit')).toBe('width')
+    window.localStorage.removeItem('cvl.preview.fit')
+  })
+
+  it('shows Part B’s question numbers as they are', () => {
+    renderPartB()
+    const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
+    expect(links.slice(0, 4)).toEqual(['Company', 'B1', 'B2', 'B3'])
+  })
+
+  it('saves with Ctrl+S', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    renderPartB()
+    await user.click(within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes'))
+    await user.keyboard('{Control>}s{/Control}')
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+  })
+
+  it('downloads the PDF of the answers on screen, filling it again first when they have changed', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    const clicked: string[] = []
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag)
+      if (tag === 'a') el.addEventListener('click', (e) => { e.preventDefault(); clicked.push((el as HTMLAnchorElement).download) })
+      return el
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:preview')
+    URL.revokeObjectURL = vi.fn()
+    renderPartB()
+    const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
+    await waitFor(() => expect(previews()).toHaveLength(1))
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    await user.click(screen.getByRole('button', { name: /Download/ }))
+    await waitFor(() => expect(clicked).toHaveLength(1))
+    // Filled again for the changed answers before it was saved as a file; nothing saved as a draft.
+    expect(previews()).toHaveLength(2)
+    expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(false)
+    expect(clicked[0]).toMatch(/^report-on-company-activities-and-property-part-b-jordan-sample.pdf$/)
   })
 })
 
@@ -140,6 +330,12 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const [valuation, erv] = [...(cell.parentElement as HTMLElement).querySelectorAll('td')].slice(1)
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
+
+  it('names Form 509’s sections in full in the jump links, never as initials', () => {
+    render509()
+    const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
+    expect(links).toEqual(['Lodgement details', 'Company details', 'Summary of assets', 'Summary of liabilities', 'Signature'])
+  })
 
   it('puts each amount under the column it prints in, in the form’s own words', () => {
     render509()
@@ -182,5 +378,19 @@ describe('CvlFormEditor — Form 509 summary', () => {
     for (const input of [row('1(b) Sundry debtors').valuation!, row('6 Creditors (unsecured) amount claimed').erv!]) {
       expect(input.className).not.toMatch(/text-right/)
     }
+  })
+
+  it('warns when an amount box holds more than fits (text prints as typed)', async () => {
+    const user = userEvent.setup({ delay: null })
+    render509()
+    const erv = row('1(a) Interest in land').erv!
+    await user.click(erv)
+    await user.paste('d cmsd cm dsmv dsmv m vjnd vnjkdnvjkdnvjkdfvjdfnvjndfjvnjdvnjdfnvjdnvjdnvjnfvjndfvjndfjvnfdjvnjfkdnvj')
+    expect(erv.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(erv.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\./)
+    // An ordinary amount fits.
+    await user.clear(erv)
+    await user.type(erv, '1250000')
+    expect(erv.getAttribute('aria-invalid')).toBeNull()
   })
 })

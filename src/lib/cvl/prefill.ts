@@ -287,16 +287,17 @@ function candidates509(ctx: CvlContext): Candidate[] {
 }
 
 function prefill509(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m } = ctx.settings
-  put(out, 'contact_name', l.contactName, settingSource('Who ASIC should contact.'))
-  put(out, 'agent_number', l.agentNumber, settingSource('ASIC registered agent number.'))
-  put(out, 'entity_name', m.companyName, settingSource('MCR’s company name (from MCR’s ASIC extract).'))
-  put(out, 'entity_number', m.acn, settingSource('MCR’s ACN (from MCR’s ASIC extract).'))
-  put(out, 'phone', l.phone, settingSource('Liquidator’s phone.'))
-  put(out, 'postal_1', l.postal1, settingSource('Liquidator’s postal address.'))
-  put(out, 'postal_2', l.postal2, settingSource('Liquidator’s postal address.'))
-  put(out, 'email', l.email, settingSource('Liquidator’s email.'))
-  settingsWarnings(out, ctx)
+  // Lodgement details: always the CVL settings' "Form 509 lodgement details"
+  // (as on the Form 509 MCR lodges with, until changed there).
+  const lodge = ctx.settings.lodgement
+  put(out, 'entity_name', lodge.firm, settingSource('Firm/organisation (CVL settings: Form 509 lodgement details).'))
+  put(out, 'entity_number', lodge.entityNumber, settingSource('ACN/ABN (CVL settings: Form 509 lodgement details).'))
+  put(out, 'agent_number', lodge.agentNumber, settingSource('ASIC registered agent number (CVL settings: Form 509 lodgement details).'))
+  put(out, 'contact_name', lodge.contactName, settingSource('Who ASIC should contact (CVL settings: Form 509 lodgement details).'))
+  put(out, 'phone', lodge.phone, settingSource('Telephone number (CVL settings: Form 509 lodgement details).'))
+  put(out, 'email', lodge.email, settingSource('Email address (CVL settings: Form 509 lodgement details).'))
+  put(out, 'postal_1', lodge.postal1, settingSource('Postal address (CVL settings: Form 509 lodgement details).'))
+  put(out, 'postal_2', lodge.postal2, settingSource('Postal address (CVL settings: Form 509 lodgement details).'))
 
   putCompany(out, ctx, 'company_name', 'company_acn')
   out.notes.summary_date = 'Pick the date the summary is made up to.'
@@ -334,24 +335,23 @@ function prefill509(ctx: CvlContext, out: Prefill) {
 /* ---------------- Part A ---------------- */
 
 function prefillPartA(ctx: CvlContext, out: Prefill) {
-  const { liquidator: l, mcrCompany: m } = ctx.settings
-  put(out, 'ea_organisation', m.companyName, settingSource('MCR’s company name.'))
-  put(out, 'ea_liquidator_number', l.number, settingSource('Registered liquidator number.'))
-  put(out, 'ea_name', l.name, settingSource('Liquidator.'))
-  put(out, 'ea_contact', l.contactName, settingSource('Contact person.'))
-  put(out, 'ea_phone', l.phone, settingSource('Liquidator’s phone.'))
-  const office = splitAddress(m.address)
-  if (office) {
-    const source = settingSource('MCR’s address (from MCR’s ASIC extract).')
-    put(out, 'ea_street', office.street, source)
-    put(out, 'ea_suburb', office.suburb, source)
-    put(out, 'ea_state', office.state, source)
-    put(out, 'ea_postcode', office.postcode, source)
-  }
+  // The External Administrator box: box for box from the CVL settings' "External Administrator".
+  const ea = ctx.settings.externalAdministrator
+  const from = (what: string) => settingSource(`${what} (CVL settings: External Administrator).`)
+  put(out, 'ea_organisation', ea.organisation, from('Organisation'))
+  put(out, 'ea_liquidator_number', ea.liquidatorNumber, from('ASIC Registered Liquidator number'))
+  put(out, 'ea_name', ea.name, from('Name of External Administrator'))
+  put(out, 'ea_contact', ea.contact, from('Contact person'))
+  put(out, 'ea_phone', ea.phone, from('Phone number'))
+  put(out, 'ea_address', ea.address, from('Address'))
+  put(out, 'ea_street', ea.street, from('Street/Unit number and name'))
+  put(out, 'ea_suburb', ea.suburb, from('Suburb/City'))
+  put(out, 'ea_state', ea.state, from('State/Territory'))
+  put(out, 'ea_postcode', ea.postcode, from('Postcode'))
   settingsWarnings(out, ctx)
   out.fields.ea_role = {
     value: 'cvl_liquidator',
-    source: { from: ['Type of appointment.', 'A CVL: liquidator in a creditors’ voluntary winding up, s497(4).'] },
+    source: { from: ['Please tick appropriate box.', 'A CVL: Liquidator – creditors’ voluntary winding up – s497(4) 507D.'] },
   }
 
   putCompany(out, ctx, 'company_name', 'company_acn')

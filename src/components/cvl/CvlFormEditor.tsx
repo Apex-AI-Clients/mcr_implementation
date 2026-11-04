@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, ExternalLink, Loader2, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
 import type { FieldValue, TableRow } from '@/lib/forms/types'
+import { overflowOf, type Room } from '@/lib/forms/fit'
+import { choiceValue, choiceValues } from '@/lib/forms/choice'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
 import type { Candidate, Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
@@ -29,8 +31,6 @@ interface CvlFormEditorProps {
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const blank = (v: FieldValue) => v === null || v === undefined || v === ''
 
-/** How long after the last keystroke the preview is filled again. */
-const PREVIEW_DELAY_MS = 600
 
 /**
  * One ASIC form's entry screen: the questions on the left, in the form's own
@@ -51,8 +51,31 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // The template page being edited: the preview turns to it.
-  const [editingPage, setEditingPage] = useState<number | null>(null)
+  const [spot, setSpot] = useState<Spot | null>(null)
   const dirty = !same(state, savedState)
+  const answersOf = (st: EntryState) => JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy })
+  // What the preview shows: filled on opening, and again on Save (never while typing).
+  const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(initial), n: 0 }))
+  const stale = answersOf(state) !== previewRequest.answers
+  const refreshPreview = () => setPreviewRequest((r) => ({ answers: answersOf(state), n: r.n + 1 }))
+  // Each press of Download in the header; the preview saves its PDF as a file.
+  const [downloadTick, setDownloadTick] = useState(0)
+
+  // Ctrl+S / Cmd+S saves (and updates the preview), as in a document editor.
+  const saveRef = useRef<() => void>(() => {})
+  saveRef.current = () => {
+    if (!saving) void save()
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // A warning before leaving with changes not saved.
   useEffect(() => {
@@ -102,6 +125,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       if (!res.ok) throw new Error(data.error || 'Failed to save the draft')
       setSavedState(state)
       setSaved({ at: data.updatedAt, by: data.updatedBy, version: data.formVersion })
+      refreshPreview()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -133,8 +157,41 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   // The page of whatever is focused on the left, for the preview.
   function onFocusIn(e: React.FocusEvent<HTMLDivElement>) {
     const holder = (e.target as HTMLElement).closest('[data-page]') as HTMLElement | null
-    if (holder?.dataset.page) setEditingPage(Number(holder.dataset.page))
+    if (holder?.dataset.page) setSpot({ page: Number(holder.dataset.page), top: Number(holder.dataset.top ?? 0) })
   }
+
+  // Scrolling the questions: the section crossing a band near the top of the
+  // screen is the one shown on the right. The browser reports crossings
+  // (IntersectionObserver), so nothing runs while scrolling within a section.
+  const questions = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = questions.current
+    if (!root || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+        const el = hit?.target as HTMLElement | undefined
+        if (!el?.dataset.page) return
+        const next = { page: Number(el.dataset.page), top: Number(el.dataset.top ?? 0) }
+        setSpot((cur) => (cur && cur.page === next.page && cur.top === next.top ? cur : next))
+      },
+      { rootMargin: '-15% 0px -75% 0px' },
+    )
+    root.querySelectorAll('section[data-page]').forEach((el) => observer.observe(el))
+
+    // Back at the top of the questions: the first page, from its top.
+    const marker = root.querySelector<HTMLElement>('[data-form-top]')
+    const atTop = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting) || !marker?.dataset.page) return
+      const next = { page: Number(marker.dataset.page), top: 0 }
+      setSpot((cur) => (cur && cur.page === next.page && cur.top === 0 ? cur : next))
+    })
+    if (marker) atTop.observe(marker)
+    return () => {
+      observer.disconnect()
+      atTop.disconnect()
+    }
+  }, [map])
 
   return (
     <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6">
@@ -149,20 +206,17 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           <h1 className="text-xl font-semibold text-foreground">{map.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/cvl/${clientId}/print`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print page
-          </Link>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setDownloadTick((t) => t + 1)} title="Download the PDF of the answers on screen">
+            <Download className="h-3.5 w-3.5" />
+            Download
+          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
             <RotateCcw className="h-3.5 w-3.5" />
             Back to pre-filled
           </Button>
-          <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty}>
-            {dirty ? (
-              'Save draft'
+          <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty && !stale} title="Save the draft and update the preview (Ctrl+S)">
+            {dirty || stale ? (
+              'Save'
             ) : (
               <>
                 <Check className="h-3.5 w-3.5" /> Saved
@@ -195,15 +249,18 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The questions */}
-        <div className="min-w-0 space-y-3" onFocus={onFocusIn}>
+        <div ref={questions} className="min-w-0 space-y-3" onFocus={onFocusIn}>
+          {/* Marks the top of the questions, for the preview to show the first page from its top. */}
+          <div data-form-top="" data-page={sectionSpot(map.sections[0] ?? { q: '', text: '', fields: [], tables: [] }, true)['data-page'] ?? 1} aria-hidden="true" className="-mb-3 h-0" />
           <nav aria-label="Questions" className="flex flex-wrap gap-1">
             {map.sections.map((s) => (
               <a
                 key={s.q}
                 href={`#q-${s.q}`}
-                className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-foreground/50 hover:border-accent hover:text-accent"
+                // A question number (A3, B12) in the form's own style; a section name (Form 509) in full.
+                className={`rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-foreground/50 hover:border-accent hover:text-accent ${/^[A-Z]\d/.test(s.q) ? 'font-mono tabular-nums' : ''}`}
               >
-                {s.q.length > 6 ? s.q.split(' ').map((w) => w[0]).join('') : s.q}
+                {s.q}
               </a>
             ))}
           </nav>
@@ -226,8 +283,13 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             </section>
           )}
 
-          {map.sections.map((s) => (
-            <section key={s.q} className="scroll-mt-4 rounded-xl border border-border bg-card p-4" aria-labelledby={`q-${s.q}`}>
+          {map.sections.map((s, i) => (
+            <section
+              key={s.q}
+              className="scroll-mt-4 rounded-xl border border-border bg-card p-4"
+              aria-labelledby={`q-${s.q}`}
+              {...sectionSpot(s, i === 0)}
+            >
               <h2 id={`q-${s.q}`} className="mb-3 flex items-baseline gap-2.5 text-sm font-medium text-foreground">
                 <span className="min-w-[2.6em] font-mono font-semibold text-accent">{s.q}</span>{' '}
                 <span className="flex-1">{s.text}</span>
@@ -270,7 +332,18 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
         {/* The official page, as it will print */}
         <div className="min-w-0 space-y-4 lg:sticky lg:top-4">
-          <LivePreview caseId={caseId} code={map.code} subject={subject} state={state} editingPage={editingPage} title={map.title} />
+          <LivePreview
+            caseId={caseId}
+            code={map.code}
+            subject={subject}
+            request={previewRequest}
+            stale={stale}
+            onRefresh={refreshPreview}
+            downloadTick={downloadTick}
+            spot={spot}
+            title={map.title}
+            fileName={`${map.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}${subject === 'company' ? '' : `-${(subjects.find((x) => x.subject === subject)?.label ?? subject).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}`}.pdf`}
+          />
           {prefill.candidates.length > 0 && <Candidates candidates={prefill.candidates} />}
         </div>
       </div>
@@ -286,44 +359,108 @@ interface Filled {
   pageSources: number[]
 }
 
+/** Where the preview remembers whole page or fit width (this browser only). */
+const FIT_KEY = 'cvl.preview.fit'
+
+/** A place on the form: a template page, and how far down it (points). */
+interface Spot {
+  page: number
+  top: number
+}
+
 /**
- * The form as it will print with the answers on screen (not yet saved),
- * filled again on the server a moment after each change and drawn here page
- * by page. Turns to the page of whatever is being edited.
+ * Where a section starts on the form: its first answer or table that is on
+ * screen. The form's first section shows its page from the very top, so the
+ * form's heading is in view while the questions are scrolled to the top.
+ */
+function sectionSpot(s: EntryMap['sections'][number], first: boolean): { 'data-page'?: number; 'data-top'?: number } {
+  const shown = [...s.fields.filter((f) => !f.handwritten), ...s.tables]
+  const lead = shown[0]
+  if (!lead) return {}
+  if (first) return { 'data-page': lead.page, 'data-top': 0 }
+  const onLeadPage = shown.filter((x) => x.page === lead.page)
+  return { 'data-page': lead.page, 'data-top': Math.min(...onLeadPage.map((x) => x.top)) }
+}
+
+/** pdf.js's parsed document and its loading task (unpdf's build), as used here. */
+type PdfTask = ReturnType<typeof import('unpdf/pdfjs').getDocument>
+type PdfDoc = Awaited<PdfTask['promise']>
+
+/**
+ * The form as it will print, filled on the server when asked (on opening,
+ * on Save, before a download) and drawn here page by page; never while
+ * typing. Turns to the page of whatever is being edited, and says when the
+ * answers on screen have changed since.
  */
 function LivePreview({
   caseId,
   code,
   subject,
-  state,
-  editingPage,
+  request,
+  stale,
+  onRefresh,
+  downloadTick,
+  spot,
   title,
+  fileName,
 }: {
   caseId: string
   code: string
   subject: string
-  state: EntryState
-  editingPage: number | null
+  /** The answers to fill, and a counter that changes each time a new preview is asked for. */
+  request: { answers: string; n: number }
+  /** The answers on screen differ from the ones previewed. */
+  stale: boolean
+  /** Ask for a preview of the answers on screen (without saving). */
+  onRefresh: () => void
+  /** Changes each time Download is pressed (in the header). */
+  downloadTick: number
+  /** The page and place being looked at or edited on the left. */
+  spot: Spot | null
   title: string
+  fileName: string
 }) {
   const [filled, setFilled] = useState<Filled | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [doc, setDoc] = useState<PdfDoc | null>(null)
+  const [pendingDownload, setPendingDownload] = useState(false)
+  // The drawn page's height in points, to place a spot on it.
+  const [pageHeight, setPageHeight] = useState<number | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const request = useRef(0)
-  const answers = JSON.stringify({ fields: state.fields, tables: state.tables, signedBy: state.signedBy })
-
-  // Fill again shortly after the last change; an older answer never overwrites a newer one.
+  const sheet = useRef<HTMLDivElement>(null)
+  // The whole page in view (the default), or the page as wide as the column,
+  // scrolled to what is being edited. Remembered in this browser.
+  const [fit, setFit] = useState<'page' | 'width'>('page')
   useEffect(() => {
-    const id = ++request.current
-    const timer = setTimeout(async () => {
+    try {
+      if (window.localStorage.getItem(FIT_KEY) === 'width') setFit('width')
+    } catch {
+      // Storage blocked: the whole page.
+    }
+  }, [])
+  const chooseFit = (next: 'page' | 'width') => {
+    setFit(next)
+    try {
+      window.localStorage.setItem(FIT_KEY, next)
+    } catch {
+      // Not remembered: fine.
+    }
+  }
+  const latest = useRef(0)
+
+  // Fill once per request (on opening, on Save, before a download): never while typing.
+  useEffect(() => {
+    const id = ++latest.current
+    let cancelled = false
+    void (async () => {
       setLoading(true)
       try {
         const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ form: code, subject, answers: JSON.parse(answers) }),
+          body: JSON.stringify({ form: code, subject, answers: JSON.parse(request.answers) }),
         })
         if (!res.ok) throw new Error('The preview could not be filled.')
         const pdf = new Uint8Array(await res.arrayBuffer())
@@ -333,69 +470,121 @@ function LivePreview({
         } catch {
           // The PDF still shows; it just cannot turn to the page being edited.
         }
-        if (id !== request.current) return
+        if (cancelled || id !== latest.current) return
         setFilled({ pdf, pageSources })
         setError(null)
       } catch (err) {
-        if (id === request.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
+        if (!cancelled && id === latest.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
       } finally {
-        if (id === request.current) setLoading(false)
+        if (!cancelled && id === latest.current) setLoading(false)
       }
-    }, PREVIEW_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [caseId, code, subject, answers])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, code, subject, request])
+
+  // Parse each preview once; every page tab draws from the same parsed copy.
+  // The previous copy is let go when a new one arrives, and on leaving.
+  useEffect(() => {
+    if (!filled) return
+    let task: PdfTask | null = null
+    let cancelled = false
+    void (async () => {
+      try {
+        // pdf.js itself (unpdf's browser-ready build), loaded only when a preview is drawn.
+        const { getDocument } = await import('unpdf/pdfjs')
+        task = getDocument({ data: filled.pdf.slice(), useSystemFonts: true })
+        const parsed = await task.promise
+        if (!cancelled) setDoc(parsed)
+      } catch {
+        if (!cancelled) setError('The preview could not be drawn. Download the PDF instead.')
+      }
+    })()
+    return () => {
+      cancelled = true
+      setDoc(null)
+      void task?.destroy()
+    }
+  }, [filled])
 
   const pages = filled ? Math.max(1, filled.pageSources.length) : 0
 
   // Turn to the page of the field being edited.
   useEffect(() => {
-    if (!filled || editingPage === null) return
-    const at = filled.pageSources.indexOf(editingPage)
+    if (!filled || !spot) return
+    const at = filled.pageSources.indexOf(spot.page)
     if (at >= 0) setPage(at + 1)
-  }, [editingPage, filled])
+  }, [spot, filled])
 
   const shown = Math.min(page, pages || 1)
 
-  // Draw the page shown.
-  const draw = useCallback(async () => {
-    if (!filled || !canvas.current) return
-    try {
-      // pdf.js itself (unpdf's browser-ready build), loaded only when a preview is drawn.
-      const { getDocument } = await import('unpdf/pdfjs')
-      const task = getDocument({ data: filled.pdf.slice(), useSystemFonts: true })
-      const doc = await task.promise
-      const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
-      const scale = Math.min(2.2, (window.devicePixelRatio || 1) * 1.4)
-      const viewport = pdfPage.getViewport({ scale })
-      const off = document.createElement('canvas')
-      off.width = viewport.width
-      off.height = viewport.height
-      const ctx = off.getContext('2d')
-      if (!ctx) return
-      await pdfPage.render({ canvas: off, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
-      const target = canvas.current
-      if (!target) return
-      target.width = off.width
-      target.height = off.height
-      target.getContext('2d')?.drawImage(off, 0, 0)
-      await task.destroy()
-    } catch {
-      setError('The preview could not be drawn. Open the PDF instead.')
+  // Draw the page shown, from the parsed copy.
+  useEffect(() => {
+    if (!doc || !canvas.current) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
+        const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.25)
+        const viewport = pdfPage.getViewport({ scale })
+        setPageHeight(pdfPage.getViewport({ scale: 1 }).height)
+        const target = canvas.current
+        if (cancelled || !target) return
+        target.width = viewport.width
+        target.height = viewport.height
+        const ctx = target.getContext('2d')
+        if (!ctx) return
+        await pdfPage.render({ canvas: target, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
+        pdfPage.cleanup()
+      } catch {
+        if (!cancelled) setError('The preview could not be drawn. Download the PDF instead.')
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [filled, shown])
+  }, [doc, shown])
 
+  // Scroll the sheet to the spot on the page shown: where that section is printed.
   useEffect(() => {
-    void draw()
-  }, [draw])
+    const box = sheet.current
+    const target = canvas.current
+    if (!box || !target || !spot || !pageHeight || !filled) return
+    if (filled.pageSources[shown - 1] !== spot.page) return
+    const y = (spot.top / pageHeight) * target.clientHeight - 24
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    box.scrollTo?.({ top: Math.max(0, y), behavior: reduce ? 'auto' : 'smooth' })
+  }, [spot, pageHeight, shown, filled])
 
-  // A link to the same PDF, to open whole in a new tab.
-  const [href, setHref] = useState<string | null>(null)
-  useEffect(() => {
+  // Save the PDF of the answers on screen: filled again first when they have changed.
+  const saveFile = useCallback(() => {
     if (!filled) return
     const url = URL.createObjectURL(new Blob([filled.pdf.slice()], { type: 'application/pdf' }))
-    setHref(url)
-    return () => URL.revokeObjectURL(url)
-  }, [filled])
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, [filled, fileName])
+
+  // Download pressed: fill the answers on screen first when they have changed,
+  // then save the PDF as a file once it is ready.
+  const onRefreshRef = useRef(onRefresh)
+  onRefreshRef.current = onRefresh
+  const staleRef = useRef(stale)
+  staleRef.current = stale
+  useEffect(() => {
+    if (downloadTick === 0) return
+    setPendingDownload(true)
+    if (staleRef.current) onRefreshRef.current()
+  }, [downloadTick])
+
+  useEffect(() => {
+    if (!pendingDownload || loading || stale || !filled) return
+    setPendingDownload(false)
+    saveFile()
+  }, [pendingDownload, loading, stale, filled, saveFile])
 
   return (
     <section aria-label={`Preview of ${title}`} className="space-y-2">
@@ -412,22 +601,47 @@ function LivePreview({
             {n}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-2 text-foreground/40">
-          {loading && (
-            <span className="inline-flex items-center gap-1">
+        <span className="ml-auto flex items-center gap-2">
+          <span role="group" aria-label="Preview size" className="inline-flex overflow-hidden rounded border border-border">
+            {(
+              [
+                ['page', 'Whole page'],
+                ['width', 'Fit width'],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={fit === v}
+                onClick={() => chooseFit(v)}
+                className={`px-2 py-0.5 ${v === 'width' ? 'border-l border-border' : ''} ${fit === v ? 'bg-accent text-white' : 'bg-card text-foreground/60 hover:text-foreground'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+          {loading ? (
+            <span className="inline-flex items-center gap-1 text-foreground/40">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
             </span>
-          )}
-          {href && (
-            <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-              <ExternalLink className="h-3 w-3" aria-hidden="true" /> Open PDF
-            </a>
+          ) : (
+            stale && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-warning">Preview not updated: save to see your changes</span>
           )}
         </span>
       </div>
-      <div className="overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]">
+      <div
+        ref={sheet}
+        data-fit={fit}
+        className={`rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)] ${
+          fit === 'page' ? 'mx-auto w-fit max-w-full' : 'max-h-[calc(100vh-9rem)] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+        }`}
+      >
         {filled ? (
-          <canvas ref={canvas} className="block h-auto w-full" aria-label={`Page ${shown} of ${pages}`} />
+          <canvas
+            ref={canvas}
+            className={fit === 'page' ? 'block h-auto max-h-[calc(100vh-9rem)] w-auto max-w-full' : 'block h-auto w-full'}
+            aria-label={`Page ${shown} of ${pages}`}
+          />
         ) : (
           <div className="flex aspect-[1/1.414] items-center justify-center text-xs text-neutral-500">
             {error ?? 'Filling the form…'}
@@ -443,6 +657,27 @@ function LivePreview({
 
 const inputClass =
   'w-full rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-50'
+/** An answer longer than its box on the form: outlined in red. */
+const tooLongClass = 'border-destructive focus:border-destructive'
+
+/** How many characters of an answer won't print in its box (0 when it all fits, or the box has no limit). */
+function overflowFor(room: Room | undefined, value: FieldValue): number {
+  if (!room || value === null || value === undefined || typeof value === 'boolean') return 0
+  return overflowOf(room, String(value))
+}
+
+const chars = (n: number) => `${n} ${n === 1 ? 'character' : 'characters'}`
+
+/** The warning under an answer that won't all print. */
+function TooLong({ id, over, room }: { id: string; over: number; room: Room }) {
+  if (!over) return null
+  const where = room.kind === 'lines' ? `the ${room.lineWs.length} lines on the form` : 'its box on the form'
+  return (
+    <p id={id} className="mt-1 text-xs text-destructive">
+      Too long for {where}: the last {chars(over)} won’t print.
+    </p>
+  )
+}
 
 function FieldInput({
   field: f,
@@ -463,6 +698,11 @@ function FieldInput({
 
   // Written by hand on the printout (signature dates, B6 log-ins, B1 address): not on this screen.
   if (f.handwritten) return null
+
+  // Measured as the form prints it: shrunk to fit first, then whatever still doesn't fit is cut.
+  const over = overflowFor(f.room, value)
+  const fitId = `${id}-fit`
+  const fitProps = over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {}
 
   let control: React.ReactNode
   if (f.type === 'yesno') {
@@ -486,23 +726,38 @@ function FieldInput({
       </div>
     )
   } else if (f.type === 'choice') {
+    // As on the form: a tick box per option, any number ticked.
+    const order = f.options!.map(([v]) => v)
+    const ticked = choiceValues(value)
     control = (
-      <div className="flex items-center gap-1">
-        <select id={id} value={String(value ?? '')} onChange={(e) => onChange(e.target.value || null)} className={inputClass}>
-          <option value="">—</option>
+      <div className="flex items-start gap-1">
+        <div role="group" aria-labelledby={`${id}-label`} className="flex-1 space-y-1.5 rounded-lg border border-border bg-input-bg px-3 py-2.5">
           {f.options!.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
+            <label key={v} className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={ticked.includes(v)}
+                onChange={(e) => onChange(choiceValue(e.target.checked ? [...ticked, v] : ticked.filter((x) => x !== v), order))}
+                className="mt-0.5 accent-accent"
+              />
+              <span>{label}</span>
+            </label>
           ))}
-        </select>
+        </div>
         {info}
       </div>
     )
   } else if (f.type === 'lines') {
     control = (
       <div className="flex items-start gap-1">
-        <textarea id={id} rows={Math.min(8, Math.max(2, f.lines ?? 3))} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} className={inputClass} />
+        <textarea
+          id={id}
+          rows={Math.min(8, Math.max(2, f.lines ?? 3))}
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${inputClass} ${over ? tooLongClass : ''}`}
+          {...fitProps}
+        />
         {info}
       </div>
     )
@@ -522,7 +777,8 @@ function FieldInput({
               onChange(raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw)
             } else onChange(raw === '' ? null : raw)
           }}
-          className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''}`}
+          className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
+          {...fitProps}
         />
         {info}
       </div>
@@ -530,10 +786,14 @@ function FieldInput({
   }
 
   return (
-    <div className={f.type === 'yesno' ? 'sm:col-span-2' : wide ? 'sm:col-span-2' : ''} data-page={f.page}>
+    <div className={f.type === 'yesno' ? 'sm:col-span-2' : wide ? 'sm:col-span-2' : ''} data-page={f.page} data-top={f.top}>
       {f.type === 'yesno' ? (
         <p id={`${id}-label`} className="mb-1.5 text-sm text-foreground/80">
           {f.label}
+        </p>
+      ) : f.type === 'choice' ? (
+        <p id={`${id}-label`} className="mb-1.5 block text-xs font-medium text-muted">
+          {f.label} <span className="font-normal text-foreground/40">(tick all that apply)</span>
         </p>
       ) : (
         <label htmlFor={id} className="mb-1.5 block text-xs font-medium text-muted">
@@ -541,6 +801,7 @@ function FieldInput({
         </label>
       )}
       {control}
+      {f.room && <TooLong id={fitId} over={over} room={f.room} />}
       {note && <p className="mt-1 text-xs text-warning">{note}</p>}
     </div>
   )
@@ -591,8 +852,10 @@ function ColumnsTable({
     if (!f) return <span className="block px-2 text-xs text-foreground/25" aria-hidden="true">—</span>
     const source = sourceOf(f.key)
     const value = values[f.key]
+    const over = overflowFor(f.room, value)
+    const fitId = `f-${f.key}-fit`
     return (
-      <div data-page={f.page}>
+      <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
           <input
             id={`f-${f.key}`}
@@ -600,10 +863,12 @@ function ColumnsTable({
             inputMode="decimal"
             value={value === null || value === undefined ? '' : String(value)}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
-            className={`${inputClass} py-1.5 tabular-nums`}
+            className={`${inputClass} py-1.5 tabular-nums ${over ? tooLongClass : ''}`}
+            {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}
           />
           {source && <SourceButton source={source} label={f.label} />}
         </div>
+        {f.room && <TooLong id={fitId} over={over} room={f.room} />}
         {notes[f.key] && <p className="mt-1 text-xs text-warning">{notes[f.key]}</p>}
       </div>
     )
@@ -623,21 +888,7 @@ function ColumnsTable({
             <tr key={r.label} className="border-t border-white/5">
               <td className="py-1.5 pr-3 text-xs text-foreground/80">
                 {r.label}
-                {r.inline && (
-                  <span className="mt-1 flex items-center gap-1.5" data-page={r.inline.page}>
-                    <label htmlFor={`f-${r.inline.key}`} className="shrink-0 text-foreground/50">
-                      to:
-                    </label>
-                    <input
-                      id={`f-${r.inline.key}`}
-                      aria-label={r.inline.label}
-                      placeholder="Who holds the debenture or charge"
-                      value={values[r.inline.key] === null || values[r.inline.key] === undefined ? '' : String(values[r.inline.key])}
-                      onChange={(e) => onChange(r.inline!.key, e.target.value === '' ? null : e.target.value)}
-                      className={`${inputClass} py-1 text-xs`}
-                    />
-                  </span>
-                )}
+                {r.inline && <InlineAnswer field={r.inline} value={values[r.inline.key]} onChange={onChange} />}
               </td>
               <td className="py-1.5 pr-2">{cell(r.valuation)}</td>
               <td className="py-1.5">{cell(r.erv)}</td>
@@ -649,13 +900,38 @@ function ColumnsTable({
   )
 }
 
+/** Line 4's "…assets to:" blank, typed inside its row. */
+function InlineAnswer({ field: f, value, onChange }: { field: EntryField; value: FieldValue; onChange: (key: string, v: FieldValue) => void }) {
+  const id = `f-${f.key}`
+  const over = overflowFor(f.room, value)
+  return (
+    <span className="mt-1 block" data-page={f.page} data-top={f.top}>
+      <span className="flex items-center gap-1.5">
+        <label htmlFor={id} className="shrink-0 text-foreground/50">
+          to:
+        </label>
+        <input
+          id={id}
+          aria-label={f.label}
+          placeholder="Who holds the debenture or charge"
+          value={value === null || value === undefined ? '' : String(value)}
+          onChange={(e) => onChange(f.key, e.target.value === '' ? null : e.target.value)}
+          className={`${inputClass} py-1 text-xs ${over ? tooLongClass : ''}`}
+          {...(over ? { 'aria-invalid': true as const, 'aria-describedby': `${id}-fit` } : {})}
+        />
+      </span>
+      {f.room && <TooLong id={`${id}-fit`} over={over} room={f.room} />}
+    </span>
+  )
+}
+
 /* ---------------- appendix tables ---------------- */
 
 function TableInput({ table, rows, sources, onChange }: { table: EntryTable; rows: TableRow[]; sources: AmountSource[]; onChange: (rows: TableRow[]) => void }) {
   const set = (i: number, key: string, v: FieldValue) => onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   const pages = Math.max(1, Math.ceil(rows.length / table.rowsPerPage))
   return (
-    <div className="mt-4" data-page={table.page}>
+    <div className="mt-4" data-page={table.page} data-top={table.top}>
       <p className="mb-2 text-xs font-medium text-foreground/70">
         Table {table.id.replace('_', ' ')}: {table.title}
         <span className="ml-2 font-normal text-foreground/40">
@@ -678,8 +954,11 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className="border-b border-white/8 last:border-0">
-                {table.columns.map((c) => (
-                  <td key={c.key} className="px-1 py-1">
+                {table.columns.map((c) => {
+                  const over = overflowFor(c.room, r[c.key])
+                  const fitId = `t-${table.id}-${i}-${c.key}-fit`
+                  return (
+                    <td key={c.key} className="px-1 py-1 align-top">
                     {c.type === 'check' ? (
                       <input
                         type="checkbox"
@@ -699,11 +978,18 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                           const n = Number(raw.replace(/[$,\s]/g, ''))
                           set(i, c.key, raw === '' ? null : c.type === 'money' && Number.isFinite(n) ? n : raw)
                         }}
-                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''}`}
+                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
+                        {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}
                       />
                     )}
-                  </td>
-                ))}
+                    {over > 0 && (
+                      <p id={fitId} className="mt-0.5 px-1 text-[11px] leading-tight text-destructive">
+                        Too long for its cell: the last {chars(over)} won’t print.
+                      </p>
+                    )}
+                    </td>
+                  )
+                })}
                 <td className="px-1 py-1">
                   <span className="flex items-center gap-1">
                     {sources[i] && <SourceButton source={sources[i]} label={`Row ${i + 1}`} />}

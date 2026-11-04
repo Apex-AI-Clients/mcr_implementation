@@ -25,23 +25,30 @@ describe('caseJobs', () => {
     expect(jobs[2].answers.fields.b2).toBe('no')
   })
 
-  it('prints a saved draft over the pre-filled answers', () => {
+  it('prints a saved draft over the pre-filled answers where they were typed in, and the pre-fill as it is now elsewhere', () => {
     const jobs = caseJobs(context(), [
-      { form_code: '507b', subject: 'director:2', form_version: '20220801', answers: { fields: { b1_name: 'Casey A. Example', b2: 'yes' }, tables: {}, signedBy: null } },
+      {
+        form_code: '507b',
+        subject: 'director:2',
+        form_version: '20220801',
+        answers: { fields: { b1_name: 'Casey A. Example', b2: 'yes', company_name: null }, tables: {}, signedBy: null },
+        edited_keys: ['b1_name', 'b2'],
+      },
     ])
     const two = jobs[3]
     expect(two.fromDraft).toBe(true)
     expect(two.answers.fields.b1_name).toBe('Casey A. Example')
     expect(two.answers.fields.b2).toBe('yes')
+    // Saved blank, never typed in: the company name on the file now prints.
+    expect(two.answers.fields.company_name).toBe('Example Trading Pty Ltd')
   })
 })
 
 describe('warningsFor', () => {
-  it('lists blank settings, overflow, amounts not placed, and forms never opened', () => {
+  it('lists overflow, amounts not placed, and forms never opened (Form 509’s lodgement details have starting values)', () => {
     const [f509] = caseJobs(context(), [])
     const w = warningsFor(f509, [{ key: 'company_name', q: 'Company details', message: 'Answer is too long for the box and was cut off: attach an annexure.' }])
     expect(w).toEqual([
-      expect.stringMatching(/^Not set yet in CVL settings: /),
       'Company details: Answer is too long for the box and was cut off: attach an annexure.',
       expect.stringMatching(/^Not placed on the form: Director loan/),
       'Never opened: printed from the pre-filled answers.',
