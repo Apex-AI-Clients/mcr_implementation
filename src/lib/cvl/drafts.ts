@@ -29,22 +29,31 @@ const isBlank = (v: FieldValue) => v === null || v === undefined || (typeof v ==
 
 /** The answers a screen opens with: the draft's, else the pre-filled ones, else blank — and every Yes/No "No". */
 export function entryState(map: FormMap, prefill: Prefill, draft: (DraftAnswers & { editedKeys?: string[] }) | null): EntryState {
+  // A saved draft keeps what was typed (its edited keys). A box never typed
+  // in follows the pre-fill as it is now, so a later change on the client
+  // file or in the CVL settings reaches a form already saved; a box the
+  // pre-fill has nothing for keeps what the draft holds.
+  const edited = new Set(draft?.editedKeys ?? [])
   const fields: Record<string, FieldValue> = {}
   for (const f of map.fields) {
     if (f.handwritten) continue
-    if (draft && f.key in draft.fields) fields[f.key] = draft.fields[f.key]
-    else if (prefill.fields[f.key]) fields[f.key] = prefill.fields[f.key].value
+    const pre = prefill.fields[f.key]
+    if (draft && f.key in draft.fields && (edited.has(f.key) || !pre)) fields[f.key] = draft.fields[f.key]
+    else if (pre) fields[f.key] = pre.value
     else fields[f.key] = f.type === 'yesno' ? 'no' : null
     if (f.type === 'yesno' && isBlank(fields[f.key])) fields[f.key] = 'no'
   }
   const tables: Record<string, TableRow[]> = {}
   for (const t of map.tables) {
-    tables[t.id] = draft?.tables[t.id] ?? (prefill.tables[t.id] ?? []).map((r) => r.row)
+    const saved = draft?.tables[t.id]
+    const pre = prefill.tables[t.id]
+    tables[t.id] = saved && (edited.has(`table:${t.id}`) || !pre?.length) ? saved : (pre ?? []).map((r) => r.row)
   }
+  const preSigned = (prefill.signedBy?.value as string | undefined) ?? null
   return {
     fields,
     tables,
-    signedBy: draft ? draft.signedBy : ((prefill.signedBy?.value as string | undefined) ?? null),
+    signedBy: draft && (edited.has('signedBy') || !preSigned) ? draft.signedBy : preSigned,
     editedKeys: draft?.editedKeys ?? [],
   }
 }
