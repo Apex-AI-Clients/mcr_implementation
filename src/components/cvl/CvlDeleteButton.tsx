@@ -62,18 +62,18 @@ export function CvlDeleteButton({ clientId, clientName, redirectTo, compact = fa
           <Trash2 className="h-4 w-4" />
         </button>
       ) : (
-        <Button
+        // Styled as the CVL file's other header button (Edit client details); red on hover.
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
           onClick={() => {
             setError(null)
             setConfirming(true)
           }}
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
         >
           <Trash2 className="h-3.5 w-3.5" />
           Delete
-        </Button>
+        </button>
       )}
 
       <Dialog
