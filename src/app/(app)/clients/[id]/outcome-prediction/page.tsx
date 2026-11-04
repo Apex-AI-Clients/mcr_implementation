@@ -35,17 +35,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const { id } = await params
   const supabase = getSupabaseServerClient()
 
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, name, archived_at, workflow')
-    .eq('id', id)
-    .maybeSingle()
-  if (!client) notFound()
-  // An archived file is viewed, read-only, in the Archive, and so is the SBR
-  // record of a file moved to CVL (the prediction is SBR only).
-  if (client.archived_at || client.workflow === 'cvl') redirect(`/sbr/archive/${client.id}`)
-
-  const [lodgement, printed, mapping, cached, imports, directors] = await Promise.all([
+  // The reads run together (one after another, each waited a round trip to
+  // the database); what is worked out from them is unchanged. A file that
+  // belongs elsewhere is redirected once they are back.
+  const [{ data: client }, lodgement, printed, mapping, cached, imports, directors, readiness] = await Promise.all([
+    supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle(),
     supabase
       .from('lodgement_analyses')
       .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label')
@@ -65,11 +59,27 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // that is stale (staleness.ts).
     supabase.from('sbr_case_imports').select('uploaded_at, undone_at, counts'),
     loadDirectorNames(supabase, id),
+    // What the prediction is waiting for, and its DPN factor (readiness.ts).
+    loadReadiness(supabase, id),
   ])
+  if (!client) notFound()
+  // An archived file is viewed, read-only, in the Archive, and so is the SBR
+  // record of a file moved to CVL (the prediction is SBR only).
+  if (client.archived_at || client.workflow === 'cvl') redirect(`/sbr/archive/${client.id}`)
   const changedAt = trainingDataChangedAt((imports.data ?? []) as ImportChange[])
 
-  // What the prediction is waiting for, and its DPN factor (readiness.ts).
-  const readiness = await loadReadiness(supabase, id)
+  // Three reads that need only the activity statement analysis, together:
+  // the account rows behind the creditor debt (rows saved before the CSV fix
+  // carry no balance and are re-read from the CSV, icaRows.ts), which account
+  // the factors come from when there are two (001 and 002), and the other ATO
+  // accounts (behind a setting, off until confirmed).
+  const [ica, factorsSource, atoAccountRows] = await Promise.all([
+    loadIcaRows(supabase, lodgement.data ?? null),
+    loadFactorsSourceNote(supabase, id, lodgement.data?.statement_label ?? null),
+    ATO_ACCOUNT_CREDITOR_ROWS
+      ? loadAtoAccounts(supabase, id).then((o) => atoAccountCreditorRows(o.accounts, lodgement.data?.statement_label ?? null))
+      : Promise.resolve([]),
+  ])
   const dpnItem = readiness.items.find((i) => i.key === 'dpn')
 
   const financials = predictionFinancials(printed.comparison, mapping, { directors })
@@ -78,8 +88,6 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const bsColumn = financials.balanceSheet?.column ?? null
 
   // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
-  // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
-  const ica = await loadIcaRows(supabase, lodgement.data ?? null)
   const icaRows = (ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
   const debt = creditorDebt({
     icaRows,
@@ -180,13 +188,6 @@ export default async function OutcomePredictionPage({ params }: Props) {
         daysSinceLastPayment: initialAuto.daysSinceLastPayment,
         atoDebt: ato.staffAmount ?? debt.amount,
       })
-    : []
-
-  // With two activity statement accounts (001 and 002), which one the factors come from.
-  const factorsSource = await loadFactorsSourceNote(supabase, id, lodgement.data?.statement_label ?? null)
-  // Behind a setting, off until Gabby confirms: a row per other ATO account in "Creditors in the SBR".
-  const atoAccountRows = ATO_ACCOUNT_CREDITOR_ROWS
-    ? atoAccountCreditorRows((await loadAtoAccounts(supabase, id)).accounts, lodgement.data?.statement_label ?? null)
     : []
 
   return (

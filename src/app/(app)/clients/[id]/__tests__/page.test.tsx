@@ -85,12 +85,18 @@ const COMPANY = {
   company_details_source: 'asic_pdf_edited',
 }
 
-function mockDb(client: Record<string, unknown>, company: Record<string, unknown> | null, cvlCase: Record<string, unknown> | null = null) {
+function mockDb(
+  client: Record<string, unknown>,
+  company: Record<string, unknown> | null,
+  cvlCase: Record<string, unknown> | null = null,
+  drafts: Record<string, unknown>[] = [],
+) {
   const rows: Record<string, unknown> = {
     cvl_cases: cvlCase,
     clients: client,
     company_details: company,
     accountant_details: null,
+    cvl_form_answers: drafts,
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => {
@@ -101,6 +107,8 @@ function mockDb(client: Record<string, unknown>, company: Record<string, unknown
         order: () => Promise.resolve(result),
         single: () => Promise.resolve(result),
         maybeSingle: () => Promise.resolve(result),
+        // A query awaited straight after its filters (no single/order).
+        then: (resolve: (r: typeof result) => unknown) => resolve(result),
       }
       return chain
     },
@@ -317,6 +325,16 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(within(banner).getByRole('link', { name: 'Open the CVL file' }).getAttribute('href')).toBe('/cvl/cl_1')
     expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Mark printed/ })).toBeNull()
+  })
+
+  it('shows which forms have a saved draft (read together with the rest of the page)', async () => {
+    mockDb(IN_CVL, COMPANY, CASE, [{ form_code: '509', subject: 'company', updated_at: '2026-11-03T02:00:00Z', cvl_cases: { client_id: 'cl_1' } }])
+    render(await CvlClientPage(PARAMS))
+    const links = screen.getAllByRole('link', { name: /Fill in|Continue/ })
+    expect(links[0].textContent?.trim()).toBe('Continue')
+    expect(links[0].getAttribute('href')).toBe('/cvl/cl_1/forms/509?subject=company')
+    expect(links.slice(1).every((l) => l.textContent?.trim() === 'Fill in')).toBe(true)
+    expect(screen.getByText(/^Draft saved/)).toBeTruthy()
   })
 
   it('shows the CVL page: the forms per director, the analyses as tiles inside CVL, no status bar', async () => {
