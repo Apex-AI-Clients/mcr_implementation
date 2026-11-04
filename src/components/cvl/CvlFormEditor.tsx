@@ -49,7 +49,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // The template page being edited: the preview turns to it.
-  const [editingPage, setEditingPage] = useState<number | null>(null)
+  const [spot, setSpot] = useState<Spot | null>(null)
   const dirty = !same(state, savedState)
   const answersOf = (st: EntryState) => JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy })
   // What the preview shows: filled on opening, and again on Save (never while typing).
@@ -155,8 +155,29 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   // The page of whatever is focused on the left, for the preview.
   function onFocusIn(e: React.FocusEvent<HTMLDivElement>) {
     const holder = (e.target as HTMLElement).closest('[data-page]') as HTMLElement | null
-    if (holder?.dataset.page) setEditingPage(Number(holder.dataset.page))
+    if (holder?.dataset.page) setSpot({ page: Number(holder.dataset.page), top: Number(holder.dataset.top ?? 0) })
   }
+
+  // Scrolling the questions: the section crossing a band near the top of the
+  // screen is the one shown on the right. The browser reports crossings
+  // (IntersectionObserver), so nothing runs while scrolling within a section.
+  const questions = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = questions.current
+    if (!root || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
+        const el = hit?.target as HTMLElement | undefined
+        if (!el?.dataset.page) return
+        const next = { page: Number(el.dataset.page), top: Number(el.dataset.top ?? 0) }
+        setSpot((cur) => (cur && cur.page === next.page && cur.top === next.top ? cur : next))
+      },
+      { rootMargin: '-15% 0px -75% 0px' },
+    )
+    root.querySelectorAll('section[data-page]').forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [map])
 
   return (
     <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6">
@@ -214,7 +235,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The questions */}
-        <div className="min-w-0 space-y-3" onFocus={onFocusIn}>
+        <div ref={questions} className="min-w-0 space-y-3" onFocus={onFocusIn}>
           <nav aria-label="Questions" className="flex flex-wrap gap-1">
             {map.sections.map((s) => (
               <a
@@ -246,7 +267,12 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           )}
 
           {map.sections.map((s) => (
-            <section key={s.q} className="scroll-mt-4 rounded-xl border border-border bg-card p-4" aria-labelledby={`q-${s.q}`}>
+            <section
+              key={s.q}
+              className="scroll-mt-4 rounded-xl border border-border bg-card p-4"
+              aria-labelledby={`q-${s.q}`}
+              {...sectionSpot(s)}
+            >
               <h2 id={`q-${s.q}`} className="mb-3 flex items-baseline gap-2.5 text-sm font-medium text-foreground">
                 <span className="min-w-[2.6em] font-mono font-semibold text-accent">{s.q}</span>{' '}
                 <span className="flex-1">{s.text}</span>
@@ -297,7 +323,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             stale={stale}
             onRefresh={refreshPreview}
             downloadTick={downloadTick}
-            editingPage={editingPage}
+            spot={spot}
             title={map.title}
             fileName={`${map.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}${subject === 'company' ? '' : `-${(subjects.find((x) => x.subject === subject)?.label ?? subject).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}`}.pdf`}
           />
@@ -314,6 +340,20 @@ interface Filled {
   pdf: Uint8Array
   /** Template page of each output page. */
   pageSources: number[]
+}
+
+/** A place on the form: a template page, and how far down it (points). */
+interface Spot {
+  page: number
+  top: number
+}
+
+/** Where a section starts on the form: its first answer or table that is on screen. */
+function sectionSpot(s: EntryMap['sections'][number]): { 'data-page'?: number; 'data-top'?: number } {
+  const first = [...s.fields.filter((f) => !f.handwritten), ...s.tables][0]
+  if (!first) return {}
+  const onFirstPage = [...s.fields.filter((f) => !f.handwritten), ...s.tables].filter((x) => x.page === first.page)
+  return { 'data-page': first.page, 'data-top': Math.min(...onFirstPage.map((x) => x.top)) }
 }
 
 /** pdf.js's parsed document and its loading task (unpdf's build), as used here. */
@@ -334,7 +374,7 @@ function LivePreview({
   stale,
   onRefresh,
   downloadTick,
-  editingPage,
+  spot,
   title,
   fileName,
 }: {
@@ -349,7 +389,8 @@ function LivePreview({
   onRefresh: () => void
   /** Changes each time Download is pressed (in the header). */
   downloadTick: number
-  editingPage: number | null
+  /** The page and place being looked at or edited on the left. */
+  spot: Spot | null
   title: string
   fileName: string
 }) {
@@ -359,7 +400,10 @@ function LivePreview({
   const [page, setPage] = useState(1)
   const [doc, setDoc] = useState<PdfDoc | null>(null)
   const [pendingDownload, setPendingDownload] = useState(false)
+  // The drawn page's height in points, to place a spot on it.
+  const [pageHeight, setPageHeight] = useState<number | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const sheet = useRef<HTMLDivElement>(null)
   const latest = useRef(0)
 
   // Fill once per request (on opening, on Save, before a download): never while typing.
@@ -424,10 +468,10 @@ function LivePreview({
 
   // Turn to the page of the field being edited.
   useEffect(() => {
-    if (!filled || editingPage === null) return
-    const at = filled.pageSources.indexOf(editingPage)
+    if (!filled || !spot) return
+    const at = filled.pageSources.indexOf(spot.page)
     if (at >= 0) setPage(at + 1)
-  }, [editingPage, filled])
+  }, [spot, filled])
 
   const shown = Math.min(page, pages || 1)
 
@@ -440,6 +484,7 @@ function LivePreview({
         const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
         const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.25)
         const viewport = pdfPage.getViewport({ scale })
+        setPageHeight(pdfPage.getViewport({ scale: 1 }).height)
         const target = canvas.current
         if (cancelled || !target) return
         target.width = viewport.width
@@ -456,6 +501,17 @@ function LivePreview({
       cancelled = true
     }
   }, [doc, shown])
+
+  // Scroll the sheet to the spot on the page shown: where that section is printed.
+  useEffect(() => {
+    const box = sheet.current
+    const target = canvas.current
+    if (!box || !target || !spot || !pageHeight || !filled) return
+    if (filled.pageSources[shown - 1] !== spot.page) return
+    const y = (spot.top / pageHeight) * target.clientHeight - 24
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    box.scrollTo?.({ top: Math.max(0, y), behavior: reduce ? 'auto' : 'smooth' })
+  }, [spot, pageHeight, shown, filled])
 
   // Save the PDF of the answers on screen: filled again first when they have changed.
   const saveFile = useCallback(() => {
@@ -511,7 +567,10 @@ function LivePreview({
           )}
         </span>
       </div>
-      <div className="overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]">
+      <div
+        ref={sheet}
+        className="max-h-[calc(100vh-7rem)] overflow-y-auto overflow-x-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
+      >
         {filled ? (
           <canvas ref={canvas} className="block h-auto w-full" aria-label={`Page ${shown} of ${pages}`} />
         ) : (
@@ -616,7 +675,7 @@ function FieldInput({
   }
 
   return (
-    <div className={f.type === 'yesno' ? 'sm:col-span-2' : wide ? 'sm:col-span-2' : ''} data-page={f.page}>
+    <div className={f.type === 'yesno' ? 'sm:col-span-2' : wide ? 'sm:col-span-2' : ''} data-page={f.page} data-top={f.top}>
       {f.type === 'yesno' ? (
         <p id={`${id}-label`} className="mb-1.5 text-sm text-foreground/80">
           {f.label}
@@ -678,7 +737,7 @@ function ColumnsTable({
     const source = sourceOf(f.key)
     const value = values[f.key]
     return (
-      <div data-page={f.page}>
+      <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
           <input
             id={`f-${f.key}`}
@@ -710,7 +769,7 @@ function ColumnsTable({
               <td className="py-1.5 pr-3 text-xs text-foreground/80">
                 {r.label}
                 {r.inline && (
-                  <span className="mt-1 flex items-center gap-1.5" data-page={r.inline.page}>
+                  <span className="mt-1 flex items-center gap-1.5" data-page={r.inline.page} data-top={r.inline.top}>
                     <label htmlFor={`f-${r.inline.key}`} className="shrink-0 text-foreground/50">
                       to:
                     </label>
@@ -741,7 +800,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
   const set = (i: number, key: string, v: FieldValue) => onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   const pages = Math.max(1, Math.ceil(rows.length / table.rowsPerPage))
   return (
-    <div className="mt-4" data-page={table.page}>
+    <div className="mt-4" data-page={table.page} data-top={table.top}>
       <p className="mb-2 text-xs font-medium text-foreground/70">
         Table {table.id.replace('_', ' ')}: {table.title}
         <span className="ml-2 font-normal text-foreground/40">

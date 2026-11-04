@@ -20,6 +20,8 @@ export interface EntryField {
   lines?: number
   /** The template page it is printed on: the preview shows it while it is edited. */
   page: number
+  /** How far down that page it is printed (points from the top): the preview scrolls there. */
+  top: number
   /**
    * Form 509's summary: the printed column the amount goes in, and the row it
    * belongs to. Each row shows its boxes under the form's own two headings.
@@ -40,6 +42,8 @@ export interface EntryTable {
   rowsPerPage: number
   /** The template page the table is printed on. */
   page: number
+  /** Its first row, in points from the top of the page. */
+  top: number
 }
 
 export interface EntrySection {
@@ -75,6 +79,22 @@ const ERV_COLUMN_X0 = 480
 const rowLabel = (label: string) =>
   label.replace(/: (Valuation|Estimated realisable value)$/, '').replace(/ \(valuation\)$/, '')
 
+/** The top of an answer's first box on its page. */
+function topOf(f: FormMap['fields'][number]): number {
+  switch (f.type) {
+    case 'lines':
+      return f.lines[0]?.top ?? 0
+    case 'datecells':
+      return f.cells[0]?.top ?? 0
+    case 'yesno':
+      return Math.min(f.yes.top, f.no.top)
+    case 'choice':
+      return Math.min(...Object.values(f.options).map((b) => b.top))
+    default:
+      return f.top
+  }
+}
+
 export function entryMap(map: FormMap): EntryMap {
   const computed = new Set((map.computed ?? []).map((c) => c.key))
   const sections: EntrySection[] = []
@@ -99,6 +119,7 @@ export function entryMap(map: FormMap): EntryMap {
       label: f.label,
       type,
       page: f.page,
+      top: Math.round(topOf(f)),
       ...(map.code === '509' && f.type === 'money'
         ? { column: f.x0 >= ERV_COLUMN_X0 ? ('erv' as const) : ('valuation' as const), row: rowLabel(f.label) }
         : {}),
@@ -119,6 +140,7 @@ export function entryMap(map: FormMap): EntryMap {
       columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type })),
       rowsPerPage: t.rows.length,
       page: t.page,
+      top: Math.round(t.rows[0]?.top ?? 0),
     })
   }
   return {

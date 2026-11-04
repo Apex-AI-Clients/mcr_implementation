@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, within, cleanup, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
@@ -144,6 +144,32 @@ describe('CvlFormEditor', () => {
     expect(order.slice(-2)).toEqual(['save', 'preview'])
     expect(JSON.parse(previews()[1][1]!.body as string).answers.fields.b1_name).toBe('Jordan Sample Jr')
     await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
+  })
+
+  it('turns the preview to the page of the question scrolled to on the left', async () => {
+    let report: ((entries: { isIntersecting: boolean; target: Element; boundingClientRect: { top: number } }[]) => void) | null = null
+    const observed: Element[] = []
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(cb: typeof report) {
+          report = cb
+        }
+        observe(el: Element) {
+          observed.push(el)
+        }
+        disconnect() {}
+      },
+    )
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    // Every question section is watched, nothing else.
+    expect(observed.length).toBe(screen.getAllByRole('region').filter((r) => r.tagName === 'SECTION' && r.hasAttribute('data-page')).length)
+    const b24 = section('B24')
+    expect(b24.dataset.page).toBe('8')
+    act(() => report!([{ isIntersecting: true, target: b24, boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
   })
 
   it('saves with Ctrl+S', async () => {
