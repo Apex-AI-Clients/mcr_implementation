@@ -116,7 +116,8 @@ export function DocumentStatusGrid({
               <DpnPanel clientId={clientId} basePath={basePath} data={dpn} readOnly={readOnly} />
             )}
 
-            {category === 'integrated_client_account' && clientId && !readOnly && (
+            {/* Only once an activity statement is uploaded: there is nothing to analyse before. */}
+            {category === 'integrated_client_account' && clientId && !readOnly && received && (
               <LodgementAnalysisButton clientId={clientId} basePath={basePath} />
             )}
 
