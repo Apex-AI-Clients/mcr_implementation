@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, ExternalLink, Loader2, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -29,8 +29,6 @@ interface CvlFormEditorProps {
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const blank = (v: FieldValue) => v === null || v === undefined || v === ''
 
-/** How long after the last keystroke the preview is filled again. */
-const PREVIEW_DELAY_MS = 600
 
 /**
  * One ASIC form's entry screen: the questions on the left, in the form's own
@@ -53,6 +51,27 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   // The template page being edited: the preview turns to it.
   const [editingPage, setEditingPage] = useState<number | null>(null)
   const dirty = !same(state, savedState)
+  const answersOf = (st: EntryState) => JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy })
+  // What the preview shows: filled on opening, and again on Save (never while typing).
+  const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(initial), n: 0 }))
+  const stale = answersOf(state) !== previewRequest.answers
+  const refreshPreview = () => setPreviewRequest((r) => ({ answers: answersOf(state), n: r.n + 1 }))
+
+  // Ctrl+S / Cmd+S saves (and updates the preview), as in a document editor.
+  const saveRef = useRef<() => void>(() => {})
+  saveRef.current = () => {
+    if (!saving) void save()
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        saveRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // A warning before leaving with changes not saved.
   useEffect(() => {
@@ -102,6 +121,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       if (!res.ok) throw new Error(data.error || 'Failed to save the draft')
       setSavedState(state)
       setSaved({ at: data.updatedAt, by: data.updatedBy, version: data.formVersion })
+      refreshPreview()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -160,9 +180,9 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             <RotateCcw className="h-3.5 w-3.5" />
             Back to pre-filled
           </Button>
-          <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty}>
-            {dirty ? (
-              'Save draft'
+          <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty && !stale} title="Save the draft and update the preview (Ctrl+S)">
+            {dirty || stale ? (
+              'Save'
             ) : (
               <>
                 <Check className="h-3.5 w-3.5" /> Saved
@@ -270,7 +290,17 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
         {/* The official page, as it will print */}
         <div className="min-w-0 space-y-4 lg:sticky lg:top-4">
-          <LivePreview caseId={caseId} code={map.code} subject={subject} state={state} editingPage={editingPage} title={map.title} />
+          <LivePreview
+            caseId={caseId}
+            code={map.code}
+            subject={subject}
+            request={previewRequest}
+            stale={stale}
+            onRefresh={refreshPreview}
+            editingPage={editingPage}
+            title={map.title}
+            fileName={`${map.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}${subject === 'company' ? '' : `-${(subjects.find((x) => x.subject === subject)?.label ?? subject).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}`}.pdf`}
+          />
           {prefill.candidates.length > 0 && <Candidates candidates={prefill.candidates} />}
         </div>
       </div>
@@ -286,44 +316,60 @@ interface Filled {
   pageSources: number[]
 }
 
+/** pdf.js's parsed document and its loading task (unpdf's build), as used here. */
+type PdfTask = ReturnType<typeof import('unpdf/pdfjs').getDocument>
+type PdfDoc = Awaited<PdfTask['promise']>
+
 /**
- * The form as it will print with the answers on screen (not yet saved),
- * filled again on the server a moment after each change and drawn here page
- * by page. Turns to the page of whatever is being edited.
+ * The form as it will print, filled on the server when asked (on opening,
+ * on Save, before a download) and drawn here page by page; never while
+ * typing. Turns to the page of whatever is being edited, and says when the
+ * answers on screen have changed since.
  */
 function LivePreview({
   caseId,
   code,
   subject,
-  state,
+  request,
+  stale,
+  onRefresh,
   editingPage,
   title,
+  fileName,
 }: {
   caseId: string
   code: string
   subject: string
-  state: EntryState
+  /** The answers to fill, and a counter that changes each time a new preview is asked for. */
+  request: { answers: string; n: number }
+  /** The answers on screen differ from the ones previewed. */
+  stale: boolean
+  /** Ask for a preview of the answers on screen (without saving). */
+  onRefresh: () => void
   editingPage: number | null
   title: string
+  fileName: string
 }) {
   const [filled, setFilled] = useState<Filled | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [doc, setDoc] = useState<PdfDoc | null>(null)
+  const [pendingDownload, setPendingDownload] = useState(false)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const request = useRef(0)
-  const answers = JSON.stringify({ fields: state.fields, tables: state.tables, signedBy: state.signedBy })
+  const latest = useRef(0)
 
-  // Fill again shortly after the last change; an older answer never overwrites a newer one.
+  // Fill once per request (on opening, on Save, before a download): never while typing.
   useEffect(() => {
-    const id = ++request.current
-    const timer = setTimeout(async () => {
+    const id = ++latest.current
+    let cancelled = false
+    void (async () => {
       setLoading(true)
       try {
         const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ form: code, subject, answers: JSON.parse(answers) }),
+          body: JSON.stringify({ form: code, subject, answers: JSON.parse(request.answers) }),
         })
         if (!res.ok) throw new Error('The preview could not be filled.')
         const pdf = new Uint8Array(await res.arrayBuffer())
@@ -333,17 +379,43 @@ function LivePreview({
         } catch {
           // The PDF still shows; it just cannot turn to the page being edited.
         }
-        if (id !== request.current) return
+        if (cancelled || id !== latest.current) return
         setFilled({ pdf, pageSources })
         setError(null)
       } catch (err) {
-        if (id === request.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
+        if (!cancelled && id === latest.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
       } finally {
-        if (id === request.current) setLoading(false)
+        if (!cancelled && id === latest.current) setLoading(false)
       }
-    }, PREVIEW_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [caseId, code, subject, answers])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [caseId, code, subject, request])
+
+  // Parse each preview once; every page tab draws from the same parsed copy.
+  // The previous copy is let go when a new one arrives, and on leaving.
+  useEffect(() => {
+    if (!filled) return
+    let task: PdfTask | null = null
+    let cancelled = false
+    void (async () => {
+      try {
+        // pdf.js itself (unpdf's browser-ready build), loaded only when a preview is drawn.
+        const { getDocument } = await import('unpdf/pdfjs')
+        task = getDocument({ data: filled.pdf.slice(), useSystemFonts: true })
+        const parsed = await task.promise
+        if (!cancelled) setDoc(parsed)
+      } catch {
+        if (!cancelled) setError('The preview could not be drawn. Download the PDF instead.')
+      }
+    })()
+    return () => {
+      cancelled = true
+      setDoc(null)
+      void task?.destroy()
+    }
+  }, [filled])
 
   const pages = filled ? Math.max(1, filled.pageSources.length) : 0
 
@@ -356,46 +428,55 @@ function LivePreview({
 
   const shown = Math.min(page, pages || 1)
 
-  // Draw the page shown.
-  const draw = useCallback(async () => {
-    if (!filled || !canvas.current) return
-    try {
-      // pdf.js itself (unpdf's browser-ready build), loaded only when a preview is drawn.
-      const { getDocument } = await import('unpdf/pdfjs')
-      const task = getDocument({ data: filled.pdf.slice(), useSystemFonts: true })
-      const doc = await task.promise
-      const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
-      const scale = Math.min(2.2, (window.devicePixelRatio || 1) * 1.4)
-      const viewport = pdfPage.getViewport({ scale })
-      const off = document.createElement('canvas')
-      off.width = viewport.width
-      off.height = viewport.height
-      const ctx = off.getContext('2d')
-      if (!ctx) return
-      await pdfPage.render({ canvas: off, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
-      const target = canvas.current
-      if (!target) return
-      target.width = off.width
-      target.height = off.height
-      target.getContext('2d')?.drawImage(off, 0, 0)
-      await task.destroy()
-    } catch {
-      setError('The preview could not be drawn. Open the PDF instead.')
+  // Draw the page shown, from the parsed copy.
+  useEffect(() => {
+    if (!doc || !canvas.current) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
+        const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.25)
+        const viewport = pdfPage.getViewport({ scale })
+        const target = canvas.current
+        if (cancelled || !target) return
+        target.width = viewport.width
+        target.height = viewport.height
+        const ctx = target.getContext('2d')
+        if (!ctx) return
+        await pdfPage.render({ canvas: target, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
+        pdfPage.cleanup()
+      } catch {
+        if (!cancelled) setError('The preview could not be drawn. Download the PDF instead.')
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [filled, shown])
+  }, [doc, shown])
 
-  useEffect(() => {
-    void draw()
-  }, [draw])
-
-  // A link to the same PDF, to open whole in a new tab.
-  const [href, setHref] = useState<string | null>(null)
-  useEffect(() => {
+  // Save the PDF of the answers on screen: filled again first when they have changed.
+  const saveFile = useCallback(() => {
     if (!filled) return
     const url = URL.createObjectURL(new Blob([filled.pdf.slice()], { type: 'application/pdf' }))
-    setHref(url)
-    return () => URL.revokeObjectURL(url)
-  }, [filled])
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, [filled, fileName])
+
+  function download() {
+    if (stale) {
+      setPendingDownload(true)
+      onRefresh()
+    } else saveFile()
+  }
+
+  useEffect(() => {
+    if (!pendingDownload || loading || stale || !filled) return
+    setPendingDownload(false)
+    saveFile()
+  }, [pendingDownload, loading, stale, filled, saveFile])
 
   return (
     <section aria-label={`Preview of ${title}`} className="space-y-2">
@@ -412,17 +493,22 @@ function LivePreview({
             {n}
           </button>
         ))}
-        <span className="ml-auto flex items-center gap-2 text-foreground/40">
-          {loading && (
-            <span className="inline-flex items-center gap-1">
+        <span className="ml-auto flex items-center gap-2">
+          {loading ? (
+            <span className="inline-flex items-center gap-1 text-foreground/40">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
             </span>
+          ) : (
+            stale && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-warning">Preview not updated: save to see your changes</span>
           )}
-          {href && (
-            <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-              <ExternalLink className="h-3 w-3" aria-hidden="true" /> Open PDF
-            </a>
-          )}
+          <button
+            type="button"
+            onClick={download}
+            disabled={!filled || pendingDownload}
+            className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-foreground/70 hover:border-accent hover:text-accent disabled:opacity-50"
+          >
+            <Download className="h-3 w-3" aria-hidden="true" /> Download
+          </button>
         </span>
       </div>
       <div className="overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]">

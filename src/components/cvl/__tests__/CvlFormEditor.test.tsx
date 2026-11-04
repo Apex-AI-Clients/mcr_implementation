@@ -36,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 function renderPartB() {
@@ -99,7 +100,7 @@ describe('CvlFormEditor', () => {
     const fetchMock = stubFetch()
     renderPartB()
     await user.click(within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes'))
-    await user.click(screen.getByRole('button', { name: 'Save draft' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
     const [url, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT') as unknown as [string, RequestInit]
     expect(url).toBe('/api/admin/cvl/case-1/forms/507b')
@@ -111,7 +112,7 @@ describe('CvlFormEditor', () => {
     expect(await screen.findByRole('button', { name: /Saved/ })).toBeTruthy()
   })
 
-  it('fills the preview again with the answers on screen, with no warning boxes on the screen', async () => {
+  it('fills the preview once on opening, with no warning boxes on the screen', async () => {
     const fetchMock = stubFetch()
     renderPartB()
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/admin/cvl/case-1/preview')).toBe(true), { timeout: 3000 })
@@ -123,6 +124,59 @@ describe('CvlFormEditor', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
     expect(screen.queryByText('B14: Answer is longer than the lines')).toBeNull()
     expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
+  })
+
+  it('never fills the preview while typing; Save saves and updates it, and says when it is out of date', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    renderPartB()
+    const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
+    await waitFor(() => expect(previews()).toHaveLength(1))
+
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    await new Promise((r) => setTimeout(r, 900))
+    expect(previews()).toHaveLength(1)
+    expect(screen.getByText(/Preview not updated/)).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(previews()).toHaveLength(2))
+    const order = fetchMock.mock.calls.map(([u, i]) => (i?.method === 'PUT' ? 'save' : String(u).endsWith('/preview') ? 'preview' : 'other'))
+    expect(order.slice(-2)).toEqual(['save', 'preview'])
+    expect(JSON.parse(previews()[1][1]!.body as string).answers.fields.b1_name).toBe('Jordan Sample Jr')
+    await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
+  })
+
+  it('saves with Ctrl+S', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    renderPartB()
+    await user.click(within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes'))
+    await user.keyboard('{Control>}s{/Control}')
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(true))
+  })
+
+  it('downloads the PDF of the answers on screen, filling it again first when they have changed', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    const clicked: string[] = []
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag)
+      if (tag === 'a') el.addEventListener('click', (e) => { e.preventDefault(); clicked.push((el as HTMLAnchorElement).download) })
+      return el
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:preview')
+    URL.revokeObjectURL = vi.fn()
+    renderPartB()
+    const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
+    await waitFor(() => expect(previews()).toHaveLength(1))
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    await user.click(screen.getByRole('button', { name: /Download/ }))
+    await waitFor(() => expect(clicked).toHaveLength(1))
+    // Filled again for the changed answers before it was saved as a file; nothing saved as a draft.
+    expect(previews()).toHaveLength(2)
+    expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(false)
+    expect(clicked[0]).toMatch(/^report-on-company-activities-and-property-part-b-jordan-sample.pdf$/)
   })
 })
 
