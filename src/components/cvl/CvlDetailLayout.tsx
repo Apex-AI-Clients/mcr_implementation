@@ -22,7 +22,7 @@ interface CvlDetailLayoutProps {
   client: { id: string; name: string; email: string; phone: string | null }
   originLeadId: string | null
   cvlCase: CvlCase
-  drafts: { form_code: string; subject: string; updated_at: string; updated_by: string }[]
+  drafts: { form_code: string; subject: string; updated_at: string }[]
   company: CompanyDetails | null
   accountant: AccountantDetails | null
   documents: DocumentRecord[]
@@ -174,7 +174,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       </p>
                       <p className="text-xs text-foreground/40">
                         <span className="sr-only">{f.title}. </span>
-                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)} by ${f.draft.updated_by}` : 'Not opened yet'}
+                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)}` : 'Not opened yet'}
                       </p>
                     </div>
                   </div>

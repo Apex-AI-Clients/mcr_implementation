@@ -71,7 +71,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   // The CVL page's forms: which are drafted.
   const cvlDrafts =
     mode === 'cvl' && cvlCase
-      ? ((await supabase.from('cvl_form_answers').select('form_code, subject, updated_at, updated_by').eq('case_id', cvlCase.id)).data ?? [])
+      ? ((await supabase.from('cvl_form_answers').select('form_code, subject, updated_at').eq('case_id', cvlCase.id)).data ?? [])
       : []
   // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
   const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'

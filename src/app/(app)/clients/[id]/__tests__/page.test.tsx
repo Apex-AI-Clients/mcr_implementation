@@ -336,8 +336,9 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getByText('— Jane Sample')).toBeTruthy()
     expect(screen.getByText('— Raj Example')).toBeTruthy()
     expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
-    // Each form's line says only where it stands: no ASIC version.
+    // Each form's line says only where it stands: no ASIC version, no who saved it.
     expect(screen.queryByText(/ASIC version/)).toBeNull()
+    expect(screen.queryByText(/Draft saved .* by /)).toBeNull()
     // No print page: each form downloads from its own row.
     expect(screen.queryByRole('link', { name: /Preview and print/ })).toBeNull()
     const download = screen.getByRole('link', { name: 'Download Form 507 Part B — Raj Example' })
