@@ -66,14 +66,14 @@ export interface EntryMap {
   hasTables: boolean
 }
 
-/** Human labels for the choice boxes the maps name by key. */
+/** The choice boxes the maps name by key, in the form's own words (Part A, page 2). */
 const CHOICE_LABELS: Record<string, string> = {
-  receiver_manager: 'Receiver and Manager s421A(1) (507G)',
-  managing_controller: 'Managing Controller s421A(1) (507H)',
-  controller_director_report: 'Controller s429(2)(b) (507F)',
-  court_liquidator: 'Court liquidator s475(1) (507C)',
-  cvl_liquidator: 'Liquidator, creditors’ voluntary winding up s497(4) (507D)',
-  voluntary_administrator: 'Voluntary Administrator s438B(2) (507K)',
+  receiver_manager: 'Receiver and Manager - s421A(1) 507G',
+  managing_controller: 'Managing Controller of property - s421A(1) 507H',
+  controller_director_report: 'Receiver, Receiver and Manager or Controller (Director Report) - s429(2)(b) 507F',
+  court_liquidator: 'Liquidator/Provisional Liquidator appointed by the court - s475(1) 507C',
+  cvl_liquidator: 'Liquidator – creditors’ voluntary winding up – s497(4) 507D',
+  voluntary_administrator: 'Voluntary Administrator - s438B(2) 507K',
 }
 
 /** Form 509's two money columns: Valuation from x 400, Estimated realisable value from x 483. */

@@ -98,7 +98,16 @@ describe('entryMap', () => {
     expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['External Administrator', 'A2', 'A3', 'A4'])
     const role = m.sections[0].fields.find((f) => f.key === 'ea_role')!
     expect(role.type).toBe('choice')
-    expect(role.options).toContainEqual(['cvl_liquidator', 'Liquidator, creditors’ voluntary winding up s497(4) (507D)'])
+    // Asked and labelled in the form's own words (no "Type of appointment" on the form).
+    expect(role.label).toBe('Please tick appropriate box')
+    expect(role.options).toEqual([
+      ['receiver_manager', 'Receiver and Manager - s421A(1) 507G'],
+      ['managing_controller', 'Managing Controller of property - s421A(1) 507H'],
+      ['controller_director_report', 'Receiver, Receiver and Manager or Controller (Director Report) - s429(2)(b) 507F'],
+      ['court_liquidator', 'Liquidator/Provisional Liquidator appointed by the court - s475(1) 507C'],
+      ['cvl_liquidator', 'Liquidator – creditors’ voluntary winding up – s497(4) 507D'],
+      ['voluntary_administrator', 'Voluntary Administrator - s438B(2) 507K'],
+    ])
     expect(m.sections.find((s) => s.q === 'A9')!.fields.find((f) => f.key === 'a9_date')!.handwritten).toBe(true)
     // Only where each answer starts on its page (for the preview to follow), never the boxes themselves.
     expect(JSON.stringify(m)).not.toMatch(/"x0"|"x1"|"bot"|"slashes"|"cells"/)

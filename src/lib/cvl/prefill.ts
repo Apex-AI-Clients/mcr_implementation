@@ -351,7 +351,7 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
   settingsWarnings(out, ctx)
   out.fields.ea_role = {
     value: 'cvl_liquidator',
-    source: { from: ['Type of appointment.', 'A CVL: liquidator in a creditors’ voluntary winding up, s497(4).'] },
+    source: { from: ['Please tick appropriate box.', 'A CVL: Liquidator – creditors’ voluntary winding up – s497(4) 507D.'] },
   }
 
   putCompany(out, ctx, 'company_name', 'company_acn')

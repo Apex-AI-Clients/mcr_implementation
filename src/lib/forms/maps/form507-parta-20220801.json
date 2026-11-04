@@ -200,7 +200,7 @@
   {
    "key": "ea_role",
    "q": "External Administrator",
-   "label": "Type of appointment",
+   "label": "Please tick appropriate box",
    "type": "choice",
    "page": 2,
    "options": {
