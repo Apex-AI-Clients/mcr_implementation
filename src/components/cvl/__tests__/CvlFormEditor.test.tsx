@@ -199,6 +199,16 @@ describe('CvlFormEditor', () => {
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })
 
+  it('scrolls the preview without showing a scrollbar', async () => {
+    stubFetch()
+    renderPartB()
+    const canvas = await screen.findByLabelText(/^Page 1 of /)
+    const sheet = canvas.parentElement as HTMLElement
+    expect(sheet.className).toContain('overflow-y-auto')
+    expect(sheet.className).toContain('[scrollbar-width:none]')
+    expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
+  })
+
   it('saves with Ctrl+S', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()

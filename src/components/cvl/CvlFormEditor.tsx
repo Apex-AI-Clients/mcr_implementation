@@ -589,7 +589,7 @@ function LivePreview({
       </div>
       <div
         ref={sheet}
-        className="max-h-[calc(100vh-7rem)] overflow-y-auto overflow-x-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
+        className="max-h-[calc(100vh-7rem)] overflow-y-auto overflow-x-hidden rounded-sm bg-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
       >
         {filled ? (
           <canvas ref={canvas} className="block h-auto w-full" aria-label={`Page ${shown} of ${pages}`} />
