@@ -71,7 +71,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                 <th className="px-4 py-3 font-medium">Client</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'Moved to CVL' : 'Status'}</th>
                 <th className="px-4 py-3 font-medium">{moved ? 'By' : 'Came from'}</th>
-                <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Opened'}</th>
+                <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Became CVL client'}</th>
                 {deletable && <th className="w-12 px-4 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>

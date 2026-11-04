@@ -90,6 +90,21 @@ describe('CvlClientTable: delete several', () => {
     expect(statusCell.textContent).toBe('Printed')
   })
 
+  it('dates each client from when it became a CVL client', () => {
+    render(
+      <CvlClientTable
+        list={{ ...list, rows: [{ ...row(1), createdAt: '2026-10-20T00:00:00Z' }] }}
+        path="/cvl"
+        rowHref={(id) => `/cvl/${id}`}
+        empty="No CVL clients yet."
+      />,
+    )
+    expect(screen.getByRole('columnheader', { name: 'Became CVL client' })).toBeTruthy()
+    expect(screen.queryByRole('columnheader', { name: 'Opened' })).toBeNull()
+    const cells = screen.getAllByRole('cell')
+    expect(cells.at(-1)!.textContent).toMatch(/20 Oct 2026/)
+  })
+
   it('has no tick boxes where rows cannot be deleted (the SBR Archive’s "Moved to CVL")', () => {
     renderList(false)
     expect(screen.queryByRole('checkbox')).toBeNull()
