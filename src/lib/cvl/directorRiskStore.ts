@@ -50,7 +50,7 @@ export async function loadDirectorRisk(
     sgIds.length
       ? supabase.from('ato_account_analyses').select('account_label, summary').in('id', sgIds)
       : Promise.resolve({ data: [] as { account_label: string; summary: unknown }[] }),
-    loadPrintedComparison(supabase, clientId, { readMissing: true }),
+    loadPrintedComparison(supabase, clientId),
     loadMapping(supabase, clientId),
   ])
 

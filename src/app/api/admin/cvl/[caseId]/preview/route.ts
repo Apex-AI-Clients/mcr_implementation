@@ -6,7 +6,8 @@ import { CURRENT_VERSION, FORM_CODES } from '@/lib/forms/registry'
 import type { FormCode } from '@/lib/forms/types'
 import { loadCaseAccess } from '@/lib/cvl/caseAccess'
 import { loadCvlContext } from '@/lib/cvl/context'
-import { cleanAnswers } from '@/lib/cvl/drafts'
+import { cleanAnswers, toFormData } from '@/lib/cvl/drafts'
+import { fillOfficialForm } from '@/lib/forms/fill'
 import { caseJobs, fillAll, fillJob, jobFor, loadDraftRows } from '@/lib/cvl/generate'
 import { isSubject, subjectsFor } from '@/lib/cvl/prefill'
 
@@ -94,11 +95,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const supabase = getSupabaseServerClient()
     const access = await loadCaseAccess(supabase, caseId)
     if (!access) return NextResponse.json({ error: 'CVL file not found' }, { status: 404 })
-    const ctx = await loadCvlContext(supabase, access.clientId)
-    // The pre-fill only for its warnings and amounts not placed; the answers are the ones sent.
-    const job = { ...jobFor(ctx, [], code, body.data.subject), answers, fromDraft: true, version: CURRENT_VERSION[code] }
-    const filled = await fillJob(job)
-    return pdfResponse(filled.fill.pdf, filled.warnings, `${code}-preview.pdf`, filled.fill.pageSources)
+    // Only the answers sent are filled: nothing else on the client file is read
+    // (the entry screen shows no warnings, and every request stays light).
+    const fill = await fillOfficialForm(code, toFormData(answers))
+    return pdfResponse(fill.pdf, fill.warnings.map((w) => `${w.q ? `${w.q}: ` : ''}${w.message}`), `${code}-preview.pdf`, fill.pageSources)
   } catch (err) {
     console.error('[POST /api/admin/cvl/[caseId]/preview]', err instanceof Error ? err.message : 'unknown')
     return NextResponse.json({ error: 'Could not make the preview' }, { status: 500 })

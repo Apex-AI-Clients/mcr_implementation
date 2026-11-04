@@ -11,9 +11,19 @@ import type { FillOptions, FillResult, FormCode, FormData } from './types'
 
 const TEMPLATE_DIR = path.join(process.cwd(), 'src', 'lib', 'forms', 'templates')
 
+/** The official PDFs never change at run time: each is read from disk once. */
+const templates = new Map<string, Promise<Uint8Array>>()
+
 export async function readTemplate(code: FormCode, version?: string): Promise<Uint8Array> {
   const { template } = formVersion(code, version)
-  return new Uint8Array(await readFile(path.join(TEMPLATE_DIR, template)))
+  let bytes = templates.get(template)
+  if (!bytes) {
+    bytes = readFile(path.join(TEMPLATE_DIR, template)).then((b) => new Uint8Array(b))
+    templates.set(template, bytes)
+    bytes.catch(() => templates.delete(template))
+  }
+  // A copy: pdf-lib may hold on to (or detach) what it is given.
+  return (await bytes).slice()
 }
 
 export async function fillOfficialForm(

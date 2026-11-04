@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Download, Loader2, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
@@ -56,6 +56,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(initial), n: 0 }))
   const stale = answersOf(state) !== previewRequest.answers
   const refreshPreview = () => setPreviewRequest((r) => ({ answers: answersOf(state), n: r.n + 1 }))
+  // Each press of Download in the header; the preview saves its PDF as a file.
+  const [downloadTick, setDownloadTick] = useState(0)
 
   // Ctrl+S / Cmd+S saves (and updates the preview), as in a document editor.
   const saveRef = useRef<() => void>(() => {})
@@ -169,13 +171,10 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           <h1 className="text-xl font-semibold text-foreground">{map.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/cvl/${clientId}/print`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print page
-          </Link>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setDownloadTick((t) => t + 1)} title="Download the PDF of the answers on screen">
+            <Download className="h-3.5 w-3.5" />
+            Download
+          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
             <RotateCcw className="h-3.5 w-3.5" />
             Back to pre-filled
@@ -297,6 +296,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             request={previewRequest}
             stale={stale}
             onRefresh={refreshPreview}
+            downloadTick={downloadTick}
             editingPage={editingPage}
             title={map.title}
             fileName={`${map.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}${subject === 'company' ? '' : `-${(subjects.find((x) => x.subject === subject)?.label ?? subject).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}`}.pdf`}
@@ -333,6 +333,7 @@ function LivePreview({
   request,
   stale,
   onRefresh,
+  downloadTick,
   editingPage,
   title,
   fileName,
@@ -346,6 +347,8 @@ function LivePreview({
   stale: boolean
   /** Ask for a preview of the answers on screen (without saving). */
   onRefresh: () => void
+  /** Changes each time Download is pressed (in the header). */
+  downloadTick: number
   editingPage: number | null
   title: string
   fileName: string
@@ -465,12 +468,17 @@ function LivePreview({
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }, [filled, fileName])
 
-  function download() {
-    if (stale) {
-      setPendingDownload(true)
-      onRefresh()
-    } else saveFile()
-  }
+  // Download pressed: fill the answers on screen first when they have changed,
+  // then save the PDF as a file once it is ready.
+  const onRefreshRef = useRef(onRefresh)
+  onRefreshRef.current = onRefresh
+  const staleRef = useRef(stale)
+  staleRef.current = stale
+  useEffect(() => {
+    if (downloadTick === 0) return
+    setPendingDownload(true)
+    if (staleRef.current) onRefreshRef.current()
+  }, [downloadTick])
 
   useEffect(() => {
     if (!pendingDownload || loading || stale || !filled) return
@@ -501,14 +509,6 @@ function LivePreview({
           ) : (
             stale && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-warning">Preview not updated: save to see your changes</span>
           )}
-          <button
-            type="button"
-            onClick={download}
-            disabled={!filled || pendingDownload}
-            className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-foreground/70 hover:border-accent hover:text-accent disabled:opacity-50"
-          >
-            <Download className="h-3 w-3" aria-hidden="true" /> Download
-          </button>
         </span>
       </div>
       <div className="overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]">

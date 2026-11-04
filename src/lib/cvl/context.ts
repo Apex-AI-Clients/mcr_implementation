@@ -89,7 +89,9 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
       .limit(1)
       .maybeSingle(),
     supabase.from('accountant_details').select('company_name, contact_person, phone_number, email_address').eq('client_id', clientId).maybeSingle(),
-    loadPrintedComparison(supabase, clientId, { readMissing: true }),
+    // Stored reads only: statements are read (once) when the comparison page is
+    // opened. Reading here would parse PDFs again on every form open.
+    loadPrintedComparison(supabase, clientId),
     loadMapping(supabase, clientId),
     loadAtoAccounts(supabase, clientId),
     supabase.from('sbr_outcome_predictions').select('creditors').eq('client_id', clientId).maybeSingle(),

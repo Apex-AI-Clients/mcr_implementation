@@ -74,6 +74,7 @@ const json = (url: string, body: unknown) => new NextRequest(url, { method: 'POS
 const text = async (res: Response) => (await extractText(await getDocumentProxy(new Uint8Array(await res.arrayBuffer())), { mergePages: true })).text
 
 beforeEach(() => {
+  vi.mocked(loadCvlContext).mockClear()
   vi.mocked(requireStaffUser).mockResolvedValue({ id: 's1', email: 'casey@example.com', user_metadata: { full_name: 'Casey Staff' } } as never)
   vi.mocked(loadCvlContext).mockResolvedValue(context())
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -111,6 +112,8 @@ describe('preview', () => {
       PARAMS,
     )
     expect(res.status).toBe(200)
+    // Only the answers sent are filled: the client file is not read (a light request).
+    expect(loadCvlContext).not.toHaveBeenCalled()
     const t = await text(res)
     expect(t).toContain('Typed On Screen')
     expect(t).not.toContain('hunter2')
