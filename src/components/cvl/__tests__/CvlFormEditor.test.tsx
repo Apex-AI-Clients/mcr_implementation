@@ -209,6 +209,12 @@ describe('CvlFormEditor', () => {
     expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
   })
 
+  it('shows Part B’s question numbers as they are', () => {
+    renderPartB()
+    const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
+    expect(links.slice(0, 4)).toEqual(['Company', 'B1', 'B2', 'B3'])
+  })
+
   it('saves with Ctrl+S', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()
@@ -257,6 +263,12 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const [valuation, erv] = [...(cell.parentElement as HTMLElement).querySelectorAll('td')].slice(1)
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
+
+  it('names Form 509’s sections in full in the jump links, never as initials', () => {
+    render509()
+    const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
+    expect(links).toEqual(['Lodgement details', 'Company details', 'Summary of assets', 'Summary of liabilities', 'Signature'])
+  })
 
   it('puts each amount under the column it prints in, in the form’s own words', () => {
     render509()

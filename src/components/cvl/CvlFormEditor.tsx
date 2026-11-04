@@ -255,9 +255,10 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
               <a
                 key={s.q}
                 href={`#q-${s.q}`}
-                className="rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-foreground/50 hover:border-accent hover:text-accent"
+                // A question number (A3, B12) in the form's own style; a section name (Form 509) in full.
+                className={`rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-foreground/50 hover:border-accent hover:text-accent ${/^[A-Z]\d/.test(s.q) ? 'font-mono tabular-nums' : ''}`}
               >
-                {s.q.length > 6 ? s.q.split(' ').map((w) => w[0]).join('') : s.q}
+                {s.q}
               </a>
             ))}
           </nav>
