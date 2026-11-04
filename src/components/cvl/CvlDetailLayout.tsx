@@ -7,7 +7,7 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { CvlDeleteButton } from './CvlDeleteButton'
-import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
+import { FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
 import { formatPhone } from '@/lib/leads/format'
@@ -49,12 +49,6 @@ const SHORT: Record<string, string> = { '509': 'Form 509', '507a': 'Form 507 Par
 const formatAcn = (acn: string | null) => {
   const d = (acn ?? '').replace(/\D/g, '')
   return d.length === 9 ? d.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : acn || null
-}
-
-/** "1 Aug 2022" from ASIC's "20220801"; a year alone as it is. */
-const versionLabel = (v: string) => {
-  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(v)
-  return m ? formatDate(`${m[1]}-${m[2]}-${m[3]}`) : v
 }
 
 /**
@@ -180,8 +174,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       </p>
                       <p className="text-xs text-foreground/40">
                         <span className="sr-only">{f.title}. </span>
-                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)} by ${f.draft.updated_by}` : 'Not opened yet'} · ASIC version{' '}
-                        {versionLabel(CURRENT_VERSION[f.code])}
+                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)} by ${f.draft.updated_by}` : 'Not opened yet'}
                       </p>
                     </div>
                   </div>
