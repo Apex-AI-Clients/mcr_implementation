@@ -357,7 +357,7 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',
     )
-    expect(screen.getByRole('link', { name: /Edit details/ }).getAttribute('href')).toBe('/cvl/cl_1/intake')
+    expect(screen.getByRole('link', { name: 'Edit client details' }).getAttribute('href')).toBe('/cvl/cl_1/intake')
     expect(screen.getByRole('link', { name: /CVL clients/ }).getAttribute('href')).toBe('/cvl')
     // SBR only: no prediction checklist, no Continue intake.
     expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()

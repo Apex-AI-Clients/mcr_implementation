@@ -137,7 +137,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:bg-primary"
           >
             <Pencil className="h-3.5 w-3.5" />
-            Edit details
+            Edit client details
           </Link>
         </div>
       </div>
@@ -309,7 +309,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                 ))}
               </ul>
             ) : (
-              <p className="text-xs italic text-foreground/40">No directors on file: add them in Edit details. Each gets their own Part B.</p>
+              <p className="text-xs italic text-foreground/40">No directors on file: add them in Edit client details. Each gets their own Part B.</p>
             )}
           </Card>
 
