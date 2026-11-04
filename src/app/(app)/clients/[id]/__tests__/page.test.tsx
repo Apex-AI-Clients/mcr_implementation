@@ -17,18 +17,6 @@ vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: ()
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
 vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
-// The director's risk reads the statements and ATO accounts: its own tests cover it.
-vi.mock('@/lib/cvl/directorRiskStore', () => ({
-  loadDirectorRisk: vi.fn(async () => ({
-    issued: [],
-    potential: [],
-    activityStatement: null,
-    sgAccounts: [],
-    loans: [],
-    totalAtoDebt: null,
-    accounts: [],
-  })),
-}))
 vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
@@ -357,11 +345,8 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
     expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview'])
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
-    // The director's personal risk comes last, after the documents and the side column.
-    const risk = screen.getByText('Director’s personal risk')
-    for (const before of ['Documents', 'Accountant']) {
-      expect(screen.getByText(before).compareDocumentPosition(risk) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
+    // No director's personal risk section on this page.
+    expect(screen.queryByText('Director’s personal risk')).toBeNull()
     expect(within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ }).getAttribute('href')).toBe(
       '/cvl/cl_1/director-penalty-notices',
     )

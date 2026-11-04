@@ -30,7 +30,6 @@ import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/
 import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
-import { loadDirectorRisk } from '@/lib/cvl/directorRiskStore'
 import { toCvlCase } from '@/lib/cvl/cases'
 import { clientBase, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
@@ -194,11 +193,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
 
   // A CVL file has its own layout: status and next step first, then the forms.
   if (cvl && cvlCase) {
-    // The director's risk: never stops the page loading.
-    const risk = await loadDirectorRisk(supabase, id, { dpn, atoAccounts }).catch((err) => {
-      console.error('[cvl page] director risk failed', err instanceof Error ? err.name : 'unknown')
-      return null
-    })
     return (
       <CvlDetailLayout
         client={{ id: client.id, name: client.name, email: client.email, phone: client.phone }}
@@ -211,7 +205,6 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         dpn={dpn}
         atoAccounts={atoAccounts}
         runningJob={runningJob}
-        risk={risk}
       />
     )
   }

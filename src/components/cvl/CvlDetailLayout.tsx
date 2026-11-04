@@ -7,8 +7,6 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { CvlDeleteButton } from './CvlDeleteButton'
-import { DirectorRiskPanel } from './DirectorRiskPanel'
-import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
 import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
@@ -31,8 +29,6 @@ interface CvlDetailLayoutProps {
   dpn: DpnPanelData
   atoAccounts: AtoAccountsOverview
   runningJob: { id: string; created_at: string } | null
-  /** The director's personal risk; null when it could not be worked out. */
-  risk: DirectorRiskData | null
 }
 
 interface Analysis {
@@ -66,7 +62,7 @@ const versionLabel = (v: string) => {
  * next first, then the ASIC forms (one Part B per director), the company and
  * its directors at a glance, and the documents and analyses the forms draw on.
  */
-export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob, risk }: CvlDetailLayoutProps) {
+export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob }: CvlDetailLayoutProps) {
   const base = `/cvl/${client.id}`
   const directors = company?.directors ?? []
   const forms = FORM_CODES.flatMap((code) =>
@@ -354,13 +350,6 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
           )}
         </aside>
       </div>
-
-      {/* Last, full width: the director's personal risk. */}
-      {risk && (
-        <div className="mt-6">
-          <DirectorRiskPanel clientId={client.id} risk={risk} />
-        </div>
-      )}
     </div>
   )
 }
