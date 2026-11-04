@@ -176,7 +176,19 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       { rootMargin: '-15% 0px -75% 0px' },
     )
     root.querySelectorAll('section[data-page]').forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
+
+    // Back at the top of the questions: the first page, from its top.
+    const marker = root.querySelector<HTMLElement>('[data-form-top]')
+    const atTop = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting) || !marker?.dataset.page) return
+      const next = { page: Number(marker.dataset.page), top: 0 }
+      setSpot((cur) => (cur && cur.page === next.page && cur.top === 0 ? cur : next))
+    })
+    if (marker) atTop.observe(marker)
+    return () => {
+      observer.disconnect()
+      atTop.disconnect()
+    }
   }, [map])
 
   return (
@@ -236,6 +248,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The questions */}
         <div ref={questions} className="min-w-0 space-y-3" onFocus={onFocusIn}>
+          {/* Marks the top of the questions, for the preview to show the first page from its top. */}
+          <div data-form-top="" data-page={sectionSpot(map.sections[0] ?? { q: '', text: '', fields: [], tables: [] }, true)['data-page'] ?? 1} aria-hidden="true" className="-mb-3 h-0" />
           <nav aria-label="Questions" className="flex flex-wrap gap-1">
             {map.sections.map((s) => (
               <a
@@ -266,12 +280,12 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             </section>
           )}
 
-          {map.sections.map((s) => (
+          {map.sections.map((s, i) => (
             <section
               key={s.q}
               className="scroll-mt-4 rounded-xl border border-border bg-card p-4"
               aria-labelledby={`q-${s.q}`}
-              {...sectionSpot(s)}
+              {...sectionSpot(s, i === 0)}
             >
               <h2 id={`q-${s.q}`} className="mb-3 flex items-baseline gap-2.5 text-sm font-medium text-foreground">
                 <span className="min-w-[2.6em] font-mono font-semibold text-accent">{s.q}</span>{' '}
@@ -348,12 +362,18 @@ interface Spot {
   top: number
 }
 
-/** Where a section starts on the form: its first answer or table that is on screen. */
-function sectionSpot(s: EntryMap['sections'][number]): { 'data-page'?: number; 'data-top'?: number } {
-  const first = [...s.fields.filter((f) => !f.handwritten), ...s.tables][0]
-  if (!first) return {}
-  const onFirstPage = [...s.fields.filter((f) => !f.handwritten), ...s.tables].filter((x) => x.page === first.page)
-  return { 'data-page': first.page, 'data-top': Math.min(...onFirstPage.map((x) => x.top)) }
+/**
+ * Where a section starts on the form: its first answer or table that is on
+ * screen. The form's first section shows its page from the very top, so the
+ * form's heading is in view while the questions are scrolled to the top.
+ */
+function sectionSpot(s: EntryMap['sections'][number], first: boolean): { 'data-page'?: number; 'data-top'?: number } {
+  const shown = [...s.fields.filter((f) => !f.handwritten), ...s.tables]
+  const lead = shown[0]
+  if (!lead) return {}
+  if (first) return { 'data-page': lead.page, 'data-top': 0 }
+  const onLeadPage = shown.filter((x) => x.page === lead.page)
+  return { 'data-page': lead.page, 'data-top': Math.min(...onLeadPage.map((x) => x.top)) }
 }
 
 /** pdf.js's parsed document and its loading task (unpdf's build), as used here. */

@@ -146,30 +146,57 @@ describe('CvlFormEditor', () => {
     await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
   })
 
-  it('turns the preview to the page of the question scrolled to on the left', async () => {
-    let report: ((entries: { isIntersecting: boolean; target: Element; boundingClientRect: { top: number } }[]) => void) | null = null
-    const observed: Element[] = []
+  /** A stand-in IntersectionObserver: each observer's callback and what it watches. */
+  function stubObservers() {
+    const observers: { report: (entries: { isIntersecting: boolean; target: Element; boundingClientRect: { top: number } }[]) => void; watched: Element[] }[] = []
     vi.stubGlobal(
       'IntersectionObserver',
       class {
-        constructor(cb: typeof report) {
-          report = cb
+        watched: Element[] = []
+        constructor(report: (typeof observers)[number]['report']) {
+          observers.push({ report, watched: this.watched })
         }
         observe(el: Element) {
-          observed.push(el)
+          this.watched.push(el)
         }
         disconnect() {}
       },
     )
+    const watching = (pred: (el: Element) => boolean) => observers.find((o) => o.watched.some(pred))!
+    return { watching }
+  }
+
+  it('turns the preview to the page of the question scrolled to on the left', async () => {
+    const { watching } = stubObservers()
     stubFetch()
     renderPartB()
     await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
-    // Every question section is watched, nothing else.
-    expect(observed.length).toBe(screen.getAllByRole('region').filter((r) => r.tagName === 'SECTION' && r.hasAttribute('data-page')).length)
+    const sections = watching((el) => el.tagName === 'SECTION')
+    // Every question section is watched.
+    expect(sections.watched.length).toBe(document.querySelectorAll('section[data-page]').length)
     const b24 = section('B24')
     expect(b24.dataset.page).toBe('8')
-    act(() => report!([{ isIntersecting: true, target: b24, boundingClientRect: { top: 100 } }]))
+    act(() => sections.report([{ isIntersecting: true, target: b24, boundingClientRect: { top: 100 } }]))
     await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+  })
+
+  it('shows the first question’s page from its very top when the questions are back at the top', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+    act(() => sections.report([{ isIntersecting: true, target: section('B24'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+
+    const top = watching((el) => el.hasAttribute('data-form-top'))
+    const marker = document.querySelector('[data-form-top]')!
+    act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
+    // Part B's first question is on page 2 (page 1 is ASIC's cover): that page, from its top.
+    expect(marker.getAttribute('data-page')).toBe('2')
+    await waitFor(() => expect(screen.getByRole('button', { name: '2' }).getAttribute('aria-current')).toBe('page'))
+    // The first section starts its page from the top, not at its own first box.
+    expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })
 
   it('saves with Ctrl+S', async () => {
