@@ -9,6 +9,7 @@ import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
 import type { FieldValue, TableRow } from '@/lib/forms/types'
+import { overflowOf, type Room } from '@/lib/forms/fit'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
 import type { Candidate, Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
@@ -609,6 +610,27 @@ function LivePreview({
 
 const inputClass =
   'w-full rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-50'
+/** An answer longer than its box on the form: outlined in red. */
+const tooLongClass = 'border-destructive focus:border-destructive'
+
+/** How many characters of an answer won't print in its box (0 when it all fits, or the box has no limit). */
+function overflowFor(room: Room | undefined, value: FieldValue): number {
+  if (!room || value === null || value === undefined || typeof value === 'boolean') return 0
+  return overflowOf(room, String(value))
+}
+
+const chars = (n: number) => `${n} ${n === 1 ? 'character' : 'characters'}`
+
+/** The warning under an answer that won't all print. */
+function TooLong({ id, over, room }: { id: string; over: number; room: Room }) {
+  if (!over) return null
+  const where = room.kind === 'lines' ? `the ${room.lineWs.length} lines on the form` : 'its box on the form'
+  return (
+    <p id={id} className="mt-1 text-xs text-destructive">
+      Too long for {where}: the last {chars(over)} won’t print. Shorten it, or attach an annexure.
+    </p>
+  )
+}
 
 function FieldInput({
   field: f,
@@ -629,6 +651,11 @@ function FieldInput({
 
   // Written by hand on the printout (signature dates, B6 log-ins, B1 address): not on this screen.
   if (f.handwritten) return null
+
+  // Measured as the form prints it: shrunk to fit first, then whatever still doesn't fit is cut.
+  const over = overflowFor(f.room, value)
+  const fitId = `${id}-fit`
+  const fitProps = over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {}
 
   let control: React.ReactNode
   if (f.type === 'yesno') {
@@ -668,7 +695,14 @@ function FieldInput({
   } else if (f.type === 'lines') {
     control = (
       <div className="flex items-start gap-1">
-        <textarea id={id} rows={Math.min(8, Math.max(2, f.lines ?? 3))} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} className={inputClass} />
+        <textarea
+          id={id}
+          rows={Math.min(8, Math.max(2, f.lines ?? 3))}
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${inputClass} ${over ? tooLongClass : ''}`}
+          {...fitProps}
+        />
         {info}
       </div>
     )
@@ -688,7 +722,8 @@ function FieldInput({
               onChange(raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw)
             } else onChange(raw === '' ? null : raw)
           }}
-          className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''}`}
+          className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
+          {...fitProps}
         />
         {info}
       </div>
@@ -707,6 +742,7 @@ function FieldInput({
         </label>
       )}
       {control}
+      {f.room && <TooLong id={fitId} over={over} room={f.room} />}
       {note && <p className="mt-1 text-xs text-warning">{note}</p>}
     </div>
   )
@@ -789,21 +825,7 @@ function ColumnsTable({
             <tr key={r.label} className="border-t border-white/5">
               <td className="py-1.5 pr-3 text-xs text-foreground/80">
                 {r.label}
-                {r.inline && (
-                  <span className="mt-1 flex items-center gap-1.5" data-page={r.inline.page} data-top={r.inline.top}>
-                    <label htmlFor={`f-${r.inline.key}`} className="shrink-0 text-foreground/50">
-                      to:
-                    </label>
-                    <input
-                      id={`f-${r.inline.key}`}
-                      aria-label={r.inline.label}
-                      placeholder="Who holds the debenture or charge"
-                      value={values[r.inline.key] === null || values[r.inline.key] === undefined ? '' : String(values[r.inline.key])}
-                      onChange={(e) => onChange(r.inline!.key, e.target.value === '' ? null : e.target.value)}
-                      className={`${inputClass} py-1 text-xs`}
-                    />
-                  </span>
-                )}
+                {r.inline && <InlineAnswer field={r.inline} value={values[r.inline.key]} onChange={onChange} />}
               </td>
               <td className="py-1.5 pr-2">{cell(r.valuation)}</td>
               <td className="py-1.5">{cell(r.erv)}</td>
@@ -812,6 +834,31 @@ function ColumnsTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+/** Line 4's "…assets to:" blank, typed inside its row. */
+function InlineAnswer({ field: f, value, onChange }: { field: EntryField; value: FieldValue; onChange: (key: string, v: FieldValue) => void }) {
+  const id = `f-${f.key}`
+  const over = overflowFor(f.room, value)
+  return (
+    <span className="mt-1 block" data-page={f.page} data-top={f.top}>
+      <span className="flex items-center gap-1.5">
+        <label htmlFor={id} className="shrink-0 text-foreground/50">
+          to:
+        </label>
+        <input
+          id={id}
+          aria-label={f.label}
+          placeholder="Who holds the debenture or charge"
+          value={value === null || value === undefined ? '' : String(value)}
+          onChange={(e) => onChange(f.key, e.target.value === '' ? null : e.target.value)}
+          className={`${inputClass} py-1 text-xs ${over ? tooLongClass : ''}`}
+          {...(over ? { 'aria-invalid': true as const, 'aria-describedby': `${id}-fit` } : {})}
+        />
+      </span>
+      {f.room && <TooLong id={`${id}-fit`} over={over} room={f.room} />}
+    </span>
   )
 }
 
@@ -844,8 +891,11 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className="border-b border-white/8 last:border-0">
-                {table.columns.map((c) => (
-                  <td key={c.key} className="px-1 py-1">
+                {table.columns.map((c) => {
+                  const over = overflowFor(c.room, r[c.key])
+                  const fitId = `t-${table.id}-${i}-${c.key}-fit`
+                  return (
+                    <td key={c.key} className="px-1 py-1 align-top">
                     {c.type === 'check' ? (
                       <input
                         type="checkbox"
@@ -865,11 +915,18 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                           const n = Number(raw.replace(/[$,\s]/g, ''))
                           set(i, c.key, raw === '' ? null : c.type === 'money' && Number.isFinite(n) ? n : raw)
                         }}
-                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''}`}
+                        className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
+                        {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}
                       />
                     )}
-                  </td>
-                ))}
+                    {over > 0 && (
+                      <p id={fitId} className="mt-0.5 px-1 text-[11px] leading-tight text-destructive">
+                        Too long for its cell: the last {chars(over)} won’t print.
+                      </p>
+                    )}
+                    </td>
+                  )
+                })}
                 <td className="px-1 py-1">
                   <span className="flex items-center gap-1">
                     {sources[i] && <SourceButton source={sources[i]} label={`Row ${i + 1}`} />}

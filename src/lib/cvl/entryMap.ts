@@ -1,9 +1,10 @@
+import { cellRoomOf, roomOf, type Room } from '@/lib/forms/fit'
 import type { FormMap } from '@/lib/forms/types'
 
 /**
  * A form's map as the entry screen needs it: questions in the form's own
- * order and numbering, each answer's type and label, the tables' columns.
- * No page coordinates. Pure.
+ * order and numbering, each answer's type and label, the tables' columns,
+ * where each is printed and how much room its box gives. Pure.
  */
 
 export type EntryFieldType = 'text' | 'lines' | 'money' | 'date' | 'yesno' | 'choice'
@@ -32,12 +33,15 @@ export interface EntryField {
   computed?: boolean
   /** Typed inside its row of the summary table (line 4's "…assets to:"), not on its own. */
   inline?: boolean
+  /** The room its box gives on the form, to warn when an answer would be cut off. */
+  room?: Room
 }
 
 export interface EntryTable {
   id: string
   title: string
-  columns: { key: string; label: string; type: 'text' | 'money' | 'date' | 'check' }[]
+  /** Text columns carry the room a cell gives, to warn when an entry would be cut off. */
+  columns: { key: string; label: string; type: 'text' | 'money' | 'date' | 'check'; room?: Room }[]
   /** Rows on one printed page; more go onto copies of the page. */
   rowsPerPage: number
   /** The template page the table is printed on. */
@@ -78,6 +82,8 @@ const ERV_COLUMN_X0 = 480
 /** "1(b) Sundry debtors: Valuation" → "1(b) Sundry debtors". */
 const rowLabel = (label: string) =>
   label.replace(/: (Valuation|Estimated realisable value)$/, '').replace(/ \(valuation\)$/, '')
+
+const withRoom = (room: Room | null): { room?: Room } => (room ? { room } : {})
 
 /** The top of an answer's first box on its page. */
 function topOf(f: FormMap['fields'][number]): number {
@@ -131,13 +137,14 @@ export function entryMap(map: FormMap): EntryMap {
       ...(f.type === 'choice' ? { options: Object.keys(f.options).map((k): [string, string] => [k, CHOICE_LABELS[k] ?? k.replace(/_/g, ' ')]) } : {}),
       ...(f.type === 'lines' ? { lines: f.lines.length } : {}),
       ...(f.handwritten ? { handwritten: true } : {}),
+      ...(f.handwritten ? {} : withRoom(roomOf(f))),
     })
   }
   for (const t of map.tables) {
     section(t.q).tables.push({
       id: t.id,
       title: t.title,
-      columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type })),
+      columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type, ...withRoom(cellRoomOf(c)) })),
       rowsPerPage: t.rows.length,
       page: t.page,
       top: Math.round(t.rows[0]?.top ?? 0),

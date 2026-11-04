@@ -85,6 +85,39 @@ describe('CvlFormEditor', () => {
     expect(within(name.parentElement as HTMLElement).queryByRole('button')).toBeNull()
   })
 
+  it('warns while typing when an answer is too long for its box, without stopping the typing', async () => {
+    const user = userEvent.setup({ delay: null })
+    renderPartB()
+    const name = within(section('B1')).getByLabelText('Name') as HTMLInputElement
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+    await user.clear(name)
+    const long = 'Lorem ipsum dolor sit amet '.repeat(8).trim()
+    await user.click(name)
+    await user.paste(long)
+    // Everything typed is kept; the box says how much won't print.
+    expect(name.value).toBe(long)
+    expect(name.getAttribute('aria-invalid')).toBe('true')
+    const warning = document.getElementById(name.getAttribute('aria-describedby')!)!
+    expect(warning.textContent).toMatch(/^Too long for its box on the form: the last \d+ characters won’t print\. Shorten it, or attach an annexure\.$/)
+    // Short enough again: the warning goes.
+    await user.clear(name)
+    await user.type(name, 'Jordan Sample')
+    expect(name.getAttribute('aria-invalid')).toBeNull()
+    expect(within(section('B1')).queryByText(/Too long for/)).toBeNull()
+  })
+
+  it('warns on a table cell too long for its cell', async () => {
+    const user = userEvent.setup({ delay: null })
+    renderPartB()
+    const b21 = section('B21')
+    await user.click(within(b21).getByRole('button', { name: 'Add a row' }))
+    const how = within(b21).getByLabelText('How did creditor ask for payment, row 1') as HTMLInputElement
+    await user.click(how)
+    await user.paste('Lorem ipsum dolor sit amet '.repeat(10).trim())
+    expect(how.getAttribute('aria-invalid')).toBe('true')
+    expect(within(b21).getByText(/^Too long for its cell: the last \d+ characters won’t print\.$/)).toBeTruthy()
+  })
+
   it('leaves handwritten answers off the screen: nothing to type, nothing saved', () => {
     renderPartB()
     const b6 = section('B6')
