@@ -147,6 +147,29 @@ describe('auto-selection', () => {
     expect(possible.loan_payable?.[0].why).toMatch(/Confirmed as not printed, but now matched/)
   })
 
+  it('switches a staff "Not printed" given under an older reader to the lines matched now, with a note', () => {
+    const c = trustComparison([r(NCL, 'Example Earthworks - 2020 Div 7A Loan', 'line', 32791.15), r(NCL, 'Example Earthworks - 2022 Div 7A Loan', 'line', 27620.66)])
+    const staff: MappingEntry[] = [{ meaning: 'loan_payable', rowKey: '', label: null, nonePrinted: true, confirmedBy: 'assist', confirmedAt: '2026-11-04T08:58:19Z' }]
+    const { entries, possible, replaced } = autoMapping(c, staff, { parties: PARTIES }, { staleBefore: '2026-11-05T00:00:00Z' })
+    expect(replaced).toEqual(staff)
+    const by = entries.filter((e) => e.meaning === 'loan_payable')
+    expect(by).toHaveLength(5)
+    expect(by[0].updatedNote).toBe('Updated after a reading fix (was: Not printed, by assist on 4 Nov 2026)')
+    expect(possible.loan_payable).toBeUndefined()
+    // The Div 7A lines are counted, labelled as such.
+    expect(by.filter((e) => /^Div 7A loan/.test(e.autoRule ?? '')).map((e) => e.label)).toEqual(['Example Earthworks - 2020 Div 7A Loan', 'Example Earthworks - 2022 Div 7A Loan'])
+    expect(predictionFinancials(c, entries, { parties: PARTIES }).loanPayable?.amount).toBe(356321.41)
+  })
+
+  it('never changes a staff answer given since the reader went live', () => {
+    const c = trustComparison()
+    const staff: MappingEntry[] = [{ meaning: 'loan_payable', rowKey: '', label: null, nonePrinted: true, confirmedBy: 'assist', confirmedAt: '2026-11-06T00:00:00Z' }]
+    const { entries, possible, replaced } = autoMapping(c, staff, { parties: PARTIES }, { staleBefore: '2026-11-05T00:00:00Z' })
+    expect(replaced).toEqual([])
+    expect(entries.find((e) => e.meaning === 'loan_payable')).toBeUndefined()
+    expect(possible.loan_payable).toHaveLength(3)
+  })
+
   it('selects nothing from a statement no file prints', () => {
     const c = buildPrintedComparison([])
     expect(autoMapping(c, [], {}).entries).toEqual([])

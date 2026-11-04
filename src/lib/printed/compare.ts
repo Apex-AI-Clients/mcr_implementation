@@ -1,5 +1,5 @@
 import { verifyStatement, type TotalCheck } from './verify'
-import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind } from './types'
+import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind, ScanCell, ScanSummary } from './types'
 
 /**
  * The as-printed comparison: a client's financial statement PDFs, read by
@@ -20,6 +20,9 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  *             and line: the own report's figure stays, with a note.
  *   Checks    every printed total of every report used, against its lines
  *             (verify.ts). A failure is a hard check: Needs review.
+ *   Scans     a figure read from a scanned page carries both readings
+ *             (src/lib/scan); one they disagree on is a hard check only a
+ *             staff choice settles; a single reading is one to tick.
  */
 
 export interface ComparisonDocument {
@@ -64,6 +67,8 @@ export interface ComparisonCell {
   restated: Restatement[]
   /** A printed total that does not add up (verify.ts), or adds up only to rounding. */
   check: TotalCheck['status'] | null
+  /** Read from a scanned page: both readings, and where the line is on the page (for its crop). */
+  scan?: ScanCell & { key: string; documentId: string; page: number; band: [number, number] | null; column: number }
 }
 
 export interface ComparisonRow {
@@ -82,7 +87,7 @@ export interface ComparisonTable {
 }
 
 export interface ComparisonFailure {
-  kind: 'totals_reconciliation' | 'balance_sheet_equation'
+  kind: 'totals_reconciliation' | 'balance_sheet_equation' | 'scan_disagreement' | 'scan_single_reading'
   statement: PrintedStatementKind
   column: string
   financialYear: number
@@ -102,6 +107,8 @@ export interface DocumentUse {
   /** For staff: why it is not used, or what could not be read. */
   message: string | null
   issues: PrintedRead['issues']
+  /** The PDF has scanned pages: which, what was read, what was skipped. */
+  scan?: ScanSummary
 }
 
 export interface PrintedComparison {
@@ -366,6 +373,7 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
             }
           }
         }
+        const scanCell = found?.row.scan?.cells[found.column]
         return found
           ? {
               printed: true,
@@ -373,16 +381,55 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
               source: sourceOf(sources[i]!, found),
               restated,
               check: checkByCell.get(`${key}#${i}`) ?? null,
+              ...(scanCell
+                ? { scan: { ...scanCell, key: found.row.scan!.key, documentId: sources[i]!.documentId, page: found.row.page, band: found.row.scan!.band, column: found.column } }
+                : {}),
             }
           : { printed: false, value: null, source: null, restated, check: null }
       }),
     }))
+    // Scanned figures: each disagreement is a hard check; single readings, one per year.
+    columns.forEach((col, i) => {
+      const doc = sources[i]
+      if (!doc) return
+      let single = 0
+      for (const row of rows) {
+        const cell = row.cells[i]
+        if (!cell.scan) continue
+        if (cell.scan.status === 'single') single++
+        if (cell.scan.status !== 'disagree') continue
+        failures.push({
+          kind: 'scan_disagreement',
+          statement: kind,
+          column: col.key,
+          financialYear: col.financialYear,
+          currentPeriod: col.kind === 'current_period',
+          documentId: doc.documentId,
+          message: `${doc.filename}, page ${cell.scan.page}: "${row.label || '(no label)'}" reads ${scanText(cell.scan.ocr)} by one reading and ${scanText(cell.scan.claude)} by the other. Choose the figure.`,
+          terms: [],
+        })
+      }
+      if (single > 0) {
+        failures.push({
+          kind: 'scan_single_reading',
+          statement: kind,
+          column: col.key,
+          financialYear: col.financialYear,
+          currentPeriod: col.kind === 'current_period',
+          documentId: doc.documentId,
+          message: `${doc.filename}: ${single} figure(s) were read from a scan by one reader only. Check them against the scan.`,
+          terms: [],
+        })
+      }
+    })
     const titleSource = blocks[orderIdx[0]]?.[0]
     tables.push({ kind, title: titleSource?.statement.title ?? (kind === 'profit_and_loss' ? 'Profit and Loss' : 'Balance Sheet'), rows })
   }
 
   return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length, hiddenComparativeYears: hiddenYears }
 }
+
+const scanText = (v: PrintedAmount | undefined) => (v === undefined ? 'nothing' : v === null ? '"-"' : typeof v === 'number' ? v.toLocaleString('en-AU') : v)
 
 function describeDocuments(docs: ComparisonDocument[], used: Set<string>): DocumentUse[] {
   return docs.map((doc) => {
@@ -392,7 +439,9 @@ function describeDocuments(docs: ComparisonDocument[], used: Set<string>): Docum
       ? read.statements.map((s) => `${s.title}: ${s.columns.map((c) => (c.kind === 'annual' ? fyLabel(c.financialYear) : `to ${c.periodEnd}`)).join(', ')}`).join(' · ')
       : null
     const message =
-      read.status === 'no_text_layer'
+      read.status === 'scan_pending'
+        ? (read.scan?.message ?? 'Scanned pages are being read.')
+        : read.status === 'no_text_layer'
         ? NO_TEXT_LAYER_FOR_STAFF
         : read.status === 'failed'
           ? read.issues.map((i) => i.message).join(' ')
@@ -403,6 +452,6 @@ function describeDocuments(docs: ComparisonDocument[], used: Set<string>): Docum
             : used.has(doc.documentId)
               ? null
               : 'Not used: each year it prints comes from another report.'
-    return { documentId: doc.documentId, filename: doc.filename, status: read.status, found, used: used.has(doc.documentId), message, issues: read.issues }
+    return { documentId: doc.documentId, filename: doc.filename, status: read.status, found, used: used.has(doc.documentId), message, issues: read.issues, ...(read.scan ? { scan: read.scan } : {}) }
   })
 }

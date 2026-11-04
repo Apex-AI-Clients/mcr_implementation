@@ -886,3 +886,33 @@ Added 2026-10-29 for the CVL forms. Code: `src/app/api/admin/clients/[id]/asic-e
 - An extract for a different ACN from the file's is refused.
 - To undo if Gabby says no: stop calling `keepAsicExtract` (two call sites) and
   delete the kept files and `client_asic_extracts` rows.
+
+---
+
+## Scanned financial statements read twice (migration 0044) — GABBY-APPROVED
+
+Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
+`src/lib/ai/openrouterClient.ts`, `SCAN_PAGE_PROMPT` in `src/lib/ai/prompts.ts`,
+`supabase/migrations/0044_scanned_statements.sql`. CLAUDE.md rule 12.
+
+- A PDF page with no text layer and a full-page image is a scan. Text-layer
+  pages keep the exact reader; OCR is never used on them.
+- Scanned pages are first sorted by their title (Tesseract, on our server):
+  only profit and loss, trading statement and balance sheet pages are read;
+  contents, notes, tax reconciliations, depreciation schedules, declarations
+  and compilation reports are skipped, and the Files read panel says which.
+- Each statement page is read twice, independently: by Tesseract on our server,
+  and by Claude from the **page image** (the only statement content ever sent to
+  a model), through the existing OpenRouter client: Anthropic only, no data
+  collection, zero retention, no fallbacks, nothing logged but ids and token
+  counts. No other page, figure or file is sent.
+- Figures both readings agree on are accepted ("Read from a scan"). Where they
+  differ, staff see both and a crop of the printed line (made on our server,
+  never stored) and choose one or type the figure; who and when are kept. The
+  comparison stays "Needs review" until every one is chosen.
+- At most 60 pages a day per client go to Claude; past that, or if Claude is
+  unavailable, Tesseract reads alone and every figure says "single reading —
+  check". The accountant's digital export is always exact: staff are prompted
+  to ask for it.
+- To undo: unset `OPENROUTER_API_KEY` for the scan reader (Tesseract then reads
+  alone), or stop calling `readOrQueueScan` in `src/lib/printed/store.ts`.

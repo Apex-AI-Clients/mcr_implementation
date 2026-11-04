@@ -20,9 +20,13 @@ import { PLAUSIBLE } from './picker'
  *
  * Auto-selections count as confirmed for the prediction (they are in the
  * mapping), are kept with the rule used (`autoRule`), and are worked out
- * again whenever the figures change. A staff choice is never replaced: when
- * the dictionary now matches lines a staff "Not printed" leaves out, they are
- * shown as possible lines on that meaning too.
+ * again whenever the figures change.
+ *
+ * Fresh evidence beats a stale answer: a staff "Not printed" given BEFORE the
+ * current reader went live (`staleBefore`), where the dictionary now matches
+ * lines, is switched to those lines with "Updated after a reading fix (was:
+ * …)". A staff answer given since is never changed: when the dictionary
+ * matches lines it leaves out, they are shown as possible lines instead.
  *
  * Nothing is auto-selected for a statement no file prints yet.
  */
@@ -43,6 +47,14 @@ export interface AutoMapping {
   /** Auto entries for meanings staff have not confirmed (confirmedBy 'auto', autoRule set). */
   entries: MappingEntry[]
   possible: Partial<Record<Meaning, PossibleLine[]>>
+  /** Staff answers switched after a reading fix: the entries they replace. */
+  replaced: MappingEntry[]
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function day(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
 }
 
 const MAX_OTHER_POSSIBLE = 3
@@ -86,7 +98,7 @@ export function autoMapping(
   comparison: PrintedComparison,
   staff: MappingEntry[],
   names: RelatedNames = {},
-  meanings: Meaning[] = SBR_MEANINGS.map((m) => m.key),
+  { meanings = SBR_MEANINGS.map((m) => m.key), staleBefore = null }: { meanings?: Meaning[]; staleBefore?: string | null } = {},
 ): AutoMapping {
   const suggested = suggestMappingWithRules(comparison, names)
   const table = (m: Meaning) => comparison.tables.find((t) => t.kind === MEANING[m].statement)
@@ -94,6 +106,7 @@ export function autoMapping(
   const taken = new Set<string>([...Object.values(suggested).flatMap((lines) => lines.map((l) => l.rowKey)), ...staff.filter((e) => !e.nonePrinted).map((e) => e.rowKey)])
   const entries: MappingEntry[] = []
   const possible: AutoMapping['possible'] = {}
+  const replaced: MappingEntry[] = []
 
   for (const m of meanings) {
     const rows = (table(m)?.rows ?? []).filter((r) => r.style !== 'heading' && r.style !== 'ratio' && r.cells.some((c) => c.printed && typeof c.value === 'number'))
@@ -101,8 +114,22 @@ export function autoMapping(
     const describe = (r: ComparisonRow, why: string): PossibleLine => ({ rowKey: r.key, label: r.label.trim() || '(line with no label)', ...latestPrinted(r, comparison.columns), why })
 
     if (confirmed.length > 0) {
-      // A staff "Not printed" the dictionary now disagrees with: say so, change nothing.
-      if (confirmed.every((e) => e.nonePrinted) && suggested[m].length > 0) {
+      const disagreed = confirmed.every((e) => e.nonePrinted) && suggested[m].length > 0
+      const stale = staleBefore !== null && confirmed.every((e) => e.confirmedAt !== '' && Date.parse(e.confirmedAt) < Date.parse(staleBefore))
+      // Given under an older reader: switched to the lines matched now, with a note.
+      if (disagreed && stale) {
+        const was = confirmed[0]
+        const note = `Updated after a reading fix (was: Not printed, by ${was.confirmedBy} on ${day(was.confirmedAt)})`
+        for (const l of suggested[m]) {
+          const r = rows.find((x) => x.key === l.rowKey)
+          if (!r) continue
+          entries.push({ meaning: m, rowKey: r.key, label: r.label || '(no label)', nonePrinted: false, confirmedBy: AUTO_BY, confirmedAt: '', autoRule: l.rule, updatedNote: note })
+        }
+        replaced.push(...confirmed)
+        continue
+      }
+      // A staff "Not printed" given since: say so, change nothing.
+      if (disagreed) {
         possible[m] = suggested[m].flatMap((l) => {
           const r = rows.find((x) => x.key === l.rowKey)
           return r ? [describe(r, `Confirmed as not printed, but now matched: ${l.rule}`)] : []
@@ -144,7 +171,7 @@ export function autoMapping(
       autoRule: 'No printed line matches, and no line looks like it.',
     })
   }
-  return { entries, possible }
+  return { entries, possible, replaced }
 }
 
 /** The same set of choices (meaning, line, not printed), whoever made them. */

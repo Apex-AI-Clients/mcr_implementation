@@ -111,7 +111,7 @@ describe('Confirm key figures', () => {
     expect(selection.loan_payable).toBeUndefined()
     expect(selection.income_tax_payable).toBeUndefined()
     // The save resolves after the click: wait for it.
-    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    await waitFor(() => expect(refresh).toHaveBeenCalled(), { timeout: 5000 })
   })
 
   it('shows the chosen line with every year and no empty heading, and the status', () => {

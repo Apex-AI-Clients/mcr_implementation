@@ -5,6 +5,10 @@ export type StatementHalfKey = 'income_statement' | 'balance_sheet'
 export type FinancialCheckKind =
   | 'totals_reconciliation'
   | 'balance_sheet_equation'
+  /** Two readings of a scanned figure differ: only a staff choice settles it (src/lib/scan). */
+  | 'scan_disagreement'
+  /** Scanned figures read by one reader only: staff tick that they checked them. */
+  | 'scan_single_reading'
   | 'retained_earnings_rollforward'
   | 'restatement'
   | 'entity_mismatch'

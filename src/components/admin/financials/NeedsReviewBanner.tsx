@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
-import { hardChecksFingerprint, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
+import { hardChecksFingerprint, reviewLine, unresolvedScanFigures, type FiguresChecked } from '@/lib/financials/hardChecks'
 import type { FinancialCheck } from '@/lib/financials/types'
 
 interface Props {
@@ -27,6 +27,8 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
   const fingerprint = hardChecksFingerprint(generatedAt, failures)
   if (!fingerprint) return null
   const done = reviewLine(failures, generatedAt, checked)
+  // Scanned figures the two readings disagree on are settled by choosing each one, not by the tick.
+  const toChoose = unresolvedScanFigures(failures)
 
   async function tick() {
     setSaving(true)
@@ -47,7 +49,9 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
     <div role="status" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3">
       <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
         <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-        Needs review: {failures.length === 1 ? 'a figure does' : `${failures.length} figures do`} not reconcile
+        {toChoose > 0
+          ? `Needs review: ${toChoose} scanned figure${toChoose === 1 ? '' : 's'} to choose${failures.length > toChoose ? `, and ${failures.length - toChoose} more to check` : ''}`
+          : `Needs review: ${failures.length === 1 ? 'a figure does' : `${failures.length} figures do`} not reconcile`}
       </p>
       <ul className="mt-2 ml-6 list-disc space-y-1 text-xs text-foreground/75">
         {failures.map((c, i) => (
@@ -59,7 +63,11 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
       </ul>
       {/* The reviewed line prints on the PDF; the tick itself does not. */}
       <div className={`mt-3 border-t border-destructive/20 pt-2 ${done ? '' : 'no-print'}`}>
-        {done ? (
+        {toChoose > 0 ? (
+          <p className="text-[11px] text-foreground/65">
+            Choose each scanned figure below (the readings differ). The PDF and CSV stay locked until every one is chosen.
+          </p>
+        ) : done ? (
           <p className="flex items-center gap-1.5 text-xs text-foreground/70">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
             {done}: checked against the source documents.

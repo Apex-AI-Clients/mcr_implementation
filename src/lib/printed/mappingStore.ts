@@ -3,6 +3,7 @@ import type { PrintedComparison } from './compare'
 import type { MappingEntry } from './mapping'
 import { MEANING, MEANINGS, type Meaning } from './meanings'
 import { fixSpelling } from './compare'
+import { READER_VERSION } from './store'
 import { readDirectors } from '@/lib/clients/companyDetails'
 import type { RelatedNames } from './dictionary'
 import { AUTO_BY, autoMapping, sameChoices, type PossibleLine } from './autoMapping'
@@ -39,6 +40,7 @@ export async function loadMapping(supabase: ServerClient, clientId: string): Pro
     confirmedBy: r.confirmed_by,
     confirmedAt: r.confirmed_at,
     autoRule: (r as { auto_rule?: string | null }).auto_rule ?? null,
+    updatedNote: (r as { updated_note?: string | null }).updated_note ?? null,
   }))
 }
 
@@ -121,6 +123,7 @@ export async function saveMapping(
       return {
         ...mappingRow(clientId, e, found ? { kind: found.kind, path: found.row.path } : null),
         ...(anyAuto ? { auto_rule: e.autoRule ?? null } : {}),
+        ...(next.some((x) => x.updatedNote) ? { updated_note: e.updatedNote ?? null } : {}),
       }
     }),
   )
@@ -201,8 +204,9 @@ export async function applyAutoMapping(
   const staff = stored.filter((e) => !isAuto(e))
   const kept = stored.filter(isAuto)
   if (loaded.unread > 0) return { mapping: [...staff, ...kept], possible: {} }
-  const { entries, possible } = autoMapping(comparison, staff, names)
-  if (sameChoices(kept, entries)) return { mapping: [...staff, ...kept], possible }
+  const { entries, possible, replaced } = autoMapping(comparison, staff, names, { staleBefore: await readerReleasedAt(supabase) })
+  if (replaced.length === 0 && sameChoices(kept, entries)) return { mapping: [...staff, ...kept], possible }
+  const staffKept = staff.filter((e) => !replaced.includes(e))
 
   const at = new Date().toISOString()
   const fresh = entries.map((e) => ({ ...e, confirmedAt: at }))
@@ -211,6 +215,11 @@ export async function applyAutoMapping(
   const before = new Set(kept.map(id))
   const after = new Set(fresh.map(id))
   try {
+    // Staff answers given under an older reader, switched to the lines matched now.
+    for (const e of replaced) {
+      const { error } = await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', e.meaning).eq('row_key', e.rowKey)
+      if (error) throw error
+    }
     const gone = kept.filter((e) => !after.has(id(e)))
     for (const e of gone) {
       const { error } = await supabase
@@ -226,14 +235,23 @@ export async function applyAutoMapping(
     if (added.length) {
       const { error } = await supabase
         .from('client_line_mappings')
-        .upsert(added.map((e) => ({ ...mappingRow(clientId, e, rows.get(e.rowKey) ?? null), auto_rule: e.autoRule ?? null })), {
-          onConflict: 'client_id,meaning,row_key',
-          ignoreDuplicates: true,
-        })
+        .upsert(
+          added.map((e) => ({
+            ...mappingRow(clientId, e, rows.get(e.rowKey) ?? null),
+            auto_rule: e.autoRule ?? null,
+            // updated_note (migration 0044) only on a switched answer.
+            ...(e.updatedNote ? { updated_note: e.updatedNote } : {}),
+          })),
+          {
+            onConflict: 'client_id,meaning,row_key',
+            ignoreDuplicates: true,
+          },
+        )
       if (error) throw error
     }
     const log = [
-      ...added.map((e) => ({ meaning: e.meaning, action: e.nonePrinted ? 'auto_none_printed' : 'auto_selected', row_key: e.rowKey, label: e.label, rule: e.autoRule ?? null })),
+      ...replaced.map((e) => ({ meaning: e.meaning, action: 'auto_removed', row_key: e.rowKey, label: e.label, rule: `Staff answer replaced after a reading fix (was: Not printed, by ${e.confirmedBy})` })),
+      ...added.map((e) => ({ meaning: e.meaning, action: e.nonePrinted ? 'auto_none_printed' : 'auto_selected', row_key: e.rowKey, label: e.label, rule: e.updatedNote ? `${e.updatedNote}. ${e.autoRule ?? ''}` : (e.autoRule ?? null) })),
       ...gone.map((e) => ({ meaning: e.meaning, action: 'auto_removed', row_key: e.rowKey, label: e.label, rule: e.autoRule ?? null })),
     ]
     if (log.length) {
@@ -244,7 +262,24 @@ export async function applyAutoMapping(
     // Migration 0043 not applied yet (or a write failed): use them, keep nothing.
     console.error('[line-mapping] could not keep the auto-selections:', err instanceof Error ? err.message : err)
   }
-  return { mapping: [...staff, ...fresh], possible }
+  return { mapping: [...staffKept, ...fresh], possible }
+}
+
+/**
+ * When the current READER_VERSION first ran on this deployment (reader_releases,
+ * migration 0044): staff answers given before it were given under an older
+ * reader. Null (no switching) when the table is not there yet.
+ */
+export async function readerReleasedAt(supabase: ServerClient): Promise<string | null> {
+  const read = async () => {
+    const { data, error } = await supabase.from('reader_releases').select('first_seen_at').eq('version', READER_VERSION).maybeSingle()
+    return error ? undefined : (data?.first_seen_at ?? null)
+  }
+  const seen = await read()
+  if (seen !== null) return seen ?? null
+  const { error } = await supabase.from('reader_releases').upsert({ version: READER_VERSION }, { onConflict: 'version', ignoreDuplicates: true })
+  if (error) return null
+  return (await read()) ?? null
 }
 
 /** The names, then the auto-selections over a mapping already loaded beside the comparison. */

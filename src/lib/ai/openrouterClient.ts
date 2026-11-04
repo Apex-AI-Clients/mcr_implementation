@@ -2,7 +2,10 @@
  * Server-only. The one way this app talks to an AI model: Claude, through
  * OpenRouter (MCR's account), for the comparison and lodgement summaries and
  * for suggesting what an unknown printed label means. No figure is ever read
- * by a model: the financial statements are read by code (src/lib/printed).
+ * by a model from a PDF's text: the financial statements are read by code
+ * (src/lib/printed). The one exception (Gabby-approved, 4 Nov 2026, CLAUDE.md
+ * rule 12): the page IMAGE of a SCANNED statement page, for the second,
+ * independent reading of a scan (askClaudeImage, src/lib/scan). Nothing else.
  *
  * Every request is pinned to Anthropic with OpenRouter's provider preferences
  * (CLAUDE_ONLY): only Anthropic, no fallback to any other provider, no
@@ -24,8 +27,9 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 /** The current Claude models on OpenRouter (checked 25 Oct 2026); overridable by env. */
 export const DEFAULT_SUMMARY_MODEL = 'anthropic/claude-sonnet-5.5'
 export const DEFAULT_LABEL_MODEL = 'anthropic/claude-haiku-5.5'
+export const DEFAULT_SCAN_MODEL = 'anthropic/claude-sonnet-5.5'
 
-export type ClaudePurpose = 'summary' | 'labels'
+export type ClaudePurpose = 'summary' | 'labels' | 'scan'
 
 /**
  * OpenRouter provider preferences sent with every request
@@ -52,8 +56,9 @@ export function aiSummariesEnabled(): boolean {
 
 /** The model for a purpose: env OPENROUTER_SUMMARY_MODEL / OPENROUTER_LABEL_MODEL, else the default. Claude only. */
 export function claudeModel(purpose: ClaudePurpose): string {
-  const configured = (purpose === 'summary' ? process.env.OPENROUTER_SUMMARY_MODEL : process.env.OPENROUTER_LABEL_MODEL)?.trim()
-  const model = configured || (purpose === 'summary' ? DEFAULT_SUMMARY_MODEL : DEFAULT_LABEL_MODEL)
+  const env = { summary: process.env.OPENROUTER_SUMMARY_MODEL, labels: process.env.OPENROUTER_LABEL_MODEL, scan: process.env.OPENROUTER_SCAN_MODEL }[purpose]
+  const fallback = { summary: DEFAULT_SUMMARY_MODEL, labels: DEFAULT_LABEL_MODEL, scan: DEFAULT_SCAN_MODEL }[purpose]
+  const model = env?.trim() || fallback
   if (!model.startsWith('anthropic/')) throw new AiUnavailableError(`Only Claude models may be used: "${model}" is not one.`)
   return model
 }
@@ -109,4 +114,64 @@ export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs =
   const text = response.choices[0]?.message?.content?.trim() ?? ''
   if (!text) throw new Error(`${label}: the model returned no text.`)
   return { text, model: response.model, generationId: response.id }
+}
+
+/** The second reading of scanned statement pages: on whenever the key is set (it does not depend on the summaries flag). */
+export function scanReadingEnabled(): boolean {
+  return !!process.env.OPENROUTER_API_KEY
+}
+
+export interface ImageAnswer extends ClaudeAnswer {
+  tokensIn: number
+  tokensOut: number
+}
+
+/**
+ * One scanned statement page image to Claude, with the same routing as
+ * askClaude: Anthropic only, no fallback, no data collection, zero retention;
+ * an answer served by anyone else is thrown away. Only for src/lib/scan.
+ * Logs the generation id, model and token counts, never the image or the answer.
+ */
+export async function askClaudeImage({
+  prompt,
+  image,
+  mediaType,
+  maxTokens,
+  label,
+  timeoutMs = 120_000,
+}: {
+  prompt: string
+  image: Uint8Array
+  mediaType: 'image/jpeg' | 'image/png'
+  maxTokens: number
+  label: string
+  timeoutMs?: number
+}): Promise<ImageAnswer> {
+  if (!scanReadingEnabled()) throw new AiUnavailableError('OPENROUTER_API_KEY is not set.')
+  const model = claudeModel('scan')
+  const response = await client(timeoutMs).chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${Buffer.from(image).toString('base64')}` } },
+          { type: 'text', text: prompt },
+        ],
+      },
+    ],
+    ...({ provider: CLAUDE_ONLY } as object),
+  })
+  const served = (response as unknown as { provider?: string }).provider
+  if ((served && !/anthropic/i.test(served)) || !response.model?.startsWith('anthropic/')) {
+    console.error(`[ai] ${label} generation=${response.id} refused: not served by Anthropic (${served ?? 'unknown'}, ${response.model})`)
+    throw new AiUnavailableError('The answer did not come from Anthropic, so it was not used.')
+  }
+  const tokensIn = response.usage?.prompt_tokens ?? 0
+  const tokensOut = response.usage?.completion_tokens ?? 0
+  console.log(`[ai] ${label} generation=${response.id} model=${response.model} tokens_in=${tokensIn} tokens_out=${tokensOut}`)
+  const text = response.choices[0]?.message?.content?.trim() ?? ''
+  if (!text) throw new Error(`${label}: the model returned no text.`)
+  return { text, model: response.model, generationId: response.id, tokensIn, tokensOut }
 }

@@ -61,6 +61,9 @@ const FUNDS_LOANED = /\bfunds (loaned|lent|advanced) to (the )?(trust|company|bu
 const PERSON_LOAN = /^loans? from [a-z]+( [a-z]+){1,2}$|^[a-z]+( [a-z]+){1,2} loan account$/i
 /** A line that is a loan account at all: what a name needs beside it to be a related-party loan. */
 const LOANISH = /\b(loans?|lent|loaned|advances?|funds introduced|loan account|div(ision)? ?7a)\b/i
+/** A Division 7A loan: shown as its own labelled line ("Div 7A") so staff can see it and untick it. */
+const DIV_7A = /\bdiv(ision)? ?7a\b/i
+export const isDiv7A = (label: string) => DIV_7A.test(label)
 /** Finance on a line, whatever else it names: interest, chattel mortgage, hire purchase, leases. */
 const FINANCE_LINE = /:\s*interest\b|\b(unexpired interest|chattel|hire purchase|lease|leasing)\b/i
 /** Money a director put in or took out, which is owed either way without the word "loan". */
@@ -297,7 +300,8 @@ export function suggestMappingWithRules(comparison: PrintedComparison, { directo
     const why = relatedLoanReason(r.label, { directors, parties }) ?? 'A loan with no lender, vehicle or person named.'
     const side = isLiability(r) ? 'liabilities' : 'assets'
     const sign = latest(r) < 0 ? 'negative' : 'positive'
-    return `${why} Printed ${sign} under ${side}, so it is owed ${meaning === 'loan_receivable' ? 'TO' : 'BY'} the company.`
+    const div7a = isDiv7A(r.label) ? 'Div 7A loan (counted; untick it if it should not be). ' : ''
+    return `${div7a}${why} Printed ${sign} under ${side}, so it is owed ${meaning === 'loan_receivable' ? 'TO' : 'BY'} the company.`
   }
   return Object.fromEntries(
     (Object.keys(keys) as Meaning[]).map((m) => [

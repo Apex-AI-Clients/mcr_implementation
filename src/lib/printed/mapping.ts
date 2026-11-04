@@ -20,6 +20,11 @@ export interface MappingEntry {
   confirmedAt: string
   /** Set when auto-selected (autoMapping.ts): the rule used, in plain English. Null or absent: staff chose it. */
   autoRule?: string | null
+  /**
+   * Set when a staff answer given under an older reader was switched to the
+   * lines the current reader matches: "Updated after a reading fix (was: …)".
+   */
+  updatedNote?: string | null
 }
 
 export interface MappedLine {

@@ -31,6 +31,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
+    "@tesseract.js-data/eng": "1.0.0",
     "clsx": "^2.1.1",
     "csv-parse": "^6.2.1",
     "date-fns": "^4.1.0",
@@ -45,7 +46,9 @@
     "react-dropzone": "^15.0.0",
     "recharts": "^3.10.1",
     "resend": "^6.12.2",
+    "sharp": "0.34.5",
     "tailwind-merge": "^3.5.0",
+    "tesseract.js": "7.0.0",
     "unpdf": "1.8.1",
     "write-excel-file": "^4.1.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",

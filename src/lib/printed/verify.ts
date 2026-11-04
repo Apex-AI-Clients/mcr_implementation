@@ -39,7 +39,8 @@ export interface TotalCheck {
   message: string
 }
 
-const NEGATIVE_SECTION = /cost|expense|outgoing|deduct|liabilit/i
+/** A trust's "Distribution of Trust Income" (or "Distributions to beneficiaries", an appropriation) is taken off the profit available; "Distributions received" is income. */
+const NEGATIVE_SECTION = /cost|expense|outgoing|deduct|liabilit|\bdistribution of\b|\bdistributions? to\b|\bappropriation/i
 const LESS = /^less\b/i
 /** Closing stock is taken off cost of sales whether or not the label says "Less" (old reader lineCorrections sectionSum). */
 const CLOSING_STOCK = /^(less:?\s*)?closing (stock|inventory)( on hand)?\b|^stock on hand at (the )?end/i

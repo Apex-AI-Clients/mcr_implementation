@@ -53,7 +53,8 @@ export function structureRows<T extends UnstructuredRow>(kind: PrintedStatementK
       stack.push({ label: row.label, x: row.x, lines: 0 })
       continue
     }
-    if (row.amounts.some((a) => typeof a === 'string')) {
+    // A percentage, printed with "%" or under a "(%)" label ("Gross Profit (%)  34  38"): never an amount.
+    if (row.amounts.some((a) => typeof a === 'string') || /%/.test(row.label)) {
       out.push({ ...row, path: labels(), style: 'ratio' })
       continue
     }

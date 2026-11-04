@@ -10,6 +10,7 @@ import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBann
 import { PrintedComparisonTable, type SelectedFigure } from '@/components/admin/financials/PrintedComparisonTable'
 import { HeadlineTiles } from '@/components/admin/financials/HeadlineTiles'
 import { ComparisonSummaryCard } from '@/components/admin/financials/ComparisonSummaryCard'
+import { ScanChecksPanel, ScanChooser, ScanCrop, ScanProgress } from '@/components/admin/financials/ScanFigures'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
@@ -120,7 +121,11 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
         {error && <p className="no-print text-xs text-destructive">{error}</p>}
       </div>
 
+      <ScanProgress clientId={clientId} pending={comparison.documents.some((d) => d.status === 'scan_pending')} />
+
       <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
+
+      <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
       {!hasTables ? (
         <p className="rounded-lg border border-border/60 bg-surface/60 p-4 text-sm text-foreground/70">
@@ -154,7 +159,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
               )}
             </label>
           )}
-          {selected && <SourcePanel figure={selected} onClose={() => setSelected(null)} />}
+          {selected && <SourcePanel clientId={clientId} figure={selected} onClose={() => setSelected(null)} />}
           {comparison.tables.map((table) => (
             <PrintedComparisonTable key={table.kind} table={table} columns={comparison.columns} selected={selected} onSelect={setSelected} />
           ))}
@@ -167,7 +172,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
 }
 
 /** Where a clicked figure is printed: the file, page, column and line, and the PDF itself. */
-function SourcePanel({ figure, onClose }: { figure: SelectedFigure; onClose: () => void }) {
+function SourcePanel({ clientId, figure, onClose }: { clientId: string; figure: SelectedFigure; onClose: () => void }) {
   const { row, column, cell } = figure
   const [opening, setOpening] = useState(false)
   if (!cell.source) return null
@@ -196,6 +201,22 @@ function SourcePanel({ figure, onClose }: { figure: SelectedFigure; onClose: () 
             {source.filename}, page {source.page}, column &ldquo;{source.header}&rdquo;
           </p>
           <p className="font-mono text-[11px] text-foreground/60">&ldquo;{source.text}&rdquo;</p>
+          {cell.scan && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-foreground/70">
+                Read from a scan:{' '}
+                {cell.scan.status === 'agree'
+                  ? 'both readings agree.'
+                  : cell.scan.status === 'chosen'
+                    ? 'the readings differed; this figure was chosen.'
+                    : cell.scan.status === 'single'
+                      ? 'single reading — check it against the line below.'
+                      : 'the two readings differ — choose the figure.'}
+              </p>
+              <ScanCrop clientId={clientId} scan={cell.scan} />
+              <ScanChooser clientId={clientId} scan={cell.scan} />
+            </div>
+          )}
           {cell.restated.map((r, i) => (
             <p key={i} className="text-warning">
               Restated in {r.report.replace(/^the /, '')}: {formatPrinted(r.value)} ({r.source.filename}, page {r.source.page}: &ldquo;{r.source.text}&rdquo;)
@@ -228,6 +249,7 @@ function FilesPanel({ comparison }: { comparison: PrintedComparison }) {
             <p className="font-medium text-foreground">{d.filename}</p>
             {d.found && <p className="text-foreground/60">{d.found}</p>}
             {d.message && <p className={d.status === 'read' && !d.issues.length ? 'text-foreground/50' : 'text-destructive'}>{d.message}</p>}
+            {d.scan && <ScanPages scan={d.scan} />}
             {d.issues.filter((i) => i.text).map((i, n) => (
               <p key={n} className="font-mono text-[11px] text-foreground/50">
                 Page {i.page}: &ldquo;{i.text}&rdquo;
@@ -237,5 +259,36 @@ function FilesPanel({ comparison }: { comparison: PrintedComparison }) {
         ))}
       </ul>
     </section>
+  )
+}
+
+/** A file with scanned pages: which pages are scans, which were read as statements, which skipped and why. */
+function ScanPages({ scan }: { scan: NonNullable<PrintedComparison['documents'][number]['scan']> }) {
+  const scanned = scan.pages.filter((p) => p.scanned)
+  const read = scanned.filter((p) => p.role === 'statement')
+  const skipped = scanned.filter((p) => p.role === 'skipped')
+  const list = (pages: typeof scanned) => pages.map((p) => p.page).join(', ')
+  return (
+    <div className="mt-1 space-y-0.5 text-foreground/60">
+      <p>
+        Scanned pages: {list(scanned)}
+        {scan.state === 'pending' ? ' (being read)' : ''}.
+      </p>
+      {read.length > 0 && <p>Read as statements: {read.map((p) => `${p.page} (${p.note ?? 'statement'})`).join(', ')}.</p>}
+      {skipped.length > 0 && (
+        <details>
+          <summary className="cursor-pointer">Skipped: {list(skipped)}</summary>
+          <ul className="mt-0.5 space-y-0.5 pl-3">
+            {skipped.map((p) => (
+              <li key={p.page}>
+                Page {p.page}: {p.note}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {scan.singleReading && <p className="text-warning">Read by one reader only: every figure is a single reading — check them.</p>}
+      <p className="text-foreground/50">A scan is read by two readers and checked by staff. The accountant&apos;s digital export (a PDF from their software) is always exact: ask for it.</p>
+    </div>
   )
 }

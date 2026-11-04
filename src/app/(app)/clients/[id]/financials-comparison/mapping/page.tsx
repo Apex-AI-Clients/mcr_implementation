@@ -1,5 +1,8 @@
 import { LineMappingView } from './view'
 
+// Scanned pages are read in the background after the response (src/lib/scan, after()).
+export const maxDuration = 800
+
 export const dynamic = 'force-dynamic'
 
 interface Props {

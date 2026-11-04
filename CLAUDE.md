@@ -137,6 +137,7 @@ OPENROUTER_API_KEY=                  # SERVER ONLY, only in src/lib/ai/openroute
 AI_SUMMARIES_ENABLED=                # "true" turns the AI summaries + label suggestions on; default off
 OPENROUTER_SUMMARY_MODEL=            # optional, anthropic/… (default anthropic/claude-sonnet-5.5)
 OPENROUTER_LABEL_MODEL=              # optional, anthropic/… (default anthropic/claude-haiku-5.5)
+OPENROUTER_SCAN_MODEL=               # optional, anthropic/… (default anthropic/claude-sonnet-5.5): second reading of scanned statement pages
 
 # App
 NEXT_PUBLIC_APP_URL=                 # https://your-domain.vercel.app (no trailing slash)
@@ -227,8 +228,8 @@ Source of truth: `src/lib/constants.ts` (`DOCUMENT_CATEGORIES` / `CATEGORY_META`
 10. File uploads stored at `documents/{client_id}/{uuid}.{ext}` in Supabase Storage.
 
 ### AI Integration
-11. Claude via OpenRouter only (`askClaude()` in `lib/ai/openrouterClient.ts`): provider routing restricted to Anthropic, `data_collection: 'deny'`, `zdr: true`, no fallbacks — an answer from any other provider is rejected. Models come from `OPENROUTER_SUMMARY_MODEL` / `OPENROUTER_LABEL_MODEL` (defaults in that file); every prompt lives in `lib/ai/prompts.ts`.
-12. No PDF or statement text is sent to a model. Summaries are written only from confirmed, as-printed figures and checked by `lib/ai/checkedSummary.ts` (every dollar figure an input or the difference of two; no banned words); label suggestions send labels and headings only. Log generation id, model and token counts — never content.
+11. Claude via OpenRouter only (`askClaude()` / `askClaudeImage()` in `lib/ai/openrouterClient.ts`): provider routing restricted to Anthropic, `data_collection: 'deny'`, `zdr: true`, no fallbacks — an answer from any other provider is rejected. Models come from `OPENROUTER_SUMMARY_MODEL` / `OPENROUTER_LABEL_MODEL` / `OPENROUTER_SCAN_MODEL` (defaults in that file); every prompt lives in `lib/ai/prompts.ts`.
+12. No PDF or statement content is sent to a model, with ONE exception (Gabby-approved, 4 Nov 2026): the page image of a SCANNED statement page (a P&L, trading statement or balance sheet page with no text layer, `src/lib/scan`) may be sent to Claude for the second reading, only through `askClaudeImage()` in the existing OpenRouter client, with Anthropic-only routing, `data_collection: 'deny'`, `zdr: true` (zero retention), no fallbacks, and nothing logged but the generation id, model and token counts. No other statement content (no text-layer page, no other scanned page, no figures, no file) is ever sent to a model. Summaries are written only from confirmed, as-printed figures and checked by `lib/ai/checkedSummary.ts` (every dollar figure an input or the difference of two; no banned words); label suggestions send labels and headings only. Log generation id, model and token counts — never content.
 
 ### AI Confidence Thresholds
 | Confidence | Action | UI Badge |

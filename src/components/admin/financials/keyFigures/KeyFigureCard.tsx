@@ -12,6 +12,7 @@ import type { MappingEntry } from '@/lib/printed/mapping'
 import type { MappingSelection } from '@/lib/printed/mappingStore'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
 import { formatPrinted } from '@/lib/printed/csv'
+import { isDiv7A } from '@/lib/printed/dictionary'
 import { KeyFigurePicker } from './KeyFigurePicker'
 import { YearValues, rowValues, totalsPerYear } from './YearValues'
 
@@ -146,6 +147,11 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
               <div key={row.key} className="rounded border border-border/40 px-3 py-2">
                 <p className="text-xs">
                   <span className="font-medium text-foreground">“{label}”</span>
+                  {isDiv7A(row.label) && (
+                    <Badge variant="muted" className="ml-1.5 align-middle">
+                      Div 7A
+                    </Badge>
+                  )}
                   <span className="text-foreground/50"> — {where}</span>
                 </p>
                 <YearValues columns={comparison.columns} values={rowValues(row)} className="mt-1" />
@@ -160,6 +166,11 @@ export function KeyFigureCard({ clientId, comparison, meaning, entries, suggesti
           </div>
         )}
         {missing > 0 && <p className="text-xs text-warning">A chosen line is no longer printed. Choose again.</p>}
+        {[...new Set(entries.map((e) => e.updatedNote).filter((n): n is string => !!n))].map((note) => (
+          <p key={note} className="text-[11px] font-medium text-warning">
+            {note}
+          </p>
+        ))}
         {auto && rules.length > 0 && (
           <p className="text-[11px] text-foreground/55">
             Auto-selected: {rules.join(' ')} Counts as confirmed; change it if it is wrong.
