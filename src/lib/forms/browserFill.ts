@@ -32,13 +32,14 @@ function template(code: FormCode, version: string): Promise<Uint8Array> {
 }
 
 export async function fillInBrowser(code: FormCode, version: string, answers: unknown): Promise<FillResult> {
-  const [bytes, { fillForm }, { formVersion }, { cleanAnswers, toFormData }] = await Promise.all([
+  const [bytes, { fillForm }, { formVersion }, { cleanAnswers, toFormData }, { cvlFillOptions }] = await Promise.all([
     template(code, version),
     import('./engine'),
     import('./registry'),
     import('@/lib/cvl/drafts'),
+    import('@/lib/cvl/printPages'),
   ])
   const { map } = formVersion(code, version)
-  // A copy: pdf-lib may hold on to (or detach) what it is given.
-  return fillForm(bytes.slice(), map, toFormData(cleanAnswers(code, version, answers)))
+  // A copy: pdf-lib may hold on to (or detach) what it is given. Every page, as the printout.
+  return fillForm(bytes.slice(), map, toFormData(cleanAnswers(code, version, answers)), cvlFillOptions(map))
 }

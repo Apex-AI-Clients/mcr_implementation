@@ -6,6 +6,7 @@ import type { FillResult, FormCode, FormWarning } from '@/lib/forms/types'
 import { entryState, readDraft, toFormData, type DraftAnswers } from './drafts'
 import { prefillForm, subjectsFor, type Prefill, type Subject } from './prefill'
 import type { CvlContext } from './context'
+import { cvlFillOptions } from './printPages'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -86,9 +87,9 @@ export function warningsFor(job: FormJob, engine: readonly FormWarning[]): strin
   return out
 }
 
-/** Fills one form. Part A never includes Form 507A (court liquidations only). */
+/** Fills one form, every page of it: Part A with its page 7 (Form 507A) too. */
 export async function fillJob(job: FormJob): Promise<FilledJob> {
-  const fill = await fillOfficialForm(job.code, toFormData(job.answers), { version: job.version })
+  const fill = await fillOfficialForm(job.code, toFormData(job.answers), { version: job.version, ...cvlFillOptions(formVersion(job.code, job.version).map) })
   return { job, fill, warnings: warningsFor(job, fill.warnings) }
 }
 

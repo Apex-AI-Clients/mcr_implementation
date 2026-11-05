@@ -5,6 +5,7 @@ import { cleanAnswers, cleanEditedKeys, entryState, readDraft, toFormData } from
 import { entryMap } from '../entryMap'
 import { prefillForm } from '../prefill'
 import { readCvlSettings } from '../settings'
+import { caseJobs, fillJob } from '../generate'
 import { formVersion, handwrittenKeys } from '@/lib/forms/registry'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { context } from './fixtures'
@@ -93,14 +94,23 @@ describe('cleanAnswers', () => {
 })
 
 describe('entryMap', () => {
-  it('asks nothing on a page the CVL printout leaves out (Form 507A, court liquidations only)', () => {
+  it('asks every page of Part A, page 7 (Form 507A) included, and prints it', async () => {
     const m = entryMap(partA)
-    expect(m.sections.map((s) => s.q)).not.toContain('Form 507A')
-    const keys = m.sections.flatMap((s) => [...s.fields.map((f) => f.key), ...s.tables.map((t) => t.id)])
-    expect(keys.some((k) => k.startsWith('f507a_'))).toBe(false)
-    // Every question on the printed pages is still there, and the tables too.
-    expect(m.sections.map((s) => s.q).at(-1)).toBe('A10')
+    const f507a = m.sections.find((s) => s.q === 'Form 507A')!
+    expect(f507a.fields.filter((f) => !f.handwritten).map((f) => f.key)).toEqual([
+      'f507a_company_name',
+      'f507a_company_acn',
+      'f507a_report_date',
+      'f507a_name',
+      'f507a_capacity',
+    ])
     expect(m.sections.flatMap((s) => s.tables.map((t) => t.id))).toEqual(['A4', 'A5', 'A6_unrelated', 'A6_related', 'A7'])
+    // The CVL printout: pages 1 to 7, the appendix after.
+    const [, partAJob] = caseJobs(context(), [])
+    expect(partAJob.code).toBe('507a')
+    expect(partAJob.answers.fields.f507a_company_name).toBe('Example Trading Pty Ltd')
+    const { fill } = await fillJob(partAJob)
+    expect(fill.pageSources.slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, 7])
   })
 
   it('lists the questions in the form’s order and numbering, without box geometry', () => {

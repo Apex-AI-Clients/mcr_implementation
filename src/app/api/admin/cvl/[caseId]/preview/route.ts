@@ -10,6 +10,7 @@ import { cleanAnswers, toFormData } from '@/lib/cvl/drafts'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { caseJobs, fillAll, fillJob, jobFor, loadDraftRows } from '@/lib/cvl/generate'
 import { isSubject, subjectsFor } from '@/lib/cvl/prefill'
+import { cvlFillOptions } from '@/lib/cvl/printPages'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!access) return NextResponse.json({ error: 'CVL file not found' }, { status: 404 })
     // Only the answers sent are filled: nothing else on the client file is read
     // (the entry screen shows no warnings, and every request stays light).
-    const fill = await fillOfficialForm(code, toFormData(answers))
+    const fill = await fillOfficialForm(code, toFormData(answers), cvlFillOptions(formVersion(code).map))
     return pdfResponse(fill.pdf, fill.warnings.map((w) => `${w.q ? `${w.q}: ` : ''}${w.message}`), `${code}-preview.pdf`, fill.pageSources)
   } catch (err) {
     console.error('[POST /api/admin/cvl/[caseId]/preview]', err instanceof Error ? err.message : 'unknown')
