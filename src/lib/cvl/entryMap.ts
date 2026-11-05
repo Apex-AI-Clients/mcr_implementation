@@ -31,6 +31,8 @@ export interface EntryField {
   row?: string
   /** Left blank, the form adds it up from the boxes above (Form 509 totals). */
   computed?: boolean
+  /** For a computed field: the boxes it adds up (the screen shows the total as it will print). */
+  sum?: string[]
   /** Typed inside its row of the summary table (line 4's "…assets to:"), not on its own. */
   inline?: boolean
   /** The room its box gives on the form, to warn when an answer would be cut off. */
@@ -102,7 +104,7 @@ function topOf(f: FormMap['fields'][number]): number {
 }
 
 export function entryMap(map: FormMap): EntryMap {
-  const computed = new Set((map.computed ?? []).map((c) => c.key))
+  const computed = new Map((map.computed ?? []).map((c) => [c.key, c.sum]))
   const sections: EntrySection[] = []
   const byQ = new Map<string, EntrySection>()
   const section = (q: string) => {
@@ -129,7 +131,7 @@ export function entryMap(map: FormMap): EntryMap {
       ...(map.code === '509' && f.type === 'money'
         ? { column: f.x0 >= ERV_COLUMN_X0 ? ('erv' as const) : ('valuation' as const), row: rowLabel(f.label) }
         : {}),
-      ...(computed.has(f.key) ? { computed: true } : {}),
+      ...(computed.has(f.key) ? { computed: true, sum: computed.get(f.key)! } : {}),
       // Line 4's "to:" blank sits in line 4's row.
       ...(map.code === '509' && f.key === 'r4_to'
         ? { inline: true, row: rowLabel(map.fields.find((x) => x.key === 'r4')?.label ?? f.label) }

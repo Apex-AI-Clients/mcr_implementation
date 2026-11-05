@@ -801,10 +801,8 @@ function FieldInput({
           value={value === null || value === undefined ? '' : String(value)}
           onChange={(e) => {
             const raw = e.target.value
-            if (f.type === 'money') {
-              const n = Number(raw.replace(/[$,\s]/g, ''))
-              onChange(raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw)
-            } else onChange(raw === '' ? null : raw)
+            if (f.type === 'money') onChange(moneyValue(raw))
+            else onChange(raw === '' ? null : raw)
           }}
           className={`${inputClass} ${f.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
           {...fitProps}
@@ -838,10 +836,28 @@ function FieldInput({
 
 /* ---------------- Form 509's two columns ---------------- */
 
+/** What a total box prints when left blank: the sum of its boxes that hold amounts, as the PDF engine adds them (withComputed). */
+function sumOf(keys: string[], values: Record<string, FieldValue>): number | null {
+  const nums = keys
+    .map((k) => {
+      const v = values[k]
+      if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null
+      const n = Number(String(v).replace(/[$,\s]/g, ''))
+      return Number.isFinite(n) ? n : null
+    })
+    .filter((n): n is number => n !== null)
+  return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) * 100) / 100 : null
+}
+
 /** Typed amount → stored value: a number when it reads as one, else the text as typed. */
 function moneyValue(raw: string): FieldValue {
-  const n = Number(raw.replace(/[$,\s]/g, ''))
-  return raw.trim() === '' ? null : Number.isFinite(n) && /^-?[\d,.\s$]+$/.test(raw) ? n : raw
+  if (raw.trim() === '') return null
+  const cleaned = raw.replace(/[$,\s]/g, '')
+  const n = Number(cleaned)
+  if (!Number.isFinite(n) || !/^-?[\d,.\s$]+$/.test(raw)) return raw
+  // Kept as typed while a number would change what is on screen ("2500." mid-typing,
+  // "12.50", "2,500"): the box shows exactly what was typed, and the PDF reads both alike.
+  return String(n) === cleaned ? n : raw
 }
 
 /**
@@ -883,6 +899,9 @@ function ColumnsTable({
     const value = values[f.key]
     const over = overflowFor(f.room, value)
     const fitId = `f-${f.key}-fit`
+    // A total the form adds up when left blank (TOTAL assets, TOTAL estimated
+    // realisable values): the sum shows in the empty box, as it will print.
+    const total = f.sum ? sumOf(f.sum, values) : null
     return (
       <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
@@ -890,6 +909,8 @@ function ColumnsTable({
             id={`f-${f.key}`}
             aria-label={f.label}
             inputMode="decimal"
+            placeholder={total === null ? undefined : total.toLocaleString('en-AU', { maximumFractionDigits: 2 })}
+            title={f.sum ? 'Adds up the boxes above when left blank; type an amount to use it instead.' : undefined}
             value={value === null || value === undefined ? '' : String(value)}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
             className={`${inputClass} py-1.5 tabular-nums ${over ? tooLongClass : ''}`}
@@ -1004,8 +1025,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                         value={r[c.key] === null || r[c.key] === undefined ? '' : String(r[c.key])}
                         onChange={(e) => {
                           const raw = e.target.value
-                          const n = Number(raw.replace(/[$,\s]/g, ''))
-                          set(i, c.key, raw === '' ? null : c.type === 'money' && Number.isFinite(n) ? n : raw)
+                          set(i, c.key, c.type === 'money' ? moneyValue(raw) : raw === '' ? null : raw)
                         }}
                         className={`w-full min-w-[90px] rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none ${c.type === 'money' ? 'tabular-nums' : ''} ${over ? tooLongClass : ''}`}
                         {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}

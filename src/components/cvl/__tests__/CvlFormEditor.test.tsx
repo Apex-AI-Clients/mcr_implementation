@@ -371,6 +371,40 @@ describe('CvlFormEditor — Form 509 summary', () => {
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
 
+  it('shows TOTAL assets (Valuation) and TOTAL estimated realisable values (ERV) as they will print: added up while blank, replaced when typed', async () => {
+    const user = userEvent.setup({ delay: null })
+    render509()
+    const totalAssets = row('TOTAL assets')
+    const totalErv = row('TOTAL estimated realisable values')
+    // The pre-fill's book values already add up in the Valuation total.
+    expect(totalAssets.valuation!.value).toBe('')
+    const before = Number(totalAssets.valuation!.placeholder.replace(/,/g, ''))
+    expect(before).toBeGreaterThan(0)
+
+    // Two estimated realisable values typed: the ERV total shows their sum.
+    await user.type(row('1(a) Interest in land').erv!, '12500')
+    await user.type(row('1(b) Sundry debtors').erv!, '2500.5')
+    // A decimal point typed stays put while typing (it used to vanish: "2500." became 2500, then "25005").
+    expect(row('1(b) Sundry debtors').erv!.value).toBe('2500.5')
+    await user.type(row('1(c) Cash on hand').erv!, '12.50')
+    expect(row('1(c) Cash on hand').erv!.value).toBe('12.50')
+    expect(totalErv.erv!.placeholder).toBe('15,013')
+    expect(totalErv.erv!.value).toBe('')
+    // A Valuation typed into 1(a) joins the Valuation total (in place of what was there).
+    const landBefore = Number(row('1(a) Interest in land').valuation!.value || 0)
+    await user.clear(row('1(a) Interest in land').valuation!)
+    await user.type(row('1(a) Interest in land').valuation!, '100')
+    expect(Number(totalAssets.valuation!.placeholder.replace(/,/g, ''))).toBe(before - landBefore + 100)
+
+    // The other two total boxes are only what is typed: nothing added up there.
+    expect(totalAssets.erv!.placeholder).toBe('')
+    expect(totalErv.valuation!.placeholder).toBe('')
+
+    // Typed, the total is the typed amount.
+    await user.type(totalErv.erv!, '99')
+    expect(totalErv.erv!.value).toBe('99')
+  })
+
   it('names Form 509’s sections in full in the jump links, never as initials', () => {
     render509()
     const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
@@ -383,8 +417,8 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const debtors = row('1(b) Sundry debtors')
     expect(debtors.valuation?.value).toBe('12480.5')
     expect(debtors.erv?.value).toBe('')
-    // Both totals have a box in each column.
-    expect(row('TOTAL assets').valuation?.placeholder).toBe('')
+    // Both totals have a box in each column; TOTAL assets' Valuation shows what it adds up to.
+    expect(row('TOTAL assets').valuation?.placeholder).toBe('47,234.67')
     expect(row('TOTAL assets').erv).not.toBeNull()
     expect(row('TOTAL estimated realisable values').valuation).not.toBeNull()
     expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
