@@ -47,7 +47,9 @@ function mockDb({
     status,
     forms_prepared_at: null,
     printed_at: null,
-    clients: { name: 'Example Trading client', archived_at: null, workflow: open ? 'cvl' : 'sbr' },
+    // Open in CVL: its case not removed from CVL (migration 0047).
+    removed_at: open ? null : '2026-11-01T00:00:00Z',
+    clients: { name: 'Example Trading client', archived_at: null, workflow: 'cvl' },
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (t: string) => {

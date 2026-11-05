@@ -4,8 +4,8 @@ type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
 /**
  * A CVL case and its client, for the routes that act on it. `open`: the file
- * is in the CVL workspace and not archived, so its forms can be changed and
- * generated (an archived file is read, not written).
+ * is in CVL (its case not removed from CVL, migration 0047), so its forms can
+ * be changed and generated. `inSbr`: also an SBR client on the SBR list.
  */
 export interface CaseAccess {
   id: string
@@ -15,12 +15,15 @@ export interface CaseAccess {
   printedAt: string | null
   clientName: string
   open: boolean
+  inSbr: boolean
+  /** 'cvl': a CVL-only file (never an SBR client, or not yet). */
+  workflow: 'sbr' | 'cvl'
 }
 
 export async function loadCaseAccess(supabase: ServerClient, caseId: string): Promise<CaseAccess | null> {
   const { data } = await supabase
     .from('cvl_cases')
-    .select('id, client_id, status, forms_prepared_at, printed_at, clients(name, archived_at, workflow)')
+    .select('id, client_id, status, forms_prepared_at, printed_at, removed_at, clients(name, archived_at, workflow)')
     .eq('id', caseId)
     .maybeSingle()
   if (!data) return null
@@ -35,6 +38,8 @@ export async function loadCaseAccess(supabase: ServerClient, caseId: string): Pr
     formsPreparedAt: data.forms_prepared_at,
     printedAt: data.printed_at,
     clientName: client?.name ?? '',
-    open: !!client && !client.archived_at && client.workflow === 'cvl',
+    open: !!client && !data.removed_at,
+    inSbr: !!client && client.workflow === 'sbr' && !client.archived_at,
+    workflow: client?.workflow === 'cvl' ? 'cvl' : 'sbr',
   }
 }

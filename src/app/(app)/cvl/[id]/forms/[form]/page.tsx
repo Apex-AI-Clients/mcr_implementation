@@ -32,8 +32,8 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
   // come back together; the one for the subject shown is picked below, once
   // the directors are known.
   const [{ data: client }, { data: cvlCase }, ctx, { subject: asked = '' }, { data: draftRows }] = await Promise.all([
-    supabase.from('clients').select('id, archived_at, workflow').eq('id', id).maybeSingle(),
-    supabase.from('cvl_cases').select('id').eq('client_id', id).maybeSingle(),
+    supabase.from('clients').select('id, archived_at, workflow, cvl_cases(removed_at)').eq('id', id).maybeSingle(),
+    supabase.from('cvl_cases').select('id').eq('client_id', id).is('removed_at', null).maybeSingle(),
     loadCvlContext(supabase, id),
     searchParams,
     supabase

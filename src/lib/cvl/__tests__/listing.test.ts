@@ -77,26 +77,24 @@ describe('the CVL list', () => {
     sbr_archived_at: '2026-10-20T00:00:00.000Z',
     sbr_archived_by: 'Gabby',
     created_at: '2026-10-20T00:00:00.000Z',
-    clients: { name: 'Sample Trading Pty Ltd', email: 'accounts@example.test' },
+    clients: { name: 'Sample Trading Pty Ltd', email: 'accounts@example.test', workflow: 'sbr', archived_at: null },
   }
 
-  it('lists CVL files not archived, newest first, with their client', async () => {
-    const calls = recordingDb([ROW])
+  it('lists the files in CVL (case not removed), newest first, whatever their SBR side, saying which are also in SBR', async () => {
+    const calls = recordingDb([
+      ROW,
+      { ...ROW, id: 'case-2', client_id: 'cl_2', origin: 'lead', clients: { ...ROW.clients, workflow: 'cvl' } },
+      { ...ROW, id: 'case-3', client_id: 'cl_3', clients: { ...ROW.clients, archived_at: '2026-11-01T00:00:00Z' } },
+    ])
     const page = await getCvlListPage({})
-    expect(filters(calls, 'cvl_cases')).toEqual([
-      ['is', 'clients.archived_at', null],
-      ['eq', 'clients.workflow', 'cvl'],
-    ])
+    // In CVL is the case's own state: a client archived from SBR stays on this list.
+    expect(filters(calls, 'cvl_cases')).toEqual([['is', 'removed_at', null]])
     expect(calls.find((c) => c.method === 'order')?.args[0]).toBe('created_at')
-    expect(page.rows).toEqual([
-      expect.objectContaining({ clientId: 'cl_1', name: 'Sample Trading Pty Ltd', status: 'printed', origin: 'sbr_client' }),
+    expect(page.rows.map((r) => [r.clientId, r.inSbr])).toEqual([
+      ['cl_1', true],
+      ['cl_2', false],
+      ['cl_3', false],
     ])
-  })
-
-  it('"Moved to CVL" lists only files that were SBR clients, most recently moved first', async () => {
-    const calls = recordingDb([ROW])
-    await getCvlListPage({ movedFromSbr: true })
-    expect(filters(calls, 'cvl_cases')).toContainEqual(['eq', 'origin', 'sbr_client'])
-    expect(calls.find((c) => c.method === 'order')?.args[0]).toBe('sbr_archived_at')
+    expect(page.rows[0]).toEqual(expect.objectContaining({ name: 'Sample Trading Pty Ltd', status: 'printed', origin: 'sbr_client' }))
   })
 })

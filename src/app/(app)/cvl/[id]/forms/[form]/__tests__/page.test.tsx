@@ -30,7 +30,7 @@ let queried: string[] = []
 beforeEach(() => {
   queried = []
   const rows: Record<string, unknown> = {
-    clients: { id: 'cl_1', archived_at: null, workflow: 'cvl' },
+    clients: { id: 'cl_1', archived_at: null, workflow: 'cvl', cvl_cases: { removed_at: null } },
     cvl_cases: { id: 'case-1' },
     cvl_form_answers: DRAFTS,
   }
@@ -41,6 +41,7 @@ beforeEach(() => {
       const chain = {
         select: () => chain,
         eq: () => chain,
+        is: () => chain,
         maybeSingle: () => Promise.resolve(result),
         then: (resolve: (r: typeof result) => unknown) => resolve(result),
       }

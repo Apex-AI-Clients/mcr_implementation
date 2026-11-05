@@ -483,6 +483,8 @@ export type Database = {
           id: string
           origin: string
           printed_at: string | null
+          removed_at: string | null
+          removed_by: string | null
           report_date: string | null
           report_return_date: string | null
           sbr_archived_at: string | null
@@ -500,6 +502,8 @@ export type Database = {
           id?: string
           origin: string
           printed_at?: string | null
+          removed_at?: string | null
+          removed_by?: string | null
           report_date?: string | null
           report_return_date?: string | null
           sbr_archived_at?: string | null
@@ -517,6 +521,8 @@ export type Database = {
           id?: string
           origin?: string
           printed_at?: string | null
+          removed_at?: string | null
+          removed_by?: string | null
           report_date?: string | null
           report_return_date?: string | null
           sbr_archived_at?: string | null

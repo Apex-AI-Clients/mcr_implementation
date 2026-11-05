@@ -25,7 +25,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     const { data: client, error: lookupError } = await supabase
       .from('clients')
-      .select('id, archived_at')
+      .select('id, archived_at, workflow')
       .eq('id', id)
       .maybeSingle()
     if (lookupError) throw lookupError
@@ -36,6 +36,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     const { error } = await supabase.from('clients').update(restoreUpdate()).eq('id', id)
     if (error) throw error
+    // A CVL-only file was taken off the CVL list when archived (0047): back on it.
+    if (client.workflow === 'cvl') {
+      const { error: caseError } = await supabase.from('cvl_cases').update({ removed_at: null, removed_by: null }).eq('client_id', id)
+      if (caseError) throw caseError
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err) {

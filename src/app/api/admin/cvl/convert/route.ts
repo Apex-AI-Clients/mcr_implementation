@@ -6,10 +6,10 @@ import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 /**
  * POST /api/admin/cvl/convert — "Convert to CVL" on an SBR client page.
  *
- * Moves the file to the CVL workspace and opens its case in one transaction
- * (cvl_convert_client, migration 0039). The SBR record is kept read-only in
- * the SBR Archive under "Moved to CVL"; documents, details and analyses stay
- * on the client, so the CVL page has them straight away. Nothing is deleted.
+ * Opens the client's CVL case, or reopens one removed from CVL (its forms
+ * kept), in one transaction (cvl_convert_client, migrations 0039 and 0047).
+ * The client stays on the SBR list: it is in both. Documents, details and
+ * analyses stay on the client, so the CVL page has them straight away.
  *
  * A lead is converted to CVL through POST /api/admin/clients (workflow 'cvl').
  */
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       if (error.code === 'P0002') return NextResponse.json({ error: 'Client not found' }, { status: 404 })
       if (error.code === '55000') {
         return NextResponse.json(
-          { error: 'Only a client on the SBR client list can be converted to CVL.' },
+          { error: 'Only a client on the SBR client list, and not already in CVL, can be moved to CVL.' },
           { status: 409 },
         )
       }

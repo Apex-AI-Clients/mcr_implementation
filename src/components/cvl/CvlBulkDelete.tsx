@@ -9,17 +9,21 @@ import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 
 /**
  * Ticking several CVL clients and deleting them together, as on the SBR
- * client list. As the single Delete, nothing is destroyed: each file moves to
- * the Archive (CVL tab), from where it can be made a client again or deleted
- * permanently (POST /api/admin/clients/[id]/archive).
+ * client list. As the single Delete, nothing is destroyed: each file leaves
+ * the CVL list (POST /api/admin/cvl/[caseId]/remove). One also in SBR stays
+ * on the SBR list; a CVL-only file moves to the Archive (CVL tab), from where
+ * it can be made a client again or deleted permanently.
  *
  * The table stays a server component: it places a CvlSelectAll and a
  * CvlRowCheckbox, and this provider holds what is ticked.
  */
 
 interface Row {
+  /** The file's CVL case. */
   id: string
   name: string
+  /** Also on the SBR list: it stays there. */
+  inSbr: boolean
 }
 
 interface Selection {
@@ -64,7 +68,7 @@ export function CvlSelectionProvider({ rows, children }: { rows: Row[]; children
     setError(null)
     const results = await Promise.all(
       ticked.map((r) =>
-        fetch(`/api/admin/clients/${r.id}/archive`, { method: 'POST' })
+        fetch(`/api/admin/cvl/${r.id}/remove`, { method: 'POST' })
           .then((res) => res.ok)
           .catch(() => false),
       ),
@@ -80,7 +84,6 @@ export function CvlSelectionProvider({ rows, children }: { rows: Row[]; children
   }
 
   const count = ticked.length
-  const names = ticked.map((r) => r.name).join(', ')
 
   return (
     <SelectionContext.Provider value={{ rows, selected, toggle, toggleAll }}>
@@ -115,7 +118,7 @@ export function CvlSelectionProvider({ rows, children }: { rows: Row[]; children
         open={confirming}
         onClose={working ? () => {} : () => setConfirming(false)}
         title={count === 1 ? 'Delete this CVL file?' : `Delete ${count} CVL files?`}
-        description={`${names} ${count === 1 ? 'leaves' : 'leave'} the CVL client list and ${count === 1 ? 'moves' : 'move'} to the Archive (CVL tab). Documents, forms and saved PDFs are kept: from the Archive ${count === 1 ? 'it' : 'each'} can be made a client again, or deleted permanently.`}
+        description={bulkDescription(ticked)}
         footer={
           <>
             <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={working}>
@@ -133,6 +136,23 @@ export function CvlSelectionProvider({ rows, children }: { rows: Row[]; children
       {(working || refreshing) && <LoadingOverlay label={count > 1 ? `Deleting ${count} CVL files…` : 'Deleting…'} />}
     </SelectionContext.Provider>
   )
+}
+
+/** What happens to the ticked files, said for those also in SBR and those not. */
+function bulkDescription(ticked: Row[]): string {
+  const names = (rows: Row[]) => rows.map((r) => r.name).join(', ')
+  const both = ticked.filter((r) => r.inSbr)
+  const only = ticked.filter((r) => !r.inSbr)
+  const parts: string[] = []
+  if (only.length) {
+    parts.push(
+      `${names(only)} ${only.length === 1 ? 'leaves' : 'leave'} the CVL client list and ${only.length === 1 ? 'moves' : 'move'} to the Archive (CVL tab); from there ${only.length === 1 ? 'it' : 'each'} can be made a client again, or deleted permanently.`,
+    )
+  }
+  if (both.length) {
+    parts.push(`${names(both)} ${both.length === 1 ? 'leaves' : 'leave'} the CVL client list and ${both.length === 1 ? 'stays' : 'stay'} on the SBR list.`)
+  }
+  return `${parts.join(' ')} Documents, forms and saved PDFs are kept.`
 }
 
 export function CvlSelectAll() {

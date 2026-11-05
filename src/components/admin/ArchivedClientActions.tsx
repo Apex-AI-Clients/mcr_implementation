@@ -15,6 +15,8 @@ interface ArchivedClientActionsProps {
   clientEmail: string
   /** The workspace the file goes back to when made a client again. */
   workflow?: ClientWorkspace
+  /** Still in CVL (archived from SBR only): it cannot be deleted permanently from here. */
+  inCvl?: boolean
 }
 
 /**
@@ -24,13 +26,15 @@ interface ArchivedClientActionsProps {
  *                       exactly as it was archived
  *   Delete permanently  the file, its documents and storage objects, and its
  *                       company and accountant details. Asks for the name,
- *                       because it cannot be undone.
+ *                       because it cannot be undone. Not while the file is
+ *                       still in CVL: it is removed from CVL first.
  */
 export function ArchivedClientActions({
   clientId,
   clientName,
   clientEmail,
   workflow = 'sbr',
+  inCvl = false,
 }: ArchivedClientActionsProps) {
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
@@ -87,7 +91,8 @@ export function ArchivedClientActions({
           type="button"
           variant="ghost"
           size="sm"
-          disabled={restoring}
+          disabled={restoring || inCvl}
+          title={inCvl ? 'Still in CVL: remove it from CVL first.' : undefined}
           onClick={() => {
             setError(null)
             setConfirmName('')
@@ -100,6 +105,7 @@ export function ArchivedClientActions({
         </Button>
       </div>
 
+      {inCvl && <p className="mt-2 text-xs text-foreground/50">Delete permanently is not available while the file is still in CVL.</p>}
       {error && !confirmDelete && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <Dialog

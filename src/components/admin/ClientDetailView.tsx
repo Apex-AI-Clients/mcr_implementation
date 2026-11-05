@@ -31,7 +31,7 @@ import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
 import { toCvlCase } from '@/lib/cvl/cases'
-import { clientBase, workspaceOf } from '@/lib/clients/workspace'
+import { clientBase, membershipOf, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
 import { Archive, ArrowLeft, Building, Gavel, Landmark, Pencil } from 'lucide-react'
 
@@ -104,19 +104,18 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   ])
   if (!client) notFound()
   const workspace = workspaceOf(client)
-  // The CVL case, for a file in CVL: its status, and whether it was an SBR client.
-  const cvlCase = workspace === 'cvl' && caseRow ? toCvlCase(caseRow) : null
+  // Which workspaces the file is in: SBR and CVL can both hold it (0047).
+  const inside = membershipOf(client, caseRow)
+  // The CVL case while the file is in CVL: its status, and whether it was an SBR client.
+  const cvlCase = inside.cvl && caseRow ? toCvlCase(caseRow) : null
   const cvlDrafts = cvlCase ? (draftRows ?? []).map(({ form_code, subject, updated_at }) => ({ form_code, subject, updated_at })) : []
-  // A file moved from SBR to CVL keeps its SBR record, read-only, in the Archive.
-  const movedToCvl = !client.archived_at && cvlCase?.origin === 'sbr_client'
 
-  // Each page shows only files in its own state.
-  if (mode === 'active' && (client.archived_at || movedToCvl)) redirect(`/sbr/archive/${client.id}`)
-  if (mode !== 'archived' && !client.archived_at && workspace !== (mode === 'cvl' ? 'cvl' : 'sbr')) {
-    redirect(clientBase(client.id, workspace))
-  }
-  if (mode === 'cvl' && client.archived_at) redirect(`/sbr/archive/${client.id}`)
-  if (mode === 'archived' && !client.archived_at && !movedToCvl) redirect(clientBase(client.id, workspace))
+  // Each page shows the file only where it is: the SBR page while in SBR, the
+  // CVL page while in CVL, the Archive while archived. Elsewhere, the first of those.
+  const home = inside.sbr ? clientBase(client.id, 'sbr') : inside.cvl ? clientBase(client.id, 'cvl') : `/sbr/archive/${client.id}`
+  if (mode === 'active' && !inside.sbr) redirect(home)
+  if (mode === 'cvl' && !inside.cvl) redirect(home)
+  if (mode === 'archived' && !client.archived_at) redirect(home)
   const cvl = mode === 'cvl'
   const base = clientBase(client.id, cvl ? 'cvl' : 'sbr')
 
@@ -211,6 +210,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         dpn={dpn}
         atoAccounts={atoAccounts}
         runningJob={runningJob}
+        inSbr={inside.sbr}
       />
     )
   }
@@ -218,32 +218,12 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <Link
-        href={archived ? (movedToCvl ? '/sbr/archive?view=moved' : '/sbr/archive') : cvl ? '/cvl' : '/clients'}
+        href={archived ? '/sbr/archive' : cvl ? '/cvl' : '/clients'}
         className="mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         {archived ? 'Archive' : cvl ? 'CVL clients' : 'All Clients'}
       </Link>
-
-      {archived && movedToCvl && cvlCase?.sbrArchivedAt && (
-        <div
-          role="status"
-          className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm text-foreground/80"
-        >
-          <p className="flex items-start gap-2">
-            <Gavel className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
-            <span>
-              <span className="font-medium text-foreground">Moved to CVL</span> on{' '}
-              {formatDate(cvlCase.sbrArchivedAt)}
-              {cvlCase.sbrArchivedBy ? ` by ${cvlCase.sbrArchivedBy}` : ''}. This SBR record is kept
-              read-only. The file is worked on in the CVL workspace.
-            </span>
-          </p>
-          <Link href={`/cvl/${client.id}`} className="text-sm font-medium text-accent hover:underline">
-            Open the CVL file
-          </Link>
-        </div>
-      )}
 
       {archived && client.archived_at && (
         <div
@@ -258,8 +238,18 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
             {archiveReasonLabel(client.archived_reason)
               ? `${archiveReasonLabel(client.archived_reason)}. `
               : ''}
-            It is not on the {workspace === 'cvl' ? 'CVL' : 'SBR'} client list. Make it a client again to
-            edit it, or delete it permanently.
+            It is not on the {workspace === 'cvl' ? 'CVL' : 'SBR'} client list.{' '}
+            {inside.cvl ? (
+              <>
+                It is still in CVL:{' '}
+                <Link href={clientBase(client.id, 'cvl')} className="font-medium text-accent hover:underline">
+                  open the CVL file
+                </Link>
+                . Make it an SBR client again to edit it here.
+              </>
+            ) : (
+              'Make it a client again to edit it, or delete it permanently.'
+            )}
           </p>
         </div>
       )}
@@ -281,21 +271,31 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
       </div>
 
       {archived ? (
-        movedToCvl ? null : (
         <div className="mb-6">
           <ArchivedClientActions
             clientId={client.id}
             clientName={client.name}
             clientEmail={client.email}
             workflow={workspace}
+            inCvl={inside.cvl}
           />
         </div>
-        )
       ) : (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
             <ClientActions clientId={client.id} clientName={client.name} />
-            {cvlEnabled() && <ConvertToCvlButton clientId={client.id} clientName={client.name} />}
+            {cvlEnabled() &&
+              (inside.cvl ? (
+                <Link
+                  href={clientBase(client.id, 'cvl')}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20"
+                >
+                  <Gavel className="h-3.5 w-3.5" aria-hidden="true" />
+                  Open in CVL
+                </Link>
+              ) : (
+                <ConvertToCvlButton clientId={client.id} clientName={client.name} />
+              ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link

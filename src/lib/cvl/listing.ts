@@ -24,6 +24,8 @@ export interface CvlListRow {
   sbrArchivedAt: string | null
   sbrArchivedBy: string | null
   createdAt: string
+  /** Also an SBR client on the SBR list (migration 0047). */
+  inSbr: boolean
 }
 
 export interface CvlListPage {
@@ -32,6 +34,13 @@ export interface CvlListPage {
   page: number
   pageSize: number
   query: string
+}
+
+interface CaseClient {
+  name: string
+  email: string
+  workflow: string
+  archived_at: string | null
 }
 
 interface CaseWithClient {
@@ -44,15 +53,10 @@ interface CaseWithClient {
   sbr_archived_at: string | null
   sbr_archived_by: string | null
   created_at: string
-  clients: { name: string; email: string } | { name: string; email: string }[] | null
+  clients: CaseClient | CaseClient[] | null
 }
 
-export async function getCvlListPage(options: {
-  q?: string
-  page?: string
-  /** "Moved to CVL" in the SBR Archive: SBR clients converted to CVL only. */
-  movedFromSbr?: boolean
-}): Promise<CvlListPage> {
+export async function getCvlListPage(options: { q?: string; page?: string }): Promise<CvlListPage> {
   const q = (options.q ?? '').trim()
   const safeQ = q.replace(/[%,()]/g, ' ').trim()
   const page = Math.max(1, Number.parseInt(options.page ?? '1', 10) || 1)
@@ -62,17 +66,16 @@ export async function getCvlListPage(options: {
   let query = supabase
     .from('cvl_cases')
     .select(
-      'id, client_id, origin, status, forms_prepared_at, printed_at, sbr_archived_at, sbr_archived_by, created_at, clients!inner(name, email)',
+      'id, client_id, origin, status, forms_prepared_at, printed_at, sbr_archived_at, sbr_archived_by, created_at, clients!inner(name, email, workflow, archived_at)',
       { count: 'exact' },
     )
-    // An archived file is in the Archive, not on the list. A file in CVL has workflow 'cvl'.
-    .is('clients.archived_at', null)
-    .eq('clients.workflow', 'cvl')
-  if (options.movedFromSbr) query = query.eq('origin', 'sbr_client')
+    // In CVL: the case is not removed from CVL (0047). A file archived from
+    // SBR only stays here; one also in SBR is on both lists.
+    .is('removed_at', null)
   if (safeQ) query = query.or(`name.ilike.%${safeQ}%,email.ilike.%${safeQ}%`, { referencedTable: 'clients' })
 
   const { data, count, error } = await query
-    .order(options.movedFromSbr ? 'sbr_archived_at' : 'created_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .range(from, from + CVL_PAGE_SIZE - 1)
   if (error) throw error
 
@@ -90,6 +93,7 @@ export async function getCvlListPage(options: {
       sbrArchivedAt: r.sbr_archived_at,
       sbrArchivedBy: r.sbr_archived_by,
       createdAt: r.created_at,
+      inSbr: client?.workflow === 'sbr' && !client.archived_at,
     }
   })
 

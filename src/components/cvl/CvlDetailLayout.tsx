@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, BarChart3, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Briefcase, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
@@ -7,6 +7,7 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { CvlDeleteButton } from './CvlDeleteButton'
+import { MoveToSbrButton } from './MoveToSbrButton'
 import { FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
 import { CVL_ORIGIN_LABELS, type CvlCase } from '@/lib/cvl/cases'
@@ -29,6 +30,8 @@ interface CvlDetailLayoutProps {
   dpn: DpnPanelData
   atoAccounts: AtoAccountsOverview
   runningJob: { id: string; created_at: string } | null
+  /** Also on the SBR list (migration 0047): Open in SBR; else Move to SBR. */
+  inSbr: boolean
 }
 
 interface Analysis {
@@ -56,7 +59,7 @@ const formatAcn = (acn: string | null) => {
  * next first, then the ASIC forms (one Part B per director), the company and
  * its directors at a glance, and the documents and analyses the forms draw on.
  */
-export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob }: CvlDetailLayoutProps) {
+export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob, inSbr }: CvlDetailLayoutProps) {
   const base = `/cvl/${client.id}`
   const directors = company?.directors ?? []
   const forms = FORM_CODES.flatMap((code) =>
@@ -131,7 +134,18 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
           <LeadOriginLink leadId={originLeadId} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <CvlDeleteButton clientId={client.id} clientName={client.name} redirectTo="/cvl" />
+          <CvlDeleteButton caseId={cvlCase.id} clientName={client.name} inSbr={inSbr} redirectTo="/cvl" />
+          {inSbr ? (
+            <Link
+              href={`/clients/${client.id}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+            >
+              <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
+              Open in SBR
+            </Link>
+          ) : (
+            <MoveToSbrButton caseId={cvlCase.id} clientName={client.name} />
+          )}
           <Link
             href={`${base}/intake`}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:bg-primary"
@@ -336,10 +350,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
 
           {cvlCase.origin === 'sbr_client' && (
             <p className="px-1 text-[11px] text-foreground/40">
-              Moved from SBR{cvlCase.sbrArchivedAt ? ` on ${formatDate(cvlCase.sbrArchivedAt)}` : ''}.{' '}
-              <Link href={`/sbr/archive/${client.id}`} className="text-accent hover:underline">
-                SBR record (read-only)
-              </Link>
+              Moved from SBR{cvlCase.sbrArchivedAt ? ` on ${formatDate(cvlCase.sbrArchivedAt)}` : ''}.
             </p>
           )}
         </aside>

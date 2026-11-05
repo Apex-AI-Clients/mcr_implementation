@@ -17,19 +17,17 @@ interface CvlClientTableProps {
   list: CvlListPage
   /** The page this table is on, for search and paging links. */
   path: string
-  /** Extra query kept on search and paging links (e.g. the Archive's view=moved). */
+  /** Extra query kept on search and paging links. */
   keep?: Record<string, string>
-  /** Where a row opens: the CVL file, or its read-only SBR record. */
+  /** Where a row opens. */
   rowHref: (clientId: string) => string
-  /** "Moved to CVL": show when and by whom, instead of status. */
-  moved?: boolean
-  /** A Delete on each row, and ticking several to delete together (the CVL client list; never the SBR Archive's "Moved to CVL"). */
+  /** A Delete on each row, and ticking several to delete together. */
   deletable?: boolean
   empty: string
 }
 
-/** The CVL client list, and the SBR Archive's "Moved to CVL". Search and paging are plain links. */
-export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, deletable = false, empty }: CvlClientTableProps) {
+/** The CVL client list. Search and paging are plain links. */
+export function CvlClientTable({ list, path, keep = {}, rowHref, deletable = false, empty }: CvlClientTableProps) {
   const pages = Math.max(1, Math.ceil(list.total / list.pageSize))
   const link = (page: number) => {
     const params = new URLSearchParams({ ...keep, ...(list.query ? { q: list.query } : {}), page: String(page) })
@@ -58,7 +56,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
           {list.query ? 'No CVL clients match that search.' : empty}
         </div>
       ) : (
-        <Selectable on={deletable} rows={list.rows.map((r) => ({ id: r.clientId, name: r.name }))}>
+        <Selectable on={deletable} rows={list.rows.map((r) => ({ id: r.caseId, name: r.name, inSbr: r.inSbr }))}>
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
             <thead>
@@ -69,9 +67,9 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                   </th>
                 )}
                 <th className="px-4 py-3 font-medium">Client</th>
-                <th className="px-4 py-3 font-medium">{moved ? 'Moved to CVL' : 'Status'}</th>
-                <th className="px-4 py-3 font-medium">{moved ? 'By' : 'Came from'}</th>
-                <th className="px-4 py-3 font-medium">{moved ? 'CVL status' : 'Became CVL client'}</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Came from</th>
+                <th className="px-4 py-3 font-medium">Became CVL client</th>
                 {deletable && <th className="w-12 px-4 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
@@ -80,7 +78,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                 <tr key={r.caseId} className="border-b border-white/8 last:border-0 hover:bg-surface/60">
                   {deletable && (
                     <td className="px-4 py-3">
-                      <CvlRowCheckbox id={r.clientId} name={r.name} />
+                      <CvlRowCheckbox id={r.caseId} name={r.name} />
                     </td>
                   )}
                   <td className="px-4 py-3">
@@ -89,26 +87,21 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
                     </Link>
                     <p className="text-xs text-foreground/50">{r.email}</p>
                   </td>
-                  {moved ? (
-                    <>
-                      <td className="px-4 py-3 tabular-nums text-foreground/70">{r.sbrArchivedAt ? formatDate(r.sbrArchivedAt) : '—'}</td>
-                      <td className="px-4 py-3 text-foreground/70">{r.sbrArchivedBy ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={STATUS_VARIANT[r.status]}>{CVL_STATUS_LABELS[r.status]}</Badge>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-4 py-3">
-                        <Badge variant={STATUS_VARIANT[r.status]}>{CVL_STATUS_LABELS[r.status]}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-foreground/70">{CVL_ORIGIN_LABELS[r.origin]}</td>
-                      <td className="px-4 py-3 tabular-nums text-foreground/70">{formatDate(r.createdAt)}</td>
-                    </>
-                  )}
+                  <td className="px-4 py-3">
+                    <Badge variant={STATUS_VARIANT[r.status]}>{CVL_STATUS_LABELS[r.status]}</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-foreground/70">
+                    {CVL_ORIGIN_LABELS[r.origin]}
+                    {r.inSbr && (
+                      <Link href={`/clients/${r.clientId}`} className="ml-2 inline-flex">
+                        <Badge variant="muted">Also in SBR</Badge>
+                      </Link>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-foreground/70">{formatDate(r.createdAt)}</td>
                   {deletable && (
                     <td className="px-4 py-3 text-right">
-                      <CvlDeleteButton clientId={r.clientId} clientName={r.name} compact />
+                      <CvlDeleteButton caseId={r.caseId} clientName={r.name} inSbr={r.inSbr} compact />
                     </td>
                   )}
                 </tr>
@@ -135,6 +128,6 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, moved = false, 
 }
 
 /** The selection (and its "Delete selected" bar) around the table, when rows can be deleted. */
-function Selectable({ on, rows, children }: { on: boolean; rows: { id: string; name: string }[]; children: React.ReactNode }) {
+function Selectable({ on, rows, children }: { on: boolean; rows: { id: string; name: string; inSbr: boolean }[]; children: React.ReactNode }) {
   return on ? <CvlSelectionProvider rows={rows}>{children}</CvlSelectionProvider> : <>{children}</>
 }

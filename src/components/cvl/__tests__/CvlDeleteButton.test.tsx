@@ -22,14 +22,14 @@ describe('CvlDeleteButton', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true })))
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup({ delay: null })
-    render(<CvlDeleteButton clientId="cl_1" clientName="Sample Trading" compact />)
+    render(<CvlDeleteButton caseId="case-1" clientName="Sample Trading" compact />)
 
     await user.click(screen.getByRole('button', { name: 'Delete Sample Trading' }))
     expect(fetchMock).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog').textContent).toContain('moves to the Archive (CVL tab)')
 
     await user.click(screen.getByRole('button', { name: 'Delete' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/clients/cl_1/archive', { method: 'POST' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/cvl/case-1/remove', { method: 'POST' }))
     expect(refresh).toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
   })
@@ -37,7 +37,7 @@ describe('CvlDeleteButton', () => {
   it('goes back to the CVL list when deleted from the file’s own page', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true }))))
     const user = userEvent.setup({ delay: null })
-    render(<CvlDeleteButton clientId="cl_1" clientName="Sample Trading" redirectTo="/cvl" />)
+    render(<CvlDeleteButton caseId="case-1" clientName="Sample Trading" redirectTo="/cvl" />)
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     await user.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
     await waitFor(() => expect(push).toHaveBeenCalledWith('/cvl'))
@@ -46,7 +46,7 @@ describe('CvlDeleteButton', () => {
   it('says so when the delete fails, and stays open', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Failed to archive client' }), { status: 500 })))
     const user = userEvent.setup({ delay: null })
-    render(<CvlDeleteButton clientId="cl_1" clientName="Sample Trading" compact />)
+    render(<CvlDeleteButton caseId="case-1" clientName="Sample Trading" compact />)
     await user.click(screen.getByRole('button', { name: 'Delete Sample Trading' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     expect(await screen.findByText('Failed to archive client')).toBeTruthy()

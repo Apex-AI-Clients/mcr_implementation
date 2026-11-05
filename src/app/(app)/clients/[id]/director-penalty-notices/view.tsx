@@ -57,7 +57,7 @@ export async function DirectorPenaltyNoticesView({ id, workspace }: ClientPageVi
   const base = clientBase(id, workspace)
   const supabase = getSupabaseServerClient()
 
-  const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
+  const { data: client } = await supabase.from('clients').select('*, cvl_cases(removed_at)').eq('id', id).single()
   if (!client) notFound()
   // An archived file is read in the Archive; a file in the other workspace
   // opens this page there.
