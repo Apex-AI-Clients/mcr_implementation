@@ -259,9 +259,9 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         {/* The questions */}
         <div ref={questions} className="min-w-0 space-y-3" onFocus={onFocusIn}>
           {/* Marks the top of the questions, for the preview to show the first page from its top. */}
-          <div data-form-top="" data-page={sectionSpot(map.sections[0] ?? { q: '', text: '', fields: [], tables: [] }, true)['data-page'] ?? 1} aria-hidden="true" className="-mb-3 h-0" />
+          <div data-form-top="" data-page={sectionSpot(map.sections[0] ?? { q: '', text: '', fields: [], tables: [], page: 1, kind: 'page' }, true)['data-page'] ?? 1} aria-hidden="true" className="-mb-3 h-0" />
           <nav aria-label="Questions" className="flex flex-wrap gap-1">
-            {map.sections.map((s) => (
+            {map.sections.filter((s) => s.kind !== 'page').map((s) => (
               <a
                 key={s.q}
                 href={`#q-${s.q}`}
@@ -273,25 +273,21 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             ))}
           </nav>
 
-          {map.hasTables && (
-            <section className="rounded-xl border border-border bg-card p-4">
-              <label htmlFor="signed-by" className="text-xs font-medium text-muted">
-                Name on the appendix tables (&ldquo;signed by&rdquo;)
-              </label>
-              <div className="mt-1.5 flex items-center gap-1">
-                <input
-                  id="signed-by"
-                  value={state.signedBy ?? ''}
-                  onChange={(e) => setSignedBy(e.target.value)}
-                  className="h-9 w-full max-w-sm rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground focus:border-accent focus:outline-none"
-                />
-                {prefill.signedBy && !state.editedKeys.includes('signedBy') && <SourceButton source={prefill.signedBy.source} label="Name on the tables" />}
-              </div>
-              <p className="mt-1 text-xs text-foreground/40">The &ldquo;and dated&rdquo; beside it is dated by hand on the day.</p>
-            </section>
-          )}
 
-          {map.sections.map((s, i) => (
+          {map.sections.map((s, i) =>
+            s.kind === 'page' ? (
+              <section
+                key={s.q}
+                aria-labelledby={`q-${s.q}`}
+                className="flex items-baseline gap-2.5 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-foreground/50"
+                {...sectionSpot(s, i === 0)}
+              >
+                <span id={`q-${s.q}`} className="font-medium text-foreground/70">
+                  {s.q}
+                </span>
+                <span>{s.text}</span>
+              </section>
+            ) : (
             <section
               key={s.q}
               className="scroll-mt-4 rounded-xl border border-border bg-card p-4"
@@ -325,6 +321,32 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                     />
                   ))}
               </div>
+              {s.kind === 'table' && s === map.sections.find((x) => x.kind === 'table') && (
+                <div className="mb-3">
+                  <label htmlFor="signed-by" className="text-xs font-medium text-muted">
+                    Name on the appendix tables (&ldquo;signed by&rdquo;, at the top of every table page)
+                  </label>
+                  <div className="mt-1.5 flex items-center gap-1">
+                    <input
+                      id="signed-by"
+                      value={state.signedBy ?? ''}
+                      onChange={(e) => setSignedBy(e.target.value)}
+                      className="h-9 w-full max-w-sm rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground focus:border-accent focus:outline-none"
+                    />
+                    {prefill.signedBy && !state.editedKeys.includes('signedBy') && <SourceButton source={prefill.signedBy.source} label="Name on the tables" />}
+                  </div>
+                  <p className="mt-1 text-xs text-foreground/40">The &ldquo;and dated&rdquo; beside it is dated by hand on the day.</p>
+                </div>
+              )}
+              {s.tableRefs?.map((t) => (
+                <p key={t.id} className="mt-3 text-xs text-foreground/60">
+                  The rows go in{' '}
+                  <a href={`#q-Table ${t.id}`} className="font-medium text-accent hover:underline">
+                    Table {t.id}
+                  </a>{' '}
+                  ({t.title}), on page {t.page} after the form.
+                </p>
+              ))}
               {s.tables.map((t) => (
                 <TableInput
                   key={t.id}
@@ -335,7 +357,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                 />
               ))}
             </section>
-          ))}
+            ),
+          )}
         </div>
 
         {/* The official page, as it will print */}
@@ -388,7 +411,7 @@ interface Spot {
 function sectionSpot(s: EntryMap['sections'][number], first: boolean): { 'data-page'?: number; 'data-top'?: number } {
   const shown = [...s.fields.filter((f) => !f.handwritten), ...s.tables]
   const lead = shown[0]
-  if (!lead) return {}
+  if (!lead) return s.page ? { 'data-page': s.page, 'data-top': 0 } : {}
   if (first) return { 'data-page': lead.page, 'data-top': 0 }
   const onLeadPage = shown.filter((x) => x.page === lead.page)
   return { 'data-page': lead.page, 'data-top': Math.min(...onLeadPage.map((x) => x.top)) }
@@ -1108,7 +1131,8 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
         Table {table.id.replace('_', ' ')}: {table.title}
         <span className="ml-2 font-normal text-foreground/40">
           {rows.length} {rows.length === 1 ? 'row' : 'rows'}, {table.rowsPerPage} a page · printed on{' '}
-          {pages === 1 ? 'an appendix page' : `${pages} appendix pages`} after the form, not on this question’s page
+          {pages === 1 ? 'an appendix page' : `${pages} appendix pages`} (page {table.page}
+          {pages > 1 ? ` and ${pages - 1} more ${pages === 2 ? 'copy' : 'copies'} of it` : ''})
         </span>
       </p>
       <div className="overflow-x-auto rounded-lg border border-border">

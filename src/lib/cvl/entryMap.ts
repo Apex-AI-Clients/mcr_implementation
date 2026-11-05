@@ -57,6 +57,16 @@ export interface EntrySection {
   text: string
   fields: EntryField[]
   tables: EntryTable[]
+  /** The printed page it starts on: the screen lists sections page by page, as the PDF. */
+  page: number
+  /**
+   * 'question': a question's answers. 'table': an appendix table, on its own
+   * page after the form. 'page': a printed page with nothing to fill (a cover),
+   * listed so every page of the PDF has its place on the screen.
+   */
+  kind: 'question' | 'table' | 'page'
+  /** A question whose rows go in an appendix table: where that table is. */
+  tableRefs?: { id: string; title: string; page: number }[]
 }
 
 export interface EntryMap {
@@ -111,7 +121,7 @@ export function entryMap(map: FormMap): EntryMap {
     let s = byQ.get(q)
     if (!s) {
       const text = map.questions.find((x) => x.q === q)?.text ?? ''
-      s = { q, text, fields: [], tables: [] }
+      s = { q, text, fields: [], tables: [], page: map.questions.find((x) => x.q === q)?.page ?? 0, kind: 'question' }
       byQ.set(q, s)
       sections.push(s)
     }
@@ -142,21 +152,63 @@ export function entryMap(map: FormMap): EntryMap {
       ...(f.handwritten ? {} : withRoom(roomOf(f))),
     })
   }
+  // Each appendix table on its own, at its printed page (after the form);
+  // its question says where the rows go.
+  const tableSections: EntrySection[] = []
   for (const t of map.tables) {
-    section(t.q).tables.push({
-      id: t.id,
-      title: t.title,
-      columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type, ...withRoom(cellRoomOf(c)) })),
-      rowsPerPage: t.rows.length,
+    const id = t.id.replace('_', ' ')
+    const asked = byQ.get(t.q)
+    if (asked) (asked.tableRefs ??= []).push({ id, title: t.title, page: t.page })
+    tableSections.push({
+      q: `Table ${id}`,
+      text: t.title,
+      fields: [],
+      tables: [
+        {
+          id: t.id,
+          title: t.title,
+          columns: t.columns.map((c) => ({ key: c.key, label: c.label, type: c.type, ...withRoom(cellRoomOf(c)) })),
+          rowsPerPage: t.rows.length,
+          page: t.page,
+          top: Math.round(t.rows[0]?.top ?? 0),
+        },
+      ],
       page: t.page,
-      top: Math.round(t.rows[0]?.top ?? 0),
+      kind: 'table',
     })
   }
+
+  const asked = sections.filter((s) => s.fields.length).map((s) => ({ ...s, page: Math.min(...s.fields.map((f) => f.page)) }))
+  // Every page a CVL printout carries (src/lib/cvl/printPages.ts: all of them,
+  // the appendix cover and table pages too): a page nothing is filled on gets
+  // a note in its place.
+  const printed = new Set([
+    ...map.formPages,
+    ...(map.optionalPages ?? []).map((x) => x.page),
+    ...(map.tables.length && map.appendixCoverPage ? [map.appendixCoverPage] : []),
+    ...map.tables.map((t) => t.page),
+  ])
+  const used = new Set([...asked.flatMap((s) => s.fields.map((f) => f.page)), ...map.tables.map((t) => t.page)])
+  const notes: EntrySection[] = [...printed]
+    .filter((pg) => !used.has(pg))
+    .map((pg) => ({
+      q: `Page ${pg}`,
+      text: pg === map.appendixCoverPage ? 'Appendix cover: printed as it is, nothing to fill.' : 'Cover page: printed as it is, nothing to fill.',
+      fields: [],
+      tables: [],
+      page: pg,
+      kind: 'page' as const,
+    }))
+
   return {
     code: map.code,
     title: map.title,
     version: map.version,
-    sections: sections.filter((s) => s.fields.length || s.tables.length),
+    // Page by page, as the PDF; within a page, the form's own order.
+    sections: [...asked, ...tableSections, ...notes]
+      .map((sec, i) => ({ sec, i }))
+      .sort((a, b) => a.sec.page - b.sec.page || a.i - b.i)
+      .map(({ sec }) => sec),
     hasTables: map.tables.length > 0,
   }
 }

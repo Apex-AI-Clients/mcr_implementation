@@ -115,15 +115,22 @@ describe('CvlFormEditor', () => {
     expect(within(section('B1')).queryByText(/Too long for/)).toBeNull()
   })
 
-  it('says a table’s rows print on appendix pages after the form, not on its question’s page', () => {
+  it('asks each table at its own appendix page, after the form, and says so at its question', () => {
     renderPartB()
-    expect(within(section('B21')).getByText(/a page · printed on an appendix page after the form, not on this question’s page/)).toBeTruthy()
+    expect(within(section('B21')).getByRole('link', { name: 'Table B21' }).getAttribute('href')).toBe('#q-Table B21')
+    expect(within(section('B21')).queryByRole('button', { name: 'Add a row' })).toBeNull()
+    const table = section('Table B21')
+    expect(table.dataset.page).toBe('13')
+    expect(within(table).getByRole('button', { name: 'Add a row' })).toBeTruthy()
+    expect(within(table).getByText(/a page · printed on an appendix page \(page 13\)/)).toBeTruthy()
+    // The "signed by" name sits with the first table, where it prints.
+    expect(within(section('Table B2')).getByLabelText(/Name on the appendix tables/)).toBeTruthy()
   })
 
   it('warns on a table cell too long for its cell', async () => {
     const user = userEvent.setup({ delay: null })
     renderPartB()
-    const b21 = section('B21')
+    const b21 = section('Table B21')
     await user.click(within(b21).getByRole('button', { name: 'Add a row' }))
     const how = within(b21).getByLabelText('How did creditor ask for payment, row 1') as HTMLInputElement
     await user.click(how)
@@ -272,9 +279,9 @@ describe('CvlFormEditor', () => {
     const top = watching((el) => el.hasAttribute('data-form-top'))
     const marker = document.querySelector('[data-form-top]')!
     act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
-    // Part B's first question is on page 2 (page 1 is ASIC's cover): that page, from its top.
-    expect(marker.getAttribute('data-page')).toBe('2')
-    await waitFor(() => expect(screen.getByRole('button', { name: '2' }).getAttribute('aria-current')).toBe('page'))
+    // The questions start as the PDF does: page 1 (ASIC's cover, nothing to fill), from its top.
+    expect(marker.getAttribute('data-page')).toBe('1')
+    await waitFor(() => expect(screen.getByRole('button', { name: '1' }).getAttribute('aria-current')).toBe('page'))
     // The first section starts its page from the top, not at its own first box.
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })

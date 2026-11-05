@@ -94,6 +94,33 @@ describe('cleanAnswers', () => {
 })
 
 describe('entryMap', () => {
+  it('lists Part A page by page, as the PDF: every printed page has its place, each table at its appendix page', () => {
+    const m = entryMap(partA)
+    expect(m.sections.map((s) => [s.page, s.q])).toEqual([
+      [1, 'Page 1'],
+      [2, 'External Administrator'],
+      [3, 'A2'],
+      [3, 'A3'],
+      [4, 'A4'],
+      [4, 'A5'],
+      [5, 'A6'],
+      [5, 'A7'],
+      [6, 'A8'],
+      [6, 'A9'],
+      [6, 'A10'],
+      [7, 'Form 507A'],
+      [8, 'Page 8'],
+      [9, 'Table A4'],
+      [10, 'Table A5'],
+      [11, 'Table A6 unrelated'],
+      [11, 'Table A6 related'],
+      [12, 'Table A7'],
+    ])
+    // Nothing is asked on a cover; each question says where its table is.
+    expect(m.sections.find((s) => s.q === 'Page 8')).toMatchObject({ kind: 'page', fields: [], tables: [] })
+    expect(m.sections.find((s) => s.q === 'A7')!.tableRefs).toEqual([{ id: 'A7', title: expect.any(String), page: 12 }])
+  })
+
   it('asks every page of Part A, page 7 (Form 507A) included, and prints it', async () => {
     const m = entryMap(partA)
     const f507a = m.sections.find((s) => s.q === 'Form 507A')!
@@ -115,8 +142,8 @@ describe('entryMap', () => {
 
   it('lists the questions in the form’s order and numbering, without box geometry', () => {
     const m = entryMap(partA)
-    expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['External Administrator', 'A2', 'A3', 'A4'])
-    const role = m.sections[0].fields.find((f) => f.key === 'ea_role')!
+    expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['Page 1', 'External Administrator', 'A2', 'A3'])
+    const role = m.sections.find((s) => s.q === 'External Administrator')!.fields.find((f) => f.key === 'ea_role')!
     expect(role.type).toBe('choice')
     // Asked and labelled in the form's own words (no "Type of appointment" on the form).
     expect(role.label).toBe('Please tick appropriate box')
@@ -134,7 +161,7 @@ describe('entryMap', () => {
     const name = m.sections.find((s) => s.q === 'A3')!.fields.find((f) => f.key === 'company_name')!
     expect(name.page).toBe(3)
     expect(name.top).toBeGreaterThan(0)
-    expect(m.sections.find((s) => s.q === 'A7')!.tables[0]).toMatchObject({ id: 'A7', rowsPerPage: 6 })
+    expect(m.sections.find((s) => s.q === 'Table A7')!.tables[0]).toMatchObject({ id: 'A7', rowsPerPage: 6, page: 12 })
   })
 })
 
