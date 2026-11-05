@@ -985,8 +985,8 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
       <p className="mb-2 text-xs font-medium text-foreground/70">
         Table {table.id.replace('_', ' ')}: {table.title}
         <span className="ml-2 font-normal text-foreground/40">
-          {rows.length} {rows.length === 1 ? 'row' : 'rows'}, {table.rowsPerPage} a page
-          {pages > 1 ? ` · printed on ${pages} pages` : ''}
+          {rows.length} {rows.length === 1 ? 'row' : 'rows'}, {table.rowsPerPage} a page · printed on{' '}
+          {pages === 1 ? 'an appendix page' : `${pages} appendix pages`} after the form, not on this question’s page
         </span>
       </p>
       <div className="overflow-x-auto rounded-lg border border-border">

@@ -93,6 +93,16 @@ describe('cleanAnswers', () => {
 })
 
 describe('entryMap', () => {
+  it('asks nothing on a page the CVL printout leaves out (Form 507A, court liquidations only)', () => {
+    const m = entryMap(partA)
+    expect(m.sections.map((s) => s.q)).not.toContain('Form 507A')
+    const keys = m.sections.flatMap((s) => [...s.fields.map((f) => f.key), ...s.tables.map((t) => t.id)])
+    expect(keys.some((k) => k.startsWith('f507a_'))).toBe(false)
+    // Every question on the printed pages is still there, and the tables too.
+    expect(m.sections.map((s) => s.q).at(-1)).toBe('A10')
+    expect(m.sections.flatMap((s) => s.tables.map((t) => t.id))).toEqual(['A4', 'A5', 'A6_unrelated', 'A6_related', 'A7'])
+  })
+
   it('lists the questions in the form’s order and numbering, without box geometry', () => {
     const m = entryMap(partA)
     expect(m.sections.map((s) => s.q).slice(0, 4)).toEqual(['External Administrator', 'A2', 'A3', 'A4'])

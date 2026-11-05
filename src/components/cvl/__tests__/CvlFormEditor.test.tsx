@@ -115,6 +115,11 @@ describe('CvlFormEditor', () => {
     expect(within(section('B1')).queryByText(/Too long for/)).toBeNull()
   })
 
+  it('says a table’s rows print on appendix pages after the form, not on its question’s page', () => {
+    renderPartB()
+    expect(within(section('B21')).getByText(/a page · printed on an appendix page after the form, not on this question’s page/)).toBeTruthy()
+  })
+
   it('warns on a table cell too long for its cell', async () => {
     const user = userEvent.setup({ delay: null })
     renderPartB()

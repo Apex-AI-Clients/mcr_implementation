@@ -105,6 +105,9 @@ function topOf(f: FormMap['fields'][number]): number {
 
 export function entryMap(map: FormMap): EntryMap {
   const computed = new Map((map.computed ?? []).map((c) => [c.key, c.sum]))
+  // Pages a CVL printout leaves out (Part A's Form 507A, court liquidations
+  // only): nothing on them is asked, since nothing on them prints.
+  const notPrinted = new Set((map.optionalPages ?? []).map((p) => p.page))
   const sections: EntrySection[] = []
   const byQ = new Map<string, EntrySection>()
   const section = (q: string) => {
@@ -120,6 +123,7 @@ export function entryMap(map: FormMap): EntryMap {
   // The questions in the form's order first, so a field never comes before its question.
   for (const q of map.questions) section(q.q)
   for (const f of map.fields) {
+    if (notPrinted.has(f.page)) continue
     const type: EntryFieldType =
       f.type === 'datecells' || f.type === 'date' || (f.type === 'text' && f.format === 'date') ? 'date' : f.type === 'text' ? 'text' : f.type
     section(f.q).fields.push({
@@ -143,6 +147,7 @@ export function entryMap(map: FormMap): EntryMap {
     })
   }
   for (const t of map.tables) {
+    if (notPrinted.has(t.page)) continue
     section(t.q).tables.push({
       id: t.id,
       title: t.title,
