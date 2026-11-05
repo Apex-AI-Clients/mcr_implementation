@@ -438,15 +438,15 @@ function LivePreview({
   const [filled, setFilled] = useState<Filled | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
   const [doc, setDoc] = useState<PdfDoc | null>(null)
   const [pendingDownload, setPendingDownload] = useState(false)
-  // The drawn page's height in points, to place a spot on it.
-  const [pageHeight, setPageHeight] = useState<number | null>(null)
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const sheet = useRef<HTMLDivElement>(null)
-  // The whole page in view (the default), or the page as wide as the column,
-  // scrolled to what is being edited. Remembered in this browser.
+  // Every page, one under the other, in a column that scrolls to the last.
+  const viewer = useRef<HTMLDivElement>(null)
+  const pageEls = useRef<(HTMLDivElement | null)[]>([])
+  // Each page's size in points (A4 until the PDF says), and the page in view.
+  const [sizes, setSizes] = useState<{ w: number; h: number }[]>([])
+  const [current, setCurrent] = useState(1)
+  // Each page as tall as the column (the default), or as wide as it. Remembered in this browser.
   const [fit, setFit] = useState<'page' | 'width'>('page')
   useEffect(() => {
     try {
@@ -538,52 +538,69 @@ function LivePreview({
 
   const pages = filled ? Math.max(1, filled.pageSources.length) : 0
 
-  // Turn to the page of the field being edited.
+  // Each page's size, once per parsed copy (cheap: no drawing). The last
+  // sizes stay meanwhile, so the column never jumps while a preview is filled.
   useEffect(() => {
-    if (!filled || !spot) return
-    const at = filled.pageSources.indexOf(spot.page)
-    if (at >= 0) setPage(at + 1)
-  }, [spot, filled])
-
-  const shown = Math.min(page, pages || 1)
-
-  // Draw the page shown, from the parsed copy.
-  useEffect(() => {
-    if (!doc || !canvas.current) return
+    if (!doc) return
     let cancelled = false
     void (async () => {
       try {
-        const pdfPage = await doc.getPage(Math.min(shown, doc.numPages))
-        const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.25)
-        const viewport = pdfPage.getViewport({ scale })
-        setPageHeight(pdfPage.getViewport({ scale: 1 }).height)
-        const target = canvas.current
-        if (cancelled || !target) return
-        target.width = viewport.width
-        target.height = viewport.height
-        const ctx = target.getContext('2d')
-        if (!ctx) return
-        await pdfPage.render({ canvas: target, canvasContext: ctx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
-        pdfPage.cleanup()
+        const next: { w: number; h: number }[] = []
+        for (let i = 1; i <= doc.numPages; i++) {
+          const v = (await doc.getPage(i)).getViewport({ scale: 1 })
+          next.push({ w: v.width, h: v.height })
+        }
+        if (!cancelled) setSizes(next)
       } catch {
-        if (!cancelled) setError('The preview could not be drawn. Download the PDF instead.')
+        // A4 meanwhile.
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [doc, shown])
+  }, [doc])
 
-  // Scroll the sheet to the spot on the page shown: where that section is printed.
-  useEffect(() => {
-    const box = sheet.current
-    const target = canvas.current
-    if (!box || !target || !spot || !pageHeight || !filled) return
-    if (filled.pageSources[shown - 1] !== spot.page) return
-    const y = (spot.top / pageHeight) * target.clientHeight - 24
+  // Scroll the column to a spot: a page, and how far down it (points).
+  const filledRef = useRef(filled)
+  filledRef.current = filled
+  const sizesRef = useRef(sizes)
+  sizesRef.current = sizes
+  const scrollToPage = useCallback((index: number, top = 0) => {
+    const box = viewer.current
+    const el = pageEls.current[index]
+    if (!box || !el) return
+    const h = sizesRef.current[index]?.h ?? A4.h
+    const y = el.offsetTop - box.offsetTop + (top / h) * el.clientHeight - (top ? 24 : 0)
     const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     box.scrollTo?.({ top: Math.max(0, y), behavior: reduce ? 'auto' : 'smooth' })
-  }, [spot, pageHeight, shown, filled])
+  }, [])
+
+  // Follow the questions: the page and place of whatever is looked at or
+  // edited on the left. Only when that changes, never on a refill, so
+  // scrolling the column by hand is not undone while typing.
+  useEffect(() => {
+    const f = filledRef.current
+    if (!f || !spot) return
+    const at = f.pageSources.indexOf(spot.page)
+    if (at < 0) return
+    setCurrent(at + 1)
+    scrollToPage(at, spot.top)
+  }, [spot, scrollToPage])
+
+  // Stable, so a page drawing is never restarted by a re-render.
+  const onPageError = useCallback(() => setError('The preview could not be drawn. Download the PDF instead.'), [])
+
+  // The page in view, for the page buttons: the one across the top third of the column.
+  const onScroll = useCallback(() => {
+    const box = viewer.current
+    if (!box) return
+    const line = box.scrollTop + box.clientHeight / 3
+    let n = 1
+    pageEls.current.forEach((el, i) => {
+      if (el && el.offsetTop - box.offsetTop <= line) n = i + 1
+    })
+    setCurrent((c) => (c === n ? c : n))
+  }, [])
 
   // Save the PDF of the answers on screen: filled again first when they have changed.
   const saveFile = useCallback(() => {
@@ -622,9 +639,12 @@ function LivePreview({
           <button
             key={n}
             type="button"
-            onClick={() => setPage(n)}
-            aria-current={n === shown ? 'page' : undefined}
-            className={`min-w-[2em] rounded border px-1.5 py-0.5 font-mono tabular-nums ${n === shown ? 'border-accent bg-accent text-white' : 'border-border bg-card text-foreground/60 hover:border-accent'}`}
+            onClick={() => {
+              setCurrent(n)
+              scrollToPage(n - 1)
+            }}
+            aria-current={n === current ? 'page' : undefined}
+            className={`min-w-[2em] rounded border px-1.5 py-0.5 font-mono tabular-nums ${n === current ? 'border-accent bg-accent text-white' : 'border-border bg-card text-foreground/60 hover:border-accent'}`}
           >
             {n}
           </button>
@@ -659,26 +679,128 @@ function LivePreview({
         </span>
       </div>
       <div
-        ref={sheet}
+        ref={viewer}
         data-fit={fit}
-        className={`rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)] ${
-          fit === 'page' ? 'mx-auto w-fit max-w-full' : 'max-h-[calc(100vh-9rem)] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
-        }`}
+        onScroll={onScroll}
+        aria-label={`${title}: every page`}
+        className="max-h-[calc(100vh-9rem)] space-y-3 overflow-y-auto overflow-x-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {filled ? (
-          <canvas
-            ref={canvas}
-            className={fit === 'page' ? 'block h-auto max-h-[calc(100vh-9rem)] w-auto max-w-full' : 'block h-auto w-full'}
-            aria-label={`Page ${shown} of ${pages}`}
-          />
+          Array.from({ length: pages }, (_, i) => (
+            <PdfPageView
+              key={i}
+              doc={doc}
+              index={i}
+              total={pages}
+              size={sizes[i] ?? A4}
+              fit={fit}
+              root={viewer}
+              holderRef={(el) => {
+                pageEls.current[i] = el
+              }}
+              onError={onPageError}
+            />
+          ))
         ) : (
-          <div className="flex aspect-[1/1.414] items-center justify-center text-xs text-neutral-500">
+          <div className="flex aspect-[1/1.414] items-center justify-center rounded-sm bg-white text-xs text-neutral-500">
             {error ?? 'Filling the form…'}
           </div>
         )}
       </div>
       {filled && error && <p className="text-xs text-destructive">{error}</p>}
     </section>
+  )
+}
+
+/** A4 in points: the size a page is laid out at until the PDF says. */
+const A4 = { w: 595.28, h: 841.89 }
+
+/**
+ * One page of the preview, laid out at its own size straight away (so the
+ * column scrolls true) and drawn only once it comes near the visible part of
+ * the column: a 15-page Part A draws two or three pages, not fifteen, each
+ * time it is filled. Drawn off screen, then copied in, so it never flashes.
+ */
+function PdfPageView({
+  doc,
+  index,
+  total,
+  size,
+  fit,
+  root,
+  holderRef,
+  onError,
+}: {
+  doc: PdfDoc | null
+  index: number
+  total: number
+  size: { w: number; h: number }
+  fit: 'page' | 'width'
+  root: React.RefObject<HTMLDivElement | null>
+  holderRef: (el: HTMLDivElement | null) => void
+  onError: () => void
+}) {
+  const holder = useRef<HTMLDivElement | null>(null)
+  const canvas = useRef<HTMLCanvasElement>(null)
+  // With no IntersectionObserver (old browsers), every page counts as near.
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined')
+
+  useEffect(() => {
+    const el = holder.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => setNear(!!e?.isIntersecting), { root: root.current, rootMargin: '800px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [root])
+
+  // Draw this page from the parsed copy: when it comes near, and again for each new copy while near.
+  const drawn = useRef<PdfDoc | null>(null)
+  useEffect(() => {
+    if (!doc || !near || drawn.current === doc) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const pdfPage = await doc.getPage(Math.min(index + 1, doc.numPages))
+        const scale = Math.min(2, (window.devicePixelRatio || 1) * 1.25)
+        const viewport = pdfPage.getViewport({ scale })
+        const off = document.createElement('canvas')
+        off.width = viewport.width
+        off.height = viewport.height
+        const offCtx = off.getContext('2d')
+        if (!offCtx) return
+        await pdfPage.render({ canvas: off, canvasContext: offCtx, viewport } as Parameters<typeof pdfPage.render>[0]).promise
+        pdfPage.cleanup()
+        const target = canvas.current
+        if (cancelled || !target) return
+        target.width = off.width
+        target.height = off.height
+        target.getContext('2d')?.drawImage(off, 0, 0)
+        drawn.current = doc
+      } catch {
+        if (!cancelled) onError()
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [doc, near, index, onError])
+
+  const ratio = size.w / size.h
+  return (
+    <div
+      ref={(el) => {
+        holder.current = el
+        holderRef(el)
+      }}
+      data-page-index={index + 1}
+      className="relative mx-auto max-w-full overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
+      style={{
+        aspectRatio: `${size.w} / ${size.h}`,
+        width: fit === 'width' ? '100%' : `min(100%, calc((100vh - 9rem) * ${ratio}))`,
+      }}
+    >
+      <canvas ref={canvas} className="absolute inset-0 block h-full w-full" aria-label={`Page ${index + 1} of ${total}`} />
+    </div>
   )
 }
 

@@ -298,27 +298,42 @@ describe('CvlFormEditor', () => {
     expect(screen.getByTestId('preview-status')).toBe(status)
   })
 
-  it('shows the whole page to start; Fit width makes it column-wide, scrolling without a scrollbar, and is remembered', async () => {
+  it('shows every page in one column that scrolls to the last, each page whole to start, or column-wide; the choice is remembered', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()
     window.localStorage.removeItem('cvl.preview.fit')
     renderPartB()
-    const canvas = await screen.findByLabelText(/^Page 1 of /)
-    const sheet = canvas.parentElement as HTMLElement
-    // Whole page: the page is never taller than the window, and nothing is hidden below.
-    expect(sheet.dataset.fit).toBe('page')
-    expect(canvas.className).toContain('max-h-[calc(100vh-9rem)]')
-    expect(sheet.className).not.toContain('overflow-y-auto')
+    // All nine pages of Part B, one under the other.
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    expect(viewer.className).toContain('overflow-y-auto')
+    expect(viewer.className).toContain('[scrollbar-width:none]')
+    expect(viewer.className).toContain('[&::-webkit-scrollbar]:hidden')
+    const firstPage = screen.getByLabelText('Page 1 of 9').parentElement as HTMLElement
+    // Whole page: each page no taller than the column.
+    expect(viewer.dataset.fit).toBe('page')
+    // (min(100%, column height × page ratio): real browsers apply it; the test DOM drops it.) Not column-wide:
+    expect(firstPage.style.width).not.toBe('100%')
     expect(screen.getByRole('button', { name: 'Whole page' }).getAttribute('aria-pressed')).toBe('true')
 
     await user.click(screen.getByRole('button', { name: 'Fit width' }))
-    expect(sheet.dataset.fit).toBe('width')
-    expect(canvas.className).toContain('w-full')
-    expect(sheet.className).toContain('overflow-y-auto')
-    expect(sheet.className).toContain('[scrollbar-width:none]')
-    expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
+    expect(viewer.dataset.fit).toBe('width')
+    expect((screen.getByLabelText('Page 1 of 9').parentElement as HTMLElement).style.width).toBe('100%')
     expect(window.localStorage.getItem('cvl.preview.fit')).toBe('width')
     window.localStorage.removeItem('cvl.preview.fit')
+  })
+
+  it('jumps the column to a page from the page buttons', async () => {
+    const user = userEvent.setup({ delay: null })
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    const scrollTo = vi.fn()
+    viewer.scrollTo = scrollTo as never
+    await user.click(screen.getByRole('button', { name: '7' }))
+    expect(screen.getByRole('button', { name: '7' }).getAttribute('aria-current')).toBe('page')
+    expect(scrollTo).toHaveBeenCalled()
   })
 
   it('shows Part B’s question numbers as they are', () => {
