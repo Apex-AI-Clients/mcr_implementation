@@ -5,6 +5,9 @@ import userEvent from '@testing-library/user-event'
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 // The preview's drawing is pdf.js on a canvas, which jsdom has not got.
 vi.mock('unpdf/pdfjs', () => ({ getDocument: vi.fn(() => ({ promise: Promise.reject(new Error('no canvas in tests')), destroy: async () => {} })) }))
+// The browser fill (its own test fills the real templates): failing by
+// default here, so the preview falls back to the server stub below.
+vi.mock('@/lib/forms/browserFill', () => ({ fillInBrowser: vi.fn() }))
 
 import { CvlFormEditor } from '../CvlFormEditor'
 import { entryMap } from '@/lib/cvl/entryMap'
@@ -12,6 +15,7 @@ import { entryState } from '@/lib/cvl/drafts'
 import { prefillForm } from '@/lib/cvl/prefill'
 import { formVersion } from '@/lib/forms/registry'
 import { context } from '@/lib/cvl/__tests__/fixtures'
+import { fillInBrowser } from '@/lib/forms/browserFill'
 
 // Each test renders a whole ASIC form; under full-suite load that can pass 20s.
 vi.setConfig({ testTimeout: 60_000 })
@@ -31,6 +35,11 @@ function stubFetch(onPut?: Response) {
 
 beforeEach(() => {
   stubFetch()
+})
+
+beforeEach(() => {
+  vi.mocked(fillInBrowser).mockReset()
+  vi.mocked(fillInBrowser).mockRejectedValue(new Error('not in this test'))
 })
 
 afterEach(() => {
@@ -180,24 +189,36 @@ describe('CvlFormEditor', () => {
     expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
   })
 
-  it('never fills the preview while typing; Save saves and updates it, and says when it is out of date', async () => {
+  it('fills the preview again in the browser a moment after typing stops: once per pause, never asking the server', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    vi.mocked(fillInBrowser).mockResolvedValue({ pdf: new Uint8Array([37, 80, 68, 70]), pageSources: [1, 2, 3, 4, 5, 6, 7, 8, 9], pages: 9, warnings: [] } as never)
+    renderPartB()
+    await waitFor(() => expect(fillInBrowser).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(fillInBrowser).mock.calls[0].slice(0, 2)).toEqual(['507b', '20220801'])
+
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    // Typing three letters: not three fills, one after the pause.
+    await waitFor(() => expect(fillInBrowser).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    await new Promise((r) => setTimeout(r, 600))
+    expect(fillInBrowser).toHaveBeenCalledTimes(2)
+    const answers = vi.mocked(fillInBrowser).mock.calls[1][2] as { fields: Record<string, unknown> }
+    expect(answers.fields.b1_name).toBe('Jordan Sample Jr')
+    // Nothing saved, and the server never asked to fill.
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/preview'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(false)
+    expect(screen.queryByText(/save to see your changes/)).toBeNull()
+  })
+
+  it('fills the preview on the server when the browser cannot', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()
     renderPartB()
     const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
     await waitFor(() => expect(previews()).toHaveLength(1))
-
     await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
-    await new Promise((r) => setTimeout(r, 900))
-    expect(previews()).toHaveLength(1)
-    expect(screen.getByText(/Preview not updated/)).toBeTruthy()
-
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(previews()).toHaveLength(2))
-    const order = fetchMock.mock.calls.map(([u, i]) => (i?.method === 'PUT' ? 'save' : String(u).endsWith('/preview') ? 'preview' : 'other'))
-    expect(order.slice(-2)).toEqual(['save', 'preview'])
+    await waitFor(() => expect(previews()).toHaveLength(2), { timeout: 3000 })
     expect(JSON.parse(previews()[1][1]!.body as string).answers.fields.b1_name).toBe('Jordan Sample Jr')
-    await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
   })
 
   /** A stand-in IntersectionObserver: each observer's callback and what it watches. */

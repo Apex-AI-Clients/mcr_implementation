@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import { aud, type AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
-import type { FieldValue, TableRow } from '@/lib/forms/types'
+import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
 import { overflowOf, type Room } from '@/lib/forms/fit'
 import { choiceValue, choiceValues } from '@/lib/forms/choice'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
@@ -56,8 +56,16 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   const answersOf = (st: EntryState) => JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy })
   // What the preview shows: filled on opening, and again on Save (never while typing).
   const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(initial), n: 0 }))
-  const stale = answersOf(state) !== previewRequest.answers
+  const onScreen = answersOf(state)
+  const stale = onScreen !== previewRequest.answers
   const refreshPreview = () => setPreviewRequest((r) => ({ answers: answersOf(state), n: r.n + 1 }))
+  // The preview follows typing: filled again (in the browser) once the
+  // answers have stopped changing for a moment, not on every keystroke.
+  useEffect(() => {
+    if (onScreen === previewRequest.answers) return
+    const timer = setTimeout(() => setPreviewRequest((r) => ({ answers: onScreen, n: r.n + 1 })), PREVIEW_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [onScreen, previewRequest.answers])
   // Each press of Download in the header; the preview saves its PDF as a file.
   const [downloadTick, setDownloadTick] = useState(0)
 
@@ -335,6 +343,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           <LivePreview
             caseId={caseId}
             code={map.code}
+            version={map.version}
             subject={subject}
             request={previewRequest}
             stale={stale}
@@ -358,6 +367,9 @@ interface Filled {
   /** Template page of each output page. */
   pageSources: number[]
 }
+
+/** How long after the last change the preview is filled again (in the browser). */
+const PREVIEW_DELAY_MS = 400
 
 /** Where the preview remembers whole page or fit width (this browser only). */
 const FIT_KEY = 'cvl.preview.fit'
@@ -395,6 +407,7 @@ type PdfDoc = Awaited<PdfTask['promise']>
 function LivePreview({
   caseId,
   code,
+  version,
   subject,
   request,
   stale,
@@ -406,6 +419,8 @@ function LivePreview({
 }: {
   caseId: string
   code: string
+  /** The form version the answers are written against (its map and template). */
+  version: string
   subject: string
   /** The answers to fill, and a counter that changes each time a new preview is asked for. */
   request: { answers: string; n: number }
@@ -450,17 +465,30 @@ function LivePreview({
   }
   const latest = useRef(0)
 
-  // Fill once per request (on opening, on Save, before a download): never while typing.
+  // Fill once per request: on opening, a moment after typing stops, on Save,
+  // before a download. In the browser (no request per change); the server
+  // fills it only when that fails. The latest request wins.
   useEffect(() => {
     const id = ++latest.current
     let cancelled = false
+    const answers = JSON.parse(request.answers)
     void (async () => {
       setLoading(true)
       try {
+        try {
+          const { fillInBrowser } = await import('@/lib/forms/browserFill')
+          const fill = await fillInBrowser(code as FormCode, version, answers)
+          if (cancelled || id !== latest.current) return
+          setFilled({ pdf: fill.pdf, pageSources: fill.pageSources })
+          setError(null)
+          return
+        } catch {
+          // Filled on the server instead, below.
+        }
         const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ form: code, subject, answers: JSON.parse(request.answers) }),
+          body: JSON.stringify({ form: code, subject, answers }),
         })
         if (!res.ok) throw new Error('The preview could not be filled.')
         const pdf = new Uint8Array(await res.arrayBuffer())
@@ -482,7 +510,7 @@ function LivePreview({
     return () => {
       cancelled = true
     }
-  }, [caseId, code, subject, request])
+  }, [caseId, code, version, subject, request])
 
   // Parse each preview once; every page tab draws from the same parsed copy.
   // The previous copy is let go when a new one arrives, and on leaving.
@@ -625,7 +653,7 @@ function LivePreview({
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
             </span>
           ) : (
-            stale && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-warning">Preview not updated: save to see your changes</span>
+            stale && <span className="text-foreground/40">Updating…</span>
           )}
         </span>
       </div>
