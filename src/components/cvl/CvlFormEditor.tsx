@@ -630,6 +630,14 @@ function LivePreview({
           </button>
         ))}
         <span className="ml-auto flex items-center gap-2">
+          {/* A slot of its own width, always there: the buttons beside it never move as it comes and goes. */}
+          <span data-testid="preview-status" role="status" aria-live="polite" className="inline-flex w-20 items-center justify-end gap-1 text-foreground/40">
+            {(loading || stale) && (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
+              </>
+            )}
+          </span>
           <span role="group" aria-label="Preview size" className="inline-flex overflow-hidden rounded border border-border">
             {(
               [
@@ -648,13 +656,6 @@ function LivePreview({
               </button>
             ))}
           </span>
-          {loading ? (
-            <span className="inline-flex items-center gap-1 text-foreground/40">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Updating
-            </span>
-          ) : (
-            stale && <span className="text-foreground/40">Updating…</span>
-          )}
         </span>
       </div>
       <div

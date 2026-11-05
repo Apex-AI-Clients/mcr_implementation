@@ -274,6 +274,25 @@ describe('CvlFormEditor', () => {
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })
 
+  it('says "Updating" to the left of the size buttons, in a slot that is always there, so the buttons never move', async () => {
+    const user = userEvent.setup({ delay: null })
+    stubFetch()
+    vi.mocked(fillInBrowser).mockResolvedValue({ pdf: new Uint8Array([37, 80, 68, 70]), pageSources: [1, 2, 3, 4, 5, 6, 7, 8, 9], pages: 9, warnings: [] } as never)
+    renderPartB()
+    const status = screen.getByTestId('preview-status')
+    const sizes = screen.getByRole('group', { name: 'Preview size' })
+    // Before the buttons, in the same row.
+    expect(status.compareDocumentPosition(sizes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(status.parentElement).toBe(sizes.parentElement)
+    expect(status.className).toContain('w-20')
+    // Idle: still there, empty.
+    await waitFor(() => expect(status.textContent).toBe(''))
+    await user.type(within(section('B1')).getByLabelText('Name'), 'x')
+    expect(status.textContent).toContain('Updating')
+    await waitFor(() => expect(status.textContent).toBe(''), { timeout: 3000 })
+    expect(screen.getByTestId('preview-status')).toBe(status)
+  })
+
   it('shows the whole page to start; Fit width makes it column-wide, scrolling without a scrollbar, and is remembered', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()
