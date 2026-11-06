@@ -6,6 +6,7 @@ import { entryMap } from '../entryMap'
 import { prefillForm } from '../prefill'
 import { readCvlSettings } from '../settings'
 import { caseJobs, fillJob } from '../generate'
+import { cvlFillOptions } from '../printPages'
 import { formVersion, handwrittenKeys } from '@/lib/forms/registry'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { context } from './fixtures'
@@ -171,15 +172,17 @@ describe('a pre-filled draft on the official form', () => {
   it('prints what was pre-filled, and nothing written by hand', async () => {
     const ctx = context()
     const s = entryState(partA, prefillForm('507a', 'company', ctx), null)
-    const r = await fillOfficialForm('507a', toFormData(s))
+    const r = await fillOfficialForm('507a', toFormData(s), cvlFillOptions(partA))
     const { text } = await extractText(await getDocumentProxy(new Uint8Array(r.pdf)), { mergePages: true })
+    // The ASIC extract's company and address are pre-filled.
     expect(text).toContain('Example Trading Pty Ltd')
     expect(text).toContain('North Melbourne')
-    expect(text).toContain('172,320.55')
-    // 6 form pages, the appendix cover, A4, and A7 on two pages: 7 creditors, 6 a page.
-    expect(r.pages).toBe(10)
-    expect(r.warnings).toEqual([expect.objectContaining({ key: 'A7', message: expect.stringMatching(/7 rows; the form holds 6 a page/) })])
-    // The appendix tables carry the name, never a date beside it.
+    // No creditor amount from the client file's accounts: the tables are typed.
+    expect(text).not.toContain('172,320.55')
+    // Every page: 7 form pages (Form 507A included), the appendix cover, and A4, A5, A6, A7 once each, empty.
+    expect(r.pages).toBe(12)
+    expect(r.warnings).toEqual([])
+    // The appendix tables carry the name (from the ASIC extract's first director), never a date beside it.
     expect(text).toContain('Jordan Sample')
   })
 })

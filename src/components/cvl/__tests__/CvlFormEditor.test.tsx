@@ -508,9 +508,13 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const totalAssets = row('TOTAL assets')
     const totalErv = row('TOTAL estimated realisable values')
     const amount = (el: HTMLInputElement) => Number(el.value)
-    // The pre-fill's book values already add up in the Valuation total: shown as its value.
+    // Nothing pre-filled in the summary (amounts are typed): the totals start empty.
+    expect(totalAssets.valuation!.value).toBe('')
+    // Valuations typed: the Valuation total's value is their sum.
+    await user.type(row('1(b) Sundry debtors').valuation!, '40000')
+    await user.type(row('1(d) Cash at bank').valuation!, '7234.67')
     const before = amount(totalAssets.valuation!)
-    expect(before).toBeGreaterThan(0)
+    expect(before).toBe(47234.67)
     expect(totalAssets.valuation!.hasAttribute('data-auto')).toBe(true)
 
     // Two estimated realisable values typed: the ERV total's value is their sum.
@@ -559,10 +563,11 @@ describe('CvlFormEditor — Form 509 summary', () => {
     render509()
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toContain('Estimated realisable value')
     const debtors = row('1(b) Sundry debtors')
-    expect(debtors.valuation?.value).toBe('12480.5')
+    // Not pre-filled: amounts are typed (the statements' amounts are listed beside the form).
+    expect(debtors.valuation?.value).toBe('')
     expect(debtors.erv?.value).toBe('')
-    // Both totals have a box in each column; TOTAL assets' Valuation shows what it adds up to.
-    expect(row('TOTAL assets').valuation?.value).toBe('47234.67')
+    // Both totals have a box in each column; nothing to add up yet.
+    expect(row('TOTAL assets').valuation?.value).toBe('')
     expect(row('TOTAL assets').erv).not.toBeNull()
     expect(row('TOTAL estimated realisable values').valuation).not.toBeNull()
     expect(row('TOTAL estimated realisable values').erv).not.toBeNull()
@@ -581,8 +586,8 @@ describe('CvlFormEditor — Form 509 summary', () => {
       expect(row(label).valuation, label).not.toBeNull()
       expect(row(label).erv, label).not.toBeNull()
     }
-    // The book share capital goes in Valuation.
-    expect(row('Share capital issued').valuation?.value).toBe('100')
+    // Share capital is typed too (not pre-filled from the statements).
+    expect(row('Share capital issued').valuation?.value).toBe('')
     expect(row('Share capital issued').erv?.value).toBe('')
     // Line 7 is one line on the form: one row here, not two.
     expect(screen.getAllByRole('cell').filter((c) => c.textContent?.startsWith('7 Balances owing'))).toHaveLength(1)

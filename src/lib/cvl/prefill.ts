@@ -61,7 +61,6 @@ export interface Prefill {
 }
 
 const round = (n: number) => Math.round(n * 100) / 100
-const nameKey = (s: string) => s.toUpperCase().replace(/[^A-Z]/g, '')
 
 /* ---------------- sources ---------------- */
 
@@ -90,8 +89,6 @@ function companySource(ctx: CvlContext, what: string, section: Section): AmountS
       : null,
   }
 }
-
-const fileSource = (what: string, where: string): AmountSource => ({ from: [what, where] })
 
 const settingSource = (what: string): AmountSource => ({
   from: [what, 'CVL settings.'],
@@ -234,15 +231,6 @@ export function creditorRows(ctx: CvlContext): PrefillTableRow[] {
 
 /* ---------------- Form 509 ---------------- */
 
-const VALUATIONS: [string, Meaning, string][] = [
-  ['b_val', 'trade_debtors', '1(b) Sundry debtors'],
-  ['c_val', 'cash_on_hand', '1(c) Cash on hand'],
-  ['d_val', 'cash_at_bank', '1(d) Cash at bank'],
-  ['e_val', 'stock', '1(e) Stock'],
-  ['g_val', 'plant_equipment', '1(g) Plant and machinery'],
-  ['h_val', 'other_assets', '1(h) Other assets'],
-]
-
 function candidates509(ctx: CvlContext): Candidate[] {
   const out: Candidate[] = []
   const add = (key: PlacementKey, amount: number | null, source: AmountSource) => {
@@ -302,28 +290,10 @@ function prefill509(ctx: CvlContext, out: Prefill) {
   putCompany(out, ctx, 'company_name', 'company_acn')
   out.notes.summary_date = 'Pick the date the summary is made up to.'
 
-  // Book values in the valuation column only; estimated realisable values stay blank.
-  for (const [key, meaning, label] of VALUATIONS) {
-    const f = ctx.balanceSheet[meaning]
-    if (f) put(out, key, f.amount, balanceSheetSource(`${label}: book value.`, f, ctx.clientId))
-  }
-  const share = ctx.balanceSheet.share_capital
-  if (share) {
-    const source = balanceSheetSource('Share capital, as printed (issued; paid up taken as the same — check).', share, ctx.clientId)
-    // Book values: the Valuation column only.
-    put(out, 'share_issued_val', share.amount, source)
-    put(out, 'share_paid_val', share.amount, source)
-  }
-  out.warnings.push('Estimated realisable values are left blank: they are the liquidator’s estimate, not the books.')
-
+  // The amounts are typed by staff (6 Nov 2026: pre-fill only from the ASIC
+  // extract and the CVL settings). The statement amounts are still listed
+  // beside the form, to type from; none is put in a box.
   out.candidates = candidates509(ctx)
-  for (const c of out.candidates) {
-    if (!c.target || c.target === 'none' || out.fields[c.target]) continue
-    out.fields[c.target] = {
-      value: c.amount,
-      source: { ...c.source, from: [...c.source.from, `Placed in ${PLACEMENTS[c.key].options[c.target as keyof (typeof PLACEMENTS)[typeof c.key]['options']]} by the CVL setting.`] },
-    }
-  }
 
   const d = director(ctx, 'company')
   if (d) {
@@ -360,31 +330,9 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
   putAddress(out, ctx, 'a3_registered', ctx.company?.registeredOffice ?? null, 'Registered office.', 'addresses')
   putAddress(out, ctx, 'a3_principal', ctx.company?.principalPlace ?? null, 'Principal place of business.', 'addresses')
   putRegistration(out, ctx, 'a3_commenced')
-  if (ctx.company?.entityType === 'trust') {
-    const source = fileSource('The company acts as trustee.', 'Company and trust details on the client file.')
-    put(out, 'a3_trustee', 'yes', source)
-    put(out, 'a3_trust_name', ctx.company.trustName, source)
-  }
-
-  // A4: the assets on the balance sheet, described; their values are the director's estimate.
-  const assets: PrefillTableRow[] = []
-  for (const meaning of ['cash_at_bank', 'cash_on_hand', 'trade_debtors', 'stock', 'plant_equipment', 'other_assets'] as Meaning[]) {
-    const f = ctx.balanceSheet[meaning]
-    for (const line of f?.lines ?? []) {
-      if (line.value === 0) continue
-      assets.push({
-        row: { description: line.label.trim() },
-        source: {
-          from: [`${f!.statement}, line confirmed by staff:`, printedLineText(line.label, line.printed, line.source)],
-          rule: 'The book value is not copied into the estimated value: that is the director’s estimate.',
-          link: line.source ? { kind: 'pdf', documentId: line.source.documentId, page: line.source.page } : null,
-        },
-      })
-    }
-  }
-  if (assets.length) out.tables.A4 = assets
-  const creditors = creditorRows(ctx)
-  if (creditors.length) out.tables.A7 = creditors
+  // The trust question, and the tables (A4 assets, A5 debtors, A6
+  // employees, A7 creditors), are typed by staff: nothing is pre-filled from
+  // the client file's statements or accounts (6 Nov 2026).
 
   const d = director(ctx, 'company')
   if (d) {
@@ -411,23 +359,10 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
     put(out, 'b31_name', d.name, source)
     out.signedBy = { value: d.name, source }
     if (!d.appointedOn) out.notes.b1_role = ctx.asicExtract ? 'The kept ASIC extract has no appointment date for this director.' : 'Upload the ASIC extract again to fill the appointment date.'
-    // The client's own phone and email, when the client is this director.
-    if (nameKey(ctx.client.name) === nameKey(d.name)) {
-      put(out, 'b1_phone', ctx.client.phone, fileSource('The client’s phone.', 'Client file.'))
-      put(out, 'b1_email', ctx.client.email, fileSource('The client’s email.', 'Client file.'))
-    }
   }
   putRegistration(out, ctx, 'b10_date', true)
-
-  const a = ctx.accountant
-  const preparedBy = a?.contactPerson || a?.companyName
-  if (a && preparedBy) {
-    const source = fileSource('Who prepares the tax returns and BAS.', 'Accountant details on the client file.')
-    put(out, 'b24_name', a.contactPerson && a.companyName ? `${a.contactPerson}, ${a.companyName}` : preparedBy, source)
-    put(out, 'b24_phone', a.phone, source)
-  } else {
-    out.notes.b24_name = 'No accountant details on the client file.'
-  }
+  // Phone, email, the accountant (B24) and the rest are typed by staff:
+  // nothing is pre-filled from the client file beyond the ASIC extract (6 Nov 2026).
 }
 
 /* ---------------- entry ---------------- */

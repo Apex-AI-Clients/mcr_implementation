@@ -58,20 +58,14 @@ describe('CVL settings', () => {
 })
 
 describe('Form 509', () => {
-  it('puts the book values in the valuation column only, with their printed lines as the source', () => {
+  it('fills no amount: the summary is typed (pre-fill only from the ASIC extract and the CVL settings)', () => {
     const p = prefillForm('509', 'company', context())
-    expect(value(p, 'b_val')).toBe(12480.5)
-    expect(value(p, 'c_val')).toBe(150)
-    expect(value(p, 'd_val')).toBe(3204.17)
-    expect(value(p, 'e_val')).toBe(8900)
-    expect(value(p, 'g_val')).toBe(22500)
-    // Share capital is a book value too: Valuation column only.
-    expect(value(p, 'share_issued_val')).toBe(100)
-    expect(value(p, 'share_paid_val')).toBe(100)
-    expect(p.fields.share_issued).toBeUndefined()
-    for (const erv of ['a_erv', 'b_erv', 'c_erv', 'd_erv', 'e_erv', 'g_erv', 'h_erv', 's2_erv', 'total_erv']) expect(p.fields[erv]).toBeUndefined()
-    expect(p.fields.b_val.source.from.join(' ')).toContain('“Trade Debtors” printed 12,480.50 — page 2 of fy26.pdf')
-    expect(p.fields.b_val.source.link).toEqual({ kind: 'pdf', documentId: 'doc-fy26', page: 2 })
+    const amounts = Object.keys(p.fields).filter((k) => /_(val|erv)$|^r\d|^total|^share/.test(k))
+    expect(amounts).toEqual([])
+    // What is filled: the company (ASIC extract), the lodgement details (CVL settings) and the signer.
+    expect(Object.keys(p.fields).sort()).toEqual(
+      ['capacity', 'company_acn', 'company_name', 'contact_name', 'email', 'entity_name', 'phone', 'postal_1', 'postal_2', 'signer_name'].sort(),
+    )
   })
 
   it('always fills the lodgement details from the settings: their starting values until changed', () => {
@@ -104,7 +98,7 @@ describe('Form 509', () => {
     expect(cleared.fields.entity_name?.value).toBe(LODGEMENT_DEFAULTS.firm)
   })
 
-  it('lists the amounts not placed beside the form, and places none without a setting', () => {
+  it('lists the statement amounts beside the form, to type from, and puts none in a box', () => {
     const p = prefillForm('509', 'company', context())
     const c = Object.fromEntries(p.candidates.map((x) => [x.key, x]))
     expect(c.director_loan).toMatchObject({ amount: 4000, target: null })
@@ -115,11 +109,11 @@ describe('Form 509', () => {
     for (const key of ['h_val', 's2_val', 'r3', 'r6', 'r7_claims']) expect(p.fields[key]).toBeUndefined()
   })
 
-  it('places an amount once its setting says where, and says so', () => {
+  it('puts no amount in a box even when a placement setting is set: amounts are typed', () => {
     const settings = readCvlSettings([{ key: 'f509_place.super_payable', value: 'r3', confirmed: false, updated_by: 'Casey', updated_at: '2026-10-29T00:00:00Z' }])
     const p = prefillForm('509', 'company', context({ settings }))
-    expect(value(p, 'r3')).toBe(6400)
-    expect(p.fields.r3.source.from.at(-1)).toBe('Placed in 3 Preferential creditors by the CVL setting.')
+    expect(p.fields.r3).toBeUndefined()
+    expect(p.candidates.find((c) => c.key === 'super_payable')).toMatchObject({ amount: 6400 })
   })
 
   it('fills the signer from the first director, never the date signed', () => {
@@ -192,66 +186,44 @@ describe('Part A', () => {
     expect(p.notes.a3_commenced).toBe('Upload the ASIC extract again to fill (the company’s registration date).')
   })
 
-  it('lists the creditors: each ATO account owing, the balance sheet’s lines and the SBR’s own rows', () => {
-    const rows = creditorRows(context())
-    expect(rows.map((r) => [r.row.name, r.row.amount, !!r.row.secured, !!r.row.related])).toEqual([
-      ['Australian Taxation Office', 172320.55, false, false],
-      ['Australian Taxation Office', 6400, false, false],
-      // The ATO accounts stand in for the BAS Payable line; the income tax credit is not a debt.
-      ['Trade Creditors', 5000, false, false],
-      ['Chattel Mortgage - Ute', 18500, true, false],
-      ['Business Loan', 7000, false, false],
-      ['Owner Funds Introduced', 2500, false, true],
-      // "Trade suppliers" on the SBR is the balance-sheet hint, already listed.
-      ['Sample Landlord Pty Ltd', 3300, false, false],
-    ])
-    const p = prefillForm('507a', 'company', context())
-    expect(p.tables.A7).toHaveLength(7)
-  })
-
-  it('describes the assets in A4 without copying book values into the director’s estimate', () => {
-    const p = prefillForm('507a', 'company', context())
-    expect(p.tables.A4.map((r) => r.row)).toEqual([
-      { description: 'Cash at Bank' },
-      { description: 'Petty Cash' },
-      { description: 'Trade Debtors' },
-      { description: 'Stock on Hand' },
-      { description: 'Plant and Equipment' },
-    ])
-  })
-
-  it('answers the trust question from the file, and the declaration name from the first director', () => {
+  it('pre-fills no table and no trust answer: A4 to A7 are typed (only the ASIC extract and the CVL settings pre-fill)', () => {
     const ctx = context()
     ctx.company!.entityType = 'trust'
     ctx.company!.trustName = 'Example Family Trust'
     const p = prefillForm('507a', 'company', ctx)
-    expect(value(p, 'a3_trustee')).toBe('yes')
-    expect(value(p, 'a3_trust_name')).toBe('Example Family Trust')
+    expect(p.tables).toEqual({})
+    expect(p.fields.a3_trustee).toBeUndefined()
+    expect(p.fields.a3_trust_name).toBeUndefined()
+    // The client file's creditors are still worked out (Form 509's "amounts to place" list uses them).
+    expect(creditorRows(context()).length).toBeGreaterThan(0)
+  })
+
+  it('fills the declaration name from the first director (ASIC extract)', () => {
+    const p = prefillForm('507a', 'company', context())
     expect(value(p, 'a9_name')).toBe('Jordan Sample')
     expect(p.signedBy?.value).toBe('Jordan Sample')
   })
 })
 
 describe('Part B', () => {
-  it('fills each director’s own Part B, with the client’s phone and email only for the client', () => {
+  it('fills each director’s own Part B from the ASIC extract, and no phone or email from the client file', () => {
     const one = prefillForm('507b', 'director:1', context())
     expect(value(one, 'b1_name')).toBe('Jordan Sample')
-    expect(value(one, 'b1_phone')).toBe('0400 000 001')
-    expect(value(one, 'b1_email')).toBe('jordan@example.test')
+    expect(one.fields.b1_phone).toBeUndefined()
+    expect(one.fields.b1_email).toBeUndefined()
     expect(one.fields.b1_name.source.from[0]).toBe('Director: Jordan Sample, born 1970-03-14, appointed 2016-08-05.')
 
     const two = prefillForm('507b', 'director:2', context())
     expect(value(two, 'b1_name')).toBe('Casey Example')
-    expect(two.fields.b1_phone).toBeUndefined()
     expect(two.notes.b1_role).toBe('The kept ASIC extract has no appointment date for this director.')
   })
 
-  it('writes B10 as DD/MM/YYYY (a plain text box) and B24 from the accountant details', () => {
+  it('writes B10 as DD/MM/YYYY (a plain text box), and leaves B24 (the accountant) to be typed', () => {
     const p = prefillForm('507b', 'director:1', context())
     expect(value(p, 'b10_date')).toBe('12/06/2014')
-    expect(value(p, 'b24_name')).toBe('Alex Ledger, Sample Accounting')
-    expect(value(p, 'b24_phone')).toBe('02 0000 0000')
-    expect(p.fields.b24_name.source.from).toEqual(['Who prepares the tax returns and BAS.', 'Accountant details on the client file.'])
+    expect(p.fields.b24_name).toBeUndefined()
+    expect(p.fields.b24_phone).toBeUndefined()
+    expect(p.notes.b24_name).toBeUndefined()
   })
 
   it('never pre-fills anything written by hand', () => {
