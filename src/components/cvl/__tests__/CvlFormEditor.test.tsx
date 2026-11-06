@@ -527,13 +527,19 @@ describe('CvlFormEditor — Form 509 summary', () => {
     await user.type(row('1(a) Interest in land').valuation!, '100')
     expect(Number(totalAssets.valuation!.placeholder.replace(/,/g, ''))).toBe(before - landBefore + 100)
 
-    // The other two total boxes are only what is typed: nothing added up there.
-    expect(totalAssets.erv!.placeholder).toBe('')
-    expect(totalErv.valuation!.placeholder).toBe('')
+    // Each total also shows in the other total row, same column: TOTAL estimated realisable values'
+    // Valuation is TOTAL assets' Valuation; TOTAL assets' ERV is TOTAL estimated realisable values' ERV.
+    expect(totalErv.valuation!.placeholder).toBe(totalAssets.valuation!.placeholder)
+    expect(totalAssets.erv!.placeholder).toBe('15,013')
+    expect(totalAssets.erv!.title).toMatch(/The same as TOTAL estimated realisable values: Estimated realisable value/)
 
-    // Typed, the total is the typed amount.
+    // Typed, the total is the typed amount; its copy follows it.
     await user.type(totalErv.erv!, '99')
     expect(totalErv.erv!.value).toBe('99')
+    expect(totalAssets.erv!.placeholder).toBe('99')
+    // A copy typed over is its own amount.
+    await user.type(totalAssets.erv!, '5')
+    expect(totalAssets.erv!.value).toBe('5')
   })
 
   it('names Form 509’s sections in full in the jump links, never as initials', () => {

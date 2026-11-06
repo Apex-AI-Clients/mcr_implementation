@@ -33,6 +33,22 @@ describe('value helpers', () => {
     expect(withComputed(map, { b_val: 100, total_assets: 7 }).total_assets).toBe(7)
     expect(withComputed(map, {}).total_assets).toBeUndefined()
   })
+
+  it('prints each Form 509 total in both total rows, same column, unless typed there', () => {
+    const { map } = formVersion('509')
+    const out = withComputed(map, { a_val: 100, b_val: 50, a_erv: 80, b_erv: 20 })
+    // TOTAL assets: Valuation, and the same in TOTAL estimated realisable values' Valuation column.
+    expect(out.total_assets).toBe(150)
+    expect(out.total_erv_val).toBe(150)
+    // TOTAL estimated realisable values: ERV, and the same in TOTAL assets' ERV column.
+    expect(out.total_erv).toBe(100)
+    expect(out.total_assets_erv).toBe(100)
+    // Typed totals: the copies follow them; a copy typed is its own.
+    const typed = withComputed(map, { a_val: 100, total_assets: 7, a_erv: 80, total_assets_erv: 3 })
+    expect(typed.total_erv_val).toBe(7)
+    expect(typed.total_erv).toBe(80)
+    expect(typed.total_assets_erv).toBe(3)
+  })
 })
 
 describe('maps', () => {
