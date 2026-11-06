@@ -204,7 +204,7 @@ function SourcePanel({ clientId, figure, onClose }: { clientId: string; figure: 
           {cell.scan && (
             <div className="space-y-1.5 pt-1">
               <p className="text-foreground/70">
-                Read from a scan:{' '}
+                From a scanned PDF, read twice:{' '}
                 {cell.scan.status === 'agree'
                   ? 'both readings agree.'
                   : cell.scan.status === 'chosen'

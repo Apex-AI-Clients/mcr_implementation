@@ -23,7 +23,7 @@ interface Props {
  * printed headings, each figure exactly as printed. Click a figure for the
  * file, page and line it came from. Nothing here is calculated.
  *
- * A year read from a scan says so in its header ("Read from a scan"); a
+ * A year read from a scan says so in its header ("Scanned PDF", with what that means on hover); a
  * scanned figure the two readings disagree on is amber until staff choose it,
  * one read by one reader only is underlined dotted ("single reading — check").
  */
@@ -44,9 +44,12 @@ export function PrintedComparisonTable({ table, columns, selected, onSelect }: P
                     <span className="block text-foreground/70">{t.title}</span>
                     <span className="block text-[10px] font-normal text-foreground/40">{t.period}</span>
                     {scanned[columns.indexOf(c)] && (
-                      <span className="mt-0.5 inline-flex items-center gap-1 rounded bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent">
+                      <span
+                        title="This year came as a scanned PDF (pictures of the pages, no text inside). Each figure was read twice, independently, and the two readings compared: matching figures are accepted; any that differ are shown in amber for you to choose. A digital PDF from the accountant is always exact."
+                        className="mt-0.5 inline-flex cursor-help items-center gap-1 rounded bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent"
+                      >
                         <ScanLine className="h-3 w-3" aria-hidden />
-                        Read from a scan
+                        Scanned PDF
                       </span>
                     )}
                   </th>
