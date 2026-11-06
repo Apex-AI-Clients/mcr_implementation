@@ -121,11 +121,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
         {error && <p className="no-print text-xs text-destructive">{error}</p>}
       </div>
 
-      <ScanProgress
-        clientId={clientId}
-        pending={comparison.documents.some((d) => d.status === 'scan_pending')}
-        files={Object.fromEntries(comparison.documents.map((d) => [d.documentId, d.filename]))}
-      />
+      <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
 
       <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
 

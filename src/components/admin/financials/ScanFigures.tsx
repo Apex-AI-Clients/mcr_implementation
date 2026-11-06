@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ScanLine } from 'lucide-react'
+import { Loader2, ScanLine } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { parseAmount } from '@/lib/printed/amounts'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
@@ -150,20 +150,72 @@ interface Job {
   total: number
 }
 
-/** A scan waiting to be read: starts its reading (once per page load), shows progress per file, then the page refreshes itself. */
-export function ScanProgress({ clientId, pending, files = {} }: { clientId: string; pending: boolean; files?: Record<string, string> }) {
+/** Seconds with no reading seen before the box offers to start it by hand. */
+const START_GRACE_MS = 20_000
+
+/** How far a file's scanning is (0–100): finding the statement pages is the first third, reading them the rest. */
+function percent(job: Job | undefined): number {
+  if (!job || job.total === 0) return 3
+  const part = Math.min(1, job.done / job.total)
+  return Math.round(job.stage === 'reading' ? 33 + part * 67 : part * 33)
+}
+
+function step(job: Job | undefined): string {
+  if (!job) return 'Starting…'
+  if (job.stage === 'selecting') return `Finding the statement pages (page ${Math.min(job.done + 1, job.total)} of ${job.total})`
+  if (job.stage === 'reading') return `Reading the statements (page ${Math.min(job.done + 1, job.total)} of ${job.total})`
+  return 'Starting…'
+}
+
+/**
+ * Statements uploaded as scans, being read (src/lib/scan): what is happening,
+ * in plain words, with progress per file. Starts the scanning once per page
+ * load; if no scanning has started after a little while (it failed to start,
+ * or stopped), offers "Start scanning". Refreshes the page when every file is
+ * done.
+ */
+export function ScanProgress({
+  clientId,
+  files,
+  pollMs = 3000,
+  graceMs = START_GRACE_MS,
+}: {
+  clientId: string
+  files: { documentId: string; filename: string }[]
+  pollMs?: number
+  graceMs?: number
+}) {
   const router = useRouter()
   const [jobs, setJobs] = useState<Job[]>([])
+  const [stalled, setStalled] = useState(false)
+  const [starting, setStarting] = useState(false)
   const started = useRef(false)
+  // The polling loop must not restart when the router object does.
+  const routerRef = useRef(router)
+  routerRef.current = router
+  const pending = files.length > 0
+
+  async function start() {
+    setStarting(true)
+    setStalled(false)
+    try {
+      await fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' })
+    } catch {
+      setStalled(true)
+    } finally {
+      setStarting(false)
+    }
+  }
+
   useEffect(() => {
     if (!pending) return
     let stopped = false
     let seenRunning = false
-    // Starts the reading of any scan waiting for it (it runs on the server, after this request). Once:
-    // React runs this effect twice in development, and the server refuses a second reading anyway (0045).
+    let lastSeen = Date.now()
+    // Once: React runs this effect twice in development, and the server refuses a second reading anyway (0045).
     if (!started.current) {
       started.current = true
-      void fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' }).catch(() => undefined)
+      void start()
     }
     const poll = async () => {
       try {
@@ -172,39 +224,72 @@ export function ScanProgress({ clientId, pending, files = {} }: { clientId: stri
         if (stopped) return
         const running = body.jobs ?? []
         setJobs(running)
-        if (running.length) seenRunning = true
-        else if (seenRunning) return router.refresh()
+        if (running.length) {
+          seenRunning = true
+          lastSeen = Date.now()
+          setStalled(false)
+        } else if (seenRunning) {
+          // Every file is done: show the figures.
+          return routerRef.current.refresh()
+        } else if (Date.now() - lastSeen > graceMs) {
+          setStalled(true)
+        }
       } catch {
         // Try again on the next tick.
       }
-      if (!stopped) setTimeout(poll, 4000)
+      if (!stopped) setTimeout(poll, pollMs)
     }
     void poll()
     return () => {
       stopped = true
     }
-  }, [clientId, pending, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start() only reads clientId
+  }, [clientId, pending, pollMs, graceMs])
+
   if (!pending) return null
+  const byDoc = new Map(jobs.map((j) => [j.documentId, j]))
   return (
-    <div className="no-print flex items-start gap-2 rounded-lg border border-accent/40 bg-accent/5 p-3 text-xs text-foreground/80" aria-live="polite">
-      <ScanLine className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
-      <div className="space-y-0.5">
-        <p className="font-medium text-foreground">Reading scanned statements — this page refreshes when it is done.</p>
-        {jobs.length === 0 ? (
-          <p>Waiting to start…</p>
+    <section className="no-print rounded-lg border border-accent/40 bg-accent/5 p-4" aria-live="polite" aria-label="Scanning documents">
+      <div className="flex items-start gap-3">
+        {stalled ? (
+          <ScanLine className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
         ) : (
-          jobs.map((j) => (
-            <p key={j.id}>
-              {files[j.documentId] ?? 'A scanned file'}:{' '}
-              {j.stage === 'selecting'
-                ? `looking for the profit and loss and balance sheet pages (page ${j.done} of ${j.total})`
-                : j.stage === 'reading'
-                  ? `reading the statement pages (${j.done} of ${j.total})`
-                  : 'starting'}
-            </p>
-          ))
+          <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-accent" aria-hidden />
         )}
+        <div className="min-w-0 flex-1 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              {stalled ? 'Scanning has not started' : `Scanning ${files.length === 1 ? 'document' : `${files.length} documents`}`}
+            </h2>
+            <p className="mt-0.5 text-xs text-foreground/70">
+              {stalled
+                ? 'These statements were uploaded as scans (pictures of the pages) and still need to be read.'
+                : 'These statements were uploaded as scans (pictures of the pages), so we are reading them now. This usually takes a minute or two. You can leave this page: the figures appear here when it is done.'}
+            </p>
+          </div>
+          <ul className="space-y-2">
+            {files.map((f) => {
+              const job = byDoc.get(f.documentId)
+              return (
+                <li key={f.documentId} className="space-y-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
+                    <span className="font-medium text-foreground">{f.filename}</span>
+                    <span className="text-foreground/60">{stalled && !job ? 'Waiting' : step(job)}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-border/60" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent(job)} aria-label={`${f.filename}: scanning`}>
+                    <div className="h-full rounded-full bg-accent transition-all duration-700" style={{ width: `${percent(job)}%` }} />
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          {stalled && (
+            <Button size="sm" variant="primary" onClick={start} loading={starting} disabled={starting}>
+              Start scanning
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
+    </section>
   )
 }

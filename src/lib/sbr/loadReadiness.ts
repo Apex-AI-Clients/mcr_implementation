@@ -112,6 +112,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       // PDFs not yet read by the current reader. A file that could not be
       // read is a read too (with why): not waiting work.
       outOfDate: printed.unread > 0,
+      scanning: printed.comparison.documents.filter((d) => d.status === 'scan_pending').length,
       unreviewedFailures,
       mappingConfirmed: mappingConfirmed(mapping),
     },

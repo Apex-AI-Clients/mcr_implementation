@@ -45,6 +45,8 @@ export interface ReadinessItem {
   detail: string | null
   /** Not run yet ('not_started'): offer to start the run. Never while one is going. */
   canRunNow: boolean
+  /** Scanned statements are waiting to be read: the checklist starts their reading (src/lib/scan). */
+  startScan?: boolean
   /** Where to look. */
   href: string
 }
@@ -59,6 +61,8 @@ export interface ReadinessInput {
     comparison: { generatedAt: string; staleSince: string | null } | null
     /** Files never read (or overridden since), or a comparison out of date. */
     outOfDate: boolean
+    /** Files with scanned pages still being read (src/lib/scan): not compared yet. */
+    scanning?: number
     /** Failed hard checks on the comparison no staff tick covers (hardChecks.ts exportsLocked). */
     unreviewedFailures: number
     /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
@@ -115,6 +119,14 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   const f = input.financials
   const href = `/clients/${input.clientId}/financials-comparison`
   if (f.fileCount === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
+  // Scanned statements: not compared until both readings are in.
+  if ((f.scanning ?? 0) > 0) {
+    const n = f.scanning!
+    return {
+      ...item(input, 'financials', 'processing', `Scanning ${n === 1 ? '1 document' : `${n} documents`} — this usually takes a minute or two.`, href),
+      startScan: true,
+    }
+  }
   // Processing only while the run has PDFs of its own to read: a run reading a
   // notice or the ATO export leaves statements already read as they are.
   if (f.outOfDate) return item(input, 'financials', input.jobRunning ? 'processing' : 'not_started', null, href)

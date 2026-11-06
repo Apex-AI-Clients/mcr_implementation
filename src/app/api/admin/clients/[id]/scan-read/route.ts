@@ -33,7 +33,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
     for (const doc of docs) {
       if (reads.get(doc.id)?.read.status !== 'scan_pending') continue
       const job = await latestScanJob(supabase, doc.id, READER_VERSION)
-      if (scanJobAlive(job) || job?.status === 'done') continue
+      // A finished reading whose result was replaced since (the file is pending again) is read again:
+      // Claude's transcriptions are reused, so that costs nothing.
+      if (scanJobAlive(job)) continue
       waiting.push(doc)
     }
     if (waiting.length) {

@@ -148,6 +148,13 @@ function ChecklistRow({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const scanStarted = useRef(false)
+  // Scanned statements waiting: start their reading once (the server refuses a second reading of a file).
+  useEffect(() => {
+    if (!item.startScan || scanStarted.current) return
+    scanStarted.current = true
+    void fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' }).catch(() => undefined)
+  }, [item.startScan, clientId])
 
   async function runNow() {
     setBusy(true)
