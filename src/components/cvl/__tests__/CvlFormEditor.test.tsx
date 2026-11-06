@@ -330,6 +330,33 @@ describe('CvlFormEditor', () => {
     window.localStorage.removeItem('cvl.preview.fit')
   })
 
+  it('shows the page a section starts on, from its top, and keeps still for a section on the page already in view', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    const scrollTo = vi.fn()
+    viewer.scrollTo = scrollTo as never
+    const sections = watching((el) => el.tagName === 'SECTION')
+
+    // B24 is on page 8: the column turns to page 8, from its top (not to B24's place on it).
+    act(() => sections.report([{ isIntersecting: true, target: section('B24'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo.mock.calls[0][0].top).toBe(0) // the test DOM lays every page at 0: page 8's top, no offset into it
+
+    // B25 is on page 8 too: nothing moves.
+    act(() => sections.report([{ isIntersecting: true, target: section('B25'), boundingClientRect: { top: 100 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+
+    // B10 is on page 4: it turns again.
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page')
+  })
+
   it('jumps the column to a page from the page buttons', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()

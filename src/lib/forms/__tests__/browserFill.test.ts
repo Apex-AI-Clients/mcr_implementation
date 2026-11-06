@@ -4,6 +4,8 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { fillOfficialForm, readTemplate } from '../fill'
 import { fillInBrowser } from '../browserFill'
 import { SAMPLE_PARTB } from './fixtures/samples'
+import { formVersion } from '../registry'
+import { cvlFillOptions } from '@/lib/cvl/printPages'
 
 /**
  * The fill-in screen's preview, filled in the browser: the same PDF the
@@ -28,7 +30,8 @@ describe('fillInBrowser', () => {
 
     const answers = { fields: SAMPLE_PARTB.fields, tables: SAMPLE_PARTB.tables ?? {}, signedBy: null }
     const browser = await fillInBrowser('507b', '20220801', answers)
-    const server = await fillOfficialForm('507b', { fields: SAMPLE_PARTB.fields, tables: SAMPLE_PARTB.tables })
+    // The server fill with the same CVL rule: every page, every table page.
+    const server = await fillOfficialForm('507b', { fields: SAMPLE_PARTB.fields, tables: SAMPLE_PARTB.tables }, cvlFillOptions(formVersion('507b').map))
 
     expect(browser.pageSources).toEqual(server.pageSources)
     expect(await texts(browser.pdf)).toEqual(await texts(server.pdf))

@@ -593,21 +593,27 @@ function LivePreview({
     const el = pageEls.current[index]
     if (!box || !el) return
     const h = sizesRef.current[index]?.h ?? A4.h
-    const y = el.offsetTop - box.offsetTop + (top / h) * el.clientHeight - (top ? 24 : 0)
+    // Where the page sits in the column's scroll, measured on screen (whatever is positioned around it).
+    const pageTop = box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top
+    const y = pageTop + (top / h) * el.clientHeight - (top ? 24 : 0)
     const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     box.scrollTo?.({ top: Math.max(0, y), behavior: reduce ? 'auto' : 'smooth' })
   }, [])
 
-  // Follow the questions: the page and place of whatever is looked at or
-  // edited on the left. Only when that changes, never on a refill, so
-  // scrolling the column by hand is not undone while typing.
+  // Follow the questions: the page the section looked at or edited on the
+  // left starts on, shown from its top. On the page already in view, the
+  // column stays still: it never scrolls within a page to chase a section.
+  // Only when the section changes, never on a refill, so scrolling the
+  // column by hand is not undone while typing.
+  const currentRef = useRef(current)
+  currentRef.current = current
   useEffect(() => {
     const f = filledRef.current
     if (!f || !spot) return
     const at = f.pageSources.indexOf(spot.page)
-    if (at < 0) return
+    if (at < 0 || at + 1 === currentRef.current) return
     setCurrent(at + 1)
-    scrollToPage(at, spot.top)
+    scrollToPage(at)
   }, [spot, scrollToPage])
 
   // Stable, so a page drawing is never restarted by a re-render.
@@ -620,7 +626,7 @@ function LivePreview({
     const line = box.scrollTop + box.clientHeight / 3
     let n = 1
     pageEls.current.forEach((el, i) => {
-      if (el && el.offsetTop - box.offsetTop <= line) n = i + 1
+      if (el && box.scrollTop + el.getBoundingClientRect().top - box.getBoundingClientRect().top <= line) n = i + 1
     })
     setCurrent((c) => (c === n ? c : n))
   }, [])

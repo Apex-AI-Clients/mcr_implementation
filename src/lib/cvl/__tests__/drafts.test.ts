@@ -138,6 +138,8 @@ describe('entryMap', () => {
     expect(partAJob.answers.fields.f507a_company_name).toBe('Example Trading Pty Ltd')
     const { fill } = await fillJob(partAJob)
     expect(fill.pageSources.slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    // Then the appendix cover and every table page, A4 to A7, rows or not (as the official PDF).
+    for (const page of [8, 9, 10, 11, 12]) expect(fill.pageSources).toContain(page)
   })
 
   it('lists the questions in the form’s order and numbering, without box geometry', () => {
