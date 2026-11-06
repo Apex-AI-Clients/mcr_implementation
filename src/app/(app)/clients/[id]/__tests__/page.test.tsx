@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, within, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 vi.mock('@/lib/leads/queries', () => ({ getLeadIdForClient: vi.fn(async () => null) }))
@@ -17,7 +18,9 @@ vi.mock('@/components/admin/DocumentStatusGrid', () => ({ DocumentStatusGrid: ()
 vi.mock('@/components/admin/CompletenessBar', () => ({ CompletenessBar: () => null }))
 vi.mock('@/components/admin/ClientActions', () => ({ ClientActions: () => null }))
 vi.mock('@/components/cvl/ConvertToCvlButton', () => ({ ConvertToCvlButton: () => null }))
-vi.mock('@/components/admin/ArchivedClientActions', () => ({ ArchivedClientActions: () => null }))
+vi.mock('@/components/admin/ArchivedClientActions', () => ({
+  ArchivedClientActions: (p: { inCvl?: boolean }) => <div data-testid="archived-actions" data-in-cvl={String(!!p.inCvl)} />,
+}))
 vi.mock('@/components/admin/PredictOutcomeButton', () => ({ PredictOutcomeButton: () => null }))
 vi.mock('@/components/leads/LeadOriginLink', () => ({ LeadOriginLink: () => null }))
 vi.mock('@/components/admin/ComparisonJobStatus', () => ({ ComparisonJobStatus: () => null }))
@@ -300,9 +303,49 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
   }
   const FROM_LEAD = { ...CASE, origin: 'lead', sbr_archived_at: null, sbr_archived_by: null }
 
-  it('sends a file moved to CVL from the SBR client page to its read-only SBR record', async () => {
-    mockDb(IN_CVL, COMPANY, CASE)
-    await expect(ClientDetailPage(PARAMS)).rejects.toThrow('redirect:/sbr/archive/cl_1')
+  // A client moved from SBR to CVL is in both (migration 0047).
+  const IN_BOTH = { ...CLIENT, archived_at: null, workflow: 'sbr' }
+
+  it('shows a client in both on the SBR page, with Open in CVL in place of Convert', async () => {
+    mockDb(IN_BOTH, COMPANY, CASE)
+    await renderPage()
+    expect(screen.getByRole('link', { name: 'Open in CVL' }).getAttribute('href')).toBe('/cvl/cl_1')
+    expect(screen.queryByRole('button', { name: /Convert to CVL/ })).toBeNull()
+  })
+
+  it('shows a client in both on the CVL page, with Open in SBR, and Delete saying it stays in SBR', async () => {
+    const user = userEvent.setup({ delay: null })
+    mockDb(IN_BOTH, COMPANY, CASE)
+    render(await CvlClientPage(PARAMS))
+    expect(screen.getByRole('link', { name: 'Open in SBR' }).getAttribute('href')).toBe('/clients/cl_1')
+    expect(screen.queryByRole('button', { name: 'Move to SBR' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(screen.getByRole('dialog').textContent).toContain('stays on the SBR list')
+  })
+
+  it('offers Move to SBR on a CVL-only file', async () => {
+    mockDb(IN_CVL, COMPANY, FROM_LEAD)
+    render(await CvlClientPage(PARAMS))
+    expect(screen.getByRole('button', { name: 'Move to SBR' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Open in SBR' })).toBeNull()
+  })
+
+  it('keeps a file archived from SBR in CVL; its Archive page says so and holds back Delete permanently', async () => {
+    const archivedFromSbr = { ...IN_BOTH, archived_at: '2026-10-01T00:00:00Z', archived_by: 'Casey', archived_reason: 'client_deleted' }
+    mockDb(archivedFromSbr, COMPANY, CASE)
+    await expect(ClientDetailPage(PARAMS)).rejects.toThrow('redirect:/cvl/cl_1')
+    render(await CvlClientPage(PARAMS))
+    cleanup()
+    render(await ArchivedClientPage(PARAMS))
+    expect(screen.getByRole('status').textContent).toContain('It is still in CVL')
+    expect(within(screen.getByRole('status')).getByRole('link', { name: 'open the CVL file' }).getAttribute('href')).toBe('/cvl/cl_1')
+    // Told it is still in CVL: Delete permanently held back (ArchivedClientActions' own test).
+    expect(screen.getByTestId('archived-actions').dataset.inCvl).toBe('true')
+  })
+
+  it('sends a client removed from CVL from the CVL page to its SBR page', async () => {
+    mockDb(IN_BOTH, COMPANY, { ...CASE, removed_at: '2026-11-01T00:00:00Z', removed_by: 'Casey' })
+    await expect(CvlClientPage(PARAMS)).rejects.toThrow('redirect:/clients/cl_1')
   })
 
   it('sends a CVL file that came straight from a lead to the CVL page: it has no SBR record', async () => {
@@ -314,17 +357,6 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
   it('sends an SBR file from the CVL page to the SBR client page', async () => {
     mockDb({ ...CLIENT, workflow: 'sbr' }, COMPANY)
     await expect(CvlClientPage(PARAMS)).rejects.toThrow('redirect:/clients/cl_1')
-  })
-
-  it('shows the SBR record of a moved file read-only, pointing to the CVL file', async () => {
-    mockDb(IN_CVL, COMPANY, CASE)
-    render(await ArchivedClientPage(PARAMS))
-    const banner = screen.getByRole('status')
-    expect(banner.textContent).toContain('Moved to CVL')
-    expect(banner.textContent).toContain('by Gabby')
-    expect(within(banner).getByRole('link', { name: 'Open the CVL file' }).getAttribute('href')).toBe('/cvl/cl_1')
-    expect(screen.queryByRole('link', { name: /Continue intake/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Mark printed/ })).toBeNull()
   })
 
   it('shows which forms have a saved draft (read together with the rest of the page)', async () => {

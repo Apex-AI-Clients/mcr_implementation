@@ -32,7 +32,10 @@ function req(method: string) {
 function mockDb(
   client: { id: string; archived_at: string | null; auth_user_id?: string | null; name?: string; archived_by?: string | null; archived_reason?: string | null } | null,
   convertedLeads: { id: string; activities: { type: string; body: string; created_at: string }[] }[] = [],
+  /** Still in CVL: its CVL case not removed (migration 0047). */
+  inCvl = false,
 ) {
+  const caseUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
   const leadUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
   const activityInsert = vi.fn(() => Promise.resolve({ error: null }))
   const deletionInsert = vi.fn<(row: Record<string, unknown>) => Promise<{ error: { message: string } | null }>>(() => Promise.resolve({ error: null }))
@@ -54,6 +57,12 @@ function mockDb(
       select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/a.pdf' }] }) }),
     },
     client_deletions: { insert: deletionInsert },
+    cvl_cases: {
+      select: () => ({
+        eq: () => ({ is: () => ({ maybeSingle: () => Promise.resolve({ data: inCvl ? { id: 'case-1' } : null, error: null }) }) }),
+      }),
+      update: caseUpdate,
+    },
     client_asic_extracts: {
       select: () => ({ eq: () => Promise.resolve({ data: [{ file_path: 'cl_1/asic/b.pdf' }] }) }),
     },
@@ -78,7 +87,7 @@ function mockDb(
     storage: { from: () => ({ remove: storageRemove }) },
     auth: { admin: { deleteUser } },
   } as never)
-  return { update, remove, storageRemove, deleteUser, leadUpdate, activityInsert, deletionInsert }
+  return { update, remove, storageRemove, deleteUser, leadUpdate, activityInsert, deletionInsert, caseUpdate }
 }
 
 beforeEach(() => {
@@ -141,9 +150,29 @@ describe('POST restore', () => {
     expect(response.status).toBe(409)
     expect(update).not.toHaveBeenCalled()
   })
+
+  it('puts a CVL-only file back on the CVL list too; an SBR file’s CVL side is left alone', async () => {
+    const cvlOnly = mockDb({ id: 'cl_1', archived_at: '2026-09-30T00:00:00.000Z', workflow: 'cvl' } as never)
+    expect((await restore(req('POST'), PARAMS)).status).toBe(200)
+    expect(cvlOnly.caseUpdate).toHaveBeenCalledWith({ removed_at: null, removed_by: null })
+
+    const sbr = mockDb({ id: 'cl_1', archived_at: '2026-09-30T00:00:00.000Z', workflow: 'sbr' } as never)
+    expect((await restore(req('POST'), PARAMS)).status).toBe(200)
+    expect(sbr.caseUpdate).not.toHaveBeenCalled()
+  })
 })
 
 describe('DELETE — permanent, from the Archive only', () => {
+  it('refuses a file archived from SBR but still in CVL, and destroys nothing', async () => {
+    const { remove, storageRemove, deletionInsert } = mockDb({ id: 'cl_1', archived_at: '2026-10-01T00:00:00Z' }, [], true)
+    const res = await DELETE(new NextRequest('http://localhost/api/admin/clients/cl_1', { method: 'DELETE' }), PARAMS)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/still in CVL/)
+    expect(deletionInsert).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(storageRemove).not.toHaveBeenCalled()
+  })
+
   it('refuses a file still on the client list, and destroys nothing', async () => {
     const { remove, storageRemove, deleteUser } = mockDb({
       id: 'cl_1',

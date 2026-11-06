@@ -15,7 +15,7 @@ import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clien
 export async function LineMappingView({ id, workspace }: ClientPageView) {
   const base = clientBase(id, workspace)
   const supabase = getSupabaseServerClient()
-  const { data: client } = await supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle()
+  const { data: client } = await supabase.from('clients').select('id, name, archived_at, workflow, cvl_cases(removed_at)').eq('id', id).maybeSingle()
   if (!client) notFound()
   // An archived file is read in the Archive; a file in the other workspace
   // opens this page there.

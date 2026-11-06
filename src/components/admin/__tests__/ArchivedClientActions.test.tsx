@@ -32,3 +32,17 @@ describe('ArchivedClientActions — Make client again', () => {
     expect(await restore('cvl')).toBe('/cvl/cl_1')
   })
 })
+
+describe('ArchivedClientActions — Delete permanently', () => {
+  it('is offered for a file in neither workspace', () => {
+    render(<ArchivedClientActions clientId="cl_1" clientName="Sample Trading" clientEmail="a@example.test" />)
+    expect((screen.getByRole('button', { name: /Delete permanently/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('is held back while the file is still in CVL (archived from SBR only), saying why', () => {
+    render(<ArchivedClientActions clientId="cl_1" clientName="Sample Trading" clientEmail="a@example.test" inCvl />)
+    expect((screen.getByRole('button', { name: /Delete permanently/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText(/not available while the file is still in CVL/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /Make client again/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})

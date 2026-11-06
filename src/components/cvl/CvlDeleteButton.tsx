@@ -8,8 +8,11 @@ import { Dialog } from '@/components/ui/Dialog'
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay'
 
 interface CvlDeleteButtonProps {
-  clientId: string
+  /** The file's CVL case. */
+  caseId: string
   clientName: string
+  /** Also on the SBR list: it stays there. */
+  inSbr?: boolean
   /** Where to go once deleted; stays on the page (and refreshes it) when not given. */
   redirectTo?: string
   /** A small icon button for a table row, or a labelled button for a page. */
@@ -17,11 +20,13 @@ interface CvlDeleteButtonProps {
 }
 
 /**
- * "Delete" for a CVL file. As everywhere in the app, nothing is destroyed in
- * one click: the file moves to the Archive (CVL tab), from where it can be
- * made a client again or deleted permanently (POST /api/admin/clients/[id]/archive).
+ * "Delete" for a CVL file: it leaves the CVL list (POST
+ * /api/admin/cvl/[caseId]/remove). Nothing is destroyed in one click. A
+ * client also in SBR stays on the SBR list; a CVL-only file moves to the
+ * Archive (CVL tab), from where it can be made a client again or deleted
+ * permanently.
  */
-export function CvlDeleteButton({ clientId, clientName, redirectTo, compact = false }: CvlDeleteButtonProps) {
+export function CvlDeleteButton({ caseId, clientName, inSbr = false, redirectTo, compact = false }: CvlDeleteButtonProps) {
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [working, setWorking] = useState(false)
@@ -31,7 +36,7 @@ export function CvlDeleteButton({ clientId, clientName, redirectTo, compact = fa
     setError(null)
     setWorking(true)
     try {
-      const res = await fetch(`/api/admin/clients/${clientId}/archive`, { method: 'POST' })
+      const res = await fetch(`/api/admin/cvl/${caseId}/remove`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to delete')
@@ -80,7 +85,11 @@ export function CvlDeleteButton({ clientId, clientName, redirectTo, compact = fa
         open={confirming}
         onClose={working ? () => {} : () => setConfirming(false)}
         title="Delete this CVL file?"
-        description={`${clientName} leaves the CVL client list and moves to the Archive (CVL tab). Its documents, forms and saved PDFs are kept: from the Archive it can be made a client again, or deleted permanently.`}
+        description={
+          inSbr
+            ? `${clientName} leaves the CVL client list and stays on the SBR list. Its CVL forms are kept: moving it to CVL again brings them back.`
+            : `${clientName} leaves the CVL client list and moves to the Archive (CVL tab). Its documents, forms and saved PDFs are kept: from the Archive it can be made a client again, or deleted permanently.`
+        }
         footer={
           <>
             <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={working}>

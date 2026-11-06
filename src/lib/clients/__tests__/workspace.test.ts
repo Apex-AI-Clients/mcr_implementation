@@ -27,8 +27,10 @@ describe('clientBase and clientFileHref', () => {
 })
 
 describe('sharedPageRedirect', () => {
-  const sbr = { id: 'cl_1', archived_at: null, workflow: 'sbr' }
-  const cvl = { id: 'cl_1', archived_at: null, workflow: 'cvl' }
+  const open = { removed_at: null }
+  const sbr = { id: 'cl_1', archived_at: null, workflow: 'sbr', cvl_cases: null }
+  const cvl = { id: 'cl_1', archived_at: null, workflow: 'cvl', cvl_cases: open }
+  const both = { id: 'cl_1', archived_at: null, workflow: 'sbr', cvl_cases: open }
 
   it('leaves a page in its own workspace alone', () => {
     expect(sharedPageRedirect(sbr, 'sbr', '/financials-comparison')).toBeNull()
@@ -40,8 +42,24 @@ describe('sharedPageRedirect', () => {
     expect(sharedPageRedirect(sbr, 'cvl', '/ato-accounts/a1')).toBe('/clients/cl_1/ato-accounts/a1')
   })
 
-  it('sends an archived file to the Archive from either workspace', () => {
-    const archived = { ...cvl, archived_at: '2026-10-01T00:00:00Z' }
+  it('leaves a file in both alone in either workspace (migration 0047)', () => {
+    expect(sharedPageRedirect(both, 'sbr', '/intake')).toBeNull()
+    expect(sharedPageRedirect(both, 'cvl', '/intake')).toBeNull()
+    // Read as an array of one, as some queries return it.
+    expect(sharedPageRedirect({ ...both, cvl_cases: [open] }, 'cvl')).toBeNull()
+  })
+
+  it('keeps a file archived from SBR in CVL, and one removed from CVL in SBR', () => {
+    const archivedFromSbr = { ...both, archived_at: '2026-10-01T00:00:00Z' }
+    expect(sharedPageRedirect(archivedFromSbr, 'cvl')).toBeNull()
+    expect(sharedPageRedirect(archivedFromSbr, 'sbr', '/intake')).toBe('/cvl/cl_1/intake')
+    const removedFromCvl = { ...both, cvl_cases: { removed_at: '2026-10-01T00:00:00Z' } }
+    expect(sharedPageRedirect(removedFromCvl, 'sbr')).toBeNull()
+    expect(sharedPageRedirect(removedFromCvl, 'cvl', '/intake')).toBe('/clients/cl_1/intake')
+  })
+
+  it('sends a file in neither to the Archive from either workspace', () => {
+    const archived = { ...cvl, archived_at: '2026-10-01T00:00:00Z', cvl_cases: { removed_at: '2026-10-01T00:00:00Z' } }
     expect(sharedPageRedirect(archived, 'cvl')).toBe('/sbr/archive/cl_1')
     expect(sharedPageRedirect(archived, 'sbr')).toBe('/sbr/archive/cl_1')
   })

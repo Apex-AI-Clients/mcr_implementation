@@ -112,6 +112,17 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
         { status: 409 },
       )
     }
+    // Archived from SBR but still in CVL (migration 0047): removed from CVL first.
+    const { data: openCase, error: caseError } = await supabase
+      .from('cvl_cases')
+      .select('id')
+      .eq('client_id', id)
+      .is('removed_at', null)
+      .maybeSingle()
+    if (caseError) throw caseError
+    if (openCase) {
+      return NextResponse.json({ error: 'This client is still in CVL: remove it from CVL before deleting it permanently.' }, { status: 409 })
+    }
 
     // 0. Who deleted which client, when, and why it was archived (migration
     // 0035): written first, so nothing is deleted without the record.

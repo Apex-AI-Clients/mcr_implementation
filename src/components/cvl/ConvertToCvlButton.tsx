@@ -15,8 +15,8 @@ interface ConvertToCvlButtonProps {
 /**
  * "Convert to CVL" on an SBR client page (POST /api/admin/cvl/convert).
  *
- * The file moves to the CVL workspace with its documents and analyses; the
- * SBR record stays, read-only, in the SBR Archive under "Moved to CVL".
+ * The client is added to CVL with its documents and analyses and stays on the
+ * SBR list: one file in both (migration 0047).
  */
 export function ConvertToCvlButton({ clientId, clientName }: ConvertToCvlButtonProps) {
   const router = useRouter()
@@ -62,7 +62,7 @@ export function ConvertToCvlButton({ clientId, clientName }: ConvertToCvlButtonP
         open={confirming}
         onClose={working ? () => {} : () => setConfirming(false)}
         title="Convert to a CVL client?"
-        description={`${clientName} moves to the CVL workspace, with every document, detail and analysis on file. The SBR record is kept read-only in the SBR Archive, under "Moved to CVL". Nothing is deleted.`}
+        description={`${clientName} is added to the CVL workspace, with every document, detail and analysis on file, and stays on the SBR client list. Both share the same file; nothing is copied or deleted.`}
         footer={
           <>
             <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)} disabled={working}>

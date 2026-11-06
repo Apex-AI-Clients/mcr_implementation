@@ -18,13 +18,14 @@ import { PUT as putSetting } from '../settings/route'
 const params = (form: string) => ({ params: Promise.resolve({ caseId: 'case-1', form }) })
 const put = (body: unknown) => new NextRequest('http://localhost/api/admin/cvl/case-1/forms/x', { method: 'PUT', body: JSON.stringify(body) })
 
-function mockDb(client: { archived_at: string | null; workflow: string } | null = { archived_at: null, workflow: 'cvl' }) {
+/** The CVL case: in CVL unless removed from CVL (migration 0047); null: no such case. */
+function mockDb(cvlCase: { removed_at: string | null } | null = { removed_at: null }) {
   const upsert = vi.fn<(row: Record<string, unknown>, opts: unknown) => Promise<{ error: null }>>(() => Promise.resolve({ error: null }))
   const del = vi.fn(() => ({ eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }) }))
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (t: string) =>
       t === 'cvl_cases'
-        ? { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: client ? { id: 'case-1', client_id: 'cl_1', clients: client } : null }) }) }) }
+        ? { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cvlCase ? { id: 'case-1', client_id: 'cl_1', ...cvlCase } : null }) }) }) }
         : t === 'cvl_settings'
           ? { upsert, select: () => Promise.resolve({ data: [] }) }
           : { upsert, delete: del },
@@ -72,12 +73,21 @@ describe('PUT /api/admin/cvl/[caseId]/forms/[form]', () => {
     expect((await PUT(put({ subject: 'company', answers: 'x' }), params('509'))).status).toBe(400)
   })
 
-  it('writes nothing for a file that is archived or back in SBR', async () => {
-    const { upsert } = mockDb({ archived_at: '2026-10-01T00:00:00Z', workflow: 'cvl' })
+  it('writes nothing for a file taken off the CVL list', async () => {
+    const { upsert, del } = mockDb({ removed_at: '2026-10-01T00:00:00Z' })
     expect((await PUT(put({ subject: 'company', answers: { fields: {} } }), params('509'))).status).toBe(409)
-    mockDb({ archived_at: null, workflow: 'sbr' })
-    expect((await PUT(put({ subject: 'company', answers: { fields: {} } }), params('509'))).status).toBe(409)
+    expect((await DELETE(new NextRequest('http://localhost/api/admin/cvl/case-1/forms/509?subject=company', { method: 'DELETE' }), params('509'))).status).toBe(409)
     expect(upsert).not.toHaveBeenCalled()
+    expect(del).not.toHaveBeenCalled()
+  })
+
+  it('saves and resets the forms of a client in CVL and SBR both (its workflow is SBR)', async () => {
+    // The case is all that decides: nothing about the client's SBR side is read.
+    const { upsert, del } = mockDb({ removed_at: null })
+    expect((await PUT(put({ subject: 'company', answers: { fields: {} } }), params('509'))).status).toBe(200)
+    expect((await DELETE(new NextRequest('http://localhost/api/admin/cvl/case-1/forms/509?subject=company', { method: 'DELETE' }), params('509'))).status).toBe(200)
+    expect(upsert).toHaveBeenCalled()
+    expect(del).toHaveBeenCalled()
   })
 
   it('goes back to the pre-filled answers by removing the draft', async () => {

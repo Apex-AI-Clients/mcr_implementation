@@ -28,6 +28,7 @@ const row = (n: number): CvlListRow => ({
   sbrArchivedAt: null,
   sbrArchivedBy: null,
   createdAt: '2026-11-01T00:00:00Z',
+  inSbr: false,
 })
 
 const list: CvlListPage = { rows: [row(1), row(2), row(3)], total: 3, page: 1, pageSize: 25, query: '' }
@@ -55,7 +56,7 @@ describe('CvlClientTable: delete several', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Delete 2' }))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
-    expect(fetchMock.mock.calls.map(([url]) => url).sort()).toEqual(['/api/admin/clients/cl_1/archive', '/api/admin/clients/cl_3/archive'])
+    expect(fetchMock.mock.calls.map(([url]) => url).sort()).toEqual(['/api/admin/cvl/case-1/remove', '/api/admin/cvl/case-3/remove'])
   })
 
   it('selects every client on the page at once, and clears', async () => {
@@ -68,7 +69,7 @@ describe('CvlClientTable: delete several', () => {
   })
 
   it('says how many could not be deleted', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response('{}', { status: url.includes('cl_2') ? 500 : 200 })))
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response('{}', { status: url.includes('case-2') ? 500 : 200 })))
     const user = userEvent.setup({ delay: null })
     renderList()
     await user.click(screen.getByRole('checkbox', { name: 'Select all clients on this page' }))

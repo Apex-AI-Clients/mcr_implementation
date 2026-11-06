@@ -355,6 +355,8 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
   }
 
   putCompany(out, ctx, 'company_name', 'company_acn')
+  // Page 7, Form 507A: the same company.
+  putCompany(out, ctx, 'f507a_company_name', 'f507a_company_acn')
   putAddress(out, ctx, 'a3_registered', ctx.company?.registeredOffice ?? null, 'Registered office.', 'addresses')
   putAddress(out, ctx, 'a3_principal', ctx.company?.principalPlace ?? null, 'Principal place of business.', 'addresses')
   putRegistration(out, ctx, 'a3_commenced')

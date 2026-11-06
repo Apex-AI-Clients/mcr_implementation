@@ -5,6 +5,9 @@ import userEvent from '@testing-library/user-event'
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
 // The preview's drawing is pdf.js on a canvas, which jsdom has not got.
 vi.mock('unpdf/pdfjs', () => ({ getDocument: vi.fn(() => ({ promise: Promise.reject(new Error('no canvas in tests')), destroy: async () => {} })) }))
+// The browser fill (its own test fills the real templates): failing by
+// default here, so the preview falls back to the server stub below.
+vi.mock('@/lib/forms/browserFill', () => ({ fillInBrowser: vi.fn() }))
 
 import { CvlFormEditor } from '../CvlFormEditor'
 import { entryMap } from '@/lib/cvl/entryMap'
@@ -12,6 +15,7 @@ import { entryState } from '@/lib/cvl/drafts'
 import { prefillForm } from '@/lib/cvl/prefill'
 import { formVersion } from '@/lib/forms/registry'
 import { context } from '@/lib/cvl/__tests__/fixtures'
+import { fillInBrowser } from '@/lib/forms/browserFill'
 
 // Each test renders a whole ASIC form; under full-suite load that can pass 20s.
 vi.setConfig({ testTimeout: 60_000 })
@@ -31,6 +35,11 @@ function stubFetch(onPut?: Response) {
 
 beforeEach(() => {
   stubFetch()
+})
+
+beforeEach(() => {
+  vi.mocked(fillInBrowser).mockReset()
+  vi.mocked(fillInBrowser).mockRejectedValue(new Error('not in this test'))
 })
 
 afterEach(() => {
@@ -75,6 +84,28 @@ describe('CvlFormEditor', () => {
     expect((within(b2).getByLabelText('No') as HTMLInputElement).checked).toBe(true)
   })
 
+  it('clicking Yes never moves the app’s frame (the screen went blank): the hidden radio is placed in its label, and a moved frame is put back', async () => {
+    const user = userEvent.setup({ delay: null })
+    const map = formVersion('507b').map
+    const prefill = prefillForm('507b', 'director:1', context())
+    render(
+      <div data-testid="frame" style={{ overflow: 'hidden' }}>
+        <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="director:1" subjects={[{ subject: 'director:1', label: 'Jordan Sample' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />
+      </div>,
+    )
+    const yes = within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes') as HTMLInputElement
+    // Placed in its own label, inside the questions column.
+    expect(yes.closest('label')!.className).toContain('relative')
+
+    // As if the browser had scrolled the frame to bring the radio into view.
+    const frame = screen.getByTestId('frame')
+    let frameTop = 120
+    Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => frameTop, set: (v: number) => (frameTop = v) })
+    await user.click(yes)
+    expect(yes.checked).toBe(true)
+    expect(frameTop).toBe(0)
+  })
+
   it('shows where a pre-filled answer came from until it is changed', async () => {
     const user = userEvent.setup({ delay: null })
     renderPartB()
@@ -106,10 +137,22 @@ describe('CvlFormEditor', () => {
     expect(within(section('B1')).queryByText(/Too long for/)).toBeNull()
   })
 
+  it('asks each table at its own appendix page, after the form, and says so at its question', () => {
+    renderPartB()
+    expect(within(section('B21')).getByRole('link', { name: 'Table B21' }).getAttribute('href')).toBe('#q-Table B21')
+    expect(within(section('B21')).queryByRole('button', { name: 'Add a row' })).toBeNull()
+    const table = section('Table B21')
+    expect(table.dataset.page).toBe('13')
+    expect(within(table).getByRole('button', { name: 'Add a row' })).toBeTruthy()
+    expect(within(table).getByText(/a page · printed on an appendix page \(page 13\)/)).toBeTruthy()
+    // The "signed by" name sits with the first table, where it prints.
+    expect(within(section('Table B2')).getByLabelText(/Name on the appendix tables/)).toBeTruthy()
+  })
+
   it('warns on a table cell too long for its cell', async () => {
     const user = userEvent.setup({ delay: null })
     renderPartB()
-    const b21 = section('B21')
+    const b21 = section('Table B21')
     await user.click(within(b21).getByRole('button', { name: 'Add a row' }))
     const how = within(b21).getByLabelText('How did creditor ask for payment, row 1') as HTMLInputElement
     await user.click(how)
@@ -180,24 +223,36 @@ describe('CvlFormEditor', () => {
     expect(screen.queryByText(/Not set yet in CVL settings/)).toBeNull()
   })
 
-  it('never fills the preview while typing; Save saves and updates it, and says when it is out of date', async () => {
+  it('fills the preview again in the browser a moment after typing stops: once per pause, never asking the server', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchMock = stubFetch()
+    vi.mocked(fillInBrowser).mockResolvedValue({ pdf: new Uint8Array([37, 80, 68, 70]), pageSources: [1, 2, 3, 4, 5, 6, 7, 8, 9], pages: 9, warnings: [] } as never)
+    renderPartB()
+    await waitFor(() => expect(fillInBrowser).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(fillInBrowser).mock.calls[0].slice(0, 2)).toEqual(['507b', '20220801'])
+
+    await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
+    // Typing three letters: not three fills, one after the pause.
+    await waitFor(() => expect(fillInBrowser).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    await new Promise((r) => setTimeout(r, 600))
+    expect(fillInBrowser).toHaveBeenCalledTimes(2)
+    const answers = vi.mocked(fillInBrowser).mock.calls[1][2] as { fields: Record<string, unknown> }
+    expect(answers.fields.b1_name).toBe('Jordan Sample Jr')
+    // Nothing saved, and the server never asked to fill.
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/preview'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([, i]) => i?.method === 'PUT')).toBe(false)
+    expect(screen.queryByText(/save to see your changes/)).toBeNull()
+  })
+
+  it('fills the preview on the server when the browser cannot', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchMock = stubFetch()
     renderPartB()
     const previews = () => fetchMock.mock.calls.filter(([u]) => String(u) === '/api/admin/cvl/case-1/preview')
     await waitFor(() => expect(previews()).toHaveLength(1))
-
     await user.type(within(section('B1')).getByLabelText('Name'), ' Jr')
-    await new Promise((r) => setTimeout(r, 900))
-    expect(previews()).toHaveLength(1)
-    expect(screen.getByText(/Preview not updated/)).toBeTruthy()
-
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(previews()).toHaveLength(2))
-    const order = fetchMock.mock.calls.map(([u, i]) => (i?.method === 'PUT' ? 'save' : String(u).endsWith('/preview') ? 'preview' : 'other'))
-    expect(order.slice(-2)).toEqual(['save', 'preview'])
+    await waitFor(() => expect(previews()).toHaveLength(2), { timeout: 3000 })
     expect(JSON.parse(previews()[1][1]!.body as string).answers.fields.b1_name).toBe('Jordan Sample Jr')
-    await waitFor(() => expect(screen.queryByText(/Preview not updated/)).toBeNull())
   })
 
   /** A stand-in IntersectionObserver: each observer's callback and what it watches. */
@@ -246,34 +301,150 @@ describe('CvlFormEditor', () => {
     const top = watching((el) => el.hasAttribute('data-form-top'))
     const marker = document.querySelector('[data-form-top]')!
     act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
-    // Part B's first question is on page 2 (page 1 is ASIC's cover): that page, from its top.
-    expect(marker.getAttribute('data-page')).toBe('2')
-    await waitFor(() => expect(screen.getByRole('button', { name: '2' }).getAttribute('aria-current')).toBe('page'))
+    // The questions start as the PDF does: page 1 (ASIC's cover, nothing to fill), from its top.
+    expect(marker.getAttribute('data-page')).toBe('1')
+    await waitFor(() => expect(screen.getByRole('button', { name: '1' }).getAttribute('aria-current')).toBe('page'))
     // The first section starts its page from the top, not at its own first box.
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
   })
 
-  it('shows the whole page to start; Fit width makes it column-wide, scrolling without a scrollbar, and is remembered', async () => {
+  it('says "Updating" to the left of the size buttons, in a slot that is always there, so the buttons never move', async () => {
+    const user = userEvent.setup({ delay: null })
+    stubFetch()
+    vi.mocked(fillInBrowser).mockResolvedValue({ pdf: new Uint8Array([37, 80, 68, 70]), pageSources: [1, 2, 3, 4, 5, 6, 7, 8, 9], pages: 9, warnings: [] } as never)
+    renderPartB()
+    const status = screen.getByTestId('preview-status')
+    const sizes = screen.getByRole('group', { name: 'Preview size' })
+    // Before the buttons, in the same row.
+    expect(status.compareDocumentPosition(sizes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(status.parentElement).toBe(sizes.parentElement)
+    expect(status.className).toContain('w-20')
+    // Idle: still there, empty.
+    await waitFor(() => expect(status.textContent).toBe(''))
+    await user.type(within(section('B1')).getByLabelText('Name'), 'x')
+    expect(status.textContent).toContain('Updating')
+    await waitFor(() => expect(status.textContent).toBe(''), { timeout: 3000 })
+    expect(screen.getByTestId('preview-status')).toBe(status)
+  })
+
+  it('shows every page in one column that scrolls to the last, each page whole to start, or column-wide; the choice is remembered', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()
     window.localStorage.removeItem('cvl.preview.fit')
     renderPartB()
-    const canvas = await screen.findByLabelText(/^Page 1 of /)
-    const sheet = canvas.parentElement as HTMLElement
-    // Whole page: the page is never taller than the window, and nothing is hidden below.
-    expect(sheet.dataset.fit).toBe('page')
-    expect(canvas.className).toContain('max-h-[calc(100vh-9rem)]')
-    expect(sheet.className).not.toContain('overflow-y-auto')
+    // All nine pages of Part B, one under the other.
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    expect(viewer.className).toContain('overflow-y-auto')
+    expect(viewer.className).toContain('[scrollbar-width:none]')
+    expect(viewer.className).toContain('[&::-webkit-scrollbar]:hidden')
+    const firstPage = screen.getByLabelText('Page 1 of 9').parentElement as HTMLElement
+    // Whole page: each page no taller than the column.
+    expect(viewer.dataset.fit).toBe('page')
+    // (min(100%, column height × page ratio): real browsers apply it; the test DOM drops it.) Not column-wide:
+    expect(firstPage.style.width).not.toBe('100%')
     expect(screen.getByRole('button', { name: 'Whole page' }).getAttribute('aria-pressed')).toBe('true')
 
     await user.click(screen.getByRole('button', { name: 'Fit width' }))
-    expect(sheet.dataset.fit).toBe('width')
-    expect(canvas.className).toContain('w-full')
-    expect(sheet.className).toContain('overflow-y-auto')
-    expect(sheet.className).toContain('[scrollbar-width:none]')
-    expect(sheet.className).toContain('[&::-webkit-scrollbar]:hidden')
+    expect(viewer.dataset.fit).toBe('width')
+    expect((screen.getByLabelText('Page 1 of 9').parentElement as HTMLElement).style.width).toBe('100%')
     expect(window.localStorage.getItem('cvl.preview.fit')).toBe('width')
     window.localStorage.removeItem('cvl.preview.fit')
+  })
+
+  it('shows the page a section starts on, from its top, and keeps still for a section on the page already in view', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    const scrollTo = vi.fn()
+    viewer.scrollTo = scrollTo as never
+    const sections = watching((el) => el.tagName === 'SECTION')
+
+    // B24 is on page 8: the column turns to page 8, from its top (not to B24's place on it).
+    act(() => sections.report([{ isIntersecting: true, target: section('B24'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo.mock.calls[0][0].top).toBe(0) // the test DOM lays every page at 0: page 8's top, no offset into it
+
+    // B25 is on page 8 too: nothing moves.
+    act(() => sections.report([{ isIntersecting: true, target: section('B25'), boundingClientRect: { top: 100 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+
+    // B10 is on page 4: it turns again.
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 100 } }]))
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('jumps to a question or table by scrolling only the questions’ own column, never the frame around it', async () => {
+    const user = userEvent.setup({ delay: null })
+    const map = formVersion('507b').map
+    const prefill = prefillForm('507b', 'director:1', context())
+    // The app's frame (never scrolls) around its scrolling column, as in the app's layout.
+    render(
+      <div data-testid="frame" style={{ overflow: 'hidden' }}>
+        <main data-testid="column" style={{ overflowY: 'auto' }}>
+          <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="director:1" subjects={[{ subject: 'director:1', label: 'Jordan Sample' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />
+        </main>
+      </div>,
+    )
+    const column = screen.getByTestId('column')
+    const scrollTo = vi.fn()
+    column.scrollTo = scrollTo as never
+    const hashBefore = window.location.hash
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Questions' })).getByRole('link', { name: 'Table B28' }))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    // Handled here: the browser's own #anchor jump (which moves the frame) never runs.
+    expect(window.location.hash).toBe(hashBefore)
+
+    await user.click(within(section('B28')).getByRole('link', { name: 'Table B28' }))
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the page of the section a jump link goes to, not of sections passed on the way; one page in view at a time', async () => {
+    const user = userEvent.setup({ delay: null })
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+
+    // The question buttons: B21 is on page 8, so page 8 shows straight away.
+    await user.click(within(screen.getByRole('navigation', { name: 'Questions' })).getByRole('link', { name: 'B21' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+    // A section crossing the middle on the way there does not take over.
+    act(() => sections.report([{ isIntersecting: true, target: section('B3'), boundingClientRect: { top: 300 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page')
+    // Once staff scroll the questions themselves, the section across the middle decides again.
+    act(() => {
+      window.dispatchEvent(new Event('wheel'))
+    })
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 300 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page'))
+
+    // Whole page: each page in a slot as tall as the column, so only one is in view.
+    const slot = document.querySelector('[data-page-slot="1"]') as HTMLElement
+    expect(slot.className).toContain('h-[calc(100vh-9rem)]')
+    expect(slot.className).toContain('snap-start')
+    expect(screen.getByLabelText(/: every page$/).className).toContain('snap-mandatory')
+  })
+
+  it('jumps the column to a page from the page buttons', async () => {
+    const user = userEvent.setup({ delay: null })
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const viewer = screen.getByLabelText(/: every page$/)
+    const scrollTo = vi.fn()
+    viewer.scrollTo = scrollTo as never
+    await user.click(screen.getByRole('button', { name: '7' }))
+    expect(screen.getByRole('button', { name: '7' }).getAttribute('aria-current')).toBe('page')
+    expect(scrollTo).toHaveBeenCalled()
   })
 
   it('shows Part B’s question numbers as they are', () => {
@@ -331,6 +502,40 @@ describe('CvlFormEditor — Form 509 summary', () => {
     return { valuation: valuation.querySelector('input'), erv: erv.querySelector('input') }
   }
 
+  it('shows TOTAL assets (Valuation) and TOTAL estimated realisable values (ERV) as they will print: added up while blank, replaced when typed', async () => {
+    const user = userEvent.setup({ delay: null })
+    render509()
+    const totalAssets = row('TOTAL assets')
+    const totalErv = row('TOTAL estimated realisable values')
+    // The pre-fill's book values already add up in the Valuation total.
+    expect(totalAssets.valuation!.value).toBe('')
+    const before = Number(totalAssets.valuation!.placeholder.replace(/,/g, ''))
+    expect(before).toBeGreaterThan(0)
+
+    // Two estimated realisable values typed: the ERV total shows their sum.
+    await user.type(row('1(a) Interest in land').erv!, '12500')
+    await user.type(row('1(b) Sundry debtors').erv!, '2500.5')
+    // A decimal point typed stays put while typing (it used to vanish: "2500." became 2500, then "25005").
+    expect(row('1(b) Sundry debtors').erv!.value).toBe('2500.5')
+    await user.type(row('1(c) Cash on hand').erv!, '12.50')
+    expect(row('1(c) Cash on hand').erv!.value).toBe('12.50')
+    expect(totalErv.erv!.placeholder).toBe('15,013')
+    expect(totalErv.erv!.value).toBe('')
+    // A Valuation typed into 1(a) joins the Valuation total (in place of what was there).
+    const landBefore = Number(row('1(a) Interest in land').valuation!.value || 0)
+    await user.clear(row('1(a) Interest in land').valuation!)
+    await user.type(row('1(a) Interest in land').valuation!, '100')
+    expect(Number(totalAssets.valuation!.placeholder.replace(/,/g, ''))).toBe(before - landBefore + 100)
+
+    // The other two total boxes are only what is typed: nothing added up there.
+    expect(totalAssets.erv!.placeholder).toBe('')
+    expect(totalErv.valuation!.placeholder).toBe('')
+
+    // Typed, the total is the typed amount.
+    await user.type(totalErv.erv!, '99')
+    expect(totalErv.erv!.value).toBe('99')
+  })
+
   it('names Form 509’s sections in full in the jump links, never as initials', () => {
     render509()
     const links = within(screen.getByRole('navigation', { name: 'Questions' })).getAllByRole('link').map((l) => l.textContent)
@@ -343,8 +548,8 @@ describe('CvlFormEditor — Form 509 summary', () => {
     const debtors = row('1(b) Sundry debtors')
     expect(debtors.valuation?.value).toBe('12480.5')
     expect(debtors.erv?.value).toBe('')
-    // Both totals have a box in each column.
-    expect(row('TOTAL assets').valuation?.placeholder).toBe('')
+    // Both totals have a box in each column; TOTAL assets' Valuation shows what it adds up to.
+    expect(row('TOTAL assets').valuation?.placeholder).toBe('47,234.67')
     expect(row('TOTAL assets').erv).not.toBeNull()
     expect(row('TOTAL estimated realisable values').valuation).not.toBeNull()
     expect(row('TOTAL estimated realisable values').erv).not.toBeNull()

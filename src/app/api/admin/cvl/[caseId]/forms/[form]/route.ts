@@ -29,9 +29,10 @@ const Body = z.object({
 
 async function caseOf(caseId: string) {
   const supabase = getSupabaseServerClient()
-  const { data } = await supabase.from('cvl_cases').select('id, client_id, clients(archived_at, workflow)').eq('id', caseId).maybeSingle()
-  const client = Array.isArray(data?.clients) ? data?.clients[0] : data?.clients
-  return { supabase, row: data, open: !!data && !client?.archived_at && client?.workflow === 'cvl' }
+  // Open while the file is in CVL: its case not removed from CVL (migration
+  // 0047). A client also in SBR, or archived from SBR only, is still open here.
+  const { data } = await supabase.from('cvl_cases').select('id, client_id, removed_at').eq('id', caseId).maybeSingle()
+  return { supabase, row: data, open: !!data && !data.removed_at }
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {

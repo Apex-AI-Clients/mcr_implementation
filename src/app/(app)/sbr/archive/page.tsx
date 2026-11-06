@@ -1,8 +1,6 @@
 import Link from 'next/link'
 import { ClientsPageClient } from '@/components/admin/ClientsPageClient'
-import { CvlClientTable } from '@/components/cvl/CvlClientTable'
 import { getClientListPage } from '@/lib/clients/listing'
-import { getCvlListPage } from '@/lib/cvl/listing'
 import { cvlEnabled } from '@/lib/cvl/flag'
 
 export const dynamic = 'force-dynamic'
@@ -17,14 +15,13 @@ interface Props {
  * marked with its workflow and filtered by it; Make client again puts a file
  * back on its own workspace's list.
  *
- * "Moved to CVL" (view=moved, migration 0039): SBR clients converted to CVL.
- * Their SBR record is kept here, read-only; the file is worked on in CVL.
+ * A client in SBR and CVL archived from SBR shows here while it carries on in
+ * CVL (migration 0047); nothing is moved out of SBR to CVL any more.
  */
 export default async function ArchivePage({ searchParams }: Props) {
   const sp = await searchParams
   // CVL switched off: one Archive list, as before CVL.
   const cvl = cvlEnabled()
-  const moved = cvl && sp.view === 'moved'
   const workflow = cvl && (sp.workflow === 'sbr' || sp.workflow === 'cvl') ? sp.workflow : undefined
 
   const tab = (active: boolean) =>
@@ -40,7 +37,7 @@ export default async function ArchivePage({ searchParams }: Props) {
           ['CVL', 'cvl'],
         ] as const
       ).map(([label, w]) => {
-        const active = !moved && workflow === w
+        const active = workflow === w
         return (
           <Link
             key={label}
@@ -52,35 +49,8 @@ export default async function ArchivePage({ searchParams }: Props) {
           </Link>
         )
       })}
-      <Link href="/sbr/archive?view=moved" className={tab(moved)} aria-current={moved ? 'page' : undefined}>
-        Moved to CVL
-      </Link>
     </nav>
   )
-
-  if (moved) {
-    const list = await getCvlListPage({ q: sp.q, page: sp.page, movedFromSbr: true })
-    return (
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-foreground">Archive</h1>
-          <p className="mt-1 text-sm text-foreground/50">
-            {list.total} {list.total === 1 ? 'client' : 'clients'} moved to CVL. Their SBR records are kept here,
-            read-only.
-          </p>
-        </div>
-        {tabs}
-        <CvlClientTable
-          list={list}
-          path="/sbr/archive"
-          keep={{ view: 'moved' }}
-          rowHref={(clientId) => `/sbr/archive/${clientId}`}
-          moved
-          empty="No SBR client has been moved to CVL."
-        />
-      </div>
-    )
-  }
 
   const list = await getClientListPage({ q: sp.q, page: sp.page, archived: true, workflow })
   const which = workflow === 'cvl' ? 'archived CVL' : workflow === 'sbr' ? 'archived SBR' : 'archived'

@@ -8,7 +8,7 @@ export async function ClientIntakeView({ id, workspace }: ClientPageView) {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name, email, phone, archived_at, workflow')
+    .select('id, name, email, phone, archived_at, workflow, cvl_cases(removed_at)')
     .eq('id', id)
     .maybeSingle()
 
