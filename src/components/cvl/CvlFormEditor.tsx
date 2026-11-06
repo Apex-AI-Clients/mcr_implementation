@@ -1163,6 +1163,9 @@ function ColumnsTable({
     // A total the form adds up when left blank (TOTAL assets, TOTAL estimated
     // realisable values): the sum shows in the empty box, as it will print.
     const total = f.sum ? sumOf(f.sum, printed) : null
+    // A total box not typed into shows its total as its value (as it prints), kept up to
+    // date; nothing is saved for it. Clicking in selects it, so typing replaces it.
+    const auto = total !== null && (value === null || value === undefined || value === '') ? total : null
     return (
       <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
@@ -1170,7 +1173,8 @@ function ColumnsTable({
             id={`f-${f.key}`}
             aria-label={f.label}
             inputMode="decimal"
-            placeholder={total === null ? undefined : total.toLocaleString('en-AU', { maximumFractionDigits: 2 })}
+            data-auto={auto !== null ? '' : undefined}
+            onFocus={auto !== null ? (e) => e.currentTarget.select() : undefined}
             title={
               !f.sum
                 ? undefined
@@ -1178,7 +1182,7 @@ function ColumnsTable({
                   ? `The same as ${fields.find((x) => x.key === f.sum![0])!.label} when left blank; type an amount to use it instead.`
                   : 'Adds up the boxes above when left blank; type an amount to use it instead.'
             }
-            value={value === null || value === undefined ? '' : String(value)}
+            value={auto !== null ? String(auto) : value === null || value === undefined ? '' : String(value)}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
             className={`${inputClass} py-1.5 tabular-nums ${over ? tooLongClass : ''}`}
             {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}
