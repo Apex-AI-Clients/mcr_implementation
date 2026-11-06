@@ -164,6 +164,10 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
   // The page of whatever is focused on the left, for the preview.
   function onFocusIn(e: React.FocusEvent<HTMLDivElement>) {
+    const focused = e.target as HTMLElement
+    restoreFrames(focused)
+    // Again once the browser has finished bringing it into view.
+    requestAnimationFrame(() => restoreFrames(focused))
     const holder = (e.target as HTMLElement).closest('[data-page]') as HTMLElement | null
     if (holder?.dataset.page) setSpot({ page: Number(holder.dataset.page), top: Number(holder.dataset.top ?? 0) })
   }
@@ -439,6 +443,23 @@ interface Filled {
 const PREVIEW_DELAY_MS = 400
 
 /**
+ * Puts back any box around this element that should never scroll (overflow
+ * hidden, like the app's fixed frame) but the browser scrolled anyway, to
+ * bring something into view. Moved, it pushes the whole screen up.
+ */
+/** A box's vertical overflow (from the shorthand where only that is set). */
+function overflowYOf(el: HTMLElement): string {
+  const cs = getComputedStyle(el)
+  return cs.overflowY && cs.overflowY !== 'visible' ? cs.overflowY : cs.overflow || cs.overflowY
+}
+
+function restoreFrames(from: HTMLElement) {
+  for (let up = from.parentElement; up; up = up.parentElement) {
+    if (up.scrollTop && overflowYOf(up) === 'hidden') up.scrollTop = 0
+  }
+}
+
+/**
  * Scrolls the element with this id to the top of its own scrolling column
  * (the box with overflow auto or scroll around it), and puts back any box
  * that should never scroll (overflow hidden) the browser may have moved.
@@ -447,10 +468,8 @@ function jumpTo(id: string): HTMLElement | null {
   const el = document.getElementById(id)
   if (!el) return null
   let box: HTMLElement | null = el.parentElement
-  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement
-  for (let up = el.parentElement; up; up = up.parentElement) {
-    if (getComputedStyle(up).overflowY === 'hidden' && up.scrollTop) up.scrollTop = 0
-  }
+  while (box && !/(auto|scroll)/.test(overflowYOf(box))) box = box.parentElement
+  restoreFrames(el)
   const target = (el.closest('section') as HTMLElement | null) ?? el
   if (box) {
     const y = box.scrollTop + target.getBoundingClientRect().top - box.getBoundingClientRect().top - 16
@@ -970,7 +989,10 @@ function FieldInput({
             return (
               <label
                 key={v}
-                className={`cursor-pointer px-3.5 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-accent/40 ${v === 'no' ? 'border-l border-border' : ''} ${on ? 'bg-accent font-medium text-white' : 'bg-input-bg text-foreground/60 hover:text-foreground'}`}
+                // relative: the hidden radio inside is placed in this label. Unplaced, it
+                // sits on the app's fixed frame, and focusing it (a click) scrolled the
+                // frame, pushing the whole screen up.
+                className={`relative cursor-pointer px-3.5 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-accent/40 ${v === 'no' ? 'border-l border-border' : ''} ${on ? 'bg-accent font-medium text-white' : 'bg-input-bg text-foreground/60 hover:text-foreground'}`}
               >
                 <input type="radio" name={id} checked={on} onChange={() => onChange(v)} className="sr-only" />
                 {v === 'yes' ? 'Yes' : 'No'}

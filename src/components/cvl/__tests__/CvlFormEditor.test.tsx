@@ -84,6 +84,28 @@ describe('CvlFormEditor', () => {
     expect((within(b2).getByLabelText('No') as HTMLInputElement).checked).toBe(true)
   })
 
+  it('clicking Yes never moves the app’s frame (the screen went blank): the hidden radio is placed in its label, and a moved frame is put back', async () => {
+    const user = userEvent.setup({ delay: null })
+    const map = formVersion('507b').map
+    const prefill = prefillForm('507b', 'director:1', context())
+    render(
+      <div data-testid="frame" style={{ overflow: 'hidden' }}>
+        <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="director:1" subjects={[{ subject: 'director:1', label: 'Jordan Sample' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />
+      </div>,
+    )
+    const yes = within(within(section('B2')).getByRole('radiogroup')).getByLabelText('Yes') as HTMLInputElement
+    // Placed in its own label, inside the questions column.
+    expect(yes.closest('label')!.className).toContain('relative')
+
+    // As if the browser had scrolled the frame to bring the radio into view.
+    const frame = screen.getByTestId('frame')
+    let frameTop = 120
+    Object.defineProperty(frame, 'scrollTop', { configurable: true, get: () => frameTop, set: (v: number) => (frameTop = v) })
+    await user.click(yes)
+    expect(yes.checked).toBe(true)
+    expect(frameTop).toBe(0)
+  })
+
   it('shows where a pre-filled answer came from until it is changed', async () => {
     const user = userEvent.setup({ delay: null })
     renderPartB()
