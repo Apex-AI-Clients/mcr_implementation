@@ -201,8 +201,26 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     }
   }, [map])
 
+  // Jump links (the question buttons, "the rows go in Table …"): the
+  // questions' own column scrolls, never the app's frame. A plain #anchor
+  // makes the browser scroll every box around the target, the fixed frame
+  // too, which pushes the whole screen up. Opened with a #q-… address, the
+  // same, once.
+  const onJumpClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const link = (e.target as HTMLElement).closest('a[href^="#q-"]') as HTMLAnchorElement | null
+    if (!link) return
+    e.preventDefault()
+    jumpTo(decodeURIComponent(link.getAttribute('href')!.slice(1)))
+  }
+  useEffect(() => {
+    if (!window.location.hash.startsWith('#q-')) return
+    const id = decodeURIComponent(window.location.hash.slice(1))
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    jumpTo(id)
+  }, [])
+
   return (
-    <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6">
+    <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6" onClickCapture={onJumpClick}>
       <Link href={`/cvl/${clientId}`} className="mb-3 inline-flex items-center gap-1.5 text-xs text-foreground/40 transition-colors hover:text-foreground">
         <ArrowLeft className="h-3.5 w-3.5" />
         Back to the CVL file
@@ -393,6 +411,26 @@ interface Filled {
 
 /** How long after the last change the preview is filled again (in the browser). */
 const PREVIEW_DELAY_MS = 400
+
+/**
+ * Scrolls the element with this id to the top of its own scrolling column
+ * (the box with overflow auto or scroll around it), and puts back any box
+ * that should never scroll (overflow hidden) the browser may have moved.
+ */
+function jumpTo(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  let box: HTMLElement | null = el.parentElement
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement
+  for (let up = el.parentElement; up; up = up.parentElement) {
+    if (getComputedStyle(up).overflowY === 'hidden' && up.scrollTop) up.scrollTop = 0
+  }
+  const target = (el.closest('section') as HTMLElement | null) ?? el
+  if (box) {
+    const y = box.scrollTop + target.getBoundingClientRect().top - box.getBoundingClientRect().top - 16
+    box.scrollTo?.({ top: Math.max(0, y), behavior: 'smooth' })
+  }
+}
 
 /** Where the preview remembers whole page or fit width (this browser only). */
 const FIT_KEY = 'cvl.preview.fit'

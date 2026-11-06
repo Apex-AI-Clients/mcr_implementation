@@ -357,6 +357,32 @@ describe('CvlFormEditor', () => {
     expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page')
   })
 
+  it('jumps to a question or table by scrolling only the questions’ own column, never the frame around it', async () => {
+    const user = userEvent.setup({ delay: null })
+    const map = formVersion('507b').map
+    const prefill = prefillForm('507b', 'director:1', context())
+    // The app's frame (never scrolls) around its scrolling column, as in the app's layout.
+    render(
+      <div data-testid="frame" style={{ overflow: 'hidden' }}>
+        <main data-testid="column" style={{ overflowY: 'auto' }}>
+          <CvlFormEditor caseId="case-1" clientId="cl_1" map={entryMap(map)} subject="director:1" subjects={[{ subject: 'director:1', label: 'Jordan Sample' }]} prefill={prefill} initial={entryState(map, prefill, null)} saved={null} />
+        </main>
+      </div>,
+    )
+    const column = screen.getByTestId('column')
+    const scrollTo = vi.fn()
+    column.scrollTo = scrollTo as never
+    const hashBefore = window.location.hash
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Questions' })).getByRole('link', { name: 'Table B28' }))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    // Handled here: the browser's own #anchor jump (which moves the frame) never runs.
+    expect(window.location.hash).toBe(hashBefore)
+
+    await user.click(within(section('B28')).getByRole('link', { name: 'Table B28' }))
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+  })
+
   it('jumps the column to a page from the page buttons', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()
