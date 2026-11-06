@@ -383,6 +383,35 @@ describe('CvlFormEditor', () => {
     expect(scrollTo).toHaveBeenCalledTimes(2)
   })
 
+  it('shows the page of the section a jump link goes to, not of sections passed on the way; one page in view at a time', async () => {
+    const user = userEvent.setup({ delay: null })
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByLabelText(/^Page \d+ of 9$/)).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+
+    // The question buttons: B21 is on page 8, so page 8 shows straight away.
+    await user.click(within(screen.getByRole('navigation', { name: 'Questions' })).getByRole('link', { name: 'B21' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+    // A section crossing the middle on the way there does not take over.
+    act(() => sections.report([{ isIntersecting: true, target: section('B3'), boundingClientRect: { top: 300 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page')
+    // Once staff scroll the questions themselves, the section across the middle decides again.
+    act(() => {
+      window.dispatchEvent(new Event('wheel'))
+    })
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 300 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page'))
+
+    // Whole page: each page in a slot as tall as the column, so only one is in view.
+    const slot = document.querySelector('[data-page-slot="1"]') as HTMLElement
+    expect(slot.className).toContain('h-[calc(100vh-9rem)]')
+    expect(slot.className).toContain('snap-start')
+    expect(screen.getByLabelText(/: every page$/).className).toContain('snap-mandatory')
+  })
+
   it('jumps the column to a page from the page buttons', async () => {
     const user = userEvent.setup({ delay: null })
     stubFetch()

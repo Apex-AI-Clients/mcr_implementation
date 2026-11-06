@@ -168,8 +168,26 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     if (holder?.dataset.page) setSpot({ page: Number(holder.dataset.page), top: Number(holder.dataset.top ?? 0) })
   }
 
-  // Scrolling the questions: the section crossing a band near the top of the
-  // screen is the one shown on the right. The browser reports crossings
+  // Scrolling the questions: the section across the middle of the column is
+  // the one whose page shows on the right. Just after a jump link, the
+  // section jumped to decides (not those passed on the way), until staff next
+  // scroll the questions themselves (wheel, touch or keys: never the jump's own scroll).
+  const jumped = useRef(false)
+  useEffect(() => {
+    const release = () => {
+      jumped.current = false
+    }
+    const opts = { passive: true } as const
+    window.addEventListener('wheel', release, opts)
+    window.addEventListener('touchstart', release, opts)
+    window.addEventListener('keydown', release)
+    return () => {
+      window.removeEventListener('wheel', release)
+      window.removeEventListener('touchstart', release)
+      window.removeEventListener('keydown', release)
+    }
+  }, [])
+  // The browser reports crossings
   // (IntersectionObserver), so nothing runs while scrolling within a section.
   const questions = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -177,19 +195,21 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     if (!root || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       (entries) => {
+        if (jumped.current) return
         const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
         const el = hit?.target as HTMLElement | undefined
         if (!el?.dataset.page) return
         const next = { page: Number(el.dataset.page), top: Number(el.dataset.top ?? 0) }
         setSpot((cur) => (cur && cur.page === next.page && cur.top === next.top ? cur : next))
       },
-      { rootMargin: '-15% 0px -75% 0px' },
+      { rootMargin: '-45% 0px -45% 0px' },
     )
     root.querySelectorAll('section[data-page]').forEach((el) => observer.observe(el))
 
     // Back at the top of the questions: the first page, from its top.
     const marker = root.querySelector<HTMLElement>('[data-form-top]')
     const atTop = new IntersectionObserver((entries) => {
+      if (jumped.current) return
       if (!entries.some((e) => e.isIntersecting) || !marker?.dataset.page) return
       const next = { page: Number(marker.dataset.page), top: 0 }
       setSpot((cur) => (cur && cur.page === next.page && cur.top === 0 ? cur : next))
@@ -210,13 +230,19 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     const link = (e.target as HTMLElement).closest('a[href^="#q-"]') as HTMLAnchorElement | null
     if (!link) return
     e.preventDefault()
-    jumpTo(decodeURIComponent(link.getAttribute('href')!.slice(1)))
+    showJumped(jumpTo(decodeURIComponent(link.getAttribute('href')!.slice(1))))
+  }
+  // The page of the section jumped to, on the right, while the column scrolls to it.
+  function showJumped(section: HTMLElement | null) {
+    if (!section?.dataset.page) return
+    jumped.current = true
+    setSpot({ page: Number(section.dataset.page), top: Number(section.dataset.top ?? 0) })
   }
   useEffect(() => {
     if (!window.location.hash.startsWith('#q-')) return
     const id = decodeURIComponent(window.location.hash.slice(1))
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
-    jumpTo(id)
+    showJumped(jumpTo(id))
   }, [])
 
   return (
@@ -417,9 +443,9 @@ const PREVIEW_DELAY_MS = 400
  * (the box with overflow auto or scroll around it), and puts back any box
  * that should never scroll (overflow hidden) the browser may have moved.
  */
-function jumpTo(id: string) {
+function jumpTo(id: string): HTMLElement | null {
   const el = document.getElementById(id)
-  if (!el) return
+  if (!el) return null
   let box: HTMLElement | null = el.parentElement
   while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement
   for (let up = el.parentElement; up; up = up.parentElement) {
@@ -430,6 +456,7 @@ function jumpTo(id: string) {
     const y = box.scrollTop + target.getBoundingClientRect().top - box.getBoundingClientRect().top - 16
     box.scrollTo?.({ top: Math.max(0, y), behavior: 'smooth' })
   }
+  return target
 }
 
 /** Where the preview remembers whole page or fit width (this browser only). */
@@ -750,7 +777,9 @@ function LivePreview({
         data-fit={fit}
         onScroll={onScroll}
         aria-label={`${title}: every page`}
-        className="max-h-[calc(100vh-9rem)] space-y-3 overflow-y-auto overflow-x-hidden pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className={`max-h-[calc(100vh-9rem)] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          fit === 'page' ? 'snap-y snap-mandatory' : 'space-y-3 pb-2'
+        }`}
       >
         {filled ? (
           Array.from({ length: pages }, (_, i) => (
@@ -853,12 +882,8 @@ function PdfPageView({
   }, [doc, near, index, onError])
 
   const ratio = size.w / size.h
-  return (
+  const sheet = (
     <div
-      ref={(el) => {
-        holder.current = el
-        holderRef(el)
-      }}
       data-page-index={index + 1}
       className="relative mx-auto max-w-full overflow-hidden rounded-sm bg-white shadow-[0_1px_2px_rgba(20,30,50,.12),0_6px_20px_rgba(20,30,50,.08)]"
       style={{
@@ -868,6 +893,19 @@ function PdfPageView({
     >
       <canvas ref={canvas} className="absolute inset-0 block h-full w-full" aria-label={`Page ${index + 1} of ${total}`} />
     </div>
+  )
+  const setHolder = (el: HTMLDivElement | null) => {
+    holder.current = el
+    holderRef(el)
+  }
+  // Whole page: a slot as tall as the column, so whatever the page's width
+  // allows, one page fills the view and the next never peeks in.
+  return fit === 'page' ? (
+    <div ref={setHolder} data-page-slot={index + 1} className="flex h-[calc(100vh-9rem)] snap-start items-start justify-center">
+      {sheet}
+    </div>
+  ) : (
+    <div ref={setHolder}>{sheet}</div>
   )
 }
 
