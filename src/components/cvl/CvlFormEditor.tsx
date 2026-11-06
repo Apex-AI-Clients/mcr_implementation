@@ -1142,6 +1142,18 @@ function ColumnsTable({
     const row = rows.find((r) => r.label === f.row)
     if (row) row.inline = f
   }
+  // The totals as the PDF prints them, in order: a total left blank adds up
+  // its boxes, and one that copies another total (TOTAL estimated realisable
+  // values' Valuation = TOTAL assets' Valuation) copies what that prints.
+  const printed: Record<string, FieldValue> = { ...values }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const t of fields) {
+      if (!t.sum) continue
+      const typed = values[t.key]
+      if (typed !== null && typed !== undefined && typed !== '') continue
+      printed[t.key] = sumOf(t.sum, printed)
+    }
+  }
   const cell = (f: EntryField | undefined) => {
     if (!f) return <span className="block px-2 text-xs text-foreground/25" aria-hidden="true">—</span>
     const source = sourceOf(f.key)
@@ -1150,7 +1162,10 @@ function ColumnsTable({
     const fitId = `f-${f.key}-fit`
     // A total the form adds up when left blank (TOTAL assets, TOTAL estimated
     // realisable values): the sum shows in the empty box, as it will print.
-    const total = f.sum ? sumOf(f.sum, values) : null
+    const total = f.sum ? sumOf(f.sum, printed) : null
+    // A total box not typed into shows its total as its value (as it prints), kept up to
+    // date; nothing is saved for it. Clicking in selects it, so typing replaces it.
+    const auto = total !== null && (value === null || value === undefined || value === '') ? total : null
     return (
       <div data-page={f.page} data-top={f.top}>
         <div className="flex items-center gap-1">
@@ -1158,9 +1173,16 @@ function ColumnsTable({
             id={`f-${f.key}`}
             aria-label={f.label}
             inputMode="decimal"
-            placeholder={total === null ? undefined : total.toLocaleString('en-AU', { maximumFractionDigits: 2 })}
-            title={f.sum ? 'Adds up the boxes above when left blank; type an amount to use it instead.' : undefined}
-            value={value === null || value === undefined ? '' : String(value)}
+            data-auto={auto !== null ? '' : undefined}
+            onFocus={auto !== null ? (e) => e.currentTarget.select() : undefined}
+            title={
+              !f.sum
+                ? undefined
+                : f.sum.length === 1 && fields.some((x) => x.key === f.sum![0])
+                  ? `The same as ${fields.find((x) => x.key === f.sum![0])!.label} when left blank; type an amount to use it instead.`
+                  : 'Adds up the boxes above when left blank; type an amount to use it instead.'
+            }
+            value={auto !== null ? String(auto) : value === null || value === undefined ? '' : String(value)}
             onChange={(e) => onChange(f.key, moneyValue(e.target.value))}
             className={`${inputClass} py-1.5 tabular-nums ${over ? tooLongClass : ''}`}
             {...(over ? { 'aria-invalid': true as const, 'aria-describedby': fitId } : {})}

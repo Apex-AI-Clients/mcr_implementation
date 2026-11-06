@@ -782,6 +782,18 @@
     "h_erv",
     "s2_erv"
    ]
+  },
+  {
+   "key": "total_erv_val",
+   "sum": [
+    "total_assets"
+   ]
+  },
+  {
+   "key": "total_assets_erv",
+   "sum": [
+    "total_erv"
+   ]
   }
  ]
 }

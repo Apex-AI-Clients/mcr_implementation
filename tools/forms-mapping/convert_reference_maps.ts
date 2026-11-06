@@ -188,6 +188,11 @@ const f509: FormMap = {
   computed: [
     { key: 'total_assets', sum: assetRows.map(([k]) => `${k}_val`) },
     { key: 'total_erv', sum: assetRows.map(([k]) => `${k}_erv`) },
+    // Each total also in the other total row, same column (Gabby, 6 Nov 2026): TOTAL estimated
+    // realisable values' Valuation is TOTAL assets' Valuation; TOTAL assets' ERV is TOTAL ERV's ERV.
+    // After the two above, so they copy what those print.
+    { key: 'total_erv_val', sum: ['total_assets'] },
+    { key: 'total_assets_erv', sum: ['total_erv'] },
   ],
 }
 
