@@ -88,6 +88,13 @@ export function ScanCorrection({ clientId, scan }: { clientId: string; scan: Sca
   )
 }
 
+/** A reading that stopped without finishing, with the reason (scan-jobs). */
+interface Stopped {
+  documentId: string
+  message: string
+  finishedAt: string
+}
+
 interface Job {
   /** The reading's own id: unique even if one file were being read twice. */
   id: string
@@ -140,7 +147,9 @@ function Step({ n, label, state }: { n: number; label: string; state: 'todo' | '
  * runs on the server: leaving the page does not stop it, and coming back
  * shows it where it is (it is never started again while it runs). Starts the
  * reading once per page load; if none has started after a little while,
- * offers "Start scanning". When every file is done, says so and refreshes.
+ * offers "Start scanning". A reading that stops without finishing is shown
+ * with its reason and "Try again". When every file is done, says so and
+ * refreshes.
  */
 export function ScanProgress({
   clientId,
@@ -158,7 +167,10 @@ export function ScanProgress({
   const [stalled, setStalled] = useState(false)
   const [finished, setFinished] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [stopped, setStopped] = useState<Stopped[]>([])
   const started = useRef(false)
+  // A stopped reading counts only when it stopped after this page last started one.
+  const startedAt = useRef(Date.now())
   // The polling loop must not restart when the router object does.
   const routerRef = useRef(router)
   routerRef.current = router
@@ -167,6 +179,9 @@ export function ScanProgress({
   async function start() {
     setStarting(true)
     setStalled(false)
+    setStopped([])
+    // A little slack for the server's clock.
+    startedAt.current = Date.now() - 5000
     try {
       await fetch(`/api/admin/clients/${clientId}/scan-read`, { method: 'POST' })
     } catch {
@@ -178,7 +193,7 @@ export function ScanProgress({
 
   useEffect(() => {
     if (!pending) return
-    let stopped = false
+    let cancelled = false
     let seenRunning = false
     let lastSeen = Date.now()
     // Once: React runs this effect twice in development, and the server refuses a second reading anyway (0045).
@@ -189,14 +204,21 @@ export function ScanProgress({
     const poll = async () => {
       try {
         const res = await fetch(`/api/admin/clients/${clientId}/scan-jobs`)
-        const body = (await res.json()) as { jobs?: Job[] }
-        if (stopped) return
+        const body = (await res.json()) as { jobs?: Job[]; stopped?: Stopped[] }
+        if (cancelled) return
         const running = body.jobs ?? []
+        const ids = new Set(files.map((f) => f.documentId))
+        const failed = (body.stopped ?? []).filter((f) => ids.has(f.documentId) && Date.parse(f.finishedAt) >= startedAt.current)
         setJobs(running)
         if (running.length) {
           seenRunning = true
           lastSeen = Date.now()
           setStalled(false)
+        } else if (failed.length) {
+          // Stopped without finishing: say why, and offer to try again (polling goes on).
+          setStopped(failed)
+          seenRunning = false
+          lastSeen = Date.now()
         } else if (seenRunning) {
           // Every file is done: say so, then show the figures.
           setFinished(true)
@@ -207,19 +229,47 @@ export function ScanProgress({
       } catch {
         // Try again on the next tick.
       }
-      if (!stopped) setTimeout(poll, pollMs)
+      if (!cancelled) setTimeout(poll, pollMs)
     }
     void poll()
     return () => {
-      stopped = true
+      cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- start() only reads clientId
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start() only reads clientId; files only for its ids
   }, [clientId, pending, pollMs, graceMs])
 
   if (!pending) return null
   const byDoc = new Map(jobs.map((j) => [j.documentId, j]))
   const overall = Math.round(files.reduce((sum, f) => sum + percent(byDoc.get(f.documentId)), 0) / files.length)
   const count = files.length === 1 ? '1 document' : `${files.length} documents`
+
+  if (stopped.length && !jobs.length && !finished) {
+    const names = new Map(files.map((f) => [f.documentId, f.filename]))
+    return (
+      <section className="no-print rounded-xl border border-destructive/40 bg-card p-4" role="alert" aria-label="Scanning stopped">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/15">
+            <ScanLine className="h-5 w-5 text-destructive" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Scanning stopped before it finished</h2>
+              <ul className="mt-1 space-y-1">
+                {stopped.map((f) => (
+                  <li key={f.documentId} className="text-xs text-foreground/70">
+                    <span className="font-medium text-foreground">{names.get(f.documentId) ?? 'A document'}</span>: {f.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Button size="sm" variant="primary" onClick={start} loading={starting} disabled={starting}>
+              Try again
+            </Button>
+          </div>
+        </div>
+      </section>
+    )
+  }
 
   if (stalled && !finished) {
     return (

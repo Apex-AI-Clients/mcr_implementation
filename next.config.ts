@@ -11,7 +11,18 @@ const nextConfig: NextConfig = {
     "/cvl/**": ["./src/lib/forms/templates/**/*"],
     // Scanned statements (src/lib/scan): Tesseract's English model, with the
     // one route that reads scans and nothing else.
-    "/api/admin/clients/[id]/scan-read": ["./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**/*"],
+    // Its background worker is started from a file path (src/lib/scan/ocr.ts
+    // WORKER_PATH), so tracing can't follow it: the worker, the engine it loads
+    // and the packages the worker itself requires.
+    "/api/admin/clients/[id]/scan-read": [
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/**/*",
+      "./node_modules/tesseract.js/src/**/*",
+      "./node_modules/tesseract.js-core/*",
+      "./node_modules/regenerator-runtime/**/*",
+      "./node_modules/is-url/**/*",
+      "./node_modules/wasm-feature-detect/**/*",
+      "./node_modules/node-fetch/**/*",
+    ],
   },
 };
 
