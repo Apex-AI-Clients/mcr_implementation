@@ -6,6 +6,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 const refresh = vi.fn()
 const router = { refresh }
 vi.mock('next/navigation', () => ({ useRouter: () => router }))
+// A fresh copy: another test file's router mock must never be the one it calls.
+vi.resetModules()
 const { ScanProgress } = await import('../ScanFigures')
 
 let jobs: unknown[] = []
@@ -56,7 +58,7 @@ describe('ScanProgress', () => {
     await waitFor(() => expect(screen.getByText(/Reading the figures/)).toBeTruthy())
     jobs = []
     await waitFor(() => expect(screen.getByText('Done — updating the figures…')).toBeTruthy())
-    expect(refresh).toHaveBeenCalled()
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
   })
 
   it('offers "Start scanning" when nothing has started after a while', async () => {
