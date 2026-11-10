@@ -9,9 +9,12 @@ vi.mock('next/navigation', () => ({ useRouter: () => router }))
 const { ScanProgress } = await import('../ScanFigures')
 
 let jobs: unknown[] = []
-const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('scan-jobs') ? { jobs } : { started: 1 }), { status: 200 }))
+let stopped: unknown[] = []
+const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('scan-jobs') ? { jobs, stopped } : { started: 1 }), { status: 200 }))
 beforeEach(() => {
   jobs = []
+  stopped = []
+  refresh.mockClear()
   fetchMock.mockClear()
   vi.stubGlobal('fetch', fetchMock)
 })
@@ -60,6 +63,29 @@ describe('ScanProgress', () => {
     render(<ScanProgress clientId="c1" files={files} pollMs={20} graceMs={60} />)
     await waitFor(() => expect(screen.getByText('Scanning has not started')).toBeTruthy())
     expect(screen.getByRole('button', { name: 'Start scanning' })).toBeTruthy()
+  })
+
+  it('says why a reading stopped, and offers to try again', async () => {
+    jobs = [{ id: 'j1', documentId: 'd1', stage: 'starting', done: 0, total: 0 }]
+    render(<ScanProgress clientId="c1" files={files.slice(0, 1)} pollMs={20} />)
+    await waitFor(() => expect(screen.getByText('Starting…')).toBeTruthy())
+    jobs = []
+    stopped = [{ documentId: 'd1', message: 'The page reader (Tesseract) did not start.', finishedAt: new Date().toISOString() }]
+    await waitFor(() => expect(screen.getByText('Scanning stopped before it finished')).toBeTruthy())
+    expect(screen.getByText(/The page reader \(Tesseract\) did not start\./)).toBeTruthy()
+    expect(screen.getByText('2023 - Financial Statements.pdf')).toBeTruthy()
+    // Not "done": nothing was read.
+    expect(screen.queryByText('Done — updating the figures…')).toBeNull()
+    expect(refresh).not.toHaveBeenCalled()
+    screen.getByRole('button', { name: 'Try again' }).click()
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('scan-read'))).toHaveLength(2))
+  })
+
+  it('ignores a reading that stopped before this page started one', async () => {
+    stopped = [{ documentId: 'd1', message: 'Stopped before it finished.', finishedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString() }]
+    render(<ScanProgress clientId="c1" files={files.slice(0, 1)} pollMs={20} graceMs={60} />)
+    await waitFor(() => expect(screen.getByText('Scanning has not started')).toBeTruthy())
+    expect(screen.queryByText('Scanning stopped before it finished')).toBeNull()
   })
 
   it('shows nothing when no file is waiting', () => {

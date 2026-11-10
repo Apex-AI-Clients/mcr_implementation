@@ -1,4 +1,4 @@
-import type { MappedLine, NotIdentified, PredictionFinancials } from '@/lib/printed/mapping'
+import type { LoanYear, MappedLine, NotIdentified, PredictionFinancials } from '@/lib/printed/mapping'
 
 /**
  * The SBR prediction's "Director loan receivable amount", from the loan
@@ -62,4 +62,26 @@ export function directorLoanInput(f: PredictionFinancials, basis: DirectorLoanBa
     asOf: f.loanReceivable?.asOf ?? f.balanceSheet?.column.periodEnd ?? null,
     info,
   }
+}
+
+/** One balance sheet's loan figure on the prediction's basis, for the year-by-year row beside the input. Null: not identified that year. */
+export interface DirectorLoanYear {
+  /** "FY2025 balance sheet", "Current period to 30 Oct 2026". */
+  label: string
+  amount: number | null
+}
+
+/**
+ * Each year's figure by the same rule as the input (gross: owed to the
+ * company; net: that less what the company owes, never below $0). Context
+ * only: the prediction uses the latest.
+ */
+export function directorLoanYears(years: LoanYear[], basis: DirectorLoanBasis = DIRECTOR_LOAN_BASIS): DirectorLoanYear[] {
+  return years.map((y) => {
+    if (y.owedTo === null) return { label: y.label, amount: null }
+    const receivable = Math.max(0, y.owedTo)
+    if (basis === 'gross') return { label: y.label, amount: receivable }
+    // As the input: nothing identified owed by the company counts as $0.
+    return { label: y.label, amount: Math.max(0, round2(receivable - Math.max(0, y.owedBy ?? 0))) }
+  })
 }

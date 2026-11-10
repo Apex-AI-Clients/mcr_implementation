@@ -155,7 +155,7 @@ interface MissingPrerequisite {
   field: string
   blocker: 'lodgement_analyses' | 'financial_statements' | 'line_mapping'
   actionUrl: string
-  /** What is missing, in a line ("Not found in the statements — choose the line."). */
+  /** What is missing, in a line ("No line is confirmed for money owed to the company …"). */
   message?: string
 }
 

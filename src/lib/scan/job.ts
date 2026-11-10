@@ -90,8 +90,15 @@ export async function claudePagesLeftToday(supabase: ServerClient, clientId: str
     .eq('reader', 'claude')
     .eq('prompt_version', SCAN_PROMPT_VERSION)
     .gte('created_at', sydneyDayStart())
-  if (error) return 0
-  return Math.max(0, SCAN_DAILY_PAGE_CAP - (count ?? 0))
+  if (!error) return Math.max(0, SCAN_DAILY_PAGE_CAP - (count ?? 0))
+  // Before migration 0046 (no prompt_version): every Claude reading today counts.
+  const all = await supabase
+    .from('scan_page_readings')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('reader', 'claude')
+    .gte('created_at', sydneyDayStart())
+  return all.error ? SCAN_DAILY_PAGE_CAP : Math.max(0, SCAN_DAILY_PAGE_CAP - (all.count ?? 0))
 }
 
 /** Claude, through the approved OpenRouter client: the transcription of a statement page. */
@@ -127,8 +134,9 @@ export async function runScanJob(
   const progress = async (stage: string, done: number, total: number) => {
     await supabase.from('scan_read_jobs').update({ stage, done, total, updated_at: new Date().toISOString() }).eq('id', job.id)
   }
-  const titles = await tesseractTitles()
+  let titles: Awaited<ReturnType<typeof tesseractTitles>> | null = null
   try {
+    titles = await tesseractTitles()
     const { data: blob, error } = await supabase.storage.from('documents').download(filePath)
     if (error || !blob) throw new Error('The file could not be downloaded.')
     const bytes = new Uint8Array(await blob.arrayBuffer())
@@ -158,7 +166,7 @@ export async function runScanJob(
     console.error('[scan] job failed:', err instanceof Error ? err.name : 'unknown')
     await supabase.from('scan_read_jobs').update({ status: 'failed', message, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', job.id)
   } finally {
-    await titles.close()
+    await titles?.close().catch(() => undefined)
   }
 }
 

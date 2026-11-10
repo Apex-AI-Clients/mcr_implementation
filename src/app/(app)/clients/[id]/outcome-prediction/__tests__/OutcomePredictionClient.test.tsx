@@ -530,7 +530,7 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
           directorLoanDetected: null,
           mappingUrl: '/clients/c1/financials-comparison/mapping',
           directorLoan: {
-            notIdentified: { message: 'Not found in the statements — choose the line.', candidates: [] },
+            notIdentified: { message: 'No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (FY2024 balance sheet): choose the line, or confirm none is printed.', candidates: [] },
             amount: 0,
             basis: 'gross',
             receivable: 0,
@@ -548,10 +548,40 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
       />,
     )
     expect(screen.getByText('Not identified')).toBeTruthy()
-    expect(screen.getByText(/Not found in the statements — choose the line\./)).toBeTruthy()
+    expect(screen.getByText(/No line is confirmed for money owed to the company. The prediction uses the latest balance sheet/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Confirm key figures' }).getAttribute('href')).toBe('/clients/c1/financials-comparison/mapping')
     expect((screen.getByRole('button', { name: /Generate Prediction/ }) as HTMLButtonElement).disabled).toBe(true)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('names the balance sheet the figure is from, and shows each year with only the latest used', () => {
+    mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{
+          ...AUTO,
+          directorLoanReceivableAmount: 7_500,
+          directorLoanDetected: true,
+          directorLoanBalanceSheet: 'Current period to 30 Oct 2026',
+          directorLoanYears: [
+            { label: 'FY2024 balance sheet', amount: 12_000 },
+            { label: 'FY2025 balance sheet', amount: null },
+            { label: 'Current period to 30 Oct 2026', amount: 7_500 },
+          ],
+        }}
+        initialPrediction={null}
+        readiness={READY}
+      />,
+    )
+    expect(screen.queryByText(/^FY\d{4}$/)).toBeNull()
+    expect(screen.getAllByText('Current period to 30 Oct 2026').length).toBeGreaterThan(0)
+    expect(screen.getByText('Year by year')).toBeTruthy()
+    expect(screen.getByText('FY2024 balance sheet:').parentElement!.textContent).toBe('FY2024 balance sheet: $12,000')
+    expect(screen.getByText('FY2025 balance sheet:').parentElement!.textContent).toBe('FY2025 balance sheet: —')
+    expect(screen.getByText('Current period to 30 Oct 2026:').parentElement!.textContent).toBe('Current period to 30 Oct 2026: $7,500 (used)')
+    expect(screen.getByText(/Only the latest balance sheet is used by the prediction/)).toBeTruthy()
   })
 })
 

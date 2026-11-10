@@ -141,7 +141,7 @@ export interface MappedFigure {
  * loan, an ATO account) that is not mapped to anything. Never shown as $0.
  */
 export interface NotIdentified {
-  /** "Not found in the statements — choose the line". */
+  /** "No line is confirmed for money owed to the company …". */
   message: string
   /** Printed lines that look like it and are not mapped, as printed. */
   candidates: string[]
@@ -175,18 +175,85 @@ export function columnSourceLabel(c: ComparisonColumn): string {
   return c.kind === 'annual' ? `${c.key} balance sheet` : `current period at ${dayLabel(c.periodEnd)}`
 }
 
-export function predictionFinancials(comparison: PrintedComparison, mapping: MappingEntry[], names: RelatedNames = {}): PredictionFinancials {
-  const bsTable = comparison.tables.find((t) => t.kind === 'balance_sheet')
-  // The latest column the balance sheet prints anything in.
-  const index = bsTable ? [...comparison.columns.keys()].reverse().find((i) => bsTable.rows.some((r) => r.cells[i].printed)) : undefined
-  const column = index === undefined ? null : comparison.columns[index]
-  // Mapped lines printing "-" (nil) count as $0; a mapped line not printed at all does not.
-  const printedNil = (meaning: Meaning) => {
-    if (index === undefined) return false
-    const keys = mapping.filter((m) => m.meaning === meaning && !m.nonePrinted).map((m) => m.rowKey)
-    const rows = comparison.tables.flatMap((t) => t.rows).filter((row) => keys.includes(row.key))
-    return rows.length > 0 && rows.every((row) => row.cells[index].printed && row.cells[index].value === null)
+/** For staff, beside a figure: "FY2025 balance sheet", "Current period to 30 Oct 2026" (never "FY2027" for a part-year). */
+export function balanceSheetLabel(c: ComparisonColumn): string {
+  return c.kind === 'annual' ? `FY${c.financialYear} balance sheet` : `Current period to ${dayLabel(c.periodEnd)}`
+}
+
+/** Mapped lines all printing "-" (nil) in this column count as $0; a mapped line not printed at all does not. */
+function printedNilAt(comparison: PrintedComparison, mapping: MappingEntry[], meaning: Meaning, index: number): boolean {
+  const keys = mapping.filter((m) => m.meaning === meaning && !m.nonePrinted).map((m) => m.rowKey)
+  const rows = comparison.tables.flatMap((t) => t.rows).filter((row) => keys.includes(row.key))
+  return rows.length > 0 && rows.every((row) => row.cells[index].printed && row.cells[index].value === null)
+}
+
+/**
+ * The loan accounts in one balance sheet column, each line on the side its
+ * printed sign says, whichever of the two meanings it was confirmed under
+ * (old reader: a negative loan under liabilities is a receivable, wherever the
+ * model had filed it). Null on a side: not identified for that column.
+ */
+function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], index: number): { to: MappedFigure | null; by: MappedFigure | null } {
+  const column = comparison.columns[index]
+  const base = { source: columnSourceLabel(column), asOf: column.periodEnd }
+  const recv = resolveMeaning(comparison, mapping, 'loan_receivable')
+  const pay = resolveMeaning(comparison, mapping, 'loan_payable')
+  const to: MappedLine[] = []
+  const by: MappedLine[] = []
+  const moved = (l: MappedLine, toCompany: boolean): MappedLine => ({
+    ...l,
+    value: -l.value,
+    rule: `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
+  })
+  for (const l of recv.years[index].lines) (l.value >= 0 ? to : by).push(l.value >= 0 ? l : moved(l, false))
+  for (const l of pay.years[index].lines) (l.value >= 0 ? by : to).push(l.value >= 0 ? l : moved(l, true))
+  const sum = (lines: MappedLine[]) => Math.round(lines.reduce((t, l) => t + l.value, 0) * 100) / 100
+  const side = (lines: MappedLine[], r: ResolvedMeaning, meaning: Meaning): MappedFigure | null => {
+    if (lines.length > 0) return { ...base, amount: sum(lines), lines }
+    // Nothing on this side: $0 only when staff confirmed none is printed, or its lines print "-".
+    if (r.status === 'none' || (r.status === 'mapped' && printedNilAt(comparison, mapping, meaning, index))) return { ...base, amount: 0, lines: [] }
+    // Its mapped lines are printed but all on the other side.
+    if (r.status === 'mapped' && r.years[index].lines.length > 0) return { ...base, amount: 0, lines: [] }
+    return null
   }
+  return { to: side(to, recv, 'loan_receivable'), by: side(by, pay, 'loan_payable') }
+}
+
+/** Columns the balance sheet prints anything in, oldest first: the years a loan can be read for. */
+function balanceSheetColumns(comparison: PrintedComparison): number[] {
+  const bsTable = comparison.tables.find((t) => t.kind === 'balance_sheet')
+  if (!bsTable) return []
+  return [...comparison.columns.keys()].filter((i) => bsTable.rows.some((r) => r.cells[i].printed))
+}
+
+export interface LoanYear {
+  column: ComparisonColumn
+  /** "FY2025 balance sheet", "Current period to 30 Oct 2026". */
+  label: string
+  /** Owed to the company (gross); null: not identified for that year. */
+  owedTo: number | null
+  /** Owed by the company; null: not identified for that year. */
+  owedBy: number | null
+}
+
+/**
+ * The director (related-party) loan accounts for every balance sheet on file,
+ * oldest first, by the same rules as the prediction's (which uses only the
+ * latest). For staff, beside the prediction's figure: context, not an input.
+ */
+export function loanHistory(comparison: PrintedComparison, mapping: MappingEntry[]): LoanYear[] {
+  return balanceSheetColumns(comparison).map((i) => {
+    const { to, by } = loanSidesAt(comparison, mapping, i)
+    const column = comparison.columns[i]
+    return { column, label: balanceSheetLabel(column), owedTo: to?.amount ?? null, owedBy: by?.amount ?? null }
+  })
+}
+
+export function predictionFinancials(comparison: PrintedComparison, mapping: MappingEntry[], names: RelatedNames = {}): PredictionFinancials {
+  // The latest column the balance sheet prints anything in.
+  const index = balanceSheetColumns(comparison).pop()
+  const column = index === undefined ? null : comparison.columns[index]
+  const printedNil = (meaning: Meaning) => index !== undefined && printedNilAt(comparison, mapping, meaning, index)
   const figure = (meaning: Meaning, { absolute = false, noneIsZero = false } = {}): MappedFigure | null => {
     if (!column || index === undefined) return null
     const r = resolveMeaning(comparison, mapping, meaning)
@@ -212,35 +279,8 @@ export function predictionFinancials(comparison: PrintedComparison, mapping: Map
   const loanCandidates = unmapped([...suggested.loan_receivable, ...suggested.loan_payable])
   const atoCandidates = unmapped(suggested.ato_debt)
 
-  // The loan accounts, each line on the side its printed sign says, whichever
-  // of the two meanings it was confirmed under (old reader: a negative loan
-  // under liabilities is a receivable, wherever the model had filed it).
-  const sides = loanSides()
-  function loanSides(): { to: MappedFigure | null; by: MappedFigure | null } {
-    if (!column || index === undefined) return { to: null, by: null }
-    const base = { source: columnSourceLabel(column), asOf: column.periodEnd }
-    const recv = resolveMeaning(comparison, mapping, 'loan_receivable')
-    const pay = resolveMeaning(comparison, mapping, 'loan_payable')
-    const to: MappedLine[] = []
-    const by: MappedLine[] = []
-    const moved = (l: MappedLine, toCompany: boolean): MappedLine => ({
-      ...l,
-      value: -l.value,
-      rule: `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
-    })
-    for (const l of recv.years[index].lines) (l.value >= 0 ? to : by).push(l.value >= 0 ? l : moved(l, false))
-    for (const l of pay.years[index].lines) (l.value >= 0 ? by : to).push(l.value >= 0 ? l : moved(l, true))
-    const sum = (lines: MappedLine[]) => Math.round(lines.reduce((t, l) => t + l.value, 0) * 100) / 100
-    const side = (lines: MappedLine[], r: ResolvedMeaning, meaning: Meaning): MappedFigure | null => {
-      if (lines.length > 0) return { ...base, amount: sum(lines), lines }
-      // Nothing on this side: $0 only when staff confirmed none is printed, or its lines print "-".
-      if (r.status === 'none' || (r.status === 'mapped' && printedNil(meaning))) return { ...base, amount: 0, lines: [] }
-      // Its mapped lines are printed but all on the other side.
-      if (r.status === 'mapped' && r.years[index].lines.length > 0) return { ...base, amount: 0, lines: [] }
-      return null
-    }
-    return { to: side(to, recv, 'loan_receivable'), by: side(by, pay, 'loan_payable') }
-  }
+  // The loan accounts in the latest column (loanSidesAt).
+  const sides = column && index !== undefined ? loanSidesAt(comparison, mapping, index) : { to: null, by: null }
 
   const loanReceivable = sides.to
   const atoDebt = figure('ato_debt')
@@ -249,8 +289,8 @@ export function predictionFinancials(comparison: PrintedComparison, mapping: Map
     notIdentified.loanReceivable = {
       message:
         loanCandidates.length > 0
-          ? `Not identified — the ${columnSourceLabel(column)} prints ${loanCandidates.map((l) => `“${l}”`).join(', ')}, not mapped to a loan account. Choose the line.`
-          : 'Not found in the statements — choose the line.',
+          ? `No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (${balanceSheetLabel(column).replace(/^Current period to/, 'the current period to')}), which prints ${loanCandidates.map((l) => `“${l}”`).join(', ')}: choose the line, or confirm none is printed.`
+          : `No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (${balanceSheetLabel(column).replace(/^Current period to/, 'the current period to')}): choose the line, or confirm none is printed.`,
       candidates: loanCandidates,
     }
   }

@@ -21,13 +21,43 @@ export interface TitleReader {
 }
 
 const LANG_PATH = path.join(process.cwd(), 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int')
+/**
+ * tesseract.js finds its background worker relative to its own files; inside
+ * Next.js those can be moved, and the worker then never starts (no error, it
+ * just waits). Given by an explicit path, as the language model is.
+ */
+const WORKER_PATH = path.join(process.cwd(), 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js')
+/** Starting takes about a second; past this, it is not going to. */
+const START_LIMIT_MS = 45_000
+
+export class TitleReaderError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TitleReaderError'
+  }
+}
 
 export async function tesseractTitles(): Promise<TitleReader> {
-  const worker: Worker = await createWorker('eng', 1, {
-    langPath: LANG_PATH,
-    gzip: true,
-    cachePath: path.join(os.tmpdir(), 'mcr-tesseract'),
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TitleReaderError('The page reader (Tesseract) did not start.')), START_LIMIT_MS)
   })
+  let worker: Worker
+  try {
+    worker = await Promise.race([
+      createWorker('eng', 1, {
+        langPath: LANG_PATH,
+        workerPath: WORKER_PATH,
+        gzip: true,
+        cachePath: path.join(os.tmpdir(), 'mcr-tesseract'),
+      }),
+      limit,
+    ])
+  } catch (err) {
+    throw err instanceof TitleReaderError ? err : new TitleReaderError(`The page reader (Tesseract) could not start: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200))
+  } finally {
+    clearTimeout(timer)
+  }
   return {
     async titleLines(image) {
       const top = await sharp(image.bytes)
