@@ -166,8 +166,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
 
       {/* Totals that do not add up: at the bottom, never in the way (they do not stop the prediction). */}
       <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
-
-      <FilesPanel comparison={comparison} />
     </div>
   )
 }
@@ -229,58 +227,3 @@ function SourcePanel({ clientId, figure, onClose }: { clientId: string; figure: 
   )
 }
 
-/** Each uploaded file: what was read from it, or exactly why not. */
-function FilesPanel({ comparison }: { comparison: PrintedComparison }) {
-  if (comparison.documents.length === 0) return null
-  return (
-    <section className="no-print">
-      <h2 className="text-sm font-semibold text-foreground mb-2">Files read</h2>
-      <ul className="divide-y divide-border/40 rounded-lg border border-border/60 text-xs">
-        {comparison.documents.map((d) => (
-          <li key={d.documentId} className="px-3 py-2">
-            <p className="font-medium text-foreground">{d.filename}</p>
-            {d.found && <p className="text-foreground/60">{d.found}</p>}
-            {d.message && <p className={d.status === 'read' && !d.issues.length ? 'text-foreground/50' : 'text-destructive'}>{d.message}</p>}
-            {d.scan && <ScanPages scan={d.scan} />}
-            {d.issues.filter((i) => i.text).map((i, n) => (
-              <p key={n} className="font-mono text-[11px] text-foreground/50">
-                Page {i.page}: &ldquo;{i.text}&rdquo;
-              </p>
-            ))}
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-/** A file with scanned pages: which pages are scans, which were read as statements, which skipped and why. */
-function ScanPages({ scan }: { scan: NonNullable<PrintedComparison['documents'][number]['scan']> }) {
-  const scanned = scan.pages.filter((p) => p.scanned)
-  const read = scanned.filter((p) => p.role === 'statement')
-  const skipped = scanned.filter((p) => p.role === 'skipped')
-  const list = (pages: typeof scanned) => pages.map((p) => p.page).join(', ')
-  return (
-    <div className="mt-1 space-y-0.5 text-foreground/60">
-      <p>
-        Scanned pages: {list(scanned)}
-        {scan.state === 'pending' ? ' (being read)' : ''}.
-      </p>
-      {read.length > 0 && <p>Read as statements: {read.map((p) => `${p.page} (${p.note ?? 'statement'})`).join(', ')}.</p>}
-      {skipped.length > 0 && (
-        <details>
-          <summary className="cursor-pointer">Skipped: {list(skipped)}</summary>
-          <ul className="mt-0.5 space-y-0.5 pl-3">
-            {skipped.map((p) => (
-              <li key={p.page}>
-                Page {p.page}: {p.note}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {scan.singleReading && <p className="text-warning">Read by one reader only: every figure is a single reading — check them.</p>}
-      <p className="text-foreground/50">A scan is read by two readers and checked by staff. The accountant&apos;s digital export (a PDF from their software) is always exact: ask for it.</p>
-    </div>
-  )
-}
