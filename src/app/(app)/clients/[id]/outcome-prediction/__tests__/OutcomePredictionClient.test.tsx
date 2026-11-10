@@ -490,7 +490,7 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
     expect(bodyOf(fetchMock).directorLoanAtAppointment).toBe(false)
   })
 
-  it('shows the payable and net beside the amount, gross by default', () => {
+  it('does not list the lines owed by the company or the net under the amount', () => {
     render(
       <OutcomePredictionClient
         clientId="c1"
@@ -515,7 +515,9 @@ describe('director loan: fresh balance sheet over a stale saved value', () => {
         readiness={READY}
       />,
     )
-    expect(screen.getByText('“Owner Funds Introduced” $40,000.00 owed by the company; net $80,000.00 owed to the company')).toBeTruthy()
+    expect(screen.queryByText(/owed by the company; net/)).toBeNull()
+    // The amount used is still the gross figure.
+    expect(screen.getAllByText(/\$120,000/).length).toBeGreaterThan(0)
   })
 
   it('says "not identified" with the line to choose, never $0, and does not run', () => {

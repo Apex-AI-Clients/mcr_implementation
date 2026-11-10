@@ -974,9 +974,6 @@ function InputPanel(props: InputPanelProps) {
             />
             )}
             <DirectorLoanYears years={auto.directorLoanYears ?? []} notIdentified={Boolean(auto.directorLoan?.notIdentified)} basis={auto.directorLoan?.basis ?? 'gross'} />
-            {auto.directorLoan?.info && !auto.directorLoan.notIdentified && (
-              <p className="-mt-2 text-foreground/50">{auto.directorLoan.info}</p>
-            )}
           </dl>
         </div>
 
