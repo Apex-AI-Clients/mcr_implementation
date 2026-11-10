@@ -15,11 +15,13 @@ interface Props {
 }
 
 /**
- * Red "Needs review" when a hard check fails — a total, the balance-sheet
- * equation, a profit identity (±$5) or the retained-earnings roll-forward —
- * in every deployment. The PDF and CSV stay locked until a staff member ticks
- * that they checked the figures against the source documents; the tick covers
- * this build only. Once ticked, "Reviewed by X on <date>" prints on the PDF.
+ * "Totals that don't add up", at the bottom of the comparison page, when a
+ * hard check fails — a total, the balance-sheet equation, a profit identity
+ * (±$5) or the retained-earnings roll-forward. It never stops the SBR
+ * prediction (Gabby, 10 Nov 2026). The PDF and CSV export wait for a staff
+ * member to tick that they checked the figures against the source documents;
+ * the tick covers this build only. Once ticked, "Reviewed by X on <date>"
+ * prints on the PDF.
  */
 export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, onChecked }: Props) {
   const [saving, setSaving] = useState(false)
@@ -44,10 +46,13 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
   }
 
   return (
-    <div role="status" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3">
-      <p className="flex items-center gap-2 text-sm font-semibold text-destructive">
-        <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-        Needs review: {failures.length === 1 ? 'a figure does' : `${failures.length} figures do`} not reconcile
+    <section aria-label="Totals that don't add up" className="rounded-lg border border-warning/40 bg-warning/5 p-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+        {failures.length === 1 ? '1 total does' : `${failures.length} totals do`} not add up
+      </h2>
+      <p className="mt-1 text-xs text-foreground/65">
+        A printed total does not match the lines above it, as read from the file. Worth a look against the PDF; it does not stop the SBR prediction.
       </p>
       <ul className="mt-2 ml-6 list-disc space-y-1 text-xs text-foreground/75">
         {failures.map((c, i) => (
@@ -58,7 +63,7 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
         ))}
       </ul>
       {/* The reviewed line prints on the PDF; the tick itself does not. */}
-      <div className={`mt-3 border-t border-destructive/20 pt-2 ${done ? '' : 'no-print'}`}>
+      <div className={`mt-3 border-t border-warning/20 pt-2 ${done ? '' : 'no-print'}`}>
         {done ? (
           <p className="flex items-center gap-1.5 text-xs text-foreground/70">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
@@ -70,11 +75,11 @@ export function NeedsReviewBanner({ clientId, failures, generatedAt, checked, on
               <input type="checkbox" checked={false} disabled={saving} onChange={tick} className="accent-accent" />
               I&apos;ve checked these figures against the source documents
             </label>
-            <p className="mt-1 text-[11px] text-foreground/55">The PDF and CSV are locked until then.</p>
+            <p className="mt-1 text-[11px] text-foreground/55">Needed only to export the PDF or CSV.</p>
             {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
           </>
         )}
       </div>
-    </div>
+    </section>
   )
 }

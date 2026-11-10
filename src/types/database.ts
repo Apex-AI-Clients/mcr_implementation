@@ -264,6 +264,7 @@ export type Database = {
           label: string | null
           meaning: string
           row_key: string
+          rule: string | null
         }
         Insert: {
           action: string
@@ -274,6 +275,7 @@ export type Database = {
           label?: string | null
           meaning: string
           row_key: string
+          rule?: string | null
         }
         Update: {
           action?: string
@@ -284,6 +286,7 @@ export type Database = {
           label?: string | null
           meaning?: string
           row_key?: string
+          rule?: string | null
         }
         Relationships: [
           {
@@ -297,6 +300,7 @@ export type Database = {
       }
       client_line_mappings: {
         Row: {
+          auto_rule: string | null
           client_id: string
           confirmed_at: string
           confirmed_by: string
@@ -306,8 +310,10 @@ export type Database = {
           row_key: string
           section_path: string[]
           statement: string | null
+          updated_note: string | null
         }
         Insert: {
+          auto_rule?: string | null
           client_id: string
           confirmed_at?: string
           confirmed_by: string
@@ -317,8 +323,10 @@ export type Database = {
           row_key: string
           section_path?: string[]
           statement?: string | null
+          updated_note?: string | null
         }
         Update: {
+          auto_rule?: string | null
           client_id?: string
           confirmed_at?: string
           confirmed_by?: string
@@ -328,6 +336,7 @@ export type Database = {
           row_key?: string
           section_path?: string[]
           statement?: string | null
+          updated_note?: string | null
         }
         Relationships: [
           {
@@ -335,6 +344,206 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reader_releases: {
+        Row: {
+          first_seen_at: string
+          version: string
+        }
+        Insert: {
+          first_seen_at?: string
+          version: string
+        }
+        Update: {
+          first_seen_at?: string
+          version?: string
+        }
+        Relationships: [
+        ]
+      }
+      scan_figure_choices: {
+        Row: {
+          chosen_at: string
+          chosen_by: string
+          client_id: string
+          column_index: number
+          document_id: string
+          row_key: string
+          source: string
+          value: number | null
+        }
+        Insert: {
+          chosen_at?: string
+          chosen_by: string
+          client_id: string
+          column_index: number
+          document_id: string
+          row_key: string
+          source: string
+          value?: number | null
+        }
+        Update: {
+          chosen_at?: string
+          chosen_by?: string
+          client_id?: string
+          column_index?: number
+          document_id?: string
+          row_key?: string
+          source?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_figure_choices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_figure_choices_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scan_page_readings: {
+        Row: {
+          client_id: string
+          cost_usd: number | null
+          created_at: string
+          document_id: string
+          error: string | null
+          generation_id: string | null
+          id: string
+          job_id: string
+          model: string | null
+          output: Json | null
+          page: number
+          reader: string
+          tokens_in: number | null
+          tokens_out: number | null
+          prompt_version: string | null
+        }
+        Insert: {
+          client_id: string
+          cost_usd?: number | null
+          created_at?: string
+          document_id: string
+          error?: string | null
+          generation_id?: string | null
+          id?: string
+          job_id: string
+          model?: string | null
+          output?: Json | null
+          page: number
+          reader: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          prompt_version?: string | null
+        }
+        Update: {
+          client_id?: string
+          cost_usd?: number | null
+          created_at?: string
+          document_id?: string
+          error?: string | null
+          generation_id?: string | null
+          id?: string
+          job_id?: string
+          model?: string | null
+          output?: Json | null
+          page?: number
+          reader?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          prompt_version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_page_readings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_page_readings_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_page_readings_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "scan_read_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scan_read_jobs: {
+        Row: {
+          client_id: string
+          created_at: string
+          document_id: string
+          done: number
+          finished_at: string | null
+          id: string
+          message: string | null
+          reader_version: string
+          stage: string | null
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          document_id: string
+          done?: number
+          finished_at?: string | null
+          id?: string
+          message?: string | null
+          reader_version: string
+          stage?: string | null
+          status: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          document_id?: string
+          done?: number
+          finished_at?: string | null
+          id?: string
+          message?: string | null
+          reader_version?: string
+          stage?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_read_jobs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_read_jobs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
             referencedColumns: ["id"]
           },
         ]
@@ -1564,6 +1773,7 @@ export type Database = {
           reader_version: string
           statements: Json
           status: string
+          scan: Json | null
         }
         Insert: {
           client_id: string
@@ -1574,6 +1784,7 @@ export type Database = {
           reader_version: string
           statements?: Json
           status: string
+          scan?: Json | null
         }
         Update: {
           client_id?: string
@@ -1584,6 +1795,7 @@ export type Database = {
           reader_version?: string
           statements?: Json
           status?: string
+          scan?: Json | null
         }
         Relationships: [
           {

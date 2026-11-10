@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { suggestMapping } from '@/lib/printed/dictionary'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { PrintedComparisonClient } from './PrintedComparisonClient'
@@ -23,14 +23,17 @@ export async function FinancialsComparisonView({ id, workspace, earlierYears }: 
   const elsewhere = sharedPageRedirect(client, workspace, '/financials-comparison')
   if (elsewhere) redirect(elsewhere)
 
-  const [{ comparison, builtAt }, { data: figuresChecked }, mapping, directors] = await Promise.all([
+  const [loaded, { data: figuresChecked }, stored, names] = await Promise.all([
     loadPrintedComparison(supabase, id, { readMissing: true, comparativeYears: earlierYears }),
     // The "I've checked these figures" tick (hardChecks.ts).
     supabase.from('sbr_readiness_reviews').select('fingerprint, reviewed_by, reviewed_at').eq('client_id', id).eq('item', 'financials').maybeSingle(),
     // Which printed lines mean what, as staff confirmed (migration 0034).
     loadMapping(supabase, id),
-    loadDirectorNames(supabase, id),
+    loadRelatedNames(supabase, id),
   ])
+  // Every meaning staff have not confirmed is auto-selected (autoMapping.ts).
+  const { comparison, builtAt } = loaded
+  const { mapping, possible } = await applyAutoMapping(supabase, id, loaded, stored, names)
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
@@ -43,7 +46,8 @@ export async function FinancialsComparisonView({ id, workspace, earlierYears }: 
         earlierYears={earlierYears}
         aiSummaryEnabled={aiSummariesEnabled()}
         mapping={mapping}
-        suggestions={suggestMapping(comparison, { directors })}
+        suggestions={suggestMapping(comparison, names)}
+        possible={possible}
         initialFiguresChecked={
           figuresChecked ? { fingerprint: figuresChecked.fingerprint, by: figuresChecked.reviewed_by, at: figuresChecked.reviewed_at } : null
         }

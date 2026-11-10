@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/printed/store', () => ({ loadPrintedComparison: vi.fn(async () => ({ comparison: { columns: [], tables: [] } })) }))
-vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []) }))
+vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []), applyAutoMapping: vi.fn(async (_s: unknown, _c: unknown, _l: unknown, saved: unknown) => ({ mapping: saved, possible: {} })), withAutoMapping: vi.fn(async (_s: unknown, _c: unknown, _l: unknown, saved: unknown) => ({ mapping: saved, possible: {}, names: { directors: [], parties: [] } })), loadRelatedNames: vi.fn(async () => ({ directors: [], parties: [] })) }))
 
 import { loadDirectorRisk } from '../directorRiskStore'
 import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'

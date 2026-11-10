@@ -10,6 +10,13 @@ import type { Meaning } from './meanings'
  *   the same under liabilities                    loan account owed by the company
  *   … printed NEGATIVE under liabilities          owed TO the company (the director owes it)
  *   "Owner … Funds Introduced" under liabilities  owed by the company
+ *   "Funds Loaned to Trust - <anyone>", "Loan from
+ *   <person>", "<person> Loan Account" under
+ *   liabilities                                   owed by the company
+ *   a loan line naming the client, a director,
+ *   the trust or the trustee company             related party (its sign says which way)
+ *   finance ("Loan - Dynamoney …", "…: Interest",
+ *   chattel, hire purchase, vehicle/equipment)    never a related-party loan
  *   "Loan 2019" (no lender named), negative under
  *   liabilities or positive under assets          owed to the company
  *   "BAS Payable", "GST", "PAYG", "ATO …"         ATO-related debt
@@ -21,6 +28,16 @@ import type { Meaning } from './meanings'
  */
 
 export type Suggestions = Record<Meaning, string[]>
+
+/**
+ * The names a loan line can name to be a related-party loan: the client's
+ * directors (any line naming one, as before), and the client, the trust and
+ * the trustee company on file (a LOAN line naming one of them).
+ */
+export interface RelatedNames {
+  directors?: readonly string[]
+  parties?: readonly string[]
+}
 
 const pathText = (r: ComparisonRow) => r.path.join(' > ').toLowerCase()
 const under = (r: ComparisonRow, re: RegExp) => re.test(pathText(r))
@@ -34,10 +51,28 @@ const printedAnywhere = (r: ComparisonRow) => r.cells.some((c) => c.printed && t
 const ATO = /\b(ato|bas|gst|payg|activity statement|taxation office|integrated client account)\b/i
 const INCOME_TAX = /\b(income tax|provision for (income )?tax)\b|^taxation$/i
 const SUPER = /\bsuper/i
-const RELATED = /\b(directors?|shareholders?|unitholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced|quarantined)\b|^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
+const RELATED = /\b(directors?|shareholders?|unitholders?|related part(y|ies)|beneficiar(y|ies)|associates?|owner|proprietor|drawings|funds introduced|quarantined)\b/i
+/** "Loan - Aaron Peters": a loan naming a person (two or three words, no lender, vehicle or asset). */
+const PERSON_NAME_LOAN = /^loan\s*[-–]\s*[a-z]+\s+[a-z]+(\s+[a-z]+)?$/i
+/** A trust's beneficiary accounts: unpaid distributions, shown as their own labelled line so staff can untick them. */
+const BENEFICIARY_ACCOUNT = /\bbeneficiar(y|ies)'?s?'?\s+(current\s+)?accounts?\b/i
+export const isBeneficiaryAccount = (label: string) => BENEFICIARY_ACCOUNT.test(label)
+/** Names the statements give a trust's beneficiaries: "Profit Distribution - Jane Example", "Beneficiary - Jane Example". */
+const BENEFICIARY_NAMED = /\b(distributions?|beneficiar(y|ies)'?s?'?(\s+accounts?)?)\s*[-–:]\s*(.+)$/i
 const LOAN_OWED_TO = /\b(loans?|accounts?)\b|^loan\b/i
 /** A loan with no lender, vehicle or person named: "Loan 2019", "Loan - 2023", "Loans" (old reader: director-related). */
 const UNNAMED_LOAN = /^loans?(\s*[-–]?\s*(19|20)\d{2})?$/i
+/** Money lent to the business by whoever is named after it: owed BY the company (under liabilities). */
+const FUNDS_LOANED = /\bfunds (loaned|lent|advanced) to (the )?(trust|company|business|partnership|entity)\b/i
+/** "Loan from John Smith", "John Smith Loan Account": a person's loan (lenders are left out below). */
+const PERSON_LOAN = /^loans? from [a-z]+( [a-z]+){1,2}$|^[a-z]+( [a-z]+){1,2} loan account$/i
+/** A line that is a loan account at all: what a name needs beside it to be a related-party loan. */
+const LOANISH = /\b(loans?|lent|loaned|advances?|funds introduced|loan account|div(ision)? ?7a)\b/i
+/** A Division 7A loan: shown as its own labelled line ("Div 7A") so staff can see it and untick it. */
+const DIV_7A = /\bdiv(ision)? ?7a\b/i
+export const isDiv7A = (label: string) => DIV_7A.test(label)
+/** Finance on a line, whatever else it names: interest, chattel mortgage, hire purchase, leases. */
+const FINANCE_LINE = /:\s*interest\b|\b(unexpired interest|chattel|hire purchase|lease|leasing)\b/i
 /** Money a director put in or took out, which is owed either way without the word "loan". */
 const DIRECTOR_MONEY = /\b(funds introduced|drawings|owner)\b/i
 const NOT_A_LOAN = /\b(borrowing costs?|deposits?|bond|interest)\b/i
@@ -55,6 +90,8 @@ const EQUIPMENT_OR_LENDER = new RegExp(
     'vw|volkswagen|audi|toyota|hino|isuzu|ford|holden|mazda|nissan|mitsubishi|mercedes|benz|bmw|landcruiser|land cruiser|hilux|t cross|tcross|ranger|navara|triton|prado|kia|hyundai|subaru|volvo|kenworth|iveco|fuso|kubota|caterpillar|cat|komatsu|tesla|jeep|lexus|porsche|suzuki|honda|renault|peugeot|skoda|ldv|ram|dmax|d max',
     // Lenders and finance
     'bank|banking|finance|financial|capital|credit|pty|ltd|limited|leasing|lease|funding|lending|lender|ondesk|getcapital|capify|westpac|nab|anz|cba|commonwealth|macquarie|st george|stgeorge|bendigo|suncorp|amex|pepper|latitude|prospa|moula|ato|insurance|premium|mortgage|chattel|hire purchase|hire|unexpired',
+    // Equipment and vehicle financiers
+    'dynamoney|earlypay|flexi ?commercial|flexicommercial|resimac|scotpac|multipli|true pillars|g ?& ?gf|group & general',
   ]
     .map((words) => `\\b(${words})\\b`)
     .join('|') + '|\\bvan\\b(?!\\s+(?!loans?\\b)[a-z]{2,})',
@@ -87,6 +124,33 @@ export function namesDirector(label: string, directors: readonly string[]): bool
     return name.length === 1 ? shared === 1 : shared >= 2
   })
 }
+/** Words a company or trust name shares with any other: never enough to name one. */
+const GENERIC_NAME_WORDS = /\b(pty|ltd|limited|the|and|trust|trustee|family|for|as|atf|co|company|corporation|corp|inc|holdings|group|services)\b/g
+
+/**
+ * A line naming the client, the trust or the trustee company: a one-word name
+ * (once "Pty Ltd", "Family Trust"… are left out) needs that word, a longer
+ * name two of its words. "Doyle Family Trust" is named by "Doyle";
+ * "Example Earthworks & Haulage Pty Ltd" by "Example Earthworks".
+ */
+export function namesParty(label: string, parties: readonly string[]): boolean {
+  const words = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(GENERIC_NAME_WORDS, ' ')
+      .replace(/\b(loans?|less|to|from|account|a c|payable|receivable|owing|funds|loaned|lent)\b/g, ' ')
+      .split(' ')
+      .filter((t) => t.length >= 3)
+  const tokens = words(label)
+  return parties.some((party) => {
+    const name = [...new Set(words(party))]
+    if (name.length === 0) return false
+    const shared = name.filter((t) => tokens.includes(t)).length
+    return name.length === 1 ? shared === 1 : shared >= 2
+  })
+}
+
 /** CVL, Form 509 assets and share capital (migration 0040). */
 const CASH_AT_BANK = /\b(cash at bank|bank accounts?|cheque account|operating account|business (cheque |transaction )?account|savings account|term deposits?)\b/i
 const CASH_ON_HAND = /\b(cash on hand|petty cash|cash in hand|float)\b/i
@@ -127,9 +191,73 @@ function bestPerLayout(rows: ComparisonRow[], rules: RegExp[], columns: number):
   return chosen.map((r) => r.key)
 }
 
-export function suggestMapping(comparison: PrintedComparison, { directors = [] }: { directors?: readonly string[] } = {}): Suggestions {
+export function suggestMapping(comparison: PrintedComparison, names: RelatedNames = {}): Suggestions {
+  const detailed = suggestMappingWithRules(comparison, names)
+  return Object.fromEntries(Object.entries(detailed).map(([m, lines]) => [m, lines.map((l) => l.rowKey)])) as Suggestions
+}
+
+/** A suggested line and the dictionary rule that matched it, in plain English (logged with an auto-selection). */
+export interface SuggestedLine {
+  rowKey: string
+  rule: string
+  /**
+   * A loan naming a person who is not the client, a director, a beneficiary
+   * (as the statements name them) or the trustee company: never auto-selected,
+   * offered as a possible line (autoMapping.ts).
+   */
+  unknownPerson?: boolean
+}
+
+/** A loan line that names a person not on file: "Loan - Aaron Peters", "Loan from Aaron Peters". */
+export function namesUnknownPerson(label: string, { directors = [], parties = [] }: RelatedNames): boolean {
+  const t = label.trim()
+  if (!PERSON_NAME_LOAN.test(t) && !PERSON_LOAN.test(t)) return false
+  // "Loan - Related Parties", "Loan - Director Smith": related-party words, not an unknown person.
+  if (EQUIPMENT_OR_LENDER.test(t) || RELATED.test(t)) return false
+  return !namesDirector(t, directors) && !namesParty(t, parties)
+}
+
+/** The beneficiaries the balance sheet names ("Profit Distribution - Jane Example"): related parties of a trust. */
+export function beneficiaryNames(labels: string[]): string[] {
+  return [...new Set(labels.flatMap((l) => {
+    const m = BENEFICIARY_NAMED.exec(l.trim())
+    return m ? [m[4].trim()] : []
+  }))].filter((n) => /[a-z]/i.test(n))
+}
+
+/** Whether a balance sheet line is a related-party loan, and why: null when it is not one. */
+export function relatedLoanReason(label: string, { directors = [], parties = [] }: RelatedNames): string | null {
+  if (FINANCE_LINE.test(label)) return null
+  if (FUNDS_LOANED.test(label)) return '“Funds loaned to …” is money lent to the business.'
+  if (NOT_A_LOAN.test(label)) return null
+  if (LOANISH.test(label) && namesParty(label, parties)) return 'A loan line naming the client, the trust or the trustee company on file.'
+  if (EQUIPMENT_OR_LENDER.test(label)) return null
+  if (namesDirector(label, directors)) return 'Names a director on file.'
+  if (PERSON_LOAN.test(label.trim())) return 'A loan from (or loan account of) a person.'
+  if (isBeneficiaryAccount(label)) return 'Beneficiary accounts — unpaid distributions owed to the beneficiaries.'
+  if (RELATED.test(label)) return 'Labelled as a director, shareholder, related-party, owner or beneficiary account.'
+  if (PERSON_NAME_LOAN.test(label.trim())) return 'A loan naming a person.'
+  return null
+}
+
+const RULE: Partial<Record<Meaning, string>> = {
+  revenue: 'The total income (or sales) line the profit and loss prints.',
+  net_profit: 'The net profit (or loss) line the profit and loss prints.',
+  net_assets: 'The net assets (or total equity) line the balance sheet prints.',
+  ato_debt: 'A liability labelled ATO, BAS, GST, PAYG or activity statement (not super, not income tax).',
+  income_tax_payable: 'A liability labelled income tax payable, provision for income tax or taxation.',
+  credit_cards: 'A liability labelled credit card, Amex, Visa or Mastercard.',
+  cash_loans: 'A liability labelled loan, chattel mortgage, hire purchase, finance or mortgage (not a related-party loan).',
+  bank_overdraft: 'An overdraft, or a bank account printed under liabilities.',
+  trade_suppliers: 'A liability labelled trade creditors, accounts payable or creditors.',
+}
+
+export function suggestMappingWithRules(comparison: PrintedComparison, names: RelatedNames = {}): Record<Meaning, SuggestedLine[]> {
   const pl = comparison.tables.find((t) => t.kind === 'profit_and_loss')?.rows ?? []
   const bs = comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? []
+  const directors = names.directors ?? []
+  // A trust's beneficiaries, as its balance sheet names them, are related parties too.
+  const parties = [...(names.parties ?? []), ...beneficiaryNames(bs.map((r) => r.label))]
   const n = comparison.columns.length
   const lines = bs.filter((r) => r.style === 'line' && printedAnywhere(r))
   const taken = new Set<string>()
@@ -143,8 +271,7 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
   const revenueRows = pl.filter((r) => r.style !== 'total' && !(r.style === 'subtotal' && (/\bother\b/i.test(section(r)) || netOfCosts(pl, r))))
   const incomeTax = pick(lines.filter((r) => isLiability(r) && INCOME_TAX.test(r.label)))
   const ato = pick(lines.filter((r) => isLiability(r) && ATO.test(r.label) && !SUPER.test(r.label)))
-  const related = (r: ComparisonRow) =>
-    (RELATED.test(r.label) || namesDirector(r.label, directors)) && !NOT_A_LOAN.test(r.label) && !EQUIPMENT_OR_LENDER.test(r.label)
+  const related = (r: ComparisonRow) => relatedLoanReason(r.label, { directors, parties }) !== null
   // The newest printed amount says which way a loan account is owed (mapping.ts readLoanLine).
   const latest = (r: ComparisonRow) => {
     for (let i = r.cells.length - 1; i >= 0; i--) {
@@ -158,9 +285,13 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
     (isAsset(r) && latest(r) >= 0 && ((related(r) && (LOAN_OWED_TO.test(r.label) || DIRECTOR_MONEY.test(r.label))) || unnamedLoan(r))) ||
     (isLiability(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
   // Old reader: an unnamed loan under liabilities is the director's, owed by the company.
+  // "Funds loaned to the trust" under liabilities is owed by it, whatever the sign.
+  const fundsLoaned = (r: ComparisonRow) => isLiability(r) && FUNDS_LOANED.test(r.label)
   const owedBy = (r: ComparisonRow) =>
-    (isLiability(r) && latest(r) >= 0 && (related(r) || unnamedLoan(r))) || (isAsset(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
-  const loanReceivable = pick(lines.filter(owedTo))
+    fundsLoaned(r) ||
+    (isLiability(r) && latest(r) >= 0 && (related(r) || unnamedLoan(r))) ||
+    (isAsset(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
+  const loanReceivable = pick(lines.filter((r) => owedTo(r) && !fundsLoaned(r)))
   const loanPayable = pick(lines.filter(owedBy))
   const creditCards = pick(lines.filter((r) => isLiability(r) && CREDIT_CARD.test(r.label)))
   const overdraft = pick(lines.filter((r) => isLiability(r) && (OVERDRAFT.test(r.label) || under(r, OVERDRAFT) || BANK_ACCOUNT.test(r.label.trim()))))
@@ -175,7 +306,7 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
   const plant = pick(lines.filter((r) => isAsset(r) && (PLANT.test(r.label) || (/depreciation/i.test(r.label) && PLANT.test(section(r))))))
   const shareCapital = pick(bs.filter((r) => r.style === 'line' && printedAnywhere(r) && EQUITY.test(section(r)) && SHARE_CAPITAL.test(r.label)))
 
-  return {
+  const keys: Record<Meaning, string[]> = {
     // One printed line each: the best match.
     revenue: bestPerLayout(revenueRows, REVENUE, n).slice(0, 1),
     net_profit: bestPerLayout(pl, NET_PROFIT, n).slice(0, 1),
@@ -197,4 +328,32 @@ export function suggestMapping(comparison: PrintedComparison, { directors = [] }
     other_assets: [],
     share_capital: shareCapital,
   }
+  const byKey = new Map([...bs, ...pl].map((r) => [r.key, r]))
+  const loanRule = (meaning: 'loan_receivable' | 'loan_payable', key: string) => {
+    const r = byKey.get(key)
+    if (!r) return 'A loan account line.'
+    const why = relatedLoanReason(r.label, { directors, parties }) ?? 'A loan with no lender, vehicle or person named.'
+    const side = isLiability(r) ? 'liabilities' : 'assets'
+    const sign = latest(r) < 0 ? 'negative' : 'positive'
+    const div7a = isDiv7A(r.label)
+      ? 'Div 7A loan (counted; untick it if it should not be). '
+      : isBeneficiaryAccount(r.label)
+        ? 'Beneficiary accounts — unpaid distributions (counted; untick it if it should not be). '
+        : ''
+    return `${div7a}${why} Printed ${sign} under ${side}, so it is owed ${meaning === 'loan_receivable' ? 'TO' : 'BY'} the company.`
+  }
+  return Object.fromEntries(
+    (Object.keys(keys) as Meaning[]).map((m) => [
+      m,
+      keys[m].map((rowKey) => {
+        const loan = m === 'loan_receivable' || m === 'loan_payable'
+        const label = byKey.get(rowKey)?.label ?? ''
+        return {
+          rowKey,
+          rule: loan ? loanRule(m, rowKey) : (RULE[m] ?? 'Matched by its printed label.'),
+          ...(loan && namesUnknownPerson(label, { directors, parties }) ? { unknownPerson: true } : {}),
+        }
+      }),
+    ]),
+  ) as Record<Meaning, SuggestedLine[]>
 }

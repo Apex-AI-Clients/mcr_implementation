@@ -1,6 +1,6 @@
 import type { CellSource, ComparisonColumn, ComparisonRow, PrintedComparison } from './compare'
 import { KEY_FIGURES, MEANINGS, type Meaning } from './meanings'
-import { suggestMapping } from './dictionary'
+import { suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
 
 /**
@@ -18,6 +18,13 @@ export interface MappingEntry {
   nonePrinted: boolean
   confirmedBy: string
   confirmedAt: string
+  /** Set when auto-selected (autoMapping.ts): the rule used, in plain English. Null or absent: staff chose it. */
+  autoRule?: string | null
+  /**
+   * Set when a staff answer given under an older reader was switched to the
+   * lines the current reader matches: "Updated after a reading fix (was: …)".
+   */
+  updatedNote?: string | null
 }
 
 export interface MappedLine {
@@ -168,11 +175,7 @@ export function columnSourceLabel(c: ComparisonColumn): string {
   return c.kind === 'annual' ? `${c.key} balance sheet` : `current period at ${dayLabel(c.periodEnd)}`
 }
 
-export function predictionFinancials(
-  comparison: PrintedComparison,
-  mapping: MappingEntry[],
-  { directors = [] }: { directors?: readonly string[] } = {},
-): PredictionFinancials {
+export function predictionFinancials(comparison: PrintedComparison, mapping: MappingEntry[], names: RelatedNames = {}): PredictionFinancials {
   const bsTable = comparison.tables.find((t) => t.kind === 'balance_sheet')
   // The latest column the balance sheet prints anything in.
   const index = bsTable ? [...comparison.columns.keys()].reverse().find((i) => bsTable.rows.some((r) => r.cells[i].printed)) : undefined
@@ -199,7 +202,7 @@ export function predictionFinancials(
   // ATO account (dictionary.ts) and are mapped to nothing.
   const mappedKeys = new Set(mapping.filter((m) => !m.nonePrinted).map((m) => m.rowKey))
   const rows = comparison.tables.flatMap((t) => t.rows)
-  const suggested = suggestMapping(comparison, { directors })
+  const suggested = suggestMapping(comparison, names)
   const unmapped = (keys: string[]) =>
     keys
       .filter((k) => !mappedKeys.has(k))

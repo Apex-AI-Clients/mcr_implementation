@@ -13,7 +13,7 @@ vi.mock('@/lib/sbr/loadReadiness', () => ({ loadReadiness: vi.fn() }))
 vi.mock('@/lib/printed/store', () => ({
   loadPrintedComparison: vi.fn(async () => ({ comparison: { columns: [], tables: [], failures: [], documents: [], annualYears: 0 }, builtAt: null, unread: 0 })),
 }))
-vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []), loadDirectorNames: vi.fn(async () => []) }))
+vi.mock('@/lib/printed/mappingStore', () => ({ loadMapping: vi.fn(async () => []), loadDirectorNames: vi.fn(async () => []), applyAutoMapping: vi.fn(async (_s: unknown, _c: unknown, _l: unknown, saved: unknown) => ({ mapping: saved, possible: {} })), withAutoMapping: vi.fn(async (_s: unknown, _c: unknown, _l: unknown, saved: unknown) => ({ mapping: saved, possible: {}, names: { directors: [], parties: [] } })), loadRelatedNames: vi.fn(async () => ({ directors: [], parties: [] })) }))
 // A confirmed loan account (none owed), so these tests are about the creditors alone.
 vi.mock('@/lib/printed/mapping', () => ({
   predictionFinancials: vi.fn(() => ({

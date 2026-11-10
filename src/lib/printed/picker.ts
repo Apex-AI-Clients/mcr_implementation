@@ -27,7 +27,7 @@ const isLoanLine = (r: ComparisonRow) =>
   !/equity|capital|reserves/.test((r.path[r.path.length - 1] ?? '').toLowerCase()) &&
   /\b(loans?|directors?|shareholders?|related|associates?|associated|beneficiar(y|ies))\b/i.test(r.label)
 
-const PLAUSIBLE: Record<Meaning, (r: ComparisonRow) => boolean> = {
+export const PLAUSIBLE: Record<Meaning, (r: ComparisonRow) => boolean> = {
   revenue: (r) => !isExpenseSection(r) && /\b(income|sales?|revenue|turnover|fees?)\b/i.test(`${r.label} ${r.path.join(' ')}`) && !/\b(profit|loss|tax)\b/i.test(r.label),
   net_profit: (r) => r.style === 'total' || /\b(profit|loss|earnings|surplus|deficit)\b/i.test(r.label) || /^net income\b/i.test(r.label),
   net_assets: (r) => /\bnet assets\b|\bequity\b|\btrust funds\b|\bnet liabilities\b/i.test(r.label),

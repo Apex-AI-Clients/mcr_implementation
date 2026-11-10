@@ -1,5 +1,5 @@
 import { verifyStatement, type TotalCheck } from './verify'
-import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind } from './types'
+import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind, ScanCell, ScanSummary } from './types'
 
 /**
  * The as-printed comparison: a client's financial statement PDFs, read by
@@ -20,6 +20,9 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  *             and line: the own report's figure stays, with a note.
  *   Checks    every printed total of every report used, against its lines
  *             (verify.ts). A failure is a hard check: Needs review.
+ *   Scans     a figure read from a scanned page (by Claude, src/lib/scan)
+ *             carries that reading and where the line is on the page; its
+ *             totals are checked like any other.
  */
 
 export interface ComparisonDocument {
@@ -64,6 +67,8 @@ export interface ComparisonCell {
   restated: Restatement[]
   /** A printed total that does not add up (verify.ts), or adds up only to rounding. */
   check: TotalCheck['status'] | null
+  /** Read from a scanned page: the reading (or a staff correction), and where the line is on the page (for its crop). */
+  scan?: ScanCell & { key: string; documentId: string; page: number; band: [number, number] | null; column: number }
 }
 
 export interface ComparisonRow {
@@ -102,6 +107,8 @@ export interface DocumentUse {
   /** For staff: why it is not used, or what could not be read. */
   message: string | null
   issues: PrintedRead['issues']
+  /** The PDF has scanned pages: which, what was read, what was skipped. */
+  scan?: ScanSummary
 }
 
 export interface PrintedComparison {
@@ -268,6 +275,32 @@ function mergeOrder(order: { key: string; row: PrintedRow }[], rows: BlockRow[])
   }
 }
 
+/**
+ * The same printed line across years when a report's section path differs
+ * above the line's own heading (a scan read with "Non-Current Liabilities"
+ * where another year prints "Liabilities › Non-Current Liabilities"): the
+ * label and the DEEPEST heading match, and it is that heading's n-th such line.
+ * Such a line takes the key the newer report gave it, so saved choices
+ * (keyed on the newer report's lines) keep finding their row.
+ */
+function canonicalKeys(kind: PrintedStatementKind) {
+  const byShape = new Map<string, string>()
+  return (rows: BlockRow[]) => {
+    const own = new Set(rows.map((r) => r.key))
+    const count = new Map<string, number>()
+    for (const r of rows) {
+      const shape = `${kind}|${norm(r.row.path[r.row.path.length - 1] ?? '')}|${norm(r.row.label)}|${r.row.style === 'heading' ? 'h' : 'v'}`
+      const n = count.get(shape) ?? 0
+      count.set(shape, n + 1)
+      const id = `${shape}#${n}`
+      const known = byShape.get(id)
+      if (known === undefined) byShape.set(id, r.key)
+      // Only where this report has no line under the newer key itself.
+      else if (known !== r.key && !own.has(known)) r.key = known
+    }
+  }
+}
+
 const sameAmount = (a: PrintedAmount, b: PrintedAmount) =>
   typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) < 0.005 : a === b
 
@@ -299,6 +332,9 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
     // The latest annual year's report sets the order; then newer to older; the current period last.
     const annualIdx = columns.map((c, i) => (c.kind === 'annual' ? i : -1)).filter((i) => i >= 0 && blocks[i].length)
     const orderIdx = [...annualIdx.reverse(), ...columns.map((c, i) => (c.kind === 'current_period' && blocks[i].length ? i : -1)).filter((i) => i >= 0)]
+    // Newest report first: its keys are the ones the others take.
+    const canonical = canonicalKeys(kind)
+    for (const i of [...orderIdx, ...columns.keys()].filter((i, k, all) => all.indexOf(i) === k)) canonical(blocks[i])
     const order: { key: string; row: PrintedRow }[] = []
     for (const i of orderIdx) mergeOrder(order, blocks[i])
 
@@ -340,7 +376,9 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
       for (const inst of instances) {
         if (inst.statement.kind !== kind || inst.own || !matches(inst, col) || inst.doc === sources[i]) continue
         if (out.some((o) => o.inst.doc === inst.doc)) continue
-        out.push({ inst, rows: block(inst.doc, kind, col, instances) })
+        const rows = block(inst.doc, kind, col, instances)
+        canonical(rows)
+        out.push({ inst, rows })
       }
       return out
     })
@@ -366,6 +404,7 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
             }
           }
         }
+        const scanCell = found?.row.scan?.cells[found.column]
         return found
           ? {
               printed: true,
@@ -373,6 +412,9 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
               source: sourceOf(sources[i]!, found),
               restated,
               check: checkByCell.get(`${key}#${i}`) ?? null,
+              ...(scanCell
+                ? { scan: { ...scanCell, key: found.row.scan!.key, documentId: sources[i]!.documentId, page: found.row.page, band: found.row.scan!.band, column: found.column } }
+                : {}),
             }
           : { printed: false, value: null, source: null, restated, check: null }
       }),
@@ -384,6 +426,7 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
   return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length, hiddenComparativeYears: hiddenYears }
 }
 
+
 function describeDocuments(docs: ComparisonDocument[], used: Set<string>): DocumentUse[] {
   return docs.map((doc) => {
     const read = doc.read
@@ -392,7 +435,9 @@ function describeDocuments(docs: ComparisonDocument[], used: Set<string>): Docum
       ? read.statements.map((s) => `${s.title}: ${s.columns.map((c) => (c.kind === 'annual' ? fyLabel(c.financialYear) : `to ${c.periodEnd}`)).join(', ')}`).join(' · ')
       : null
     const message =
-      read.status === 'no_text_layer'
+      read.status === 'scan_pending'
+        ? (read.scan?.message ?? 'Scanned pages are being read.')
+        : read.status === 'no_text_layer'
         ? NO_TEXT_LAYER_FOR_STAFF
         : read.status === 'failed'
           ? read.issues.map((i) => i.message).join(' ')
@@ -403,6 +448,6 @@ function describeDocuments(docs: ComparisonDocument[], used: Set<string>): Docum
             : used.has(doc.documentId)
               ? null
               : 'Not used: each year it prints comes from another report.'
-    return { documentId: doc.documentId, filename: doc.filename, status: read.status, found, used: used.has(doc.documentId), message, issues: read.issues }
+    return { documentId: doc.documentId, filename: doc.filename, status: read.status, found, used: used.has(doc.documentId), message, issues: read.issues, ...(read.scan ? { scan: read.scan } : {}) }
   })
 }

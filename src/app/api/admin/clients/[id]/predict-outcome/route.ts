@@ -61,7 +61,7 @@ import {
   type IcaRow,
 } from '@/lib/sbr/creditorDebt'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadDirectorNames, loadMapping } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { directorLoanInput, type DirectorLoanInput } from '@/lib/sbr/directorLoan'
 import { staffAuthorName } from '@/lib/auth/staff'
 import { predictionFinancials, type PredictionFinancials } from '@/lib/printed/mapping'
@@ -236,12 +236,15 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // The financial figures: the printed lines staff confirmed (the readiness
     // gate above has made sure they did), on the latest balance sheet.
-    const [{ comparison }, mapping, directors] = await Promise.all([
+    const [loaded, savedMapping, names] = await Promise.all([
       loadPrintedComparison(supabase, clientId),
       loadMapping(supabase, clientId),
-      loadDirectorNames(supabase, clientId),
+      loadRelatedNames(supabase, clientId),
     ])
-    const financials = predictionFinancials(comparison, mapping, { directors })
+    // Staff choices, and the auto-selections for the rest (autoMapping.ts).
+    const { comparison } = loaded
+    const { mapping } = await applyAutoMapping(supabase, clientId, loaded, savedMapping, names)
+    const financials = predictionFinancials(comparison, mapping, names)
     const loan = directorLoanInput(financials)
 
     const missing: MissingPrerequisite[] = []

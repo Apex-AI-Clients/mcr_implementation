@@ -2,20 +2,33 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { PdfTooLongError, PdfUnreadableError, readPrintedStatements } from './readPdf'
 import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from './compare'
-import type { PrintedRead } from './types'
+import { readStatements } from './readStatements'
+import type { PrintedRead, ScanSummary } from './types'
+import { scannedPages } from '@/lib/scan/detect'
+import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
 
 /**
  * Server-only. A client's financial statement PDFs, read as printed and kept
  * in printed_reads (migration 0033), and the comparison built from them.
  *
  * A PDF is read when it has no read by the current READER_VERSION, so a
- * reader fix reaches every client the next time their page opens. Reading is
+ * reader fix reaches every client the next time their page opens; except a
+ * PDF with scanned pages, which once read is kept until staff press Refresh. Reading is
  * on our own server, in memory: no file or figure is sent anywhere. If the
  * read cannot be kept (the table not there yet), it is still used.
  */
 
-/** Bump when the reader changes what it reads: every PDF is then read again. */
-export const READER_VERSION = '2026-10-25.1'
+/**
+ * Bump when the reader changes what it reads: every PDF is then read again.
+ * A re-read that prints exactly what the last read did keeps that read's
+ * time, so a staff "I've checked these figures" tick (hardChecks.ts) resets
+ * only for a client whose figures changed.
+ *
+ * 2026-11-04.1: "Profit / Loss from sale of assets" inside a section is a line;
+ * a "(%)" row is a ratio; scanned pages are read (src/lib/scan).
+ * 2026-11-10.1: scanned pages are read by Claude alone (Tesseract removed).
+ */
+export const READER_VERSION = '2026-11-10.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -45,14 +58,16 @@ export async function loadFinancialDocuments(supabase: ServerClient, clientId: s
 
 /** Reads by the current reader. A missing table reads as none. */
 export async function loadStoredReads(supabase: ServerClient, clientId: string): Promise<Map<string, StoredRead>> {
-  const { data, error } = await supabase
-    .from('printed_reads')
-    .select('document_id, reader_version, status, page_count, statements, issues, read_at')
-    .eq('client_id', clientId)
+  // '*': the scan column (migration 0044) when it is there.
+  const { data, error } = await supabase.from('printed_reads').select('*').eq('client_id', clientId)
   const out = new Map<string, StoredRead>()
   if (error) return out
   for (const row of data ?? []) {
-    if (row.reader_version !== READER_VERSION) continue
+    // A scanned file, once read, is kept until staff press Refresh: a reader
+    // update never sends it to be read again on its own (Gabby, 10 Nov 2026).
+    const scan = (row as { scan?: ScanSummary | null }).scan
+    const keptScan = scan?.state === 'done' && scan.pages.some((p) => p.scanned)
+    if (row.reader_version !== READER_VERSION && !keptScan) continue
     out.set(row.document_id, {
       documentId: row.document_id,
       readAt: row.read_at,
@@ -61,6 +76,7 @@ export async function loadStoredReads(supabase: ServerClient, clientId: string):
         pageCount: row.page_count ?? 0,
         statements: row.statements as unknown as PrintedRead['statements'],
         issues: row.issues as unknown as PrintedRead['issues'],
+        ...((row as { scan?: unknown }).scan ? { scan: (row as { scan?: unknown }).scan as ScanSummary } : {}),
       },
     })
   }
@@ -74,7 +90,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
   try {
     const { data: blob, error } = await supabase.storage.from('documents').download(doc.file_path)
     if (error || !blob) throw new Error('The file could not be downloaded.')
-    read = await readPrintedStatements(new Uint8Array(await blob.arrayBuffer()))
+    read = await readOrQueueScan(new Uint8Array(await blob.arrayBuffer()))
   } catch (err) {
     const message =
       err instanceof PdfTooLongError
@@ -98,6 +114,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     if (error) console.error('[printed-reads] could not keep a failed read:', error.message)
     return { documentId: doc.id, read, readAt }
   }
+  const keptAt = read.status === 'scan_pending' ? null : await unchangedReadAt(supabase, doc.id, read)
   const { error } = await supabase.from('printed_reads').upsert({
     document_id: doc.id,
     client_id: clientId,
@@ -106,10 +123,62 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     page_count: read.pageCount,
     statements: read.statements as unknown as never,
     issues: read.issues as unknown as never,
-    read_at: readAt,
+    ...(read.scan ? { scan: read.scan as unknown as never } : {}),
+    read_at: keptAt ?? readAt,
   })
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
-  return { documentId: doc.id, read, readAt }
+  return { documentId: doc.id, read, readAt: keptAt ?? readAt }
+}
+
+/**
+ * A PDF with scanned pages (src/lib/scan): its text-layer pages are read now,
+ * as always; the read says 'scan_pending' until the scanned pages are read
+ * twice by /api/admin/clients/[id]/scan-read (the page starts it). The scan
+ * reader (Claude) runs in that route only. Without scanned pages: the reader as
+ * before. If the scan check itself fails (a PDF pdf-lib cannot open), the
+ * file is read as before.
+ */
+async function readOrQueueScan(bytes: Uint8Array): Promise<PrintedRead> {
+  let found: Awaited<ReturnType<typeof scannedPages>> | null = null
+  try {
+    found = await scannedPages(bytes)
+  } catch {
+    found = null
+  }
+  if (!found || found.scanned.length === 0) return readPrintedStatements(bytes)
+  const scanned = new Set(found.scanned)
+  const digital = readStatements(found.textPages.map((lines, i) => (scanned.has(i + 1) ? [] : lines)))
+  return {
+    ...digital,
+    status: 'scan_pending',
+    issues: digital.issues.filter((i) => i.kind !== 'no_text_layer'),
+    scan: {
+      state: 'pending',
+      pages: found.textPages.map((_, i) => ({ page: i + 1, scanned: scanned.has(i + 1) })),
+      singleReading: false,
+      model: null,
+      message: `${found.scanned.length} scanned page(s) are being read.`,
+    },
+  }
+}
+
+/** The kept read's time when the new read prints exactly the same (an older reader version included); else null. */
+async function unchangedReadAt(supabase: ServerClient, documentId: string, read: PrintedRead): Promise<string | null> {
+  const { data, error } = await supabase.from('printed_reads').select('status, page_count, statements, issues, read_at').eq('document_id', documentId).maybeSingle()
+  if (error || !data) return null
+  const same =
+    data.status === read.status &&
+    (data.page_count ?? 0) === read.pageCount &&
+    canonical(data.statements) === canonical(read.statements) &&
+    canonical(data.issues) === canonical(read.issues)
+  return same ? data.read_at : null
+}
+
+/** JSON with object keys sorted: jsonb does not keep key order. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_k, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) : v,
+  )
 }
 
 export interface LoadedComparison {
@@ -137,12 +206,12 @@ export async function loadPrintedComparison(
       if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
     }
   }
-  const input: ComparisonDocument[] = docs.map((d) => ({
-    documentId: d.id,
-    filename: d.original_filename,
-    uploadedAt: d.uploaded_at,
-    read: reads.get(d.id)?.read ?? null,
-  }))
+  // Staff corrections of figures read from a scan (scan_figure_choices).
+  const choices = await loadScanChoices(supabase, clientId)
+  const input: ComparisonDocument[] = docs.map((d) => {
+    const read = reads.get(d.id)?.read ?? null
+    return { documentId: d.id, filename: d.original_filename, uploadedAt: d.uploaded_at, read: read ? applyScanChoices(read, choices.get(d.id) ?? []) : null }
+  })
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
   return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length }
 }

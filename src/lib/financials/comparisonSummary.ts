@@ -8,7 +8,7 @@ import {
   type SummaryBlock,
 } from '@/lib/ai/financialsComparisonSummary'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadMapping, withAutoMapping } from '@/lib/printed/mappingStore'
 
 /**
  * Server-only. The comparison summary for a client: the stored one while the
@@ -26,11 +26,13 @@ export type ComparisonSummaryOutcome =
   | { kind: 'failed' }
 
 export async function ensureComparisonSummary(supabase: ServerClient, clientId: string): Promise<ComparisonSummaryOutcome> {
-  const [{ comparison, builtAt }, mapping, { data: checked }] = await Promise.all([
+  const [loaded, savedMapping, { data: checked }] = await Promise.all([
     loadPrintedComparison(supabase, clientId),
     loadMapping(supabase, clientId),
     supabase.from('sbr_readiness_reviews').select('fingerprint, reviewed_by, reviewed_at').eq('client_id', clientId).eq('item', 'financials').maybeSingle(),
   ])
+  const { comparison, builtAt } = loaded
+  const { mapping } = await withAutoMapping(supabase, clientId, loaded, savedMapping)
   const reason = summaryBlock({
     comparison,
     mapping,

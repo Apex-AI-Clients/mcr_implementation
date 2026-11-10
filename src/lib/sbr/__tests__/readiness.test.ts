@@ -111,12 +111,11 @@ describe('financial statements', () => {
     expect(r.canPredict).toBe(true)
   })
 
-  it('is Needs review, holding the prediction up, while a failed hard check is not ticked', () => {
+  it('never holds the prediction up for printed totals that do not add up: a note pointing to the comparison page', () => {
     const r = computeReadiness(input({ financials: { unreviewedFailures: 2 } }))
-    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', canRunNow: false })
-    expect(statusOf(r, 'financials').detail).toMatch(/2 figures do not reconcile/)
-    expect(r.canPredict).toBe(false)
-    expect(r.waitingFor).toContain('Financial statements: needs review')
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'ready' })
+    expect(statusOf(r, 'financials').detail).toBe('2 printed totals do not add up: they are listed at the bottom of the comparison page.')
+    expect(r.canPredict).toBe(true)
   })
 
   it('is Needs review, pointing at the comparison page, until staff confirm the key figures', () => {
@@ -125,7 +124,7 @@ describe('financial statements', () => {
     expect(r.canPredict).toBe(false)
   })
 
-  it('never has a line under the heading, in any state but Needs review', () => {
+  it('never has a line under the heading, in any state but Needs review (or totals to look at)', () => {
     for (const over of [{ fileCount: 0 }, { outOfDate: true }, { comparison: null }, {}]) {
       expect(statusOf(computeReadiness(input({ financials: over })), 'financials').detail).toBeNull()
     }
@@ -206,5 +205,13 @@ describe('director penalty notices and the DPN factor', () => {
       canRunNow: true,
     })
     expect(statusOf(computeReadiness(input({ jobRunning: true, dpn: { notices: [view(null)] } })), 'dpn').status).toBe('processing')
+  })
+})
+
+describe('computeReadiness — scanned statements', () => {
+  it('shows the financial statements as processing while scans are read, never as compared', () => {
+    const r = computeReadiness(input({ financials: { scanning: 2 } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'processing', detail: 'Reading 2 scanned documents — this usually takes a few minutes. It keeps going in the background, so you can leave this page.', startScan: true })
+    expect(r.canPredict).toBe(false)
   })
 })

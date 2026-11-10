@@ -42,6 +42,50 @@ export interface PrintedRow {
   amounts: PrintedAmount[]
   /** The whole printed line, for "where did this come from". */
   text: string
+  /** A line read from a scanned page by Claude, per column (src/lib/scan). Absent on a text-layer page. */
+  scan?: ScanRowInfo
+}
+
+/**
+ * read      read by Claude from the scanned page: accepted as read
+ * chosen    corrected by staff (scan_figure_choices): the figure typed in
+ */
+export type ScanCellStatus = 'read' | 'chosen'
+
+export interface ScanCell {
+  status: ScanCellStatus
+  /** Claude's figure, as read from the page. */
+  claude?: PrintedAmount
+  /** Who corrected it, and when (status 'chosen'). */
+  chosenBy?: string
+  chosenAt?: string
+}
+
+export interface ScanRowInfo {
+  /** Identifies the line for a staff choice: kind|page|path|label|n. */
+  key: string
+  /** Where the line sits on the page image, as fractions of its height (top, bottom), for the crop. */
+  band: [number, number] | null
+  cells: ScanCell[]
+}
+
+export interface ScanPageInfo {
+  page: number
+  /** No text layer and a full-page image. */
+  scanned: boolean
+  /** Scanned pages only: read as a statement, or skipped and why. */
+  role?: 'statement' | 'skipped'
+  /** The title the cheap first pass read ("Balance Sheet"), or why it was skipped. */
+  note?: string
+}
+
+export interface ScanSummary {
+  state: 'pending' | 'done' | 'failed'
+  pages: ScanPageInfo[]
+  /** Unused since Claude reads scans alone (always false); kept for reads stored before. */
+  singleReading: boolean
+  model: string | null
+  message: string | null
 }
 
 export interface PrintedStatement {
@@ -77,11 +121,16 @@ export interface ReadIssue {
 }
 
 export interface PrintedRead {
-  /** 'failed': the file could not be downloaded or opened (store.ts). */
-  status: 'read' | 'no_text_layer' | 'no_statements' | 'failed'
+  /**
+   * 'failed': the file could not be downloaded or opened (store.ts).
+   * 'scan_pending': it has scanned pages being read in the background (src/lib/scan).
+   */
+  status: 'read' | 'no_text_layer' | 'no_statements' | 'failed' | 'scan_pending'
   pageCount: number
   statements: PrintedStatement[]
   issues: ReadIssue[]
+  /** Set when the PDF has scanned pages. */
+  scan?: ScanSummary
 }
 
 export const NO_TEXT_LAYER_MESSAGE =

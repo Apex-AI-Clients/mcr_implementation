@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, within } from '@testing-library/react'
+import { render, screen, cleanup, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
 import { suggestMapping } from '@/lib/printed/dictionary'
@@ -69,6 +69,35 @@ const cardOf = (title: string) => screen.getByRole('listitem', { name: title })
 const sentSelection = () => JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).selection
 
 describe('Confirm key figures', () => {
+  it('labels an auto-selection "Auto-selected" with its rule and Change; a possible line asks "Use it?"', async () => {
+    const user = userEvent.setup()
+    const { autoMapping } = await import('@/lib/printed/autoMapping')
+    const { entries } = autoMapping(comparison, [])
+    render(
+      <LineMappingClient
+        clientId="client-1"
+        clientName="Example Pty Ltd"
+        comparison={comparison}
+        mapping={entries.filter((e) => e.meaning !== 'income_tax_payable')}
+        suggestions={suggestions}
+        changes={[]}
+        possible={{ income_tax_payable: [{ rowKey: key('GST'), label: 'GST', value: 20, column: 'FY2025', why: 'Reads like an ATO, tax, BAS, GST or PAYG account.' }] }}
+      />,
+    )
+    const revenue = cardOf('Revenue')
+    expect(within(revenue).getByText('Auto-selected')).toBeTruthy()
+    expect(within(revenue).getByText(/Auto-selected: The total income/)).toBeTruthy()
+    expect(within(revenue).getByRole('button', { name: /Change/ })).toBeTruthy()
+    expect(within(cardOf('Loan account — owed BY the company')).getByText('Not printed.')).toBeTruthy()
+    // Six of seven: income tax waits for its possible line.
+    expect(screen.getByText('6 of 7 confirmed')).toBeTruthy()
+    const tax = cardOf('Income tax payable')
+    expect(within(tax).getByText('Check the possible line')).toBeTruthy()
+    expect(tax.textContent).toContain('Possible line: “GST” $20 (FY2025)')
+    await user.click(within(tax).getByRole('button', { name: 'Use it?' }))
+    expect(sentSelection()).toEqual({ income_tax_payable: { rowKeys: [key('GST')] } })
+  })
+
   it('confirms every suggestion at once, and nothing that has no suggestion', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -81,7 +110,8 @@ describe('Confirm key figures', () => {
     // No suggestion for these: left for staff.
     expect(selection.loan_payable).toBeUndefined()
     expect(selection.income_tax_payable).toBeUndefined()
-    expect(refresh).toHaveBeenCalled()
+    // The save resolves after the click: wait for it.
+    await waitFor(() => expect(refresh).toHaveBeenCalled(), { timeout: 5000 })
   })
 
   it('shows the chosen line with every year and no empty heading, and the status', () => {

@@ -13,7 +13,8 @@ import { STATEMENT_NAME, describeLine } from '@/lib/printed/picker'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { printedLinesSource } from '@/lib/sources'
 import type { Suggestions } from '@/lib/printed/dictionary'
-import { KeyFigureCard, keyFigureStatus, type KeyFigureStatus } from './keyFigures/KeyFigureCard'
+import { KeyFigureCard, isAutoSelected, keyFigureStatus, type KeyFigureStatus } from './keyFigures/KeyFigureCard'
+import type { PossibleLine } from '@/lib/printed/autoMapping'
 
 interface Props {
   clientId: string
@@ -22,6 +23,8 @@ interface Props {
   comparison: PrintedComparison
   mapping: MappingEntry[]
   suggestions: Suggestions
+  /** Lines that look like a key figure the dictionary did not match (autoMapping.ts). */
+  possible?: Partial<Record<Meaning, PossibleLine[]>>
 }
 
 /** Per status: the tile's top edge, its corner icon, and the review bar's segment. */
@@ -39,7 +42,7 @@ const LOOK: Record<KeyFigureStatus, { edge: string; segment: string; icon: typeo
  * and leads to "Confirm key figures". The SBR prediction uses only confirmed
  * lines.
  */
-export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, comparison, mapping, suggestions }: Props) {
+export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, comparison, mapping, suggestions, possible = {} }: Props) {
   const [open, setOpen] = useState<Meaning | null>(null)
   const tiles = MEANINGS.filter((m) => m.tile)
   const keyFigures = `${basePath}/financials-comparison/mapping`
@@ -162,6 +165,11 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
               {status === 'not_found' ? (
                 <div className="mt-2 rounded-md border border-dashed border-destructive/50 bg-destructive/5 p-2 text-xs">
                   <p className="font-medium text-destructive">No printed line matched this figure.</p>
+                  {(possible[info.key] ?? []).map((p) => (
+                    <p key={p.rowKey} className="mt-0.5 text-warning">
+                      Possible line: “{p.label}”{p.value !== null ? ` $${formatPrinted(p.value)}` : ''} — use it?
+                    </p>
+                  ))}
                   <p className="mt-0.5 text-foreground/60">The statements don&apos;t print a line with this name. Pick the line that holds it, or say it isn&apos;t printed.</p>
                   <button type="button" onClick={() => setOpen(info.key)} className="no-print mt-1.5 font-medium text-accent hover:underline">
                     Choose the line
@@ -181,10 +189,15 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
                   </button>
                 </div>
               ) : resolved.status === 'none' ? (
-                <p className="mt-2 text-xs text-foreground/60">Confirmed: the statements don&apos;t print this.</p>
+                <p className="mt-2 text-xs text-foreground/60">
+                  {isAutoSelected(entries) ? 'Auto-selected: not printed.' : <>Confirmed: the statements don&apos;t print this.</>}
+                </p>
               ) : (
                 <div className="mt-2 text-xs">
-                  <p className="text-success">{sources.length > 1 ? `From ${sources.length} printed lines, added up:` : 'From the printed line:'}</p>
+                  <p className="text-success">
+                    {isAutoSelected(entries) ? 'Auto-selected — ' : ''}
+                    {sources.length > 1 ? `from ${sources.length} printed lines, added up:` : 'from the printed line:'}
+                  </p>
                   <SourceLines sources={sources} />
                 </div>
               )}
@@ -260,7 +273,8 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
               meaning={open}
               entries={entriesOf(open)}
               suggestion={suggestions[open]}
-              choosing
+              possible={possible[open] ?? []}
+              choosing={(possible[open] ?? []).length === 0}
               onDone={() => setOpen(null)}
             />
           </ul>

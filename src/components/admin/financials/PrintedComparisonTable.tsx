@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ScanLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
 import type { ComparisonCell, ComparisonColumn, ComparisonRow, ComparisonTable } from '@/lib/printed/compare'
@@ -22,8 +22,12 @@ interface Props {
  * One statement as printed, years side by side: the printed lines under their
  * printed headings, each figure exactly as printed. Click a figure for the
  * file, page and line it came from. Nothing here is calculated.
+ *
+ * A year read from a scan says so in its header ("Scanned PDF", with what
+ * that means on hover); a scanned figure staff corrected is marked so.
  */
 export function PrintedComparisonTable({ table, columns, selected, onSelect }: Props) {
+  const scanned = columns.map((_, i) => table.rows.some((r) => r.cells[i]?.scan))
   return (
     <section>
       <h2 className="text-sm font-semibold text-foreground mb-3">{table.title}</h2>
@@ -38,6 +42,15 @@ export function PrintedComparisonTable({ table, columns, selected, onSelect }: P
                   <th key={c.key} className={cn('py-2 pr-4 font-medium text-right', c.kind === 'current_period' && 'pl-4 border-l border-border/40')}>
                     <span className="block text-foreground/70">{t.title}</span>
                     <span className="block text-[10px] font-normal text-foreground/40">{t.period}</span>
+                    {scanned[columns.indexOf(c)] && (
+                      <span
+                        title="This year came as a scanned PDF (pictures of the pages, no text inside), so Claude read each figure from the page image. Every printed total is checked to add up, as for any statement; click a figure to see its line on the scan and correct it if needed. A digital PDF from the accountant is always exact."
+                        className="mt-0.5 inline-flex cursor-help items-center gap-1 rounded bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent"
+                      >
+                        <ScanLine className="h-3 w-3" aria-hidden />
+                        Scanned PDF
+                      </span>
+                    )}
                   </th>
                 )
               })}
@@ -91,6 +104,7 @@ export function PrintedComparisonTable({ table, columns, selected, onSelect }: P
 
 function Figure({ cell, emphasis, active, onClick }: { cell: ComparisonCell; emphasis: boolean; active: boolean; onClick: () => void }) {
   const failed = cell.check === 'mismatch' || cell.check === 'wrong_column'
+  const corrected = cell.scan?.status === 'chosen'
   if (!cell.printed && cell.restated.length === 0) return null
   return (
     <span className="inline-flex flex-col items-end">
@@ -98,11 +112,12 @@ function Figure({ cell, emphasis, active, onClick }: { cell: ComparisonCell; emp
         <button
           type="button"
           onClick={onClick}
-          title="Where this figure is printed"
+          title={corrected ? `Corrected by ${cell.scan!.chosenBy}` : 'Where this figure is printed'}
           className={cn(
             'inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-surface/60 focus:outline-none focus:ring-1 focus:ring-accent',
             emphasis && 'font-semibold',
             failed && 'text-destructive',
+            corrected && 'underline decoration-dotted decoration-accent underline-offset-2',
             active && 'ring-1 ring-accent',
           )}
         >

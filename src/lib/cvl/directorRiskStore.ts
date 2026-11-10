@@ -3,7 +3,7 @@ import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'
 import type { SuperGuaranteeSummary } from '@/lib/analysis/atoAccount/superGuarantee'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadMapping, withAutoMapping } from '@/lib/printed/mappingStore'
 import { resolveMeaning } from '@/lib/printed/mapping'
 import { summariseNotices } from '@/lib/dpn/summary'
 import type { DpnPanelData } from '@/lib/dpn/view'
@@ -39,7 +39,7 @@ export async function loadDirectorRisk(
   { dpn, atoAccounts }: { dpn: DpnPanelData; atoAccounts: AtoAccountsOverview },
 ): Promise<DirectorRiskData> {
   const sgIds = atoAccounts.accounts.filter((a) => a.kind === 'super_guarantee').map((a) => a.id)
-  const [{ data: lodgement }, { data: sgRows }, comparison, mapping] = await Promise.all([
+  const [{ data: lodgement }, { data: sgRows }, comparison, stored] = await Promise.all([
     supabase
       .from('lodgement_analyses')
       .select('rows, statement_label, analysed_at')
@@ -53,6 +53,7 @@ export async function loadDirectorRisk(
     loadPrintedComparison(supabase, clientId),
     loadMapping(supabase, clientId),
   ])
+  const { mapping } = await withAutoMapping(supabase, clientId, comparison, stored)
 
   // Today's code over the saved rows, as the lodgement report does.
   const rows = lodgement ? (reanalyseStoredRows(lodgement.rows)?.rows ?? []) : []

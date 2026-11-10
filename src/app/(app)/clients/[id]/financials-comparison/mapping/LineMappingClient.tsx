@@ -10,6 +10,7 @@ import type { PrintedComparison } from '@/lib/printed/compare'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import type { MappingChange, MappingSelection } from '@/lib/printed/mappingStore'
+import type { PossibleLine } from '@/lib/printed/autoMapping'
 
 interface Props {
   clientId: string
@@ -20,17 +21,20 @@ interface Props {
   mapping: MappingEntry[]
   suggestions: Suggestions
   changes: MappingChange[]
+  /** Lines that look like a figure the dictionary did not match (autoMapping.ts). */
+  possible?: Partial<Record<Meaning, PossibleLine[]>>
   /** Ask Claude about the key figures the dictionary found no line for (AI_SUMMARIES_ENABLED). */
   aiEnabled?: boolean
 }
 
 /**
  * "Confirm key figures": which printed line is each key figure the tiles and
- * the SBR prediction use. Suggested from the statements; staff check each
- * one, or confirm all the suggestions at once. Each confirmation records who
- * and when.
+ * the SBR prediction use. Every figure staff have not confirmed is
+ * auto-selected from the statements (autoMapping.ts), so staff only change
+ * what is wrong; a figure with a possible line waits for a click. Each
+ * confirmation records who and when.
  */
-export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, mapping, suggestions, changes, aiEnabled = false }: Props) {
+export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, mapping, suggestions, changes, possible = {}, aiEnabled = false }: Props) {
   const { confirm, saving, error } = useConfirmKeyFigures(clientId)
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
   const confirmedCount = KEY_FIGURES.filter((m) => entriesOf(m.key).length > 0).length
@@ -77,6 +81,7 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
         entries={entriesOf(m)}
         suggestion={ai.length ? ai : suggestions[m]}
         aiSuggested={ai.length > 0}
+        possible={possible[m] ?? []}
       />
     )
   }
@@ -90,7 +95,9 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
         </Link>
         <h1 className="text-xl font-semibold text-foreground">Confirm key figures</h1>
         <p className="text-sm text-foreground/60">{clientName}</p>
-        <p className="text-sm text-foreground/70">We matched these from the statements. Check each one, or confirm all at once.</p>
+        <p className="text-sm text-foreground/70">
+          We auto-selected these from the statements: change any that are wrong. A figure with a possible line waits for you to choose.
+        </p>
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <span className="text-sm font-medium text-foreground" aria-live="polite">
             {confirmedCount} of {KEY_FIGURES.length} confirmed
@@ -128,7 +135,7 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
             {changes.map((c, i) => (
               <li key={i}>
                 {shortDate(c.changedAt)}, {c.changedBy}: {MEANINGS.find((m) => m.key === c.meaning)?.label} —{' '}
-                {c.action === 'none_printed' ? 'not printed' : `${c.action} “${c.label ?? ''}”`}
+                {changeText(c)}
               </li>
             ))}
           </ul>
@@ -136,4 +143,19 @@ export function LineMappingClient({ clientId, basePath = `/clients/${clientId}`,
       )}
     </div>
   )
+}
+
+function changeText(c: MappingChange): string {
+  switch (c.action) {
+    case 'none_printed':
+      return 'not printed'
+    case 'auto_selected':
+      return `auto-selected “${c.label ?? ''}”${c.rule ? ` (${c.rule})` : ''}`
+    case 'auto_none_printed':
+      return `auto-selected not printed${c.rule ? ` (${c.rule})` : ''}`
+    case 'auto_removed':
+      return `auto-selection of “${c.label ?? 'not printed'}” withdrawn (the figures changed)`
+    default:
+      return `${c.action} “${c.label ?? ''}”`
+  }
 }

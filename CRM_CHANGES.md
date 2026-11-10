@@ -886,3 +886,42 @@ Added 2026-10-29 for the CVL forms. Code: `src/app/api/admin/clients/[id]/asic-e
 - An extract for a different ACN from the file's is refused.
 - To undo if Gabby says no: stop calling `keepAsicExtract` (two call sites) and
   delete the kept files and `client_asic_extracts` rows.
+
+---
+
+## Scanned financial statements read by Claude (migrations 0044–0046) — GABBY-APPROVED
+
+Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
+`src/lib/ai/openrouterClient.ts`, `SCAN_PAGE_PROMPT` in `src/lib/ai/prompts.ts`,
+`supabase/migrations/0044_scanned_statements.sql` (and 0045, 0046). CLAUDE.md rule 12.
+
+- A PDF page with no text layer and a full-page image is a scan. Text-layer
+  pages keep the exact reader and are never sent anywhere.
+- Which scanned pages are statements is decided on our own server: Tesseract
+  (open source) reads only the title at the top of each scanned page. Only
+  profit and loss, trading statement and balance sheet pages go further;
+  contents, notes, tax reconciliations, distribution and beneficiary
+  statements, depreciation schedules, declarations and compilation reports
+  never leave our server, and the Files read panel lists them as skipped.
+- Claude reads each statement page from its **page image** (the only statement
+  content ever sent to a model), every line with the section headings it sits
+  under, through the existing OpenRouter client. No other page, figure or
+  file is sent. Nothing is logged but ids, provider and token counts.
+- **Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.**
+  (Option A, in writing. It replaces the earlier zero-retention requirement,
+  which OpenRouter cannot meet for any Claude model, and applies to every
+  Claude call: scanned-page reading, AI summaries and label suggestions. If
+  OpenRouter cannot honour Anthropic-only with no training, the call fails;
+  it is never routed elsewhere.)
+- Claude's reading is accepted as read (10 Nov 2026: the second, Tesseract
+  reading of every figure was removed; on the client checked, every figure
+  the two readings disagreed on was Tesseract's misread). Every printed total
+  is still checked to add up, as for any statement, and staff can correct a
+  scanned figure by clicking it (who and when are kept).
+- At most 60 statement pages a day per client go to Claude; past that, or if
+  Claude is unavailable, those pages wait ("could not be read yet") and
+  nothing is guessed. A page already read is never sent again (its reading is
+  kept and reused). The accountant's digital export is always exact: staff
+  are prompted to ask for it.
+- To undo: unset `OPENROUTER_API_KEY` (scans are then not read), or stop
+  calling `readOrQueueScan` in `src/lib/printed/store.ts`.

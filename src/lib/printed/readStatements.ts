@@ -27,7 +27,7 @@ const PL_TITLE =
   /^(detailed\s+)?(profit\s*(and|&)\s*loss(\s+statement|\s+account)?|income\s+statement|trading\s+statement|statement\s+of\s+profit\s+or\s+loss(\s+and\s+other\s+comprehensive\s+income)?|statement\s+of\s+comprehensive\s+income|operating\s+statement|trading\s*(and|&)\s*profit\s*(and|&)\s*loss(\s+statement|\s+account)?)$/i
 const BS_TITLE = /^(detailed\s+)?(balance\s+sheet|statement\s+of\s+financial\s+position)$/i
 /** A title of anything but a P&L or balance sheet: such a page never continues one. */
-const OTHER_TITLE = /\b(statement|notes?|schedule|report|declaration|reconciliation|worksheet|return|summary)\b/i
+export const OTHER_TITLE = /\b(statement|notes?|schedule|report|declaration|reconciliation|worksheet|return|summary)\b/i
 /** The title is printed within the first lines of the page. */
 const TITLE_WITHIN = 8
 
@@ -39,7 +39,7 @@ const PAGE_NUMBER = /(^\d+\s*(\/|of)\s*\d+$)|(\bpage\s+\d+(\s+of\s+\d+)?\b)/i
 /** Furthest a figure sits from its column's right edge. */
 const MAX_COLUMN_DISTANCE = 60
 
-function statementKind(text: string): PrintedStatementKind | null {
+export function statementKind(text: string): PrintedStatementKind | null {
   const t = text.replace(/\s+/g, ' ').trim()
   if (PL_TITLE.test(t)) return 'profit_and_loss'
   if (BS_TITLE.test(t)) return 'balance_sheet'

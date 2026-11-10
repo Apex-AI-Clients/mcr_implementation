@@ -45,6 +45,8 @@ export interface ReadinessItem {
   detail: string | null
   /** Not run yet ('not_started'): offer to start the run. Never while one is going. */
   canRunNow: boolean
+  /** Scanned statements are waiting to be read: the checklist starts their reading (src/lib/scan). */
+  startScan?: boolean
   /** Where to look. */
   href: string
 }
@@ -59,6 +61,8 @@ export interface ReadinessInput {
     comparison: { generatedAt: string; staleSince: string | null } | null
     /** Files never read (or overridden since), or a comparison out of date. */
     outOfDate: boolean
+    /** Files with scanned pages still being read (src/lib/scan): not compared yet. */
+    scanning?: number
     /** Failed hard checks on the comparison no staff tick covers (hardChecks.ts exportsLocked). */
     unreviewedFailures: number
     /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
@@ -115,20 +119,19 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   const f = input.financials
   const href = `/clients/${input.clientId}/financials-comparison`
   if (f.fileCount === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
+  // Scanned statements: not compared until they are read.
+  if ((f.scanning ?? 0) > 0) {
+    const n = f.scanning!
+    return {
+      ...item(input, 'financials', 'processing', `Reading ${n === 1 ? '1 scanned document' : `${n} scanned documents`} — this usually takes a few minutes. It keeps going in the background, so you can leave this page.`, href),
+      startScan: true,
+    }
+  }
   // Processing only while the run has PDFs of its own to read: a run reading a
   // notice or the ATO export leaves statements already read as they are.
   if (f.outOfDate) return item(input, 'financials', input.jobRunning ? 'processing' : 'not_started', null, href)
   // Read, but fewer than two annual statements came out: nothing to compare.
   if (!f.comparison) return item(input, 'financials', 'failed', null, href)
-  if (f.unreviewedFailures > 0) {
-    return item(
-      input,
-      'financials',
-      'needs_review',
-      `${f.unreviewedFailures === 1 ? 'A figure does' : `${f.unreviewedFailures} figures do`} not reconcile. Check them against the source documents and tick the box on the comparison page.`,
-      href,
-    )
-  }
   if (!f.mappingConfirmed) {
     return item(
       input,
@@ -138,7 +141,12 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       href,
     )
   }
-  return item(input, 'financials', 'ready', null, href)
+  // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
+  const note =
+    f.unreviewedFailures > 0
+      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are listed at the bottom of the comparison page.`
+      : null
+  return item(input, 'financials', 'ready', note, href)
 }
 
 function lodgementItem(input: ReadinessInput): ReadinessItem {

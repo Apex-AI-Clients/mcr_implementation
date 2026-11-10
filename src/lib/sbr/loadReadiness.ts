@@ -3,7 +3,7 @@ import { DOCUMENT_CATEGORIES, FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/const
 import { readDirectors } from '@/lib/clients/companyDetails'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { printedExportsLocked, printedHardChecks } from '@/lib/printed/review'
-import { loadMapping } from '@/lib/printed/mappingStore'
+import { loadMapping, withAutoMapping } from '@/lib/printed/mappingStore'
 import { mappingConfirmed } from '@/lib/printed/mapping'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
@@ -56,7 +56,9 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     findLiveComparisonJob(supabase, clientId).catch(() => null),
   ])
   // The as-printed comparison, from the stored reads only: reading PDFs is the page's or the run's job.
-  const [printed, mapping] = await Promise.all([loadPrintedComparison(supabase, clientId), loadMapping(supabase, clientId)])
+  const [printed, savedMapping] = await Promise.all([loadPrintedComparison(supabase, clientId), loadMapping(supabase, clientId)])
+  // Auto-selections count as confirmed (printed/autoMapping.ts).
+  const { mapping } = await withAutoMapping(supabase, clientId, printed, savedMapping)
 
   const all = docs ?? []
   const isFinancial = (c: string) => (FINANCIAL_STATEMENT_CATEGORIES as readonly string[]).includes(c)
@@ -110,6 +112,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       // PDFs not yet read by the current reader. A file that could not be
       // read is a read too (with why): not waiting work.
       outOfDate: printed.unread > 0,
+      scanning: printed.comparison.documents.filter((d) => d.status === 'scan_pending').length,
       unreviewedFailures,
       mappingConfirmed: mappingConfirmed(mapping),
     },
