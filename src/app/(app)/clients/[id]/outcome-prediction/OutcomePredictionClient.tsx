@@ -37,7 +37,7 @@ import {
   isValidFeeRate,
 } from '@/lib/sbr/fees'
 import type { ComparableCase, SbrPrediction, SbrPredictionInput } from '@/lib/sbr/types'
-import type { DirectorLoanInput } from '@/lib/sbr/directorLoan'
+import type { DirectorLoanInput, DirectorLoanYear } from '@/lib/sbr/directorLoan'
 import { SourceButton, SourcedAmount } from '@/components/ui/SourcedAmount'
 import { calculated, enteredByStaff, printedLinesSource, type AmountSource } from '@/lib/sources'
 import {
@@ -70,6 +70,10 @@ interface InitialAuto {
   directorLoanReasoning: string | null
   /** The balance sheet the director loan inputs come from (ISO), for their labels. */
   directorLoanAsOf?: string | null
+  /** The balance sheet the input is from: "FY2025 balance sheet", "Current period to 30 Oct 2026". */
+  directorLoanBalanceSheet?: string | null
+  /** The same figure for every balance sheet on file, oldest first: shown, never used. */
+  directorLoanYears?: DirectorLoanYear[]
   /** Where the checkbox starts: fresh evidence over a stale saved value (inputPrecedence.ts). */
   directorLoanInitial?: ResolvedDirectorLoan
   /** Why the ATO debt staff typed last time was replaced, when it was. */
@@ -965,16 +969,11 @@ function InputPanel(props: InputPanelProps) {
                   {auto.directorLoan?.basis === 'net' ? ' (net)' : ''}
                 </>
               }
-              hint={
-                auto.hasFinancials
-                  ? auto.latestFinancialYear != null
-                    ? `FY${auto.latestFinancialYear}`
-                    : undefined
-                  : 'No financials extracted — defaulting to $0'
-              }
+              hint={auto.hasFinancials ? (auto.directorLoanBalanceSheet ?? undefined) : 'No financials extracted — defaulting to $0'}
               softMissing={!auto.hasFinancials}
             />
             )}
+            <DirectorLoanYears years={auto.directorLoanYears ?? []} notIdentified={Boolean(auto.directorLoan?.notIdentified)} basis={auto.directorLoan?.basis ?? 'gross'} />
             {auto.directorLoan?.info && !auto.directorLoan.notIdentified && (
               <p className="-mt-2 text-foreground/50">{auto.directorLoan.info}</p>
             )}
@@ -3034,4 +3033,31 @@ function formatFeatureValue(feature: string, value: number | boolean | string): 
   if (feature === 'directorLoanReceivableAmount') return formatAud(value)
   if (feature === 'daysSinceLastPayment' && value >= 9999) return 'No payments ever'
   return formatNumber(value)
+}
+
+/**
+ * The director loan on every balance sheet on file, oldest first, by the
+ * prediction's own rule: so staff see the trend. Only the latest is used.
+ * Not identified on the latest: every year shows "—" (the line is not chosen).
+ */
+function DirectorLoanYears({ years, notIdentified, basis }: { years: DirectorLoanYear[]; notIdentified: boolean; basis: 'gross' | 'net' }) {
+  if (years.length < 2) return null
+  const money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`
+  return (
+    <div className="-mt-2 text-xs">
+      <p className="text-foreground/40">Year by year{basis === 'net' ? ' (net)' : ''}</p>
+      <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+        {years.map((y, i) => {
+          const latest = i === years.length - 1
+          return (
+            <li key={y.label} className={latest ? 'font-medium text-foreground' : 'text-foreground/60'}>
+              <span className="text-foreground/50">{y.label}:</span> {notIdentified || y.amount === null ? '—' : money(y.amount)}
+              {latest && <span className="text-foreground/40"> (used)</span>}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-1 text-foreground/40">Only the latest balance sheet is used by the prediction; the earlier years are shown for context.</p>
+    </div>
+  )
 }

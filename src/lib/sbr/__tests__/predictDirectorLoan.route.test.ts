@@ -124,7 +124,7 @@ describe('POST predict-outcome — the director loan input', () => {
   })
 
   it('asks for the line when a loan line is not identified, never predicting on $0', async () => {
-    FINANCIALS.notIdentified = { loanReceivable: { message: 'Not found in the statements — choose the line.', candidates: [] } }
+    FINANCIALS.notIdentified = { loanReceivable: { message: 'No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (FY2024 balance sheet): choose the line, or confirm none is printed.', candidates: [] } }
     const res = await PREDICT(post({ ...BASE, directorLoanAtAppointment: false }), PARAMS)
     expect(res.status).toBe(422)
     const body = await res.json()
@@ -134,7 +134,7 @@ describe('POST predict-outcome — the director loan input', () => {
         field: 'directorLoanReceivableAmount',
         blocker: 'line_mapping',
         actionUrl: '/clients/client-1/financials-comparison/mapping',
-        message: 'Not found in the statements — choose the line.',
+        message: 'No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (FY2024 balance sheet): choose the line, or confirm none is printed.',
       },
     ])
     expect(predictSbrOutcome).not.toHaveBeenCalled()

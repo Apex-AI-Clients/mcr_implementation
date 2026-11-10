@@ -4,8 +4,8 @@ import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
-import { directorLoanInput } from '@/lib/sbr/directorLoan'
-import { predictionFinancials } from '@/lib/printed/mapping'
+import { directorLoanInput, directorLoanYears } from '@/lib/sbr/directorLoan'
+import { balanceSheetLabel, loanHistory, predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
@@ -158,6 +158,10 @@ export default async function OutcomePredictionPage({ params }: Props) {
     directorLoanDetected,
     directorLoanReasoning,
     directorLoanAsOf: loanInput.asOf,
+    // "FY2025 balance sheet" / "Current period to 30 Oct 2026": which balance sheet the input is from.
+    directorLoanBalanceSheet: bsColumn ? balanceSheetLabel(bsColumn) : null,
+    // Every balance sheet on file, by the same rule: context beside the input, never an input.
+    directorLoanYears: directorLoanYears(loanHistory(printed.comparison, mapping)),
     // Gross, payable and net, the printed lines behind them, and why it is not identified (sbr/directorLoan.ts).
     directorLoan: loanInput,
     mappingUrl: `/clients/${id}/financials-comparison/mapping`,

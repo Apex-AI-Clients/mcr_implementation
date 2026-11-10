@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildPrintedComparison, type ComparisonDocument } from '../compare'
 import { suggestMapping } from '../dictionary'
-import { mappingConfirmed, predictionFinancials, resolveMeaning, type MappingEntry } from '../mapping'
+import { loanHistory, mappingConfirmed, predictionFinancials, resolveMeaning, type MappingEntry } from '../mapping'
+import { directorLoanYears } from '@/lib/sbr/directorLoan'
 import { MappingError, saveMapping, type MappingSelection } from '../mappingStore'
 import { MEANINGS } from '../meanings'
 import { describeLine, pickerRows } from '../picker'
@@ -389,7 +390,38 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
     ])
     const f = predictionFinancials(c, entries(c, { loan_receivable: ['Loan - Director'], loan_payable: 'none' }))
     expect(f.loanReceivable).toBeNull()
-    expect(f.notIdentified.loanReceivable?.message).toBe('Not found in the statements — choose the line.')
+    expect(f.notIdentified.loanReceivable?.message).toBe('No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (FY2025 balance sheet): choose the line, or confirm none is printed.')
+  })
+
+  it('gives the loan for every balance sheet on file, oldest first, by the same rule (loanHistory)', () => {
+    const report = (id: string, year: number, rows: PrintedRow[]): ComparisonDocument => ({
+      documentId: id,
+      filename: `${id}.pdf`,
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [{ kind: 'balance_sheet', title: 'Balance Sheet', pages: [1], columns: [fy(year)], wholeDollars: true, rows: [r([], 'Liabilities', 'heading', null), r(['Liabilities'], 'Current Liabilities', 'heading', null), ...rows] }],
+      },
+    })
+    const c = buildPrintedComparison([
+      report('fy23', 2023, [r(CL, 'Loan - Director', 'line', -9_000), r(CL, 'Funds Introduced', 'line', 1_000)]),
+      report('fy24', 2024, [r(CL, 'Loan - Director', 'line', -5_000), r(CL, 'Funds Introduced', 'line', 2_000)]),
+      report('fy25', 2025, [r(CL, 'Accrued Charges', 'line', 100)]),
+    ])
+    const mapping = entries(c, { loan_receivable: ['Loan - Director'], loan_payable: ['Funds Introduced'] })
+    const years = loanHistory(c, mapping)
+    expect(years.map((y) => [y.label, y.owedTo, y.owedBy])).toEqual([
+      ['FY2023 balance sheet', 9_000, 1_000],
+      ['FY2024 balance sheet', 5_000, 2_000],
+      // Not printed on the latest: not identified, never $0.
+      ['FY2025 balance sheet', null, null],
+    ])
+    // The latest agrees with what the prediction uses.
+    expect(predictionFinancials(c, mapping).loanReceivable).toBeNull()
+    expect(directorLoanYears(years, 'gross').map((y) => y.amount)).toEqual([9_000, 5_000, null])
+    expect(directorLoanYears(years, 'net').map((y) => y.amount)).toEqual([8_000, 3_000, null])
   })
 
   it('shows $0 when the mapped line prints "-" (nil)', () => {
