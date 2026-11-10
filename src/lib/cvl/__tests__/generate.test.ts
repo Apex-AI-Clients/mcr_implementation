@@ -2,7 +2,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { allFormsSaved, caseJobs, fileNameFor, fillAll, fillJob, warningsFor } from '../generate'
-import { readCvlSettings } from '../settings'
 import { context } from './fixtures'
 
 // Each test fills real ASIC PDFs; under full-suite load that can pass 20s.
@@ -45,30 +44,14 @@ describe('caseJobs', () => {
 })
 
 describe('warningsFor', () => {
-  it('lists overflow, amounts not placed, and forms never opened (Form 509’s lodgement details have starting values)', () => {
+  it('lists overflow and forms never opened, never amounts to place (Form 509’s lodgement details have starting values)', () => {
     const [f509] = caseJobs(context(), [])
     const w = warningsFor(f509, [{ key: 'company_name', q: 'Company details', message: 'Answer is too long for the box and was cut off: attach an annexure.' }])
     expect(w).toEqual([
       'Company details: Answer is too long for the box and was cut off: attach an annexure.',
-      expect.stringMatching(/^Not placed on the form: Director loan/),
       'Never opened: printed from the pre-filled answers.',
     ])
     expect(w.join(' ')).not.toMatch(/Gabby/)
-  })
-
-  it('says nothing about placements once each is placed', () => {
-    const at = '2026-11-03T00:00:00Z'
-    const settings = readCvlSettings(
-      (['director_loan', 'financed_vehicles', 'super_payable', 'unsecured_creditors'] as const).map((k) => ({
-        key: `f509_place.${k}`,
-        value: 'none',
-        confirmed: true,
-        updated_by: 'Casey',
-        updated_at: at,
-      })),
-    )
-    const [f509] = caseJobs(context({ settings }), [])
-    expect(warningsFor(f509, []).some((w) => w.startsWith('Not placed'))).toBe(false)
   })
 })
 

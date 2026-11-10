@@ -6,15 +6,14 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Download, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
-import { aud, type AmountSource } from '@/lib/sources'
+import type { AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
 import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
 import { overflowOf, type Room } from '@/lib/forms/fit'
 import { choiceValue, choiceValues } from '@/lib/forms/choice'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
-import type { Candidate, Prefill } from '@/lib/cvl/prefill'
+import type { Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
-import { PLACEMENTS } from '@/lib/cvl/settings'
 
 interface CvlFormEditorProps {
   caseId: string
@@ -424,7 +423,6 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             title={map.title}
             fileName={`${map.title.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}${subject === 'company' ? '' : `-${(subjects.find((x) => x.subject === subject)?.label ?? subject).replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}`}.pdf`}
           />
-          {prefill.candidates.length > 0 && <Candidates candidates={prefill.candidates} />}
         </div>
       </div>
     </div>
@@ -1337,30 +1335,3 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
   )
 }
 
-/* ---------------- Form 509 candidates ---------------- */
-
-function Candidates({ candidates }: { candidates: Candidate[] }) {
-  return (
-    <aside className="h-fit space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="text-sm font-semibold text-foreground">Amounts to place on the form</h2>
-      <p className="text-xs text-foreground/50">From the client file. Type each one that belongs into its box on the left.</p>
-      <ul className="space-y-3 text-xs">
-        {candidates.map((c) => {
-          const placement = c.target ? (PLACEMENTS[c.key].options as Record<string, string>)[c.target] : null
-          return (
-            <li key={c.key} className="rounded-lg border border-border/60 p-2.5">
-              <p className="font-medium text-foreground/80">{c.label}</p>
-              <p className="mt-0.5 flex items-center gap-1 tabular-nums text-foreground">
-                {aud(c.amount)}
-                <SourceButton source={c.source} label={c.label} />
-              </p>
-              <p className="mt-1 text-foreground/50">
-                {placement ? `Placed in ${placement}` : 'Not on the form yet'}
-              </p>
-            </li>
-          )
-        })}
-      </ul>
-    </aside>
-  )
-}

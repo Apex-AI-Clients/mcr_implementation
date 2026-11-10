@@ -77,12 +77,10 @@ export interface FilledJob {
   warnings: string[]
 }
 
-/** What to check before printing: overflow, blank settings, amounts not placed. Pure. */
+/** What to check before printing: overflow, blank settings. Pure. */
 export function warningsFor(job: FormJob, engine: readonly FormWarning[]): string[] {
   const out = [...job.prefill.warnings.filter((w) => !/^Estimated realisable values/.test(w))]
   for (const w of engine) out.push(`${w.q ? `${w.q}: ` : ''}${w.message}`)
-  const unplaced = job.prefill.candidates.filter((c) => !c.target)
-  if (unplaced.length) out.push(`Not placed on the form: ${unplaced.map((c) => c.label).join('; ')}.`)
   if (!job.fromDraft) out.push('Never opened: printed from the pre-filled answers.')
   return out
 }
