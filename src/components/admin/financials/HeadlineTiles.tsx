@@ -148,7 +148,7 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
             <div
               key={info.key}
               data-status={status}
-              className={cn('relative flex flex-col rounded-lg border border-border/60 border-t-4 bg-card p-3', look.edge)}
+              className={cn('relative rounded-lg border border-border/60 border-t-4 bg-card p-3', look.edge)}
             >
               <button
                 type="button"
@@ -188,7 +188,11 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
                     Check this match
                   </button>
                 </div>
-              ) : resolved.status === 'none' ? null : (
+              ) : resolved.status === 'none' ? (
+                <p className="mt-2 text-xs text-foreground/60">
+                  {isAutoSelected(entries) ? 'Auto-selected: not printed.' : <>Confirmed: the statements don&apos;t print this.</>}
+                </p>
+              ) : (
                 <div className="mt-2 text-xs">
                   <p className="text-success">
                     {isAutoSelected(entries) ? 'Auto-selected — ' : ''}
@@ -197,24 +201,16 @@ export function HeadlineTiles({ clientId, basePath = `/clients/${clientId}`, com
                   <SourceLines sources={sources} />
                 </div>
               )}
-              {/* Not printed: "Change" and the note pinned to the card's bottom, level with the amounts beside it. */}
-              <div className={cn(status !== 'not_found' && status !== 'suggested' && resolved.status === 'none' && 'order-last mt-auto pt-3')}>
-                {status === 'confirmed' && (
-                  <button
-                    type="button"
-                    onClick={() => setOpen(info.key)}
-                    className="no-print mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
-                  >
-                    <Pencil className="h-3 w-3" aria-hidden />
-                    Change
-                  </button>
-                )}
-                {status !== 'not_found' && status !== 'suggested' && resolved.status === 'none' && (
-                  <p className="mt-1 text-xs text-foreground/60">
-                    {isAutoSelected(entries) ? 'Auto-selected: not printed.' : <>Confirmed: the statements don&apos;t print this.</>}
-                  </p>
-                )}
-              </div>
+              {status === 'confirmed' && (
+                <button
+                  type="button"
+                  onClick={() => setOpen(info.key)}
+                  className="no-print mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+                >
+                  <Pencil className="h-3 w-3" aria-hidden />
+                  Change
+                </button>
+              )}
 
               {status !== 'not_found' && resolved.status !== 'none' && (
                 latest ? (

@@ -83,8 +83,9 @@ export function KeyFigurePicker({ comparison, meaning, current, currentNone = fa
           )
         })}
         {shown.length === 0 && <li className="px-2 py-1.5 text-xs text-foreground/55">No printed line matches. Try “Show all lines”.</li>}
-        <li>
-          <label className={cn('flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-xs', none ? 'border-accent/60 bg-accent/5' : 'border-border/40 hover:bg-surface/60')}>
+        {/* Always in view at the bottom of the list, however long it is: no scrolling down to say "not printed". */}
+        <li className="sticky bottom-0 z-10 bg-card pt-1">
+          <label className={cn('flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-xs shadow-sm', none ? 'border-accent/60 bg-accent/5' : 'border-border/40 hover:bg-surface/60')}>
             <input type={inputType} name={`pick-${meaning}`} checked={none} onChange={() => toggle(NONE)} className="accent-accent" />
             The statements don&apos;t print this
           </label>
