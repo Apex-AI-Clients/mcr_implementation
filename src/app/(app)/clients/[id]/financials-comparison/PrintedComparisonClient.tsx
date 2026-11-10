@@ -55,7 +55,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
 
   const failures = printedHardChecks(comparison)
   const exportLock = exportsLocked(failures, builtAt, figuresChecked)
-    ? `Needs review: tick "I've checked these figures against the source documents" first.`
+    ? `Some printed totals do not add up: tick "I've checked these figures" at the bottom of the page to export.`
     : null
   const reviewedBy = reviewLine(failures, builtAt, figuresChecked)
   const hasTables = comparison.tables.length > 0
@@ -123,7 +123,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
 
       <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
 
-      <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
 
 
       {!hasTables ? (
@@ -164,6 +163,9 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
           ))}
         </>
       )}
+
+      {/* Totals that do not add up: at the bottom, never in the way (they do not stop the prediction). */}
+      <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
 
       <FilesPanel comparison={comparison} />
     </div>

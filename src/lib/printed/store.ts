@@ -12,7 +12,8 @@ import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
  * in printed_reads (migration 0033), and the comparison built from them.
  *
  * A PDF is read when it has no read by the current READER_VERSION, so a
- * reader fix reaches every client the next time their page opens. Reading is
+ * reader fix reaches every client the next time their page opens; except a
+ * PDF with scanned pages, which once read is kept until staff press Refresh. Reading is
  * on our own server, in memory: no file or figure is sent anywhere. If the
  * read cannot be kept (the table not there yet), it is still used.
  */
@@ -62,7 +63,11 @@ export async function loadStoredReads(supabase: ServerClient, clientId: string):
   const out = new Map<string, StoredRead>()
   if (error) return out
   for (const row of data ?? []) {
-    if (row.reader_version !== READER_VERSION) continue
+    // A scanned file, once read, is kept until staff press Refresh: a reader
+    // update never sends it to be read again on its own (Gabby, 10 Nov 2026).
+    const scan = (row as { scan?: ScanSummary | null }).scan
+    const keptScan = scan?.state === 'done' && scan.pages.some((p) => p.scanned)
+    if (row.reader_version !== READER_VERSION && !keptScan) continue
     out.set(row.document_id, {
       documentId: row.document_id,
       readAt: row.read_at,

@@ -67,9 +67,15 @@ describe('PrintedComparisonClient', () => {
     expect(screen.getByText('“Total Assets 1250 1025.5”')).toBeTruthy()
   })
 
-  it('locks the PDF and CSV behind Needs review when a printed total does not add up', () => {
-    renderPage(comparison({ broken: true }))
-    expect(screen.getByText(/Needs review: a figure does not reconcile/)).toBeTruthy()
+  it('lists a printed total that does not add up at the bottom (no red banner), and the export waits for the tick', () => {
+    const { container } = renderPage(comparison({ broken: true }))
+    expect(screen.queryByText(/Needs review/)).toBeNull()
+    const section = screen.getByRole('region', { name: "Totals that don't add up" })
+    expect(section.textContent).toContain('1 total does not add up')
+    expect(section.textContent).toContain('it does not stop the SBR prediction')
+    // At the bottom: after every statement table.
+    const tables = container.querySelectorAll('table')
+    expect(tables[tables.length - 1].compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
   })

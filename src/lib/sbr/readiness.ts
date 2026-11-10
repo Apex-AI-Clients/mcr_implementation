@@ -132,15 +132,6 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   if (f.outOfDate) return item(input, 'financials', input.jobRunning ? 'processing' : 'not_started', null, href)
   // Read, but fewer than two annual statements came out: nothing to compare.
   if (!f.comparison) return item(input, 'financials', 'failed', null, href)
-  if (f.unreviewedFailures > 0) {
-    return item(
-      input,
-      'financials',
-      'needs_review',
-      `${f.unreviewedFailures === 1 ? 'A figure does' : `${f.unreviewedFailures} figures do`} not reconcile. Check them against the source documents and tick the box on the comparison page.`,
-      href,
-    )
-  }
   if (!f.mappingConfirmed) {
     return item(
       input,
@@ -150,7 +141,12 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       href,
     )
   }
-  return item(input, 'financials', 'ready', null, href)
+  // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
+  const note =
+    f.unreviewedFailures > 0
+      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are listed at the bottom of the comparison page.`
+      : null
+  return item(input, 'financials', 'ready', note, href)
 }
 
 function lodgementItem(input: ReadinessInput): ReadinessItem {
