@@ -8,6 +8,8 @@ import { Spinner } from '@/components/ui/Spinner'
 import type { JobStatusResponse } from '@/app/api/admin/clients/[id]/financials-comparison/status/[jobId]/route'
 
 const POLL_INTERVAL_MS = 4000
+/** Checks in a row that got no answer: past this the banner says so, rather than spin on. */
+const UNANSWERED_LIMIT = 3
 
 interface Props {
   clientId: string
@@ -18,13 +20,15 @@ interface Props {
   startedAt: string
 }
 
-type Phase = 'running' | 'done' | 'failed'
+type Phase = 'running' | 'done' | 'failed' | 'unknown'
 
 /**
  * A banner on the client page while the uploaded files are read in the
  * background (financial statement PDFs as printed, director penalty notices,
  * the ATO export; no AI). A run takes seconds, up to about a minute with many
- * files. Follows the job until it finishes, then says so.
+ * files. Follows the job until it finishes, then says so. If its checks go
+ * unanswered (an error page instead of the status), it says it cannot tell
+ * and offers a reload, never "Reading…" forever.
  */
 export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}`, jobId, startedAt }: Props) {
   const router = useRouter()
@@ -35,6 +39,7 @@ export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     let stopped = false
+    let unanswered = 0
 
     // Recursive setTimeout, so a slow answer never overlaps the next poll.
     async function poll() {
@@ -45,6 +50,7 @@ export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}
         )
         if (stopped) return
         const data = (await res.json()) as JobStatusResponse & { error?: string }
+        unanswered = 0
         if (res.ok && data.status === 'done') {
           setPhase('done')
           router.refresh()
@@ -56,8 +62,13 @@ export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}
           return
         }
       } catch {
-        // A dropped poll is not a failed job: try again on the next tick.
+        // A dropped poll is not a failed job: try again on the next tick, a few times.
         if (stopped) return
+        unanswered++
+        if (unanswered >= UNANSWERED_LIMIT) {
+          setPhase('unknown')
+          return
+        }
       }
       setMinutes(minutesSince(startedAt))
       timer = setTimeout(poll, POLL_INTERVAL_MS)
@@ -80,6 +91,21 @@ export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}
         <Link href={href} className="text-xs font-medium text-accent hover:underline">
           View comparison
         </Link>
+      </div>
+    )
+  }
+
+  if (phase === 'unknown') {
+    return (
+      <div role="status" className="mb-6 flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
+        <AlertCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+        <p className="flex-1 text-foreground/80">
+          <span className="font-medium text-foreground">Could not check on the reading of the uploaded files.</span> It has probably finished: reload the
+          page to see.
+        </p>
+        <button type="button" onClick={() => window.location.reload()} className="shrink-0 text-xs font-medium text-accent hover:underline">
+          Reload
+        </button>
       </div>
     )
   }
@@ -107,7 +133,7 @@ export function ComparisonJobStatus({ clientId, basePath = `/clients/${clientId}
         Started {minutes < 1 ? 'just now' : `${minutes} min ago`}. This usually takes under a minute; you can keep working.
       </p>
       <Link href={href} className="shrink-0 text-xs font-medium text-accent hover:underline">
-        View progress
+        Open comparison
       </Link>
     </div>
   )
