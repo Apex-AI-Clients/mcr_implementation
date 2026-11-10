@@ -26,6 +26,8 @@ export interface CvlListRow {
   createdAt: string
   /** Also an SBR client on the SBR list (migration 0047). */
   inSbr: boolean
+  /** The kept ASIC extract PDF's date (migration 0041): '' when kept with no date; null when none is kept. */
+  asicExtract?: string | null
 }
 
 export interface CvlListPage {
@@ -97,5 +99,23 @@ export async function getCvlListPage(options: { q?: string; page?: string }): Pr
     }
   })
 
-  return { rows, total: count ?? 0, page, pageSize: CVL_PAGE_SIZE, query: q }
+  // Which files have the ASIC extract PDF kept: one query for the page.
+  const ids = rows.map((r) => r.clientId)
+  const kept = new Map<string, string>()
+  if (ids.length) {
+    const { data: extracts } = await supabase
+      .from('client_asic_extracts')
+      .select('client_id, extracted_at, uploaded_at')
+      .in('client_id', ids)
+      .order('uploaded_at', { ascending: false })
+    for (const e of extracts ?? []) if (!kept.has(e.client_id)) kept.set(e.client_id, e.extracted_at ?? '')
+  }
+
+  return {
+    rows: rows.map((r) => ({ ...r, asicExtract: kept.has(r.clientId) ? kept.get(r.clientId)! : null })),
+    total: count ?? 0,
+    page,
+    pageSize: CVL_PAGE_SIZE,
+    query: q,
+  }
 }

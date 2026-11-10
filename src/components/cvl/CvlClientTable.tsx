@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import { CheckCircle2, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils'
+import { formatExtractDate } from '@/lib/asic/dates'
 import { CVL_ORIGIN_LABELS, CVL_STATUS_LABELS, type CvlStatus } from '@/lib/cvl/cases'
 import type { CvlListPage } from '@/lib/cvl/listing'
 import { CvlDeleteButton } from './CvlDeleteButton'
@@ -29,6 +30,8 @@ interface CvlClientTableProps {
 /** The CVL client list. Search and paging are plain links. */
 export function CvlClientTable({ list, path, keep = {}, rowHref, deletable = false, empty }: CvlClientTableProps) {
   const pages = Math.max(1, Math.ceil(list.total / list.pageSize))
+  // Shown when the list says, per file, whether its ASIC extract PDF is kept (cvl/listing.ts).
+  const showAsic = list.rows.some((r) => r.asicExtract !== undefined)
   const link = (page: number) => {
     const params = new URLSearchParams({ ...keep, ...(list.query ? { q: list.query } : {}), page: String(page) })
     return `${path}?${params}`
@@ -70,6 +73,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, deletable = fal
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Came from</th>
                 <th className="px-4 py-3 font-medium">Became CVL client</th>
+                {showAsic && <th className="px-4 py-3 font-medium">ASIC extract</th>}
                 {deletable && <th className="w-12 px-4 py-3"><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
@@ -99,6 +103,20 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, deletable = fal
                     )}
                   </td>
                   <td className="px-4 py-3 tabular-nums text-foreground/70">{formatDate(r.createdAt)}</td>
+                  {showAsic && (
+                    <td className="px-4 py-3 text-xs">
+                      {r.asicExtract != null ? (
+                        <span className="inline-flex items-center gap-1 text-success" title={r.asicExtract ? `ASIC extract dated ${formatExtractDate(r.asicExtract)}` : 'ASIC extract on file'}>
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                          {r.asicExtract ? formatExtractDate(r.asicExtract) : 'On file'}
+                        </span>
+                      ) : (
+                        <Link href={`${rowHref(r.clientId)}/intake`} className="text-warning hover:underline" title="No ASIC extract on file: upload it on the intake page">
+                          — Not on file
+                        </Link>
+                      )}
+                    </td>
+                  )}
                   {deletable && (
                     <td className="px-4 py-3 text-right">
                       <CvlDeleteButton caseId={r.caseId} clientName={r.name} inSbr={r.inSbr} compact />

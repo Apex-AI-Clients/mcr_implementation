@@ -6,7 +6,9 @@ const push = vi.fn()
 const refresh = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }))
 
-import { CvlDeleteButton } from '../CvlDeleteButton'
+// A fresh copy: another test file's router mock must never be the one it calls.
+vi.resetModules()
+const { CvlDeleteButton } = await import('../CvlDeleteButton')
 
 /** Delete on the CVL list and page: the file goes to the Archive, never destroyed in one click. Synthetic data. */
 

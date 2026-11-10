@@ -13,7 +13,7 @@ import { getCvlListPage } from '../listing'
  */
 
 /** A query chain that records every filter, and answers with `rows`. */
-function recordingDb(rows: unknown[] = []) {
+function recordingDb(rows: unknown[] = [], extracts: unknown[] = []) {
   const calls: { table: string; method: string; args: unknown[] }[] = []
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => {
@@ -24,6 +24,8 @@ function recordingDb(rows: unknown[] = []) {
           return chain
         }
       }
+      // The kept ASIC extracts are read with a plain await, after the page.
+      if (table === 'client_asic_extracts') chain.then = (resolve: (v: unknown) => void) => resolve({ data: extracts, error: null })
       chain.range = (...args: unknown[]) => {
         calls.push({ table, method: 'range', args })
         return Promise.resolve({ data: rows, count: rows.length, error: null })
@@ -96,5 +98,24 @@ describe('the CVL list', () => {
       ['cl_3', false],
     ])
     expect(page.rows[0]).toEqual(expect.objectContaining({ name: 'Sample Trading Pty Ltd', status: 'printed', origin: 'sbr_client' }))
+  })
+
+  it('says per file whether the ASIC extract PDF is kept, from the latest upload', async () => {
+    const calls = recordingDb(
+      [ROW, { ...ROW, id: 'case-2', client_id: 'cl_2' }, { ...ROW, id: 'case-3', client_id: 'cl_3' }],
+      [
+        // Newest first, as asked for: the latest one counts.
+        { client_id: 'cl_1', extracted_at: '2026-10-03', uploaded_at: '2026-11-05T00:00:00Z' },
+        { client_id: 'cl_1', extracted_at: '2025-01-01', uploaded_at: '2026-10-01T00:00:00Z' },
+        { client_id: 'cl_3', extracted_at: null, uploaded_at: '2026-11-01T00:00:00Z' },
+      ],
+    )
+    const page = await getCvlListPage({})
+    expect(calls.find((c) => c.table === 'client_asic_extracts' && c.method === 'in')?.args).toEqual(['client_id', ['cl_1', 'cl_2', 'cl_3']])
+    expect(page.rows.map((r) => [r.clientId, r.asicExtract])).toEqual([
+      ['cl_1', '2026-10-03'],
+      ['cl_2', null],
+      ['cl_3', ''],
+    ])
   })
 })

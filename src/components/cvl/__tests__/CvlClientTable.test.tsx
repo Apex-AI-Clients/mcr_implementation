@@ -111,3 +111,19 @@ describe('CvlClientTable: delete several', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 })
+
+describe('CvlClientTable: ASIC extract on file', () => {
+  it('marks each file: the extract date when kept, else a link to upload it on the intake page', () => {
+    const withAsic: CvlListPage = { ...list, rows: [{ ...row(1), asicExtract: '2026-10-03' }, { ...row(2), asicExtract: null }, { ...row(3), asicExtract: '' }] }
+    render(<CvlClientTable list={withAsic} path="/cvl" rowHref={(id) => `/cvl/${id}`} empty="No CVL clients yet." />)
+    expect(screen.getByRole('columnheader', { name: 'ASIC extract' })).toBeTruthy()
+    expect(screen.getByText('3 October 2026')).toBeTruthy()
+    expect(screen.getByRole('link', { name: '— Not on file' }).getAttribute('href')).toBe('/cvl/cl_2/intake')
+    expect(screen.getByText('On file')).toBeTruthy()
+  })
+
+  it('has no ASIC extract column when the list does not say', () => {
+    renderList(false)
+    expect(screen.queryByRole('columnheader', { name: 'ASIC extract' })).toBeNull()
+  })
+})

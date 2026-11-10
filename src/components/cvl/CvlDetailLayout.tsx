@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowLeft, ArrowRight, BarChart3, Briefcase, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
+import { AsicExtractOnFile } from '@/components/asic/AsicExtractOnFile'
 import { AtoAccountsPanel } from '@/components/admin/AtoAccountsPanel'
 import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
@@ -289,7 +290,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                   </div>
                 ))}
                 {company.asicExtractDate && (
-                  <p className="pt-1 text-[11px] text-foreground/40">From the ASIC extract dated {formatDate(company.asicExtractDate)}.</p>
+                  <p className="pt-1 text-[11px] text-foreground/40">Details filled from the ASIC extract dated {formatDate(company.asicExtractDate)}.</p>
                 )}
               </dl>
             ) : (
@@ -301,6 +302,8 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                 , or upload the ASIC extract.
               </p>
             )}
+            {/* Whether the PDF itself is kept: the forms' registration and appointment dates come from it. */}
+            <AsicExtractOnFile clientId={client.id} uploadHref={`${base}/intake`} className="mt-3 border-t border-border/60 pt-3" />
           </Card>
 
           <Card>

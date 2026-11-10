@@ -15,6 +15,7 @@ import { CHECKLIST_ORDER, CATEGORY_META, displayCategory } from '@/lib/constants
 import type { DocumentRecord, AccountantDetails } from '@/types/app'
 import type { DocCategory } from '@/lib/constants'
 import { IdentitySummary } from '@/components/identity/IdentitySummary'
+import { AsicExtractOnFile } from '@/components/asic/AsicExtractOnFile'
 
 interface Props {
   /** null = adding a new client (later steps are locked until created). */
@@ -61,6 +62,8 @@ export function IntakeClient({
   const router = useRouter()
   const [state, setState] = useState<State>(clientId ? { phase: 'loading' } : { phase: 'new' })
   const [activeStepId, setActiveStepId] = useState<string>('details')
+  // Asks again whether the ASIC extract PDF is kept, after each save.
+  const [savedCount, setSavedCount] = useState(0)
 
   const load = useCallback(async () => {
     if (!clientId) return
@@ -91,6 +94,7 @@ export function IntakeClient({
   }, [load])
 
   const handleStepComplete = useCallback(() => {
+    setSavedCount((n) => n + 1)
     load()
   }, [load])
 
@@ -287,11 +291,15 @@ export function IntakeClient({
             )}
 
             {activeStep.kind.kind === 'company' && clientId && (
-              <CompanyDetailsForm
-                clientId={clientId}
-                initial={companyDetails}
-                onComplete={handleStepComplete}
-              />
+              <div className="space-y-3">
+                {/* Whether the PDF itself is kept on the file, not only the details filled from it. */}
+                <AsicExtractOnFile clientId={clientId} refreshKey={savedCount} className="rounded-lg border border-border/60 bg-surface/30 px-3 py-2" />
+                <CompanyDetailsForm
+                  clientId={clientId}
+                  initial={companyDetails}
+                  onComplete={handleStepComplete}
+                />
+              </div>
             )}
 
             {activeStep.kind.kind === 'accountant' && clientId && (

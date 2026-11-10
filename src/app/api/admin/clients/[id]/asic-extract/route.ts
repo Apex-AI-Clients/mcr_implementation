@@ -11,6 +11,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 /**
+ * GET: whether one is kept (below).
+ *
  * POST /api/admin/clients/[id]/asic-extract — keep an ASIC extract PDF on the
  * client file (migration 0041, pending Gabby's confirmation).
  *
@@ -28,6 +30,30 @@ const ROUTE = 'POST /api/admin/clients/[id]/asic-extract'
 
 interface Params {
   params: Promise<{ id: string }>
+}
+
+/**
+ * GET — whether an ASIC extract PDF is kept on the file: the latest one's id,
+ * the date it was extracted from ASIC and when it was uploaded; null when none
+ * is kept (files filled before migration 0041 have none).
+ */
+export async function GET(_req: NextRequest, { params }: Params) {
+  const staff = await requireStaffUser()
+  if (!staff) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { id } = await params
+  const supabase = getSupabaseServerClient()
+  const { data, error } = await supabase
+    .from('client_asic_extracts')
+    .select('id, extracted_at, uploaded_at')
+    .eq('client_id', id)
+    .order('uploaded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) return NextResponse.json({ error: 'Could not check the ASIC extract.' }, { status: 500, headers: NO_STORE })
+  return NextResponse.json(
+    { extract: data ? { id: data.id, extractedAt: data.extracted_at, uploadedAt: data.uploaded_at } : null },
+    { headers: NO_STORE },
+  )
 }
 
 export async function POST(req: NextRequest, { params }: Params) {
