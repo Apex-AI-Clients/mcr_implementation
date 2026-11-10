@@ -119,7 +119,7 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   const f = input.financials
   const href = `/clients/${input.clientId}/financials-comparison`
   if (f.fileCount === 0) return item(input, 'financials', 'not_uploaded', null, `/clients/${input.clientId}`)
-  // Scanned statements: not compared until both readings are in.
+  // Scanned statements: not compared until they are read.
   if ((f.scanning ?? 0) > 0) {
     const n = f.scanning!
     return {

@@ -889,21 +889,23 @@ Added 2026-10-29 for the CVL forms. Code: `src/app/api/admin/clients/[id]/asic-e
 
 ---
 
-## Scanned financial statements read twice (migration 0044) — GABBY-APPROVED
+## Scanned financial statements read by Claude (migrations 0044–0046) — GABBY-APPROVED
 
 Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
 `src/lib/ai/openrouterClient.ts`, `SCAN_PAGE_PROMPT` in `src/lib/ai/prompts.ts`,
-`supabase/migrations/0044_scanned_statements.sql`. CLAUDE.md rule 12.
+`supabase/migrations/0044_scanned_statements.sql` (and 0045, 0046). CLAUDE.md rule 12.
 
 - A PDF page with no text layer and a full-page image is a scan. Text-layer
-  pages keep the exact reader; OCR is never used on them.
-- Scanned pages are first sorted by their title (Tesseract, on our server):
-  only profit and loss, trading statement and balance sheet pages are read;
-  contents, notes, tax reconciliations, depreciation schedules, declarations
-  and compilation reports are skipped, and the Files read panel says which.
-- Each statement page is read twice, independently: by Tesseract on our server,
-  and by Claude from the **page image** (the only statement content ever sent to
-  a model), through the existing OpenRouter client. No other page, figure or
+  pages keep the exact reader and are never sent anywhere.
+- Which scanned pages are statements is decided on our own server: Tesseract
+  (open source) reads only the title at the top of each scanned page. Only
+  profit and loss, trading statement and balance sheet pages go further;
+  contents, notes, tax reconciliations, distribution and beneficiary
+  statements, depreciation schedules, declarations and compilation reports
+  never leave our server, and the Files read panel lists them as skipped.
+- Claude reads each statement page from its **page image** (the only statement
+  content ever sent to a model), every line with the section headings it sits
+  under, through the existing OpenRouter client. No other page, figure or
   file is sent. Nothing is logged but ids, provider and token counts.
 - **Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.**
   (Option A, in writing. It replaces the earlier zero-retention requirement,
@@ -911,13 +913,15 @@ Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
   Claude call: scanned-page reading, AI summaries and label suggestions. If
   OpenRouter cannot honour Anthropic-only with no training, the call fails;
   it is never routed elsewhere.)
-- Figures both readings agree on are accepted ("Read from a scan"). Where they
-  differ, staff see both and a crop of the printed line (made on our server,
-  never stored) and choose one or type the figure; who and when are kept. The
-  comparison stays "Needs review" until every one is chosen.
-- At most 60 pages a day per client go to Claude; past that, or if Claude is
-  unavailable, Tesseract reads alone and every figure says "single reading —
-  check". The accountant's digital export is always exact: staff are prompted
-  to ask for it.
-- To undo: unset `OPENROUTER_API_KEY` for the scan reader (Tesseract then reads
-  alone), or stop calling `readOrQueueScan` in `src/lib/printed/store.ts`.
+- Claude's reading is accepted as read (10 Nov 2026: the second, Tesseract
+  reading of every figure was removed; on the client checked, every figure
+  the two readings disagreed on was Tesseract's misread). Every printed total
+  is still checked to add up, as for any statement, and staff can correct a
+  scanned figure by clicking it (who and when are kept).
+- At most 60 statement pages a day per client go to Claude; past that, or if
+  Claude is unavailable, those pages wait ("could not be read yet") and
+  nothing is guessed. A page already read is never sent again (its reading is
+  kept and reused). The accountant's digital export is always exact: staff
+  are prompted to ask for it.
+- To undo: unset `OPENROUTER_API_KEY` (scans are then not read), or stop
+  calling `readOrQueueScan` in `src/lib/printed/store.ts`.

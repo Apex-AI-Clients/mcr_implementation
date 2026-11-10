@@ -14,10 +14,7 @@ import type { FinancialCheck, FinancialCheckKind } from './types'
  * different failure, needs a new tick.
  */
 
-const HARD_KINDS = new Set<FinancialCheckKind>(['totals_reconciliation', 'balance_sheet_equation', 'retained_earnings_rollforward', 'scan_disagreement', 'scan_single_reading'])
-
-/** Scanned figures the two readings disagree on: the tick does not settle these, a staff choice of each figure does. */
-export const unresolvedScanFigures = (failures: FinancialCheck[]) => failures.filter((c) => c.kind === 'scan_disagreement').length
+const HARD_KINDS = new Set<FinancialCheckKind>(['totals_reconciliation', 'balance_sheet_equation', 'retained_earnings_rollforward'])
 
 export function hardCheckFailures(checks: FinancialCheck[] | undefined): FinancialCheck[] {
   return (checks ?? []).filter((c) => c.severity === 'warning' && HARD_KINDS.has(c.kind))
@@ -50,7 +47,6 @@ export interface FiguresChecked {
 
 /** The exports are locked while a hard check fails and no tick covers it. */
 export function exportsLocked(failures: FinancialCheck[], generatedAt: string | null, checked: FiguresChecked | null): boolean {
-  if (unresolvedScanFigures(failures) > 0) return true
   const fingerprint = hardChecksFingerprint(generatedAt, failures)
   return fingerprint !== null && checked?.fingerprint !== fingerprint
 }

@@ -122,30 +122,35 @@ Respond with the summary text only. No preamble, no headers, no quotes.
 `.trim()
 
 /**
- * The second, independent reading of a SCANNED statement page (src/lib/scan):
- * the page image only, transcribed, never interpreted. The answer is checked
- * against a strict schema (scan/claudeReader.ts) and compared figure by figure
- * with Tesseract's reading; staff settle every difference.
+ * The reading of a SCANNED statement page (src/lib/scan): the page image
+ * only, transcribed, never interpreted. Each line names the section headings
+ * it sits under, so the statement's structure never depends on reading
+ * indents. {context} says which sections are still open from the page before
+ * (a statement continued overleaf). The answer is checked against a strict
+ * schema (scan/claudeReader.ts) and every printed total is checked to add up.
  */
 export const SCAN_PAGE_PROMPT = `
 You are transcribing one scanned page of an Australian accountant's financial statements. Transcribe exactly what is printed. Do not calculate, correct, round, rename, reorder or interpret anything.
 
 If the page is not a profit and loss, trading statement, income statement, balance sheet or statement of financial position, answer {"title": null, "title_block": [], "columns": [], "rows": []}.
 
+{context}
+
 Otherwise answer with ONE JSON object and nothing else:
 {
-  "title": the statement title exactly as printed (e.g. "Profit & Loss Statement"),
+  "title": the statement title exactly as printed (e.g. "Profit & Loss Statement"); if the page continues a statement without printing its title, the title of the statement it continues,
   "title_block": the other lines printed with the title, top to bottom, exactly as printed (entity name, "For the year ended 30 June 2023", "As at 30 June 2023"),
   "columns": the headers of the amount columns, left to right, exactly as printed (e.g. ["2023", "2022"]); leave out a "Note"/"Notes" column and lines that only print "$",
   "rows": every printed line of the statement below the column headers, top to bottom, each as
     {"label": the label exactly as printed ("" if the line prints figures only),
-     "indent": 0 for a section heading or total printed at the left margin, 1 for a line indented under it, 2 for further indented,
+     "section": the section headings this line sits under, outermost first, each exactly as printed (e.g. ["Liabilities", "Current Liabilities", "Chattel Mortgages - Current"]); [] for a line under no heading. A heading's own section is the headings above it. A total line ("Total Current Liabilities") sits in the section it totals.
      "amounts": one entry per column: the figure exactly as printed as a string ("1,580,706", "(4,168)", "-"), or null where nothing is printed,
      "top": where the line sits on the page, as a fraction of the page height from the top (0.0 to 1.0), to two decimals}
 }
 
 Rules:
 - Include section headings (amounts all null), every line, every subtotal and total, in printed order.
+- Results such as "Gross Profit", "Net Profit", "Net Assets", "Profit / (Loss) Before Distribution" sit under no heading ([]) unless printed inside one.
 - Keep minus signs, brackets and "-" exactly as printed. Never add or drop digits, commas or cents.
 - Leave out the page footer, page numbers, the accountant's notes and signatures.
 - Output the JSON object only: no markdown, no code fence, no commentary.

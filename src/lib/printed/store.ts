@@ -24,9 +24,10 @@ import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
  * only for a client whose figures changed.
  *
  * 2026-11-04.1: "Profit / Loss from sale of assets" inside a section is a line;
- * a "(%)" row is a ratio; scanned pages are read twice (src/lib/scan).
+ * a "(%)" row is a ratio; scanned pages are read (src/lib/scan).
+ * 2026-11-10.1: scanned pages are read by Claude alone (Tesseract removed).
  */
-export const READER_VERSION = '2026-11-04.1'
+export const READER_VERSION = '2026-11-10.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -128,7 +129,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
  * A PDF with scanned pages (src/lib/scan): its text-layer pages are read now,
  * as always; the read says 'scan_pending' until the scanned pages are read
  * twice by /api/admin/clients/[id]/scan-read (the page starts it). The scan
- * reader (Tesseract and its model) lives in that route only. Without scanned pages: the reader as
+ * reader (Claude) runs in that route only. Without scanned pages: the reader as
  * before. If the scan check itself fails (a PDF pdf-lib cannot open), the
  * file is read as before.
  */
@@ -200,7 +201,7 @@ export async function loadPrintedComparison(
       if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
     }
   }
-  // Staff choices where the two readings of a scan differ (scan_figure_choices).
+  // Staff corrections of figures read from a scan (scan_figure_choices).
   const choices = await loadScanChoices(supabase, clientId)
   const input: ComparisonDocument[] = docs.map((d) => {
     const read = reads.get(d.id)?.read ?? null

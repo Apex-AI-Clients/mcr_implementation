@@ -30,7 +30,7 @@ export class UnsupportedScanImageError extends Error {
   }
 }
 
-/** The page's image, ready for Tesseract and Claude. Throws UnsupportedScanImageError for formats not handled. */
+/** The page's image, ready for Claude. Throws UnsupportedScanImageError for formats not handled. */
 export async function extractPageImage(doc: PDFDocument, pageIndex: number): Promise<PageImage> {
   const stream = largestImage(doc, pageIndex)
   if (!stream) throw new UnsupportedScanImageError('no image')
@@ -67,3 +67,4 @@ export async function cropBand(image: PageImage, band: [number, number], { pad =
     .toBuffer()
   return new Uint8Array(out)
 }
+

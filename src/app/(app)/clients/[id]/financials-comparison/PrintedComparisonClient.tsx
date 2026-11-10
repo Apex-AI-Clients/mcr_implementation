@@ -10,7 +10,7 @@ import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBann
 import { PrintedComparisonTable, type SelectedFigure } from '@/components/admin/financials/PrintedComparisonTable'
 import { HeadlineTiles } from '@/components/admin/financials/HeadlineTiles'
 import { ComparisonSummaryCard } from '@/components/admin/financials/ComparisonSummaryCard'
-import { ScanChecksPanel, ScanChooser, ScanCrop, ScanProgress } from '@/components/admin/financials/ScanFigures'
+import { ScanCorrection, ScanCrop, ScanProgress } from '@/components/admin/financials/ScanFigures'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
@@ -125,7 +125,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
 
       <NeedsReviewBanner clientId={clientId} failures={failures} generatedAt={builtAt} checked={figuresChecked} onChecked={setFiguresChecked} />
 
-      <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
       {!hasTables ? (
         <p className="rounded-lg border border-border/60 bg-surface/60 p-4 text-sm text-foreground/70">
@@ -203,18 +202,9 @@ function SourcePanel({ clientId, figure, onClose }: { clientId: string; figure: 
           <p className="font-mono text-[11px] text-foreground/60">&ldquo;{source.text}&rdquo;</p>
           {cell.scan && (
             <div className="space-y-1.5 pt-1">
-              <p className="text-foreground/70">
-                From a scanned PDF, read twice:{' '}
-                {cell.scan.status === 'agree'
-                  ? 'both readings agree.'
-                  : cell.scan.status === 'chosen'
-                    ? 'the readings differed; this figure was chosen.'
-                    : cell.scan.status === 'single'
-                      ? 'single reading — check it against the line below.'
-                      : 'the two readings differ — choose the figure.'}
-              </p>
+              <p className="text-foreground/70">From a scanned PDF, read by Claude from the page image:</p>
               <ScanCrop clientId={clientId} scan={cell.scan} />
-              <ScanChooser clientId={clientId} scan={cell.scan} />
+              <ScanCorrection clientId={clientId} scan={cell.scan} />
             </div>
           )}
           {cell.restated.map((r, i) => (

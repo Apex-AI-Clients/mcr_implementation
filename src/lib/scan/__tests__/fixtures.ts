@@ -106,14 +106,24 @@ export function profitAndLoss({ wrongTotal = false } = {}): SyntheticPage {
   }
 }
 
-/** Claude's transcription of profitAndLoss(), as the schema asks (scan/claudeReader.ts); `change` alters one figure. */
+/** Claude's transcription of a synthetic page, as the schema asks (scan/claudeReader.ts): each line with the headings it sits under. */
+export function answerFor(page: SyntheticPage, { change, carried = [] }: { change?: { label: string; column: number; to: string }; carried?: string[] } = {}): string {
+  let heading: string | null = null
+  const rows = page.rows!.map((r, i) => {
+    const indented = (r.indent ?? 0) > 0
+    if (!r.amounts && !indented) heading = r.label
+    const section = !r.amounts && !indented ? [...carried] : indented ? [...carried, ...(heading ? [heading] : [])] : [...carried]
+    return {
+      label: r.label,
+      section,
+      amounts: (r.amounts ?? page.columns!.map(() => null)).map((a, c) => (change && change.label === r.label && change.column === c ? change.to : a)),
+      top: Math.round(((370 + 110 + i * 58) / H) * 100) / 100,
+    }
+  })
+  return JSON.stringify({ title: page.title, title_block: page.titleBlock ?? [], columns: page.columns, rows })
+}
+
+/** Claude's transcription of profitAndLoss(); `change` alters one figure. */
 export function profitAndLossAnswer({ change }: { change?: { label: string; column: number; to: string } } = {}): string {
-  const page = profitAndLoss()
-  const rows = page.rows!.map((r, i) => ({
-    label: r.label,
-    indent: r.indent ?? 0,
-    amounts: (r.amounts ?? [null, null]).map((a, c) => (change && change.label === r.label && change.column === c ? change.to : a)),
-    top: Math.round(((370 + 110 + i * 58) / H) * 100) / 100,
-  }))
-  return JSON.stringify({ title: page.title, title_block: page.titleBlock, columns: page.columns, rows })
+  return answerFor(profitAndLoss(), { change })
 }

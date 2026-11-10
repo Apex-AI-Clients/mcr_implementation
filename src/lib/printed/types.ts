@@ -42,25 +42,21 @@ export interface PrintedRow {
   amounts: PrintedAmount[]
   /** The whole printed line, for "where did this come from". */
   text: string
-  /** A line read from a scanned page: both readings, per column (src/lib/scan). Absent on a text-layer page. */
+  /** A line read from a scanned page by Claude, per column (src/lib/scan). Absent on a text-layer page. */
   scan?: ScanRowInfo
 }
 
 /**
- * agree     both readings print the same figure: accepted ("Read from a scan")
- * disagree  they differ, or one of them misses it: staff choose
- * single    one reading only (the second was unavailable or over the daily cap): "single reading — check"
- * chosen    staff chose or typed the figure (scan_figure_choices)
+ * read      read by Claude from the scanned page: accepted as read
+ * chosen    corrected by staff (scan_figure_choices): the figure typed in
  */
-export type ScanCellStatus = 'agree' | 'disagree' | 'single' | 'chosen'
+export type ScanCellStatus = 'read' | 'chosen'
 
 export interface ScanCell {
   status: ScanCellStatus
-  /** Tesseract's figure; undefined when it did not read this line. */
-  ocr?: PrintedAmount
-  /** Claude's figure; undefined when it did not read this line (or was not asked). */
+  /** Claude's figure, as read from the page. */
   claude?: PrintedAmount
-  /** Who chose, and when (status 'chosen'). */
+  /** Who corrected it, and when (status 'chosen'). */
   chosenBy?: string
   chosenAt?: string
 }
@@ -86,7 +82,7 @@ export interface ScanPageInfo {
 export interface ScanSummary {
   state: 'pending' | 'done' | 'failed'
   pages: ScanPageInfo[]
-  /** Claude unavailable or over the daily cap: every scanned figure is a single reading. */
+  /** Unused since Claude reads scans alone (always false); kept for reads stored before. */
   singleReading: boolean
   model: string | null
   message: string | null

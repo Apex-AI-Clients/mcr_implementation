@@ -6,8 +6,8 @@ import { loadStoredReads } from '@/lib/printed/store'
 import { saveScanChoice, ScanChoiceError } from '@/lib/scan/choices'
 
 /**
- * PUT — staff settling a scanned figure the two readings disagree on
- * (src/lib/scan): Tesseract's, Claude's, or a typed figure. Who chose comes
+ * PUT — staff correcting a figure Claude read from a scanned page
+ * (src/lib/scan): the figure typed in (or Claude's own reading back). Who comes
  * from the session; the line is checked against the file's read as it is now.
  */
 
@@ -19,7 +19,7 @@ const BodySchema = z.object({
   documentId: z.string().uuid(),
   rowKey: z.string().min(1).max(1000),
   column: z.number().int().min(0).max(20),
-  source: z.enum(['tesseract', 'claude', 'typed']),
+  source: z.enum(['claude', 'typed']),
   value: z.number().finite().nullable(),
 })
 

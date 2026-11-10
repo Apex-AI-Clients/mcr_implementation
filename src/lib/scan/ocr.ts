@@ -2,27 +2,27 @@ import path from 'node:path'
 import os from 'node:os'
 import sharp from 'sharp'
 import { createWorker, type Worker } from 'tesseract.js'
-import type { OcrLine } from './ocrLines'
+import { statementKind } from '@/lib/printed/readStatements'
 import type { PageImage } from './pageImages'
 
 /**
  * Server-only. Tesseract (tesseract.js, open source, WebAssembly) on our own
- * server: the first reading of a scanned page. The English model ships with
- * the app (@tesseract.js-data/eng), so nothing is downloaded or sent anywhere.
- * Never used on a text-layer page.
+ * server, for ONE job: reading the title at the top of each scanned page, so
+ * only the statement pages are sent to Claude (CLAUDE.md rule 12: no other
+ * scanned page ever leaves our server). It reads no figure. The English model
+ * ships with the app (@tesseract.js-data/eng), so nothing is downloaded or
+ * sent anywhere. Never used on a text-layer page.
  */
 
-export interface OcrEngine {
-  /** The page's top third, cheaply: enough to read its title. */
+export interface TitleReader {
+  /** The page's top third, cheaply: its title lines. */
   titleLines(image: PageImage): Promise<string[]>
-  /** Every word on the page, with its position (image pixels), line by line. */
-  readLines(image: PageImage): Promise<OcrLine[]>
   close(): Promise<void>
 }
 
 const LANG_PATH = path.join(process.cwd(), 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int')
 
-export async function tesseractEngine(): Promise<OcrEngine> {
+export async function tesseractTitles(): Promise<TitleReader> {
   const worker: Worker = await createWorker('eng', 1, {
     langPath: LANG_PATH,
     gzip: true,
@@ -42,18 +42,33 @@ export async function tesseractEngine(): Promise<OcrEngine> {
         .map((l) => l.replace(/\s+/g, ' ').trim())
         .filter(Boolean)
     },
-    async readLines(image) {
-      const { data } = await worker.recognize(Buffer.from(image.bytes), {}, { blocks: true })
-      return (data.blocks ?? []).flatMap((b) =>
-        b.paragraphs.flatMap((p) =>
-          p.lines.map((l) => ({
-            words: l.words.map((w) => ({ text: w.text, confidence: w.confidence, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 })),
-          })),
-        ),
-      )
-    },
     async close() {
       await worker.terminate()
     },
   }
+}
+
+/**
+ * A statement title as OCR reads it ("Profit Loss Statement cL oN",
+ * "Profit & Loss Statement.", "Balance Sheet CLM"): the longest run of words
+ * from the start that is a P&L or balance sheet title, the "&" put back.
+ * Null when there is none.
+ */
+export function ocrTitle(text: string): string | null {
+  const words = text
+    .replace(/[.:]+$/g, '')
+    .split(/\s+/)
+    .map((w) => w.replace(/[.:,]+$/, ''))
+    .filter(Boolean)
+  let best: string | null = null
+  for (let n = 1; n <= Math.min(words.length, 12); n++) {
+    const candidate = words
+      .slice(0, n)
+      .join(' ')
+      .replace(/\bprofit\s+loss\b/i, (m) => m.replace(/\s+/, ' & '))
+    // A title is the line (a logo scrap or two beside it at most), capitalised: never a sentence that starts "balance sheet…".
+    if (statementKind(candidate) && words.length - n <= 2 && /^[A-Z]/.test(candidate)) best = candidate
+  }
+  // The longest: "Profit & Loss Statement", not "Profit & Loss".
+  return best
 }

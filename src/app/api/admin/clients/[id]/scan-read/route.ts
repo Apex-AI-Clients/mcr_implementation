@@ -12,8 +12,8 @@ import { closeDeadScanJobs, latestScanJob, runScanJob, scanJobAlive } from '@/li
  * Two requests at once never read a file twice: the database allows one
  * running reading per file (migration 0045).
  *
- * The only route that carries the scan reader: Tesseract and its English
- * model are traced into this function alone (next.config.ts).
+ * The scan reader (Claude, through the approved OpenRouter client) runs here,
+ * after the response, within this function's time limit.
  */
 
 export const maxDuration = 800

@@ -2,8 +2,8 @@ import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { PrintedRead } from '@/lib/printed/types'
 
 /**
- * Staff choices where the two readings of a scanned figure differ
- * (scan_figure_choices, migration 0044): Tesseract's figure, Claude's, or a
+ * Staff corrections of a figure Claude read from a scanned page
+ * (scan_figure_choices, migration 0044): Claude's figure back, or a
  * typed one, with who and when. Applied when the comparison is built, so a
  * choice never needs the scan read again, and survives a re-read that prints
  * the same line. Before the migration there are none.
@@ -69,8 +69,8 @@ export async function saveScanChoice(
   const row = read?.statements.flatMap((s) => s.rows).find((r) => r.scan?.key === rowKey)
   if (!row?.scan || column < 0 || column >= row.scan.cells.length) throw new ScanChoiceError('That figure is not a scanned figure of this file.')
   const cell = row.scan.cells[column]
-  const expected = source === 'tesseract' ? cell.ocr : source === 'claude' ? cell.claude : undefined
-  if (source !== 'typed' && (expected === undefined || typeof expected === 'string' || expected !== value)) throw new ScanChoiceError('That reading does not print this figure.')
+  if (source === 'tesseract') throw new ScanChoiceError('That reading is no longer used.')
+  if (source === 'claude' && cell.claude !== value) throw new ScanChoiceError('That reading does not print this figure.')
   if (value !== null && !Number.isFinite(value)) throw new ScanChoiceError('Type the figure as printed, e.g. 1,234 or (1,234).')
   const { error } = await supabase.from('scan_figure_choices').upsert({
     client_id: clientId,

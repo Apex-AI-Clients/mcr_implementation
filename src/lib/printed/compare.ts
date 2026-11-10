@@ -20,9 +20,9 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  *             and line: the own report's figure stays, with a note.
  *   Checks    every printed total of every report used, against its lines
  *             (verify.ts). A failure is a hard check: Needs review.
- *   Scans     a figure read from a scanned page carries both readings
- *             (src/lib/scan); one they disagree on is a hard check only a
- *             staff choice settles; a single reading is one to tick.
+ *   Scans     a figure read from a scanned page (by Claude, src/lib/scan)
+ *             carries that reading and where the line is on the page; its
+ *             totals are checked like any other.
  */
 
 export interface ComparisonDocument {
@@ -67,7 +67,7 @@ export interface ComparisonCell {
   restated: Restatement[]
   /** A printed total that does not add up (verify.ts), or adds up only to rounding. */
   check: TotalCheck['status'] | null
-  /** Read from a scanned page: both readings, and where the line is on the page (for its crop). */
+  /** Read from a scanned page: the reading (or a staff correction), and where the line is on the page (for its crop). */
   scan?: ScanCell & { key: string; documentId: string; page: number; band: [number, number] | null; column: number }
 }
 
@@ -87,7 +87,7 @@ export interface ComparisonTable {
 }
 
 export interface ComparisonFailure {
-  kind: 'totals_reconciliation' | 'balance_sheet_equation' | 'scan_disagreement' | 'scan_single_reading'
+  kind: 'totals_reconciliation' | 'balance_sheet_equation'
   statement: PrintedStatementKind
   column: string
   financialYear: number
@@ -419,40 +419,6 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
           : { printed: false, value: null, source: null, restated, check: null }
       }),
     }))
-    // Scanned figures: each disagreement is a hard check; single readings, one per year.
-    columns.forEach((col, i) => {
-      const doc = sources[i]
-      if (!doc) return
-      let single = 0
-      for (const row of rows) {
-        const cell = row.cells[i]
-        if (!cell.scan) continue
-        if (cell.scan.status === 'single') single++
-        if (cell.scan.status !== 'disagree') continue
-        failures.push({
-          kind: 'scan_disagreement',
-          statement: kind,
-          column: col.key,
-          financialYear: col.financialYear,
-          currentPeriod: col.kind === 'current_period',
-          documentId: doc.documentId,
-          message: `${doc.filename}, page ${cell.scan.page}: "${row.label || '(no label)'}" reads ${scanText(cell.scan.ocr)} by one reading and ${scanText(cell.scan.claude)} by the other. Choose the figure.`,
-          terms: [],
-        })
-      }
-      if (single > 0) {
-        failures.push({
-          kind: 'scan_single_reading',
-          statement: kind,
-          column: col.key,
-          financialYear: col.financialYear,
-          currentPeriod: col.kind === 'current_period',
-          documentId: doc.documentId,
-          message: `${doc.filename}: ${single} figure(s) were read from a scan by one reader only. Check them against the scan.`,
-          terms: [],
-        })
-      }
-    })
     const titleSource = blocks[orderIdx[0]]?.[0]
     tables.push({ kind, title: titleSource?.statement.title ?? (kind === 'profit_and_loss' ? 'Profit and Loss' : 'Balance Sheet'), rows })
   }
@@ -460,7 +426,6 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
   return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length, hiddenComparativeYears: hiddenYears }
 }
 
-const scanText = (v: PrintedAmount | undefined) => (v === undefined ? 'nothing' : v === null ? '"-"' : typeof v === 'number' ? v.toLocaleString('en-AU') : v)
 
 function describeDocuments(docs: ComparisonDocument[], used: Set<string>): DocumentUse[] {
   return docs.map((doc) => {

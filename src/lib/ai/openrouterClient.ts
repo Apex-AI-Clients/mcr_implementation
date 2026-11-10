@@ -60,7 +60,11 @@ export function aiSummariesEnabled(): boolean {
 
 /** The model for a purpose: env OPENROUTER_SUMMARY_MODEL / OPENROUTER_LABEL_MODEL, else the default. Claude only. */
 export function claudeModel(purpose: ClaudePurpose): string {
-  const env = { summary: process.env.OPENROUTER_SUMMARY_MODEL, labels: process.env.OPENROUTER_LABEL_MODEL, scan: process.env.OPENROUTER_SCAN_MODEL }[purpose]
+  const env = {
+    summary: process.env.OPENROUTER_SUMMARY_MODEL,
+    labels: process.env.OPENROUTER_LABEL_MODEL,
+    scan: process.env.OPENROUTER_SCAN_MODEL,
+  }[purpose]
   const fallback = { summary: DEFAULT_SUMMARY_MODEL, labels: DEFAULT_LABEL_MODEL, scan: DEFAULT_SCAN_MODEL }[purpose]
   const model = env?.trim() || fallback
   if (!model.startsWith('anthropic/')) throw new AiUnavailableError(`Only Claude models may be used: "${model}" is not one.`)
@@ -129,7 +133,7 @@ export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs =
   return { text, model: response.model, generationId: response.id }
 }
 
-/** The second reading of scanned statement pages: on whenever the key is set (it does not depend on the summaries flag). */
+/** The reading of scanned statement pages: on whenever the key is set (it does not depend on the summaries flag). */
 export function scanReadingEnabled(): boolean {
   return !!process.env.OPENROUTER_API_KEY
 }
@@ -164,7 +168,7 @@ export async function askClaudeImage({
   const model = claudeModel('scan')
   const response = await client(timeoutMs).chat.completions.create({
     model,
-    max_tokens: maxTokens,
+    max_tokens: maxTokens + THINKING_ROOM,
     messages: [
       {
         role: 'user',

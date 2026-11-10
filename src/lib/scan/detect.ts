@@ -7,7 +7,7 @@ import { MAX_FINANCIALS_PAGES } from '@/lib/printed/readPdf'
  * Server-only. Which pages of a PDF are scans: (almost) no text layer and a
  * full-page image. Cheap (the text layer and the PDF's structure, no OCR, no
  * image decoding), so every read can ask it. Deliberately light: no sharp, no
- * Tesseract, so the pages that read statements do not carry the scan reader
+ * model call, so the pages that read statements do not carry the scan reader
  * (that runs only in /api/admin/clients/[id]/scan-read).
  */
 

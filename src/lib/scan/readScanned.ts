@@ -1,92 +1,64 @@
-import { OTHER_TITLE, readStatements, statementKind } from '@/lib/printed/readStatements'
-import type { PrintedRead, ScanPageInfo } from '@/lib/printed/types'
-import { answerToLines, parseScanAnswer, ScanAnswerError, type ScanPageAnswer } from './claudeReader'
-import { ocrToLines, type BandedLine, type OcrLine } from './ocrLines'
-import type { OcrEngine } from './ocr'
-import { extractPageImage, openPdf, pageImageInfo, UnsupportedScanImageError, type PageImage } from './pageImages'
-import { reconcileReads } from './reconcile'
+import { OTHER_TITLE, readStatements } from '@/lib/printed/readStatements'
+import type { PrintedRead, PrintedRow, ScanPageInfo } from '@/lib/printed/types'
+import { answerToLines, continuationContext, parseScanAnswer, ScanAnswerError, type BandedLine, type ScanPageAnswer } from './claudeReader'
+import { extractPageImage, openPdf, UnsupportedScanImageError, type PageImage } from './pageImages'
+import { ocrTitle, type TitleReader } from './ocr'
 import { scannedPages } from './detect'
 
 export { scannedPages }
 
 /**
- * A PDF with scanned pages, read twice, independently, and reconciled
- * (reconcile.ts). Server-only; the engines are passed in.
+ * A PDF with scanned pages, read by Claude (src/lib/scan). Server-only; the
+ * title reader and Claude are passed in.
  *
- *   B1  a page with (almost) no text layer and a full-page image is a scan;
- *       text-layer pages keep the exact reader, never OCR
- *   B2  a cheap Tesseract pass over each scan's top third reads its title:
- *       only P&L / trading / balance sheet pages (and an untitled page right
- *       after one) go further; contents, notes, tax reconciliation,
- *       depreciation schedules (rotated pages read no title), declarations and
- *       compilation reports are skipped, with why
- *   B3  each statement page: Tesseract's words, and Claude's transcription of
- *       the page image, each through the same as-printed reader
- *   B8  a page Claude has already transcribed (same file, model and prompt,
- *       `reuse`) is not sent again: re-reading a scan after a reader fix costs
- *       nothing and gives the same second reading
- *   B8  Claude reads at most `secondPagesAllowed` pages (the daily cap); the
- *       rest, or every page when Claude is unavailable, are single readings
+ *   1  a page with (almost) no text layer and a full-page image is a scan;
+ *      text-layer pages keep the exact reader, never sent anywhere
+ *   2  Tesseract, on our server, reads the title at the top of each scanned
+ *      page: only P&L / trading statement / balance sheet pages (and an
+ *      untitled page right after one) go to Claude; contents, notes, tax
+ *      reconciliation, distribution, depreciation schedules (rotated pages
+ *      read no title), declarations and compilation reports never leave our
+ *      server, and are listed as skipped, with why
+ *   3  each statement page, in order: transcribed from the full page image,
+ *      every line with the section headings it sits under; a page that
+ *      continues a statement is told which sections were still open
+ *   4  the transcriptions go through the same as-printed reader as a digital
+ *      PDF (periods, sections, every printed total checked to add up), and
+ *      are accepted as read: a total that does not add up is flagged as for
+ *      any statement
+ *
+ * A page Claude has already transcribed (same file, model and prompt,
+ * `reuse`) is not sent again: re-reading a scan after a reader fix
+ * costs nothing and gives the same reading. At most `pagesAllowed` pages are
+ * transcribed (the daily cap); past it, or when Claude is unavailable, the
+ * statement pages wait, with why.
  */
 
-/**
- * A statement title as OCR reads it ("Profit Loss Statement cL oN",
- * "Profit & Loss Statement.", "Balance Sheet CLM"): the longest run of
- * words from the start that is a P&L or balance sheet title, the "&" put back.
- * Null when there is none.
- */
-export function ocrTitle(text: string): string | null {
-  const words = text
-    .replace(/[.:]+$/g, '')
-    .split(/\s+/)
-    .map((w) => w.replace(/[.:,]+$/, ''))
-    .filter(Boolean)
-  let best: string | null = null
-  for (let n = 1; n <= Math.min(words.length, 12); n++) {
-    const candidate = words
-      .slice(0, n)
-      .join(' ')
-      .replace(/\bprofit\s+loss\b/i, (m) => m.replace(/\s+/, ' & '))
-    // A title is the line (a logo scrap or two beside it at most), capitalised: never a sentence that starts "balance sheet…".
-    if (statementKind(candidate) && words.length - n <= 2 && /^[A-Z]/.test(candidate)) best = candidate
-  }
-  // The longest: "Profit & Loss Statement", not "Profit & Loss".
-  return best
-}
-
-/** The page's title line, as the reader expects it: one cell, as printed (the logo beside it left out). */
-function withTitle(lines: BandedLine[], title: string | null): BandedLine[] {
-  for (let i = 0; i < Math.min(lines.length, 8); i++) {
-    const found = ocrTitle(lines[i].cells[0]?.text ?? '')
-    if (found) {
-      const out = [...lines]
-      out[i] = { ...lines[i], text: found, cells: [{ ...lines[i].cells[0], text: found }] }
-      return out
-    }
-  }
-  // The full read dropped a title the first pass read: put it back, first.
-  if (!title) return lines
-  return [{ text: title, cells: [{ x: 57, right: 57 + title.length * 5, text: title }], band: [0, 0] }, ...lines]
-}
-
-
-export interface SecondReading {
-  answer: ScanPageAnswer
+/** Claude's answer to one page (askClaudeImage): the text, and who answered at what cost. */
+export interface ClaudeReply {
+  text: string
   model: string
   generationId: string
   tokensIn: number
   tokensOut: number
 }
 
-/** Claude's transcription of one page image (askClaudeImage + SCAN_PAGE_PROMPT); null when unavailable. */
-export type SecondReader = ((image: PageImage, page: number) => Promise<{ text: string; model: string; generationId: string; tokensIn: number; tokensOut: number }>) | null
+export interface ScanReader {
+  /** The transcription, on the full page image (SCAN_PAGE_PROMPT with the continuation context). */
+  transcribe: (image: PageImage, page: number, context: string) => Promise<ClaudeReply>
+}
+
+export interface KeptReading<T> {
+  answer: T
+  model: string
+  generationId: string
+}
 
 export interface PageReading {
   page: number
-  reader: 'tesseract' | 'claude'
-  /** A transcription kept from an earlier reading: nothing was sent, nothing paid. */
+  step: 'transcribe'
+  /** Kept from an earlier reading: nothing was sent, nothing paid. */
   reused?: boolean
-  lines?: BandedLine[]
   answer?: ScanPageAnswer
   model?: string
   generationId?: string
@@ -99,9 +71,10 @@ export interface ScannedResult {
   read: PrintedRead
   pages: ScanPageInfo[]
   readings: PageReading[]
-  /** Pages Claude was asked to read (they count against the cap, success or not). */
-  secondPages: number
-  singleReading: boolean
+  /** Pages transcribed now (they count against the daily cap). */
+  transcribed: number
+  /** Statement pages left unread (Claude unavailable, a failed answer, or the cap). */
+  unread: number[]
   model: string | null
 }
 
@@ -111,21 +84,57 @@ export interface ScanProgress {
   total: number
 }
 
+export interface Reuse {
+  transcriptions?: Map<number, KeptReading<ScanPageAnswer>>
+}
+
+/** One Claude call, kept as a reading; one retry when the answer does not fit the schema. */
+async function ask<T>(
+  page: number,
+  step: PageReading['step'],
+  readings: PageReading[],
+  call: () => Promise<ClaudeReply>,
+  parse: (text: string) => T,
+): Promise<{ answer: T | null; model: string | null; error: string | null }> {
+  let model: string | null = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let reply: ClaudeReply
+    try {
+      reply = await call()
+    } catch (err) {
+      // The provider's error, never any page content.
+      const why = err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'failed'
+      readings.push({ page, step, error: why })
+      return { answer: null, model, error: why }
+    }
+    model = reply.model
+    const base = { page, step, model: reply.model, generationId: reply.generationId, tokensIn: reply.tokensIn, tokensOut: reply.tokensOut }
+    try {
+      const answer = parse(reply.text)
+      readings.push({ ...base, answer: answer as PageReading['answer'] })
+      return { answer, model, error: null }
+    } catch (err) {
+      readings.push({ ...base, error: err instanceof ScanAnswerError ? err.message : 'unreadable answer' })
+    }
+  }
+  return { answer: null, model, error: 'The answer did not fit the schema twice.' }
+}
+
 export async function readScannedPdf(
   bytes: Uint8Array,
   {
-    ocr,
-    second,
-    secondPagesAllowed,
+    titles,
+    reader,
+    pagesAllowed,
     onProgress,
-    reuse = new Map(),
+    reuse = {},
   }: {
-    ocr: OcrEngine
-    second: SecondReader
-    secondPagesAllowed: number
+    /** Tesseract's title reading, on our server: which pages are statements. */
+    titles: TitleReader
+    reader: ScanReader | null
+    pagesAllowed: number
     onProgress?: (p: ScanProgress) => void | Promise<void>
-    /** Claude's earlier transcriptions of this file's pages (same model and prompt), by page. */
-    reuse?: Map<number, SecondReading>
+    reuse?: Reuse
   },
 ): Promise<ScannedResult | null> {
   const { textPages, scanned } = await scannedPages(bytes)
@@ -133,10 +142,12 @@ export async function readScannedPdf(
   const doc = await openPdf(bytes)
   const scannedSet = new Set(scanned)
   const pages: ScanPageInfo[] = textPages.map((_, i) => ({ page: i + 1, scanned: scannedSet.has(i + 1) }))
+  const readings: PageReading[] = []
   const images = new Map<number, PageImage>()
-  const titleOf = new Map<number, string | null>()
+  let model: string | null = null
+  let failure: string | null = null
 
-  // B2: titles first, cheaply.
+  // 2: which scanned pages are statements, from their titles read on our server.
   let previousStatement = false
   let done = 0
   for (const page of scanned) {
@@ -150,90 +161,94 @@ export async function readScannedPdf(
       previousStatement = false
       continue
     }
-    const titles = await ocr.titleLines(image)
-    const title = titles.map(ocrTitle).find((t): t is string => !!t)
-    const continues = previousStatement && scannedSet.has(page - 1) && !titles.some((t) => OTHER_TITLE.test(t)) && titles.length > 0
+    const lines = await titles.titleLines(image)
+    const title = lines.map(ocrTitle).find((t): t is string => !!t)
+    // An untitled page right after a statement page continues it, unless it titles itself as something else.
+    const continues = previousStatement && scannedSet.has(page - 1) && lines.length > 0 && !lines.some((t) => OTHER_TITLE.test(t))
     if (title || continues) {
-      images.set(page, image)
       Object.assign(info, { role: 'statement', note: title ?? 'Continued from the page before' })
-      titleOf.set(page, title ?? null)
+      images.set(page, image)
       previousStatement = true
     } else {
-      Object.assign(info, { role: 'skipped', note: titles.length ? `Not a statement page ("${titles.slice(0, 2).join(' / ').slice(0, 80)}")` : 'No title could be read (a rotated or blank page)' })
+      Object.assign(info, { role: 'skipped', note: lines.length ? `Not a statement page ("${lines.slice(0, 2).join(' / ').slice(0, 80)}")` : 'No title could be read (a rotated or blank page)' })
       previousStatement = false
     }
   }
 
-  // B3: two readings of each statement page.
-  const readings: PageReading[] = []
-  const ocrLinesByPage = new Map<number, BandedLine[]>()
-  const claudeLinesByPage = new Map<number, BandedLine[]>()
-  const secondMissing = new Set<number>()
-  let secondPages = 0
-  let secondError: string | null = null
-  let model: string | null = null
-  const statementPages = [...images.keys()]
+  // 3: the statement pages, in order, each told what the page before left open.
+  const answers = new Map<number, ScanPageAnswer>()
+  const linesByPage = new Map<number, BandedLine[]>()
+  const unread: number[] = []
+  let transcribed = 0
+  const statementPages = [...images.keys()].sort((a, b) => a - b)
   done = 0
   for (const page of statementPages) {
     await onProgress?.({ stage: 'reading', done: done++, total: statementPages.length })
-    const image = images.get(page)!
-    const size = pageImageInfo(doc, page - 1)
-    const words: OcrLine[] = await ocr.readLines(image)
-    const lines = withTitle(ocrToLines(words, image, size), titleOf.get(page) ?? null)
-    ocrLinesByPage.set(page, lines)
-    readings.push({ page, reader: 'tesseract', lines })
-
-    const kept = reuse.get(page)
-    if (kept) {
-      model = kept.model
-      readings.push({ page, reader: 'claude', reused: true, answer: kept.answer, model: kept.model, generationId: kept.generationId })
-      claudeLinesByPage.set(page, answerToLines(kept.answer))
-      continue
-    }
-    if (!second || secondPages >= secondPagesAllowed) {
-      secondMissing.add(page)
-      continue
-    }
-    secondPages++
+    // Only the page right before can be continued from.
+    const before = answers.get(page - 1) ?? null
     let answer: ScanPageAnswer | null = null
-    for (let attempt = 0; attempt < 2 && !answer; attempt++) {
-      try {
-        const reply = await second(image, page)
-        model = reply.model
-        try {
-          answer = parseScanAnswer(reply.text)
-          readings.push({ page, reader: 'claude', answer, model: reply.model, generationId: reply.generationId, tokensIn: reply.tokensIn, tokensOut: reply.tokensOut })
-        } catch (err) {
-          readings.push({ page, reader: 'claude', model: reply.model, generationId: reply.generationId, tokensIn: reply.tokensIn, tokensOut: reply.tokensOut, error: err instanceof ScanAnswerError ? err.message : 'unreadable answer' })
-        }
-      } catch (err) {
-        // The provider's error (e.g. no zero-retention endpoint), never any page content.
-        const why = err instanceof Error ? `${err.name}: ${err.message}`.slice(0, 200) : 'failed'
-        readings.push({ page, reader: 'claude', error: why })
-        secondError = why
-        break
-      }
+    const kept = reuse.transcriptions?.get(page)
+    if (kept) {
+      answer = kept.answer
+      model = kept.model
+      readings.push({ page, step: 'transcribe', reused: true, answer: kept.answer, model: kept.model, generationId: kept.generationId })
+    } else if (reader && transcribed < pagesAllowed) {
+      transcribed++
+      const got = await ask(page, 'transcribe', readings, () => reader.transcribe(images.get(page)!, page, continuationContext(before)), parseScanAnswer)
+      answer = got.answer
+      model = got.model ?? model
+      failure ??= got.error
     }
-    if (answer) claudeLinesByPage.set(page, answerToLines(answer))
-    else secondMissing.add(page)
+    if (!answer) {
+      unread.push(page)
+      pages[page - 1].note = `${pages[page - 1].note ?? 'Statement page'} (not read yet)`
+      continue
+    }
+    if (!answer.title) {
+      pages[page - 1].role = 'skipped'
+      pages[page - 1].note = 'Not a statement page'
+    }
+    answers.set(page, answer)
+    linesByPage.set(page, answerToLines(answer))
   }
 
-  const pagesFor = (scannedLines: Map<number, BandedLine[]>) => textPages.map((lines, i) => (scannedSet.has(i + 1) ? (scannedLines.get(i + 1) ?? []) : lines))
-  const ocrRead = readStatements(pagesFor(ocrLinesByPage))
-  const anySecond = claudeLinesByPage.size > 0
-  const claudeRead = anySecond ? readStatements(pagesFor(claudeLinesByPage)) : null
-  const read = reconcileReads({ ocr: ocrRead, claude: claudeRead, scannedPages: scannedSet, secondMissing, ocrLines: ocrLinesByPage, claudeLines: claudeLinesByPage })
-  const singleReading = statementPages.length > 0 && statementPages.every((p) => secondMissing.has(p))
+  // 4: the same reader as a digital PDF; each scanned line keeps its reading and its place on the page.
+  const read = readStatements(textPages.map((lines, i) => (scannedSet.has(i + 1) ? (linesByPage.get(i + 1) ?? []) : lines)))
+  markScanned(read, scannedSet, linesByPage)
+  const capped = reader !== null && unread.length > 0 && transcribed >= pagesAllowed
+  const anyScanned = read.statements.some((s) => s.pages.some((p) => scannedSet.has(p)))
   read.scan = {
-    state: 'done',
+    state: unread.length && !anyScanned ? 'failed' : 'done',
     pages,
-    singleReading,
+    singleReading: false,
     model,
-    message: singleReading
-      ? `Read from a scan by one reader only: check every figure.${secondError ? ' The second reading was unavailable.' : ''}`
-      : secondMissing.size
-        ? `${secondMissing.size} scanned page(s) were read by one reader only: check their figures.`
-        : null,
+    message: unread.length
+      ? `${unread.length} scanned statement page(s) could not be read yet${!reader ? ' (the reading is switched off)' : capped ? ' (the daily limit was reached)' : failure ? ` (${failure})` : ''}. Use Refresh to try again.`
+      : null,
   }
-  return { read, pages, readings, secondPages, singleReading, model }
+  return { read, pages, readings, transcribed, unread, model }
+}
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Each line read from a scanned page: its reading (accepted), the key a staff correction is kept under, and its band for the crop. */
+function markScanned(read: PrintedRead, scanned: Set<number>, linesByPage: Map<number, BandedLine[]>) {
+  const seen = new Map<string, number>()
+  for (const st of read.statements) {
+    st.rows = st.rows.map((row): PrintedRow => {
+      if (!scanned.has(row.page) || row.style === 'heading') return row
+      const base = `${st.kind}|${row.page}|${row.path.map(norm).join('>')}|${norm(row.label)}`
+      const n = seen.get(base) ?? 0
+      seen.set(base, n + 1)
+      const line = linesByPage.get(row.page)?.find((l) => l.text === row.text)
+      return {
+        ...row,
+        scan: {
+          key: `${base}|${n}`,
+          band: line && line.band[1] > 0 ? line.band : null,
+          cells: row.amounts.map((a) => ({ status: 'read' as const, claude: a })),
+        },
+      }
+    })
+  }
 }

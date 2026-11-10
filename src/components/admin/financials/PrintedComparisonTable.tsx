@@ -23,9 +23,8 @@ interface Props {
  * printed headings, each figure exactly as printed. Click a figure for the
  * file, page and line it came from. Nothing here is calculated.
  *
- * A year read from a scan says so in its header ("Scanned PDF", with what that means on hover); a
- * scanned figure the two readings disagree on is amber until staff choose it,
- * one read by one reader only is underlined dotted ("single reading — check").
+ * A year read from a scan says so in its header ("Scanned PDF", with what
+ * that means on hover); a scanned figure staff corrected is marked so.
  */
 export function PrintedComparisonTable({ table, columns, selected, onSelect }: Props) {
   const scanned = columns.map((_, i) => table.rows.some((r) => r.cells[i]?.scan))
@@ -45,7 +44,7 @@ export function PrintedComparisonTable({ table, columns, selected, onSelect }: P
                     <span className="block text-[10px] font-normal text-foreground/40">{t.period}</span>
                     {scanned[columns.indexOf(c)] && (
                       <span
-                        title="This year came as a scanned PDF (pictures of the pages, no text inside). Each figure was read twice, independently, and the two readings compared: matching figures are accepted; any that differ are shown in amber for you to choose. A digital PDF from the accountant is always exact."
+                        title="This year came as a scanned PDF (pictures of the pages, no text inside), so Claude read each figure from the page image. Every printed total is checked to add up, as for any statement; click a figure to see its line on the scan and correct it if needed. A digital PDF from the accountant is always exact."
                         className="mt-0.5 inline-flex cursor-help items-center gap-1 rounded bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent"
                       >
                         <ScanLine className="h-3 w-3" aria-hidden />
@@ -105,8 +104,7 @@ export function PrintedComparisonTable({ table, columns, selected, onSelect }: P
 
 function Figure({ cell, emphasis, active, onClick }: { cell: ComparisonCell; emphasis: boolean; active: boolean; onClick: () => void }) {
   const failed = cell.check === 'mismatch' || cell.check === 'wrong_column'
-  const disputed = cell.scan?.status === 'disagree'
-  const single = cell.scan?.status === 'single'
+  const corrected = cell.scan?.status === 'chosen'
   if (!cell.printed && cell.restated.length === 0) return null
   return (
     <span className="inline-flex flex-col items-end">
@@ -114,18 +112,16 @@ function Figure({ cell, emphasis, active, onClick }: { cell: ComparisonCell; emp
         <button
           type="button"
           onClick={onClick}
-          title={disputed ? 'The two readings of the scan differ: choose the figure' : single ? 'Single reading of a scan: check it' : 'Where this figure is printed'}
+          title={corrected ? `Corrected by ${cell.scan!.chosenBy}` : 'Where this figure is printed'}
           className={cn(
             'inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-surface/60 focus:outline-none focus:ring-1 focus:ring-accent',
             emphasis && 'font-semibold',
             failed && 'text-destructive',
-            disputed && 'bg-warning/15 text-warning',
-            single && 'underline decoration-dotted decoration-warning underline-offset-2',
+            corrected && 'underline decoration-dotted decoration-accent underline-offset-2',
             active && 'ring-1 ring-accent',
           )}
         >
           {failed && <AlertTriangle className="h-3 w-3" aria-label="Does not add up" />}
-          {disputed && !failed && <AlertTriangle className="h-3 w-3" aria-label="The readings differ" />}
           {formatPrinted(cell.value)}
         </button>
       ) : null}
