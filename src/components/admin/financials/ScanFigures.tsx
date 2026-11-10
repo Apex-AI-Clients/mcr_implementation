@@ -100,29 +100,11 @@ interface Job {
 /** Seconds with no reading seen before the box offers to start it by hand. */
 const START_GRACE_MS = 20_000
 
-/** Rough timings, for "about N minutes left": a page title on our server, a statement page read by Claude. */
-const SECONDS_PER_TITLE = 0.5
-const SECONDS_PER_STATEMENT_PAGE = 22
-/** A file not started yet: a typical annual pack (25 pages, 5 of them statements). */
-const SECONDS_PER_WAITING_FILE = 25 * SECONDS_PER_TITLE + 5 * SECONDS_PER_STATEMENT_PAGE
-
 /** How far a file is (0–100): finding the statement pages is quick (the first fifth); reading them is most of the wait. */
 function percent(job: Job | undefined): number {
   if (!job || job.total === 0) return 2
   const part = Math.min(1, job.done / job.total)
   return Math.max(2, Math.round(job.stage === 'reading' ? 20 + part * 80 : part * 20))
-}
-
-function secondsLeft(job: Job | undefined): number {
-  if (!job || job.total === 0) return SECONDS_PER_WAITING_FILE
-  const left = Math.max(0, job.total - job.done)
-  return job.stage === 'reading' ? left * SECONDS_PER_STATEMENT_PAGE : left * SECONDS_PER_TITLE + 5 * SECONDS_PER_STATEMENT_PAGE
-}
-
-export function timeLeft(seconds: number): string {
-  if (seconds < 50) return 'Less than a minute left'
-  const minutes = Math.round(seconds / 60)
-  return minutes <= 1 ? 'About a minute left' : `About ${minutes} minutes left`
 }
 
 type FileState = 'starting' | 'waiting' | 'finding' | 'reading'
@@ -153,7 +135,8 @@ function Step({ n, label, state }: { n: number; label: string; state: 'todo' | '
 
 /**
  * Statements uploaded as scans, being read (src/lib/scan): what is happening,
- * in plain words, how long is left, and each file's progress. The reading
+ * in plain words, and each file's progress (no time estimate: it would only
+ * be a guess). The reading
  * runs on the server: leaving the page does not stop it, and coming back
  * shows it where it is (it is never started again while it runs). Starts the
  * reading once per page load; if none has started after a little while,
@@ -236,7 +219,6 @@ export function ScanProgress({
   if (!pending) return null
   const byDoc = new Map(jobs.map((j) => [j.documentId, j]))
   const overall = Math.round(files.reduce((sum, f) => sum + percent(byDoc.get(f.documentId)), 0) / files.length)
-  const left = files.reduce((sum, f) => sum + secondsLeft(byDoc.get(f.documentId)), 0)
   const count = files.length === 1 ? '1 document' : `${files.length} documents`
 
   if (stalled && !finished) {
@@ -283,14 +265,14 @@ export function ScanProgress({
               {!finished && (
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                  {timeLeft(left)}
+                  In progress
                 </span>
               )}
             </div>
             {!finished && (
               <p className="mt-1 text-xs leading-relaxed text-foreground/70">
-                {count} came as scans (pictures of the pages), so the figures are being read for you. It keeps going in the background: you can
-                leave this page and come back. The figures appear here as soon as it is done.
+                {count} came as scans (pictures of the pages), so the figures are being read for you. This usually takes a few minutes. It keeps
+                going in the background: you can leave this page and come back. The figures appear here as soon as it is done.
               </p>
             )}
           </div>

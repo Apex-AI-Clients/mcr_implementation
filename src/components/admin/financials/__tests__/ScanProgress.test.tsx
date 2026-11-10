@@ -34,7 +34,9 @@ describe('ScanProgress', () => {
     await waitFor(() => expect(screen.getByText('Finding the statement pages (page 12 of 25)')).toBeTruthy())
     // The second file waits for the first.
     expect(screen.getByText('Waiting its turn')).toBeTruthy()
-    expect(screen.getByText(/minutes? left$/)).toBeTruthy()
+    // No time estimate: only what is happening.
+    expect(screen.queryByText(/left$/)).toBeNull()
+    expect(screen.getByText('In progress')).toBeTruthy()
     expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('scan-read'))).toHaveLength(1)
   })
 
@@ -66,11 +68,3 @@ describe('ScanProgress', () => {
   })
 })
 
-describe('timeLeft', () => {
-  it('says how long, in words', async () => {
-    const { timeLeft } = await import('../ScanFigures')
-    expect(timeLeft(30)).toBe('Less than a minute left')
-    expect(timeLeft(70)).toBe('About a minute left')
-    expect(timeLeft(250)).toBe('About 4 minutes left')
-  })
-})

@@ -123,7 +123,7 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   if ((f.scanning ?? 0) > 0) {
     const n = f.scanning!
     return {
-      ...item(input, 'financials', 'processing', `Reading ${n === 1 ? '1 scanned document' : `${n} scanned documents`} — about ${n * 2} minutes. It keeps going in the background, so you can leave this page.`, href),
+      ...item(input, 'financials', 'processing', `Reading ${n === 1 ? '1 scanned document' : `${n} scanned documents`} — this usually takes a few minutes. It keeps going in the background, so you can leave this page.`, href),
       startScan: true,
     }
   }

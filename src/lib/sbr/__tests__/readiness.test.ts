@@ -212,7 +212,7 @@ describe('director penalty notices and the DPN factor', () => {
 describe('computeReadiness — scanned statements', () => {
   it('shows the financial statements as processing while scans are read, never as compared', () => {
     const r = computeReadiness(input({ financials: { scanning: 2 } }))
-    expect(statusOf(r, 'financials')).toMatchObject({ status: 'processing', detail: 'Reading 2 scanned documents — about 4 minutes. It keeps going in the background, so you can leave this page.', startScan: true })
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'processing', detail: 'Reading 2 scanned documents — this usually takes a few minutes. It keeps going in the background, so you can leave this page.', startScan: true })
     expect(r.canPredict).toBe(false)
   })
 })
