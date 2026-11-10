@@ -111,6 +111,9 @@ export async function runScanJob(
   supabase: ServerClient,
   { clientId, documentId, filePath, readerVersion }: { clientId: string; documentId: string; filePath: string; readerVersion: string },
 ): Promise<void> {
+  // Still waiting? Files are read one after another; a page opened meanwhile may have read this one already.
+  const { data: current } = await supabase.from('printed_reads').select('status, reader_version').eq('document_id', documentId).maybeSingle()
+  if (current && (current.status !== 'scan_pending' || current.reader_version !== readerVersion)) return
   const { data: job, error: jobError } = await supabase
     .from('scan_read_jobs')
     .insert({ client_id: clientId, document_id: documentId, reader_version: readerVersion, status: 'running', stage: 'starting' })
