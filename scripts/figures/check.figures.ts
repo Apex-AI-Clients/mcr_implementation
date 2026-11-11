@@ -53,6 +53,12 @@ interface Expected {
   /** Every prediction input (predictionInputs); older files carry only atoDebt and asOf. */
   prediction?: LodgementFigures & { atoDebt?: number; asOf?: string }
   lodgement?: LodgementFigures
+  /**
+   * Lodgement figures verified under BOTH late-lodgement settings, checked
+   * whichever one is active: a switch of LATE_LODGEMENT_SCOPE is then
+   * checked before it is made (config.ts).
+   */
+  lodgementByScope?: Partial<Record<LateLodgementScope, LodgementFigures>>
   dpnNotices?: Partial<Record<'paygw' | 'gst' | 'sgc', NoticeColumns>>
   /** Printed lines in one column, and the loan and ATO figures the mapping makes of them. */
   printedFigures?: PrintedFiguresSpec | PrintedFiguresSpec[]
@@ -122,6 +128,18 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
       else out('  lodgement: not verified yet (add a "lodgement" key to the expected file)')
     } else if (expectedLodgement) {
       differences.push('lodgement  no ATO account rows for this client')
+    }
+
+    // The same figures under each setting, as verified by hand.
+    for (const [scope, want] of Object.entries(expectedFile?.lodgementByScope ?? {}) as [LateLodgementScope, LodgementFigures][]) {
+      const r = analyseLodgements(alias, snapshot, scope)
+      if (!r) {
+        differences.push(`lodgement (${scope})  no ATO account rows for this client`)
+        continue
+      }
+      const found = compareLodgement(want, lodgementFigures(r)).map((d) => d.replace(/^lodgement /, `lodgement (${scope})`))
+      out(`  lodgement (${scope}): ${found.length === 0 ? `all ${Object.keys(want).length} verified figures match` : `${found.length} difference(s)`}`)
+      differences.push(...found)
     }
 
     // Director penalty notices: the stored notices' company totals by type.

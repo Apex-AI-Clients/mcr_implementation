@@ -1,5 +1,4 @@
 import { parse } from 'csv-parse/sync'
-import { parse as parseDate, isValid } from 'date-fns'
 import type { ParsedCsv, ParsedRow } from './types'
 
 const EXPECTED_HEADER = [
@@ -11,14 +10,79 @@ const EXPECTED_HEADER = [
   'Balance',
 ]
 
-const DATE_FORMAT = 'dd MMM yyyy'
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
 
-export function parseAtoDate(raw: string): Date | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  const d = parseDate(trimmed, DATE_FORMAT, new Date())
-  return isValid(d) ? d : null
+/** "Oct", "October", "Sept" → 9; anything else → undefined. */
+function monthFromName(name: string): number | undefined {
+  const n = name.toLowerCase()
+  if (n.length < 3) return undefined
+  if (n === 'sept') return 8
+  const i = MONTH_NAMES.findIndex((m) => m.startsWith(n))
+  return i === -1 ? undefined : i
 }
+
+/** Local midnight on that calendar day, or null when the day does not exist (31 Feb, month 13). */
+function calendarDate(year: number, month: number, day: number): Date | null {
+  if (!Number.isInteger(year) || year < 1900 || year > 2099) return null
+  const d = new Date(year, month, day)
+  return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day ? d : null
+}
+
+/** Two-digit years are 20YY: the ATO account history starts this century. */
+const fullYear = (y: string) => (y.length === 2 ? 2000 + Number(y) : Number(y))
+
+/** Excel's day 0 is 30 Dec 1899 (its 1900 leap-year bug is before March 1900, so it never matters here). */
+const EXCEL_EPOCH = Date.UTC(1899, 11, 30)
+
+/**
+ * A date cell from an ATO account CSV, as the ATO writes it ("20 Oct 2026")
+ * or as Excel or Google Sheets re-save it: "20-Oct-26", "20-Oct-2026",
+ * "20/10/2026", "20/10/26", "2026-10-20", or an Excel serial number (46315).
+ * A time of midnight after the date is ignored.
+ *
+ * Australian day-first order only: "10/20/2026" is not a date (there is no
+ * month 20), never 20 October. Two-digit years are 20YY. Null for a blank or
+ * unreadable cell — the analysis counts those (config.ts unparsedDateRows) and refuses
+ * to give figures, rather than reading the row as on time.
+ *
+ * Returns local midnight, as the analysis has always used.
+ */
+export function parseAtoDate(raw: string): Date | null {
+  // A stray quote, or the apostrophe a spreadsheet puts in front of text.
+  const s = raw
+    .replace(/^['"\s]+|["\s]+$/g, '')
+    // A midnight time a spreadsheet may add: "20/10/2026 0:00", "2026-10-20T00:00:00.000Z".
+    .replace(/(?:[T\s]+0?0:00(?::00(?:\.0+)?)?(?:\s*AM)?Z?)$/i, '')
+  if (!s) return null
+
+  // 20 Oct 2026 · 20-Oct-26 · 20-Oct-2026 · 20 October 2026 · 20/Oct/2026
+  let m = s.match(/^(\d{1,2})[\s\-/.]+([A-Za-z]{3,9})\.?[\s\-/.,]+(\d{4}|\d{2})$/)
+  if (m) {
+    const month = monthFromName(m[2])
+    return month === undefined ? null : calendarDate(fullYear(m[3]), month, Number(m[1]))
+  }
+
+  // 20/10/2026 · 20/10/26 · 20-10-2026 · 20.10.2026 (day first, always)
+  m = s.match(/^(\d{1,2})([/\-.])(\d{1,2})\2(\d{4}|\d{2})$/)
+  if (m) return calendarDate(fullYear(m[4]), Number(m[3]) - 1, Number(m[1]))
+
+  // 2026-10-20 · 2026/10/20
+  m = s.match(/^(\d{4})([/\-.])(\d{1,2})\2(\d{1,2})$/)
+  if (m) return calendarDate(Number(m[1]), Number(m[3]) - 1, Number(m[4]))
+
+  // An Excel serial: a whole number of days (32874 = 1 Jan 1990, 73050 = 31 Dec 2099).
+  m = s.match(/^(\d{5})(?:\.0+)?$/)
+  if (m) {
+    const serial = Number(m[1])
+    if (serial < 32874 || serial > 73050) return null
+    const utc = new Date(EXCEL_EPOCH + serial * 86_400_000)
+    return calendarDate(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate())
+  }
+
+  return null
+}
+
+
 
 /**
  * Parse a currency cell from the ATO CSV.

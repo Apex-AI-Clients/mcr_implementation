@@ -93,6 +93,8 @@ interface InitialAuto {
   creditorMissing: string | null
   latestFinancialYear: number | null
   hasLodgement: boolean
+  /** The activity statement's dates could not be read: why the prediction cannot run (config.ts unparsedDatesMessage). */
+  lodgementUnreadable?: string | null
   hasFinancials: boolean
   /** A balance-sheet figure per kind of creditor; shown beside its row, never filled in. */
   creditorHints: CreditorHints
@@ -474,7 +476,7 @@ export function OutcomePredictionClient({
   // "About this prediction" methodology now lives behind a header info button.
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
-  const lodgementReady = auto.hasLodgement
+  const lodgementReady = auto.hasLodgement && !auto.lodgementUnreadable
   const canRun =
     lodgementReady &&
     feeRate !== null &&
@@ -670,7 +672,26 @@ export function OutcomePredictionClient({
         </Card>
       )}
 
-      {!lodgementReady && (
+      {auto.hasLodgement && auto.lodgementUnreadable && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <div role="alert" className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">The lodgement analysis cannot be used</p>
+              <p className="text-xs text-foreground/60 mt-1">{auto.lodgementUnreadable}</p>
+              <Link
+                href={`/clients/${clientId}/lodgement-compliance-analysis`}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+              >
+                Open the lodgement analysis
+                <ArrowLeft className="h-3 w-3 rotate-180" />
+              </Link>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!auto.hasLodgement && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
@@ -789,7 +810,7 @@ function PrereqMissingBlock({
                   <>
                     {m.message}{' '}
                     <Link href={m.actionUrl} className="text-accent hover:text-accent/80">
-                      Confirm key figures
+                      {m.blocker === 'lodgement_analyses' ? 'Open the lodgement analysis' : 'Confirm key figures'}
                     </Link>
                   </>
                 ) : (

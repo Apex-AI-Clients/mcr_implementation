@@ -129,6 +129,8 @@ export function analyseLodgements(alias: string, snapshot: Snapshot | null, scop
 export function lodgementFigures(r: LodgementAnalysisResult): LodgementFigures {
   const db = r.debtBreakdown
   return {
+    // Rows whose dates could not be read: above 0 the analysis fails (a file re-saved in Excel).
+    unparsedDateRows: r.unparsedDateRows,
     lateLodgements: r.summary.numberOfLateLodgements,
     cumulativeDaysLate: r.summary.cumulativeDaysLate,
     dpnGrossOver90: r.dpnRisk.totalGrossLate,

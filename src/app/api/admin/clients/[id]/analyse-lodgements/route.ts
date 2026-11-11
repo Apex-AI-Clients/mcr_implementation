@@ -71,6 +71,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
       aiSummaryGeneratedAt: row.ai_summary_generated_at,
       rows: result.rows,
       warnings: result.warnings,
+      // Above 0 the card shows why instead of figures.
+      unparsedDateRows: result.unparsedDateRows,
       analysedAt: row.analysed_at,
     })
   } catch (err) {

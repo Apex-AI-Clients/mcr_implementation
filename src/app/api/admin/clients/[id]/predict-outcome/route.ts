@@ -52,7 +52,7 @@ import {
   type TrainingRow,
 } from '@/lib/sbr/historicalCases'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
-import { storedLateLodgements } from '@/lib/analysis/config'
+import { storedLateLodgements, unparsedDateRows, unparsedDatesMessage } from '@/lib/analysis/config'
 import {
   creditorDebt,
   describeDecision,
@@ -227,7 +227,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { data: lodgement } = await supabase
       .from('lodgement_analyses')
       .select(
-        'id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at',
+        'id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, unparsed_date_rows',
       )
       .eq('client_id', clientId)
       .order('analysed_at', { ascending: false })
@@ -254,6 +254,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         blocker: 'lodgement_analyses',
         actionUrl: `/clients/${clientId}`,
       })
+    } else {
+      // Dates that could not be read: every lodgement would count as on time. Never used.
+      // From the stored rows too, so an analysis saved before the count existed is caught.
+      const unparsed = Math.max(lodgement.unparsed_date_rows ?? 0, unparsedDateRows(lodgement.rows))
+      if (unparsed > 0) {
+        missing.push({
+          field: 'cumulativeDaysLate',
+          blocker: 'lodgement_analyses',
+          actionUrl: `/clients/${clientId}/lodgement-compliance-analysis`,
+          message: unparsedDatesMessage(unparsed),
+        })
+      }
     }
     // A loan line the statements print that nobody mapped: ask, never assume $0.
     if (loan.notIdentified) {

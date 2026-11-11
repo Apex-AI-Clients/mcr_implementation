@@ -82,19 +82,25 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
         aiSummaryGeneratedAt: isClaudeSummary(rawAnalysis.ai_summary_model) ? (rawAnalysis.ai_summary_generated_at ?? null) : null,
         rows: (current?.rows ?? rawAnalysis.rows) as LodgementAnalysisPayload['rows'],
         warnings: rawAnalysis.warnings as LodgementAnalysisPayload['warnings'],
+        // Today's parser over the saved cells; the saved count when the rows cannot be read.
+        unparsedDateRows: current?.unparsedDateRows ?? rawAnalysis.unparsed_date_rows ?? 0,
         analysedAt: rawAnalysis.analysed_at,
       }
     : null
 
   // Activity statement only: a warning, never a lock (the SBR factors come from here).
-  const gap = initialAnalysis?.debtBreakdown ? reconciliationGap(initialAnalysis.debtBreakdown) : null
+  // Not for a file whose dates could not be read: the card says so instead of showing figures.
+  const gap =
+    initialAnalysis?.debtBreakdown && initialAnalysis.unparsedDateRows === 0 ? reconciliationGap(initialAnalysis.debtBreakdown) : null
   const largeGap = gap !== null && Math.abs(gap) > NEEDS_REVIEW_THRESHOLD ? gap : null
   // With two activity statement accounts (001 and 002), which one this is.
   const factorsSource = await loadFactorsSourceNote(supabase, id, rawAnalysis?.statement_label ?? null)
 
   // This page is about the analysis, so its badge is the analysis state. The
   // client's document status ("Missing: …") belongs on the client page.
-  const statusBadge = rawAnalysis
+  const statusBadge = initialAnalysis && initialAnalysis.unparsedDateRows > 0
+    ? { label: 'Failed: dates unreadable', variant: 'destructive' as const }
+    : rawAnalysis
     ? {
         label: `Analysed ${new Date(rawAnalysis.analysed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
         variant: 'success' as const,

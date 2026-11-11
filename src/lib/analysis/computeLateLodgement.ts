@@ -1,7 +1,7 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { icaPosition, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { classifyLodgement } from './classifyLodgement'
-import { LATE_LODGEMENT_SCOPE, isCountedLodgement, lateLodgementSummary, type LateLodgementScope } from './config'
+import { LATE_LODGEMENT_SCOPE, isCountedLodgement, lateLodgementSummary, unparsedDateRows, type LateLodgementScope } from './config'
 import { extractPeriodEnding, parseAtoDate } from './parseActivityStatement'
 import { markBreakdownRows } from './paymentAllocations'
 import type {
@@ -363,6 +363,8 @@ export function computeLateLodgement(parsed: ParsedCsv, scope: LateLodgementScop
     debtBreakdown,
     rows,
     warnings,
+    // A row without both dates cannot be measured: counted, and the analysis fails visibly (never read as on time).
+    unparsedDateRows: unparsedDateRows(rows),
   }
 }
 

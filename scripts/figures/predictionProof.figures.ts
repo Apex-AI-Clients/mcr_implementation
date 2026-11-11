@@ -20,6 +20,16 @@ import { out } from './figures'
  * verified-figures/proof-<label>.json (gitignored). With PROOF_COMPARE=<label>
  * the run is compared with that earlier file, client by client. Prints
  * aliases (c01, c02, … by client id order), statuses, counts and hashes only.
+ *
+ * PROOF_SCOPE=originals_only|originals_and_amendments runs as if
+ * LATE_LODGEMENT_SCOPE were set to it (analysis/config.ts), to see what a
+ * switch would change before it is made.
+ *
+ * PROOF_RERUN=yes reads each stored lodgement analysis whose rows were saved
+ * without dates (an export re-saved in Excel, before the date fix) as a
+ * re-run would store it: today's code over its raw cells. In memory only.
+ *
+ * Run with TZ=UTC, as the server: stored dates are ISO strings.
  */
 
 const blocked = { count: 0 }
@@ -35,6 +45,25 @@ vi.mock('@/lib/sbr/loadReadiness', async (importOriginal) => {
       const readiness = await actual.loadReadiness(...args)
       return gate.open ? { ...readiness, canPredict: true, waitingFor: [] } : readiness
     },
+  }
+})
+
+// As if LATE_LODGEMENT_SCOPE were PROOF_SCOPE: the constant, and every default that reads it.
+vi.mock('@/lib/analysis/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/analysis/config')>()
+  const scope = process.env.PROOF_SCOPE?.trim()
+  if (!scope) return actual
+  if (scope !== 'originals_only' && scope !== 'originals_and_amendments') throw new Error(`PROOF_SCOPE ${scope} is not a setting`)
+  type Scope = typeof actual.LATE_LODGEMENT_SCOPE
+  const s = scope as Scope
+  return {
+    ...actual,
+    LATE_LODGEMENT_SCOPE: s,
+    isCountedLodgement: (row: Parameters<typeof actual.isCountedLodgement>[0], sc: Scope = s) => actual.isCountedLodgement(row, sc),
+    countsAsLate: (row: Parameters<typeof actual.countsAsLate>[0], sc: Scope = s) => actual.countsAsLate(row, sc),
+    lateLodgementSummary: (rows: Parameters<typeof actual.lateLodgementSummary>[0], sc: Scope = s) => actual.lateLodgementSummary(rows, sc),
+    storedLateLodgements: (rows: unknown, stored: Parameters<typeof actual.storedLateLodgements>[1], sc: Scope = s) =>
+      actual.storedLateLodgements(rows, stored, sc),
   }
 })
 
@@ -54,6 +83,48 @@ function inert(): unknown {
     apply: () => proxy,
   })
   return proxy
+}
+
+/** Set once the database is known: lodgement_analyses.unparsed_date_rows (migration 0048) is not there yet. */
+const lodgementColumns = { missing0048: false }
+
+/** PROOF_RERUN: an analysis saved without dates, as a re-run with today's code would store it. */
+let rerun: ((record: Record<string, unknown>) => void) | null = null
+
+/**
+ * lodgement_analyses as the code under test expects it: without migration
+ * 0048 the column is left out of the query and reads as its default, 0 (the
+ * state just after the migration); with PROOF_RERUN, rows saved without dates
+ * are re-analysed.
+ */
+function lodgementTable<T extends object>(builder: T): T {
+  const patch = (result: { data?: unknown }) => {
+    const records = Array.isArray(result?.data) ? result.data : result?.data ? [result.data] : []
+    for (const r of records as Record<string, unknown>[]) {
+      if (lodgementColumns.missing0048 && !('unparsed_date_rows' in r)) r.unparsed_date_rows = 0
+      rerun?.(r)
+    }
+    return result
+  }
+  const wrap = (b: object): object =>
+    new Proxy(b, {
+      get(t, p) {
+        const value = Reflect.get(t, p)
+        if (p === 'then' && typeof value === 'function') {
+          return (ok: (v: unknown) => unknown, fail?: (e: unknown) => unknown) =>
+            (value as (a: unknown, b?: unknown) => Promise<unknown>).call(t, (r: { data?: unknown }) => ok(patch(r)), fail)
+        }
+        if (typeof value !== 'function') return value
+        return (...args: unknown[]) => {
+          if (p === 'select' && lodgementColumns.missing0048 && typeof args[0] === 'string') {
+            args[0] = args[0].split(',').map((c) => c.trim()).filter((c) => c !== 'unparsed_date_rows').join(', ')
+          }
+          const out = (value as (...a: unknown[]) => unknown).apply(t, args)
+          return out && typeof out === 'object' ? wrap(out) : out
+        }
+      },
+    })
+  return wrap(builder) as T
 }
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete'])
@@ -77,7 +148,9 @@ function bind<T extends object>(target: T, block: Set<string>): T {
 function readOnly(client: SupabaseClient): SupabaseClient {
   return new Proxy(client, {
     get(t, p) {
-      if (p === 'from') return (table: string) => bind(t.from(table), WRITES)
+      if (p === 'from') {
+        return (table: string) => (table === 'lodgement_analyses' ? lodgementTable(bind(t.from(table), WRITES)) : bind(t.from(table), WRITES))
+      }
       if (p === 'rpc') {
         return () => {
           blocked.count += 1
@@ -117,14 +190,34 @@ it('re-runs every client lodgement analysis and prediction, read-only', async ()
   if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env')
   const label = process.env.PROOF_LABEL?.trim()
   if (!label) throw new Error('Set PROOF_LABEL (e.g. before / after)')
-  readOnlyClient = readOnly(createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } }))
+  const raw = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+  lodgementColumns.missing0048 = Boolean((await raw.from('lodgement_analyses').select('unparsed_date_rows').limit(1)).error)
+  readOnlyClient = readOnly(raw)
   const supabase = readOnlyClient
+  const scopeNote = process.env.PROOF_SCOPE?.trim() || 'the setting in config.ts'
+  out(`late-lodgement scope: ${scopeNote}; migration 0048 ${lodgementColumns.missing0048 ? 'not applied (column read as 0)' : 'applied'}; time zone offset ${new Date(2026, 0, 1).getTimezoneOffset()} min`)
 
   // Imported after the mock is in place, from whichever source tree `@` points at.
   const { findActivityStatementCsv } = await import('@/lib/analysis/lodgementStore')
   const { parseActivityStatementCsv } = await import('@/lib/analysis/parseActivityStatement')
   const { computeLateLodgement } = await import('@/lib/analysis/computeLateLodgement')
   const { POST } = await import('@/app/api/admin/clients/[id]/predict-outcome/route')
+
+  if (process.env.PROOF_RERUN === 'yes') {
+    const { reanalyseStoredRows } = await import('@/lib/analysis/computeLateLodgement')
+    const { unparsedDateRows } = await import('@/lib/analysis/config')
+    rerun = (r) => {
+      if (!Array.isArray(r.rows) || unparsedDateRows(r.rows) === 0) return
+      const fresh = reanalyseStoredRows(r.rows)
+      if (!fresh) return
+      // As stored: JSON, dates as ISO strings.
+      r.rows = JSON.parse(JSON.stringify(fresh.rows))
+      if ('number_of_late_lodgements' in r) r.number_of_late_lodgements = fresh.summary.numberOfLateLodgements
+      if ('cumulative_days_late' in r) r.cumulative_days_late = fresh.summary.cumulativeDaysLate
+      if ('unparsed_date_rows' in r) r.unparsed_date_rows = fresh.unparsedDateRows
+    }
+    out(`PROOF_RERUN: analyses saved without dates are read as re-run (in memory)`)
+  }
 
   // Which source tree `@` resolved to: the ATO account module exists only after the change.
   const tree = await import('@/lib/analysis/atoAccountKind').then(() => 'with ATO accounts', () => 'without ATO accounts')

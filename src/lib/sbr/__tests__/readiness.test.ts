@@ -133,6 +133,19 @@ describe('financial statements', () => {
 })
 
 describe('ATO activity statement', () => {
+  it('is Failed, saying why, when the dates in the export could not be read', () => {
+    const failed = statusOf(
+      computeReadiness(input({ lodgement: { analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', unparsedDateRows: 630 } } })),
+      'lodgement',
+    )
+    expect(failed).toMatchObject({
+      status: 'failed',
+      detail: "We couldn't read the dates on 630 rows of this file — was it edited in Excel? Upload the original ATO download.",
+    })
+    const ok = statusOf(computeReadiness(input({ lodgement: { analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', unparsedDateRows: 0 } } })), 'lodgement')
+    expect(ok.status).toBe('ready')
+  })
+
   it('is not uploaded without a CSV, or when none of them is an activity statement', () => {
     expect(statusOf(computeReadiness(input({ lodgement: { csvCount: 0, analysis: null } })), 'lodgement').status).toBe('not_uploaded')
     const none = statusOf(computeReadiness(input({ lodgement: { analysis: null, noExportFound: true } })), 'lodgement')

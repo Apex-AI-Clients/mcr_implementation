@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { debtComposition } from '@/lib/analysis/debtComposition'
-import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate } from '@/lib/analysis/config'
+import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate, unparsedDatesMessage } from '@/lib/analysis/config'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
@@ -605,7 +605,7 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
   // summary: write it now that someone is looking. Only when there is
   // something late to explain, as when staff run it themselves.
   useEffect(() => {
-    if (!initialAnalysis || initialAnalysis.aiSummary) return
+    if (!initialAnalysis || initialAnalysis.aiSummary || initialAnalysis.unparsedDateRows > 0) return
     const late =
       initialAnalysis.summary.numberOfLateLodgements > 0 || (initialAnalysis.dpnRisk?.totalGrossLate ?? 0) > 0
     if (!late) return
@@ -643,6 +643,8 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
     return 'warning'
   }
 
+  // Dates that could not be read: the analysis failed, and no figure from it is shown.
+  const failed = (analysis?.unparsedDateRows ?? 0) > 0
   const countSeverity = analysis ? getSeverity(analysis.summary.numberOfLateLodgements) : 'ok'
   const daysSeverity = analysis ? getDaysSeverity(analysis.summary.cumulativeDaysLate) : 'ok'
   // The lodgements the count includes, under the late-lodgement setting (config.ts)…
@@ -660,7 +662,14 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
           <Activity className="h-4 w-4 text-foreground/50" />
           <CardTitle>Lodgement Compliance Analysis With AI</CardTitle>
         </div>
-        {analysis && (
+        {analysis && failed && (
+          <div className="no-print flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={runAnalysis} loading={loading}>
+              Re-analyse
+            </Button>
+          </div>
+        )}
+        {analysis && !failed && (
           <div className="no-print flex items-center gap-2">
             <ExportPdfButton
               targetId="lodgement-export-root"
@@ -711,7 +720,23 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
         </div>
       )}
 
-      {analysis && (
+      {analysis && failed && (
+        <div className="space-y-3">
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">{unparsedDatesMessage(analysis.unparsedDateRows)}</p>
+            <p className="mt-1 text-xs text-foreground/70">
+              No late-lodgement figures are shown and the SBR prediction will not use this file until it can be read. Upload
+              the CSV exactly as downloaded from the ATO, then re-analyse.
+            </p>
+          </div>
+          <p className="text-xs text-foreground/30">
+            Analysed {formatDateRelative(analysis.analysedAt)} · Source: {analysis.sourceFilename}
+          </p>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+      )}
+
+      {analysis && !failed && (
         <div className="space-y-4">
           {/* SBR Compliance */}
           <div className="grid grid-cols-2 gap-3">

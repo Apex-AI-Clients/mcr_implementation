@@ -1706,6 +1706,7 @@ export type Database = {
           rows: Json
           source_filename: string
           statement_label: string | null
+          unparsed_date_rows: number
           warnings: Json
         }
         Insert: {
@@ -1725,6 +1726,7 @@ export type Database = {
           rows: Json
           source_filename: string
           statement_label?: string | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Update: {
@@ -1744,6 +1746,7 @@ export type Database = {
           rows?: Json
           source_filename?: string
           statement_label?: string | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Relationships: [
