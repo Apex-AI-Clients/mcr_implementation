@@ -257,6 +257,42 @@ function getSeverity(numberOfLate: number): 'ok' | 'warning' | 'danger' {
   return 'warning'
 }
 
+/** What kind of activity statement row a contributing lodgement is, as a label. */
+const KIND_LABEL: Partial<Record<EnrichedRow['lodgementType'], { label: string; title: string; amendment: boolean }>> = {
+  Original: { label: 'Original', title: 'An original activity statement', amendment: false },
+  ClientAmended: {
+    label: 'Amended (client)',
+    title: "A client-initiated amendment, measured from the original period's due date",
+    amendment: true,
+  },
+  ATOAmended: { label: 'Amended (Tax Office)', title: "A Tax Office amendment, measured from the original period's due date", amendment: true },
+  ATOAudit: {
+    label: 'Amended (Tax Office audit)',
+    title: "A Tax Office audit amendment, measured from the original period's due date",
+    amendment: true,
+  },
+}
+
+export function LodgementKindLabel({ type }: { type: EnrichedRow['lodgementType'] }) {
+  const kind = KIND_LABEL[type] ?? {
+    // Counted because its description carries "Activity Statement", as the RBA ICA spreadsheet counts it.
+    label: type === 'FTLPenalty' ? 'Penalty row' : 'Other row',
+    title: 'Its description contains "Activity Statement", so the RBA ICA spreadsheet counts it',
+    amendment: true,
+  }
+  return (
+    <span
+      className={cn(
+        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        kind.amendment ? 'bg-warning/15 text-warning' : 'bg-surface text-foreground/70',
+      )}
+      title={kind.title}
+    >
+      {kind.label}
+    </span>
+  )
+}
+
 function ContributingTable({ late }: { late: EnrichedRow[] }) {
   if (late.length === 0) return <p className="text-xs text-foreground/40 italic">No late lodgements.</p>
 
@@ -282,16 +318,7 @@ function ContributingTable({ late }: { late: EnrichedRow[] }) {
                 {row.effectiveDate ? formatDate(new Date(row.effectiveDate as unknown as string).toISOString()) : '—'}
               </td>
               <td className="py-1.5 pr-4 whitespace-nowrap">
-                {row.lodgementType === 'ClientAmended' ? (
-                  <span
-                    className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning"
-                    title="A client-initiated amendment, measured from the original period's due date"
-                  >
-                    Amendment
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-foreground/70">Original</span>
-                )}
+                <LodgementKindLabel type={row.lodgementType} />
               </td>
               <td className="py-1.5 pr-4 text-foreground/70 max-w-xs truncate" title={row.description}>
                 {row.description}
@@ -790,7 +817,11 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
                 ) : (
                   <ChevronDown className="h-3.5 w-3.5" />
                 )}
-                {showTable ? 'Hide' : 'Show'} contributing lodgements ({lateRows.length})
+                {showTable ? 'Hide' : 'Show'} contributing lodgements ({lateRows.length}
+                {lateRows.some((r) => r.lodgementType !== 'Original')
+                  ? `: ${lateRows.filter((r) => r.lodgementType === 'Original').length} original, ${lateRows.filter((r) => r.lodgementType !== 'Original').length} amended or other`
+                  : ''}
+                )
               </button>
               {showTable && (
                 <div className="mt-3 space-y-4">

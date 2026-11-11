@@ -40,6 +40,12 @@ export function isPredictionStale(computedAt: string, changedAt: string | null):
 export const STALE_UNREADABLE_DATES = 'Calculated on unreadable ATO dates — re-run'
 
 /**
+ * Stored on a saved prediction whose late lodgements change under the RBA ICA
+ * rule (12 Nov 2026: amended activity statements count; config.ts).
+ */
+export const STALE_RULE_CHANGED = 'Late-lodgement rule changed — re-run'
+
+/**
  * The saved prediction's stale reason (0050), while it still applies: a
  * prediction computed after the latest lodgement analysis was computed on
  * that analysis, so a reason marked before it (unreadable ATO dates, then

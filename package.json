@@ -19,6 +19,7 @@
     "figures:check": "vitest run --config vitest.figures.config.ts check",
     "figures:dpn": "vitest run --config vitest.figures.config.ts dpn",
     "figures:dates": "vitest run --config vitest.figures.config.ts unreadDates",
+    "figures:relodge": "vitest run --config vitest.figures.config.ts rerunLodgements",
     "ato:refile": "vitest run --config vitest.figures.config.ts refile",
     "figures:proof": "vitest run --config vitest.figures.config.ts predictionProof",
     "printed:dump": "vitest run --config vitest.printed.config.ts dump",

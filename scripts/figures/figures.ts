@@ -1,4 +1,6 @@
+import * as fs from 'node:fs'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import * as XLSX from 'xlsx'
 import path from 'node:path'
 import { creditorDebt, daysSinceLastPayment, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
@@ -155,6 +157,48 @@ export function compareLodgement(expected: LodgementFigures, actual: LodgementFi
     if (!same) out.push(`lodgement  ${key}: verified ${want}, now ${got ?? 'missing'}`)
   }
   return out
+}
+
+// ── RBA ICA spreadsheets ────────────────────────────────────────────────────
+
+/**
+ * MCR's "RBA ICA" spreadsheets, kept in verified-figures/rba-ica/ (real
+ * client data, gitignored). Each holds the ATO rows in columns A–F from row 9
+ * and the client's own totals in H3 (late lodgements) and H4 (cumulative days
+ * late); workbooks.json names each by alias with the figures as reported.
+ */
+export const RBA_ICA_DIR = path.join(DIR, 'rba-ica')
+
+export interface RbaIcaWorkbook {
+  alias: string
+  file: string
+  lateLodgements: number
+  cumulativeDaysLate: number
+}
+
+export function readRbaIcaWorkbooks(): RbaIcaWorkbook[] {
+  const file = path.join(RBA_ICA_DIR, 'workbooks.json')
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as RbaIcaWorkbook[]) : []
+}
+
+const csvQuote = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+/**
+ * A workbook's columns A–F fed through OUR analysis (as a CSV with the ATO
+ * header: dates go in as the workbook holds them, Excel serials), and its own
+ * H3 / H4.
+ */
+export function rbaIcaWorkbook(file: string, scope: LateLodgementScope): { result: LodgementAnalysisResult; h3: unknown; h4: unknown; rows: number } {
+  XLSX.set_fs(fs)
+  const wb = XLSX.readFile(path.join(RBA_ICA_DIR, file))
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  // Row 9 onward (0-based 8), rows with a processed date.
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: true, range: 8, defval: null }).filter((r) => r[0] !== null && r[0] !== '')
+  const csv =
+    '"Activity statement (RBA ICA workbook)"\n"WORKBOOK"\nProcessed date,Effective date,Description,Debit (DR),Credit (CR),Balance\n' +
+    rows.map((r) => [0, 1, 2, 3, 4, 5].map((c) => csvQuote(r[c])).join(',')).join('\n') +
+    '\n'
+  return { result: computeLateLodgement(parseActivityStatementCsv(csv), scope), h3: ws.H3?.v, h4: ws.H4?.v, rows: rows.length }
 }
 
 // ── Director penalty notices ─────────────────────────────────────────────────

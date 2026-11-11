@@ -170,7 +170,7 @@ describe('interest summary rows', () => {
 })
 
 describe('ATO audit amendments', () => {
-  it('counts "Tax Office audit amended" debits as their own composition line, not as late lodgements', () => {
+  it('counts "Tax Office audit amended" debits as their own composition line, and as a late lodgement (RBA ICA rule)', () => {
     const r = analyse(
       row('27 May 2026', '25 May 2022', 'Tax Office audit amended Activity Statement for the period ending 31 Mar 22', '$1,800.00', '', '$31,800.00 DR'),
       OPENING,
@@ -179,7 +179,8 @@ describe('ATO audit amendments', () => {
     expect(r.debtBreakdown.auditNet).toBe(1800)
     expect(r.debtBreakdown.totalAtoDebt).toBe(31_800)
     expect(r.debtBreakdown.unexplainedDifference).toBe(0)
-    expect(r.summary.numberOfLateLodgements).toBe(0)
-    expect(r.dpnRisk.totalGrossLate).toBe(0)
+    // 27 May 2026 − 25 May 2022: 1,463 days late, its $1,800 over 90 days.
+    expect(r.summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 1463 })
+    expect(r.dpnRisk.totalGrossLate).toBe(1800)
   })
 })

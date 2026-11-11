@@ -10,6 +10,8 @@ import {
   atoAccountFigures,
   compareLodgement,
   readAtoAccounts,
+  readRbaIcaWorkbooks,
+  rbaIcaWorkbook,
   predictionDebt,
   icaCsvAliases,
   lodgementFigures,
@@ -165,6 +167,36 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
   }
   out('')
   if (failing > 0) throw new Error(`${failing} client(s) differ from their verified figures (see above).`)
+})
+
+/**
+ * MCR's RBA ICA spreadsheets (verified-figures/rba-ica/): each workbook's ATO
+ * rows through our analysis under the active setting must give exactly its
+ * own H3 (late lodgements) and H4 (cumulative days late), and the figures
+ * recorded in workbooks.json. Prints aliases and figures only.
+ */
+it('matches the RBA ICA spreadsheets exactly (H3 late lodgements, H4 cumulative days late)', () => {
+  const workbooks = readRbaIcaWorkbooks()
+  if (workbooks.length === 0) {
+    out('No RBA ICA spreadsheets in verified-figures/rba-ica/workbooks.json.')
+    return
+  }
+  out('')
+  out(`RBA ICA spreadsheets (late-lodgement setting: ${LATE_LODGEMENT_SCOPE}):`)
+  let failing = 0
+  for (const w of workbooks) {
+    const { result, h3, h4, rows } = rbaIcaWorkbook(w.file, LATE_LODGEMENT_SCOPE)
+    const ours = result.summary
+    const problems = [
+      result.unparsedDateRows > 0 ? `${result.unparsedDateRows} rows with unreadable dates` : null,
+      ours.numberOfLateLodgements !== h3 ? `late lodgements ${ours.numberOfLateLodgements}, spreadsheet H3 ${h3}` : null,
+      ours.cumulativeDaysLate !== h4 ? `cumulative days ${ours.cumulativeDaysLate}, spreadsheet H4 ${h4}` : null,
+      h3 !== w.lateLodgements || h4 !== w.cumulativeDaysLate ? `spreadsheet ${h3} / ${h4}, recorded ${w.lateLodgements} / ${w.cumulativeDaysLate}` : null,
+    ].filter(Boolean)
+    out(`  ${w.alias}: ${rows} rows | ours ${ours.numberOfLateLodgements} / ${ours.cumulativeDaysLate} | spreadsheet ${h3} / ${h4} | ${problems.length ? `DIFFERS: ${problems.join('; ')}` : 'match'}`)
+    if (problems.length) failing++
+  }
+  if (failing > 0) throw new Error(`${failing} RBA ICA spreadsheet(s) differ from our analysis (see above).`)
 })
 
 /**

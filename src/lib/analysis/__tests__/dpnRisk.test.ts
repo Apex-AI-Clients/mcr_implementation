@@ -10,6 +10,12 @@ import type { EnrichedRow, LodgementType } from '../types'
 
 let _rowIdx = 0
 
+const DESCRIPTION: Partial<Record<LodgementType, string>> = {
+  Original: 'Original Activity Statement for the period ending 30 Jun 24 - GST',
+  ClientAmended: 'Client initiated amended Activity Statement for the period ending 30 Jun 24 - GST',
+  ATOAudit: 'Tax Office audit amended Activity Statement for the period ending 30 Jun 24',
+}
+
 beforeEach(() => {
   _rowIdx = 0
 })
@@ -31,7 +37,8 @@ function buildRow(opts: {
     effectiveDate: null,
     rawProcessed: opts.processedDate ?? '',
     rawEffective: '',
-    description: opts.description ?? '',
+    // The ATO's wording by type: the late-lodgement rule (RBA ICA) reads the description.
+    description: opts.description ?? DESCRIPTION[opts.type] ?? '',
     debit: opts.debit ?? null,
     credit: opts.credit ?? null,
     balance: null,
