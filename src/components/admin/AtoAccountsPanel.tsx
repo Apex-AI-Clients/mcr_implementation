@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'
 import type { AtoAccountKind } from '@/lib/analysis/atoAccountKind'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { unparsedDatesMessage } from '@/lib/analysis/config'
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -48,6 +49,9 @@ export function AtoAccountsPanel({
     <Card className="mb-6">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-foreground">ATO accounts</h2>
+        {overview.unreadable.length > 0 && (
+          <p className="text-sm text-destructive">Total ATO debt not available: dates unreadable</p>
+        )}
         {overview.totalDebt !== null && (
           <p className="text-sm text-foreground/70">
             Total ATO debt{' '}
@@ -91,6 +95,17 @@ export function AtoAccountsPanel({
                     · newest of {a.olderFiles + 1} files
                   </span>
                 )}
+                {a.unparsedDateRows > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    Failed: dates unreadable
+                  </Badge>
+                )}
+                {a.unparsedDateRows > 0 && (
+                  <span className="mt-0.5 block text-destructive" role="alert">
+                    {unparsedDatesMessage(a.unparsedDateRows)}
+                    {a.olderFiles > 0 ? ' Then delete the edited file.' : ''}
+                  </span>
+                )}
                 {a.needsReview && !a.reviewedAt && (
                   <Badge variant="warning" className="ml-2">
                     Needs review
@@ -106,7 +121,9 @@ export function AtoAccountsPanel({
               <span className="flex shrink-0 items-center gap-2 tabular-nums">
                 <span className="text-right">
                   <span className="block font-medium text-foreground">
-                    {a.balance === null ? (
+                    {a.unparsedDateRows > 0 ? (
+                      <span className="text-destructive">Not read</span>
+                    ) : a.balance === null ? (
                       'No balance'
                     ) : (
                       <SourcedAmount

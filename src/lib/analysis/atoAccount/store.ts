@@ -6,6 +6,7 @@ import { reconciliationGap } from '../debtReconciliation'
 import { ATO_ACCOUNT_CATEGORIES, entityMatches, readAtoAccountHeader, type AtoAccountKind } from '../atoAccountKind'
 import { analyseAtoAccount } from '.'
 import { calendarDay, type AccountRow } from './engine'
+import { unparsedDateRows } from '../config'
 import type { Database, Json } from '@/types/database'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { generateAtoAccountSummary } from '@/lib/ai/atoAccountSummary'
@@ -100,6 +101,8 @@ export async function analyseAndStoreAtoAccount(
         summary: {} as Json,
         rows: [] as unknown as Json,
         warnings: result.warnings as unknown as Json,
+        // Above 0 the analysis failed (dates unreadable): shown as such, never as figures.
+        unparsed_date_rows: result.unparsedDateRows,
       }
     } else {
       const a = analyseAtoAccount(text)
@@ -115,6 +118,7 @@ export async function analyseAndStoreAtoAccount(
         summary: { ...a.summary, openingBalance: a.openingBalance, statementDate: a.statementDate } as unknown as Json,
         rows: storedRows(a.rows) as unknown as Json,
         warnings: [] as unknown as Json,
+        unparsed_date_rows: a.unparsedDateRows,
       }
     }
   } catch (err) {
@@ -156,12 +160,34 @@ export interface AtoAccountSummaryRow {
   entityMatches: boolean | null
   /** Other files for the same account (same line 1) that this one replaces. */
   olderFiles: number
+  /**
+   * Rows with unreadable dates across the account's files (storedUnparsedDateRows).
+   * Above 0 the account has failed: balance and balance date are null, and it
+   * is left out of the total.
+   */
+  unparsedDateRows: number
+}
+
+/**
+ * A stored ATO account analysis's rows with unreadable dates: the count stored
+ * with it (migration 0049), or counted from its stored rows (income tax and
+ * super accounts keep them) for an analysis saved before the count existed.
+ */
+export function storedUnparsedDateRows(row: Pick<AtoAccountAnalysisRow, 'rows'> & { unparsed_date_rows?: number | null }): number {
+  const fromRows = Array.isArray(row.rows) && row.rows.length > 0 ? unparsedDateRows(row.rows) : 0
+  return Math.max(row.unparsed_date_rows ?? 0, fromRows)
 }
 
 export interface AtoAccountsOverview {
   accounts: AtoAccountSummaryRow[]
-  /** The newest balance of each account, credits netted off; null with no balances. */
+  /**
+   * The newest balance of each account, credits netted off; null with no
+   * balances, and null when any account's dates could not be read (a total
+   * without it would be wrong): see `unreadable`.
+   */
   totalDebt: number | null
+  /** Accounts whose dates could not be read: shown as failed, never as figures. */
+  unreadable: { label: string; rows: number }[]
 }
 
 /**
@@ -181,6 +207,25 @@ export function atoAccountsOverview(rows: readonly AtoAccountAnalysisRow[]): Ato
       const newest = [...files].sort(
         (a, b) => (b.balance_date ?? '').localeCompare(a.balance_date ?? '') || b.analysed_at.localeCompare(a.analysed_at),
       )[0]
+      // Any file of the account with unreadable dates: the account has failed, and
+      // shows why rather than a balance, until that file is replaced.
+      const failed = files.filter((f) => storedUnparsedDateRows(f) > 0)
+      const shown = failed[0] ?? newest
+      if (failed.length > 0) {
+        return {
+          id: shown.id,
+          documentId: shown.document_id,
+          kind: shown.account_kind as AtoAccountKind,
+          label: shown.account_label,
+          balance: null,
+          balanceDate: null,
+          needsReview: false,
+          reviewedAt: shown.reviewed_at,
+          entityMatches: shown.entity_matches,
+          olderFiles: files.length - 1,
+          unparsedDateRows: failed.reduce((n, f) => n + storedUnparsedDateRows(f), 0),
+        }
+      }
       return {
         id: newest.id,
         documentId: newest.document_id,
@@ -192,12 +237,15 @@ export function atoAccountsOverview(rows: readonly AtoAccountAnalysisRow[]): Ato
         reviewedAt: newest.reviewed_at,
         entityMatches: newest.entity_matches,
         olderFiles: files.length - 1,
+        unparsedDateRows: 0,
       }
     })
     .sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label, 'en', { numeric: true }))
+  const unreadable = accounts.filter((a) => a.unparsedDateRows > 0).map((a) => ({ label: a.label, rows: a.unparsedDateRows }))
   const withBalance = accounts.filter((a) => a.balance !== null)
-  const totalDebt = withBalance.length ? Math.round(withBalance.reduce((s, a) => s + a.balance!, 0) * 100) / 100 : null
-  return { accounts, totalDebt }
+  const totalDebt =
+    withBalance.length && unreadable.length === 0 ? Math.round(withBalance.reduce((s, a) => s + a.balance!, 0) * 100) / 100 : null
+  return { accounts, totalDebt, unreadable }
 }
 
 export async function loadAtoAccounts(supabase: ServerClient, clientId: string): Promise<AtoAccountsOverview> {
@@ -266,12 +314,15 @@ export type AtoSummaryOutcome =
 export async function ensureAtoAccountSummary(supabase: ServerClient, clientId: string, analysisId: string): Promise<AtoSummaryOutcome> {
   const { data: row } = await supabase
     .from('ato_account_analyses')
-    .select('id, account_kind, balance, balance_date, summary, needs_review, reviewed_at, ai_summary, ai_summary_generated_at, ai_summary_model')
+    // All columns: the unread-date count (0049) and the stored rows it is also counted from.
+    .select('*')
     .eq('id', analysisId)
     .eq('client_id', clientId)
     .maybeSingle()
   if (!row) return { kind: 'none' }
   if (row.account_kind !== 'income_tax' && row.account_kind !== 'super_guarantee') return { kind: 'not_needed' }
+  // Dates that could not be read: no figures to explain.
+  if (storedUnparsedDateRows(row) > 0) return { kind: 'not_needed' }
   if (row.needs_review && !row.reviewed_at) return { kind: 'locked' }
   if (row.ai_summary && row.ai_summary_generated_at && isClaudeSummary(row.ai_summary_model)) {
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }

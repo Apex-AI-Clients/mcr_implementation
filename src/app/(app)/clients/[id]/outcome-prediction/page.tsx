@@ -11,7 +11,7 @@ import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements, unparsedDateRows, unparsedDatesMessage } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
-import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
+import { applicableStaleReason, isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
 import {
   dpnNote,
   inputsChanged,
@@ -214,7 +214,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
           dpnDetail: dpnItem?.detail ?? '',
         }}
         initialAuto={{ ...initialAuto, atoAccountRows }}
-        initialPrediction={cached.data ? { ...serialiseCachedPrediction(cached.data, changedAt), inputsChanged: changed } : null}
+        initialPrediction={cached.data ? { ...serialiseCachedPrediction(cached.data, changedAt, lodgement.data?.analysed_at ?? null), inputsChanged: changed } : null}
       />
     </div>
   )
@@ -229,9 +229,11 @@ interface CachedRow {
   training_set_size: number
   computed_at: string
   practitioner_fee_rate?: number | null
+  /** Why it must not be used (0050), e.g. computed on unreadable ATO dates. */
+  stale_reason?: string | null
 }
 
-function serialiseCachedPrediction(row: CachedRow, changedAt: string | null) {
+function serialiseCachedPrediction(row: CachedRow, changedAt: string | null, lodgementAnalysedAt: string | null) {
   return {
     inputFeatures: row.input_features as unknown as Record<string, unknown>,
     predictedOutcomePercent: Number(row.predicted_outcome_percent),
@@ -242,5 +244,6 @@ function serialiseCachedPrediction(row: CachedRow, changedAt: string | null) {
     computedAt: row.computed_at,
     practitionerFeeRate: Number(row.practitioner_fee_rate ?? DEFAULT_PRACTITIONER_FEE_RATE),
     stale: isPredictionStale(row.computed_at, changedAt),
+    staleReason: applicableStaleReason(row.stale_reason, row.computed_at, lodgementAnalysedAt),
   }
 }

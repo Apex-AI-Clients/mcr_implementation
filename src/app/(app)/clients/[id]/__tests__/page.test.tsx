@@ -31,7 +31,7 @@ vi.mock('@/lib/sbr/loadReadiness', () => ({
 }))
 // The ATO accounts panel's data (atoAccount/store.ts): none, unless a test says otherwise.
 vi.mock('@/lib/analysis/atoAccount/store', () => ({
-  loadAtoAccounts: vi.fn(async () => ({ accounts: [], totalDebt: null })),
+  loadAtoAccounts: vi.fn(async () => ({ accounts: [], totalDebt: null, unreadable: [] })),
   hasUnanalysedAtoAccounts: vi.fn(async () => false),
 }))
 vi.mock('@/lib/analysis/autoRun', () => ({

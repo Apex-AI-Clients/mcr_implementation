@@ -58,11 +58,12 @@ export function context(over: Partial<CvlContext> = {}): CvlContext {
     },
     atoAccounts: {
       accounts: [
-        { id: 'a1', documentId: 'doc-ica', kind: 'activity_statement', label: 'Activity statement 001', balance: 172320.55, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0 },
-        { id: 'a2', documentId: 'doc-sg', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: 6400, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0 },
-        { id: 'a3', documentId: 'doc-it', kind: 'income_tax', label: 'Income tax 551', balance: -120, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0 },
+        { id: 'a1', documentId: 'doc-ica', kind: 'activity_statement', label: 'Activity statement 001', balance: 172320.55, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
+        { id: 'a2', documentId: 'doc-sg', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: 6400, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
+        { id: 'a3', documentId: 'doc-it', kind: 'income_tax', label: 'Income tax 551', balance: -120, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
       ],
       totalDebt: 178600.55,
+      unreadable: [],
     },
     sbrCreditors: [
       { label: 'Trade suppliers', amount: 5000, kind: 'tradeSuppliers' },

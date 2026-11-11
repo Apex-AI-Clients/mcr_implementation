@@ -187,9 +187,11 @@ export function creditorRows(ctx: CvlContext): PrefillTableRow[] {
       },
     })
   }
-  // The ATO's own accounts stand in for the balance sheet's ATO lines when there are any.
+  // The ATO's own accounts stand in for the balance sheet's ATO lines when there are any. An account
+  // on file whose dates could not be read is never quietly replaced by the balance sheet's figure.
+  const atoOnFile = rows.length > 0 || ctx.atoAccounts.unreadable.length > 0
   const lineMeanings: [Meaning, { related?: boolean }][] = [
-    ...(rows.length ? [] : ([['ato_debt', {}]] as [Meaning, { related?: boolean }][])),
+    ...(atoOnFile ? [] : ([['ato_debt', {}]] as [Meaning, { related?: boolean }][])),
     ['trade_suppliers', {}],
     ['credit_cards', {}],
     ['bank_overdraft', {}],

@@ -424,6 +424,8 @@ export async function POST(req: NextRequest, { params }: Params) {
           input_overrides: loanOverride.override
             ? ({ directorLoanAtAppointment: loanOverride.override } as unknown as Record<string, unknown>)
             : null,
+          // A new prediction is current: any reason the saved one was stale no longer applies.
+          stale_reason: null,
           computed_at: now,
         },
         { onConflict: 'client_id' },

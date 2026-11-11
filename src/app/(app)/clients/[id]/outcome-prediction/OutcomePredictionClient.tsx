@@ -120,6 +120,11 @@ interface CachedSummary {
   practitionerFeeRate: number
   /** The historical cases changed after it was saved (staleness.ts). */
   stale: boolean
+  /**
+   * Why the saved prediction must not be used (sbr_outcome_predictions.stale_reason),
+   * e.g. computed on unreadable ATO dates: its figures are never shown, only this.
+   */
+  staleReason?: string | null
   /** Inputs the current evidence contradicts (inputPrecedence.ts); empty when none. */
   inputsChanged?: string[]
 }
@@ -537,7 +542,7 @@ export function OutcomePredictionClient({
   const hydrated = useRef(false)
   useEffect(() => {
     if (hydrated.current) return
-    if (!initialPrediction || initialPrediction.stale) return
+    if (!initialPrediction || initialPrediction.stale || initialPrediction.staleReason) return
     // Inputs the evidence now contradicts: staff check them and re-run.
     if (inputsChanged.length > 0) return
     if (!lodgementReady || !readiness.canPredict || loanNotIdentified) return
@@ -561,7 +566,7 @@ export function OutcomePredictionClient({
           <div>
             <h1 className="text-xl font-semibold text-foreground">SBR Outcome Prediction</h1>
             <p className="text-sm text-foreground/60 mt-0.5">{clientName}</p>
-            {(prediction || initialPrediction) && (
+            {(prediction || (initialPrediction && !initialPrediction.staleReason)) && (
               <p className="text-xs text-foreground/40 mt-1">
                 Generated{' '}
                 {formatDateRelative(
@@ -602,7 +607,27 @@ export function OutcomePredictionClient({
         </div>
       )}
 
-      {initialPrediction?.stale && !prediction && (
+      {initialPrediction?.staleReason && !prediction && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <div role="alert" className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div>
+                <p className="text-sm font-medium text-foreground">{initialPrediction.staleReason}</p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  The saved prediction is not shown: it must not be used. Re-run it to get a current one.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={runPrediction} loading={running} disabled={!canRun}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-run
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {initialPrediction?.stale && !initialPrediction.staleReason && !prediction && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -626,7 +651,7 @@ export function OutcomePredictionClient({
         </Card>
       )}
 
-      {inputsChanged.length > 0 && initialPrediction && !prediction && (
+      {inputsChanged.length > 0 && initialPrediction && !initialPrediction.staleReason && !prediction && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-3">

@@ -7,6 +7,9 @@ import type { AtoAccountPayload } from '@/lib/analysis/atoAccount/exportCsv'
 import type { AccountComposition } from '@/lib/analysis/atoAccount/engine'
 import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
 import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clients/workspace'
+import { Card } from '@/components/ui/Card'
+import { storedUnparsedDateRows } from '@/lib/analysis/atoAccount/store'
+import { unparsedDatesMessage } from '@/lib/analysis/config'
 
 /**
  * An income tax or superannuation guarantee account's summary, from its
@@ -34,6 +37,34 @@ export async function AtoAccountView({ id, analysisId, workspace }: ClientPageVi
   if (row.account_kind === 'activity_statement') redirect(`${base}/lodgement-compliance-analysis`)
 
   const doc = row.documents as { original_filename: string } | { original_filename: string }[] | null
+  const filename = (Array.isArray(doc) ? doc[0] : doc)?.original_filename ?? null
+
+  // Dates that could not be read (a file re-saved in Excel): the analysis failed. No figure from it is shown.
+  const unread = storedUnparsedDateRows(row)
+  if (unread > 0) {
+    return (
+      <div id="ato-account-export-root" className="mx-auto max-w-4xl p-6">
+        <Link
+          href={base}
+          className="no-print mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to {client.name}
+        </Link>
+        <h1 className="mb-4 text-xl font-semibold text-foreground">{row.account_label}</h1>
+        <Card>
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">{unparsedDatesMessage(unread)}</p>
+            <p className="mt-1 text-xs text-foreground/70">
+              No balance, payments or other figures are shown from this account, and it is left out of the total ATO debt, until
+              the CSV exactly as downloaded from the ATO is uploaded and this file is deleted.
+            </p>
+          </div>
+          {filename && <p className="mt-3 text-xs text-foreground/30">Source: {filename}</p>}
+        </Card>
+      </div>
+    )
+  }
   const payload = {
     id: row.id,
     clientId: row.client_id,
@@ -41,7 +72,7 @@ export async function AtoAccountView({ id, analysisId, workspace }: ClientPageVi
     label: row.account_label,
     entityName: row.entity_name,
     entityMatches: row.entity_matches,
-    sourceFilename: (Array.isArray(doc) ? doc[0] : doc)?.original_filename ?? null,
+    sourceFilename: filename,
     balance: row.balance === null ? null : Number(row.balance),
     balanceDate: row.balance_date,
     unexplained: row.unexplained_difference === null ? null : Number(row.unexplained_difference),

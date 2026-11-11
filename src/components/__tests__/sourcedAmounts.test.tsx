@@ -105,10 +105,11 @@ describe('every amount has a source', () => {
         clientId="c1"
         overview={{
           accounts: [
-            { id: 'a', documentId: 'd', kind: 'activity_statement', label: 'Activity statement 001', balance: 10_000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0 },
-            { id: 'b', documentId: 'e', kind: 'income_tax', label: 'Income tax 001', balance: -500, balanceDate: '2026-10-01', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0 },
+            { id: 'a', documentId: 'd', kind: 'activity_statement', label: 'Activity statement 001', balance: 10_000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
+            { id: 'b', documentId: 'e', kind: 'income_tax', label: 'Income tax 001', balance: -500, balanceDate: '2026-10-01', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
           ],
           totalDebt: 9_500,
+          unreadable: [],
         }}
       />,
     )

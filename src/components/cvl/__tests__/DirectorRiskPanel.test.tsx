@@ -18,7 +18,8 @@ const RISK: DirectorRiskData = {
   sgAccounts: [],
   loans: [{ label: 'FY2025', receivable: 40000, payable: null, receivableLines: [], payableLines: [] }],
   totalAtoDebt: 178600.55,
-  accounts: [{ label: 'Activity statement 001', balance: 178600.55, balanceDate: '2026-09-30' }],
+  accounts: [{ label: 'Activity statement 001', balance: 178600.55, balanceDate: '2026-09-30', unparsedDateRows: 0 }],
+  unreadable: [],
 }
 
 describe('DirectorRiskPanel', () => {
@@ -54,5 +55,26 @@ describe('DirectorRiskPanel', () => {
     expect(screen.getByText(/None on file/)).toBeTruthy()
     expect(screen.getByText(/No loan account lines confirmed/)).toBeTruthy()
     expect(screen.getByText(/Not advice/)).toBeTruthy()
+  })
+})
+
+describe('DirectorRiskPanel — an ATO account whose dates could not be read', () => {
+  it('says why, and shows no figure from it', () => {
+    const risk: DirectorRiskData = {
+      ...RISK,
+      potential: RISK.potential.map((p) => (p.type === 'sgc' ? p : { ...p, onTime: 0, late: 0, items: [], unreadableRows: 630 })),
+      totalAtoDebt: null,
+      accounts: [{ label: 'Activity statement 001', balance: null, balanceDate: null, unparsedDateRows: 630 }],
+      unreadable: [{ label: 'Activity statement 001', rows: 630 }],
+    }
+    render(<DirectorRiskPanel clientId="cl_1" risk={risk} />)
+    expect(screen.getByRole('alert').textContent).toContain(
+      "Activity statement 001: We couldn't read the dates on 630 rows of this file — was it edited in Excel? Upload the original ATO download.",
+    )
+    expect(screen.getAllByText('Not available: dates unreadable')).toHaveLength(2)
+    expect(screen.queryByText('$178,601')).toBeNull()
+    expect(screen.queryByText('$10,200')).toBeNull()
+    const potential = screen.getByRole('heading', { name: 'What a notice could still cover' }).parentElement as HTMLElement
+    expect(within(potential).getAllByText('Not read')).toHaveLength(4)
   })
 })

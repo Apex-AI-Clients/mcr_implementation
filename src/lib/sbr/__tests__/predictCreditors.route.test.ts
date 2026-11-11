@@ -121,6 +121,8 @@ describe('POST predict-outcome — creditors in the SBR', () => {
 
     const saved = upsert.mock.calls[0][0] as Record<string, unknown>
     expect(saved.total_creditor_amount).toBe(150_000)
+    // A new prediction is current: a stale reason on the saved one is cleared.
+    expect(saved).toHaveProperty('stale_reason', null)
     expect(saved.creditors).toMatchObject({ atoDebt: 100_000, atoDebtEdited: false })
     expect((saved.creditors as { rows: unknown[] }).rows).toHaveLength(3)
   })

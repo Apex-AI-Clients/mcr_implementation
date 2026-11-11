@@ -6,6 +6,7 @@ import { computeLateLodgement } from '@/lib/analysis/computeLateLodgement'
 import { LATE_LODGEMENT_SCOPE, storedLateLodgements, unparsedDateRows } from '@/lib/analysis/config'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { analyseAndStoreAtoAccount, clientNamesFor } from '@/lib/analysis/atoAccount/store'
+import { STALE_UNREADABLE_DATES } from '@/lib/sbr/staleness'
 import { out } from './figures'
 
 /**
@@ -23,8 +24,9 @@ import { out } from './figures'
  * ATO_DATES_APPLY=yes re-runs, with the current code: the stored lodgement
  * analysis (figures only, no AI summary) of each client whose stored rows
  * lack dates, and the ATO account analysis (ato_account_analyses) of each CSV
- * whose dates the old parser could not read. Only after migration 0048 is
- * applied and the fix is deployed.
+ * whose dates the old parser could not read; and first marks the client's
+ * saved SBR prediction, if it was computed on the unread dates, with
+ * STALE_UNREADABLE_DATES (migration 0050). Needs migrations 0048–0050.
  *
  * Prints aliases (c01, c02, … by client id, as figures:proof) and counts only.
  */
@@ -104,6 +106,23 @@ it('lists clients whose ATO account CSV dates could not be read', async () => {
     const s = stored ? `${storedUnread}/${storedRows.length}, ${storedLate?.numberOfLateLodgements} late, ${storedLate?.cumulativeDaysLate} days` : 'none'
     const f = fresh ? `${fresh.unparsedDateRows} unread, ${fresh.summary.numberOfLateLodgements} late, ${fresh.summary.cumulativeDaysLate} days` : 'no activity statement'
     out(`${alias} | ${s} | ${csvNotes.join('; ') || 'all readable'} | ${f}`)
+
+    // A saved prediction computed on these unread dates: never shown as current again.
+    if ((storedUnread ?? 0) > 0) {
+      const { data: saved } = await supabase
+        .from('sbr_outcome_predictions')
+        .select('id, predicted_outcome_percent, computed_at')
+        .eq('client_id', id)
+        .maybeSingle()
+      if (!saved) out('  saved prediction: none')
+      else if (!apply) out(`  saved prediction ${saved.predicted_outcome_percent}% (${saved.computed_at.slice(0, 10)}): would be marked "${STALE_UNREADABLE_DATES}"`)
+      else {
+        const { error: markError } = await supabase.from('sbr_outcome_predictions').update({ stale_reason: STALE_UNREADABLE_DATES }).eq('id', saved.id)
+        out(`  saved prediction ${saved.predicted_outcome_percent}% (${saved.computed_at.slice(0, 10)}): ${markError ? `NOT marked (${markError.code})` : `marked "${STALE_UNREADABLE_DATES}"`}`)
+        // The analysis is not re-run while the prediction cannot be marked: it is the last evidence.
+        if (markError) continue
+      }
+    }
 
     if (apply && file && (storedUnread ?? 0) > 0) {
       const outcome = await analyseAndStoreLodgement(supabase as never, id, file, { aiSummary: false })
