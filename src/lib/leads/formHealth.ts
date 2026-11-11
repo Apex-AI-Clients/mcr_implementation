@@ -2,14 +2,15 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { unmappedFacebookKeys } from './ingest'
 
 /**
- * Facebook lead form health, for the warning strip on the leads dashboard.
+ * Facebook lead form health, for the warning strip on a lead's record page —
+ * shown on the leads from an affected form, not over the whole list.
  *
  * Why: form 1751128836351174 went live on 4 Nov 2026 with a state question key
  * no field map listed. Every lead from it landed with a blank State and the
  * webhook reported success, so it was noticed a week later, by hand. This
  * surfaces the same kind of gap the day it starts.
  *
- * Computed when the dashboard loads, from what is already stored — no cron,
+ * Computed when the record loads, from what is already stored — no cron,
  * no extra table, nothing added to the webhook:
  *
  *  - Unmapped key: a question name (lead_submissions.meta_field_keys, from
@@ -145,13 +146,21 @@ const SUBMISSION_COLUMNS =
   'meta_form_id, received_at, state, meta_state_raw, meta_state_options, debt_min, debt_max'
 
 /**
- * The dashboard's call. Never throws: a failed health check must not take the
- * leads list down with it, so any error is logged and reads as "no warnings".
+ * The lead record's call: warnings for the Facebook forms this lead's
+ * enquiries came from, and no others. Never throws: a failed health check must
+ * not take the lead record down with it, so any error is logged and reads as
+ * "no warnings".
  */
-export async function getFacebookFormHealth(now: Date = new Date()): Promise<string[]> {
+export async function getFacebookFormHealth(
+  formIds: readonly string[],
+  now: Date = new Date(),
+): Promise<string[]> {
+  const forms = new Set(formIds.filter(Boolean))
+  if (forms.size === 0) return []
   try {
     const supabase = getSupabaseServerClient()
     const since = new Date(now.getTime() - FORM_HEALTH_WINDOW_DAYS * 86_400_000).toISOString()
+    const formList = [...forms]
 
     // meta_field_keys arrives with migration 0051. Until it is applied the
     // column is missing (42703), and the check runs without unmapped keys.
@@ -161,6 +170,7 @@ export async function getFacebookFormHealth(now: Date = new Date()): Promise<str
       .from('lead_submissions')
       .select(`${SUBMISSION_COLUMNS}, meta_field_keys`)
       .eq('source', 'facebook')
+      .in('meta_form_id', formList)
       .gte('received_at', since)
     let subs = withKeys.data as HealthSubmission[] | null
     let error = withKeys.error
@@ -169,6 +179,7 @@ export async function getFacebookFormHealth(now: Date = new Date()): Promise<str
         .from('lead_submissions')
         .select(SUBMISSION_COLUMNS)
         .eq('source', 'facebook')
+        .in('meta_form_id', formList)
         .gte('received_at', since)
       subs = withoutKeys.data as HealthSubmission[] | null
       error = withoutKeys.error
@@ -185,7 +196,10 @@ export async function getFacebookFormHealth(now: Date = new Date()): Promise<str
     if (logError) throw new Error(`lead_intake_log: ${logError.message}`)
 
     const submissions = (subs ?? []) as HealthSubmission[]
-    const rejections = (logs ?? []) as HealthRejection[]
+    // The form id sits inside the logged payload, so it is matched here.
+    const rejections = ((logs ?? []) as HealthRejection[]).filter(
+      (r) => r.form_id !== null && forms.has(r.form_id),
+    )
     const issues = assessFacebookFormHealth(submissions, rejections)
     if (issues.length === 0) return []
 

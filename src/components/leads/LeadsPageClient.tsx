@@ -18,7 +18,6 @@ import { useLeadStages } from '@/components/leads/LeadStages'
 import { StageNameDialog } from '@/components/leads/StageNameDialog'
 import { DeleteStageDialog } from '@/components/leads/DeleteStageDialog'
 import { StageTabStrip } from '@/components/leads/StageTabStrip'
-import { LeadFormHealthWarnings } from '@/components/leads/LeadFormHealthWarnings'
 import { useToast } from '@/components/ui/Toast'
 import { EMPTY_FILTERS, hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
 import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
@@ -53,8 +52,6 @@ interface LeadsPageClientProps {
   counts?: Record<LeadView, number>
   /** Each lead's notes, newest first; given, the table shows a Notes column. */
   notes?: Record<string, LeadNote[]>
-  /** Facebook form health warnings (lib/leads/formHealth). None: nothing shown. */
-  formWarnings?: string[]
 }
 
 /**
@@ -81,7 +78,6 @@ export function LeadsPageClient({
   sources = [],
   counts,
   notes,
-  formWarnings = [],
 }: LeadsPageClientProps) {
   const screenStages = view ? viewStages(view) : null
   const router = useRouter()
@@ -261,8 +257,6 @@ export function LeadsPageClient({
           </Button>
         </div>
       </div>
-
-      <LeadFormHealthWarnings warnings={formWarnings} />
 
       {/* One tab per group of stages, each with its count, then one per stage
           staff added. The tab is in the URL (?tab=), so it can be bookmarked;

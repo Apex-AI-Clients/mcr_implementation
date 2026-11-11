@@ -7,8 +7,8 @@ interface LeadFormHealthWarningsProps {
 
 /**
  * A Facebook form sending something the CRM cannot read — see
- * lib/leads/formHealth. Shown above the tabs on every leads view so a new or
- * changed form is noticed the day it starts. Renders nothing when all is well.
+ * lib/leads/formHealth. Shown on the record of each lead that came through
+ * an affected form. Renders nothing when all is well.
  */
 export function LeadFormHealthWarnings({ warnings }: LeadFormHealthWarningsProps) {
   if (warnings.length === 0) return null

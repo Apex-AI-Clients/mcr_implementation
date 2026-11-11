@@ -187,6 +187,7 @@ describe('getFacebookFormHealth', () => {
       const chain = {
         select: (cols: string) => (selects.push(cols), chain),
         eq: () => chain,
+        in: () => chain,
         gte: () => chain,
         lt: () => chain,
         limit: () => chain,
@@ -209,14 +210,14 @@ describe('getFacebookFormHealth', () => {
       { data: [], error: null }, // intake log
       { data: [], error: null }, // no history before the window
     ])
-    expect(await getFacebookFormHealth(new Date('2026-11-11T00:00:00Z'))).toEqual([
+    expect(await getFacebookFormHealth([NEW_FORM], new Date('2026-11-11T00:00:00Z'))).toEqual([
       "New Facebook form 175112… is sending a field we don't recognise: a_new_question?",
     ])
   })
 
   it('never reads the intake log payload, only its form id', async () => {
     const selects = client([{ data: [], error: null }, { data: [], error: null }])
-    await getFacebookFormHealth()
+    await getFacebookFormHealth([NEW_FORM])
     expect(selects[1]).toBe('error, created_at, form_id:raw_body->>form_id')
   })
 
@@ -226,13 +227,37 @@ describe('getFacebookFormHealth', () => {
       { data: [], error: null },
       { data: [], error: null },
     ])
-    expect(await getFacebookFormHealth()).toEqual([])
+    expect(await getFacebookFormHealth([NEW_FORM])).toEqual([])
     expect(selects[0]).toContain('meta_field_keys')
     expect(selects[1]).not.toContain('meta_field_keys')
   })
 
   it('shows no warnings rather than failing the page', async () => {
     client([{ data: null, error: { message: 'boom' } }])
-    expect(await getFacebookFormHealth()).toEqual([])
+    expect(await getFacebookFormHealth([NEW_FORM])).toEqual([])
+  })
+
+  it('asks the database nothing for a lead with no Facebook form', async () => {
+    const selects = client([])
+    expect(await getFacebookFormHealth([])).toEqual([])
+    expect(selects).toEqual([])
+  })
+
+  it("shows only the lead's own forms' turned-away leads", async () => {
+    client([
+      { data: [], error: null },
+      {
+        data: [
+          { form_id: OLD_FORM, error: 'Missing phone', created_at: '2026-11-05T00:00:00Z' },
+          { form_id: NEW_FORM, error: 'Missing email', created_at: '2026-11-05T00:00:00Z' },
+          { form_id: null, error: 'Missing name', created_at: '2026-11-05T00:00:00Z' },
+        ],
+        error: null,
+      },
+      { data: [{ meta_form_id: NEW_FORM }], error: null }, // ran before the window
+    ])
+    expect(await getFacebookFormHealth([NEW_FORM], new Date('2026-11-11T00:00:00Z'))).toEqual([
+      'Facebook form 175112…: 1 lead was turned away for a missing email in the last 14 days.',
+    ])
   })
 })

@@ -5,6 +5,7 @@ import {
   getLeadById,
   getSubmissionsForLead,
 } from '@/lib/leads/queries'
+import { getFacebookFormHealth } from '@/lib/leads/formHealth'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,9 +37,13 @@ export default async function LeadRecordPage({ params }: Props) {
     getActivitiesForLead(id),
     getSubmissionsForLead(id),
   ])
-  const convertedClient = lead?.convertedClientId
-    ? await getConvertedClientDetails(lead.convertedClientId)
-    : null
+  const [convertedClient, formWarnings] = await Promise.all([
+    lead?.convertedClientId ? getConvertedClientDetails(lead.convertedClientId) : null,
+    // Only for the Facebook forms this lead came through; never throws.
+    getFacebookFormHealth(
+      enquiries.filter((e) => e.source === 'facebook' && e.metaFormId).map((e) => e.metaFormId as string),
+    ),
+  ])
 
   return (
     <LeadRecordClient
@@ -47,6 +52,7 @@ export default async function LeadRecordPage({ params }: Props) {
       initialActivities={activities}
       enquiries={enquiries}
       convertedClient={convertedClient}
+      formWarnings={formWarnings}
     />
   )
 }
