@@ -127,14 +127,14 @@ describe('computeLateLodgement — sub-lines and non-lodgement types always retu
     ).toBe(0)
   })
 
-  it('ATOAmended returns 0', () => {
+  it('a Tax Office amendment is measured, as the RBA ICA spreadsheet measures every "Activity Statement" row', () => {
     expect(
       lateDays(
         '2024-12-02',
         '2023-08-25',
         'ATO initiated amended Activity Statement for the period ending 30 Jun 24',
       ),
-    ).toBe(0)
+    ).toBe(465)
   })
 })
 
@@ -204,16 +204,16 @@ describe('computeLateLodgement — summary statistics', () => {
     expect(result.summary.cumulativeDaysLate).toBe(465 + 17)
   })
 
-  it('counts original statements only under the default setting (amendments are corrections)', () => {
-    const result = computeLateLodgement(
-      makeCsv([
-        makeRow('2024-12-02', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
-        makeRow('2026-02-24', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
-        makeRow('2021-03-19', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
-      ]),
-    )
-    expect(result.summary.numberOfLateLodgements).toBe(1)
-    expect(result.summary.cumulativeDaysLate).toBe(17)
+  it('counts original statements only under originals_only, and amendments too under the default (RBA ICA)', () => {
+    const csv = makeCsv([
+      makeRow('2024-12-02', '2023-08-25', 'Client initiated amended Activity Statement for the period ending 30 Jun 23', 0),
+      makeRow('2026-02-24', '2026-03-03', 'Original Activity Statement for the period ending 31 Dec 25', 1),
+      makeRow('2021-03-19', '2021-03-02', 'Original Activity Statement for the period ending 31 Dec 20', 2),
+    ])
+    const originalsOnly = computeLateLodgement(csv, 'originals_only')
+    expect(originalsOnly.summary.numberOfLateLodgements).toBe(1)
+    expect(originalsOnly.summary.cumulativeDaysLate).toBe(17)
+    expect(computeLateLodgement(csv).summary).toEqual({ numberOfLateLodgements: 2, cumulativeDaysLate: 465 + 17 })
   })
 })
 
@@ -225,8 +225,9 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     )
     const parsed = parseActivityStatementCsv(csvText)
     const result = computeLateLodgement(parsed, 'originals_and_amendments')
-    // Under the default (originals only), just the original: 1 lodgement, 17 days.
-    expect(computeLateLodgement(parsed).summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 17 })
+    // Originals only: just the original, 1 lodgement, 17 days. The default (RBA ICA) is the figures below.
+    expect(computeLateLodgement(parsed, 'originals_only').summary).toEqual({ numberOfLateLodgements: 1, cumulativeDaysLate: 17 })
+    expect(computeLateLodgement(parsed).summary).toEqual(result.summary)
 
     // 4 lodgement rows are late in the sample fixture when amendments count:
     // ClientAmended 30 Jun 23: 465 days
@@ -280,9 +281,8 @@ describe('computeLateLodgement — integration with the company fixture CSV', ()
     // The reference figures below count amendments (originals_and_amendments).
     const result = computeLateLodgement(parsed, 'originals_and_amendments')
 
-    // Under the default (originals only): this fixture's three late originals
-    // (171 + 17 + 83 days).
-    const originalsOnly = computeLateLodgement(parsed)
+    // Originals only: this fixture's three late originals (171 + 17 + 83 days).
+    const originalsOnly = computeLateLodgement(parsed, 'originals_only')
     expect(originalsOnly.summary).toEqual({ numberOfLateLodgements: 3, cumulativeDaysLate: 171 + 17 + 83 })
     expect(originalsOnly.dpnRisk.totalGrossLate).toBe(7250)
 

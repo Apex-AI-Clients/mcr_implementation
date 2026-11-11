@@ -1,7 +1,7 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { icaPosition, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { classifyLodgement } from './classifyLodgement'
-import { LATE_LODGEMENT_SCOPE, isCountedLodgement, lateLodgementSummary, unparsedDateRows, type LateLodgementScope } from './config'
+import { LATE_LODGEMENT_PHRASE, LATE_LODGEMENT_SCOPE, isCountedLodgement, lateLodgementSummary, unparsedDateRows, type LateLodgementScope } from './config'
 import { extractPeriodEnding, parseAtoDate } from './parseActivityStatement'
 import { markBreakdownRows } from './paymentAllocations'
 import type {
@@ -38,14 +38,16 @@ import type {
  * account with no payments at all it showed the whole late debt as "paid".
  *
  * METHOD:
- *   1. Late debits: Original/ClientAmended rows, as the late-lodgement
- *      setting counts them (config.ts), filed more than 90 days late, with a
+ *   1. Late debits: the rows the late-lodgement setting counts (config.ts —
+ *      under the RBA ICA rule every "Activity Statement" row, Tax Office
+ *      audit amendments included), filed more than 90 days late, with a
  *      debit. Gross = their sum.
  *   2. Per period (matched on period ending), the relief is the period's NET
- *      downward amendment: the credits of its Original/ClientAmended rows,
- *      less the debits of its lodgement rows that are not counted as late
- *      debits (an amendment that went up and then back down nets to nothing).
- *      Never below $0.
+ *      downward amendment: the credits of its statement rows (Original,
+ *      ClientAmended, and the other counted rows that are not penalties),
+ *      less the debits of those rows that are not counted as late debits (an
+ *      amendment that went up and then back down nets to nothing). Never
+ *      below $0. A penalty remission is not an amendment: it relieves nothing.
  *   3. That relief reduces only that period's late debits, in date order.
  *      A credit never reduces another period's debit. A row with no period
  *      ending gets no relief.
@@ -56,10 +58,14 @@ import type {
  * Nothing here is a payment: the reduction is "reduced by later amendments".
  */
 export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
-  const lodgements = rows.filter((r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended')
+  // The statement rows a period's relief is worked out from: never a penalty or its remission.
+  const isPenalty = (r: EnrichedRow) => r.lodgementType === 'FTLPenalty' || r.lodgementType === 'GeneralPenalty'
+  const lodgements = rows.filter(
+    (r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended' || (isCountedLodgement(r, scope) && !isPenalty(r)),
+  )
   const periodOf = (r: EnrichedRow) => (r.periodEnding ? calendarDay(r.periodEnding) : null)
 
-  const lateDebitRows = lodgements
+  const lateDebitRows = rows
     .filter((r) => r.lateLodgementDays > 90 && (r.debit ?? 0) > 0 && isCountedLodgement(r, scope))
     .slice()
     .sort((a, b) => {
@@ -327,7 +333,9 @@ export function computeLateLodgement(parsed: ParsedCsv, scope: LateLodgementScop
 
     let lateLodgementDays = 0
 
-    if (lodgementType === 'Original' || lodgementType === 'ClientAmended') {
+    // Days late are measured on statements and, as the RBA ICA spreadsheet does,
+    // on every row whose description carries "Activity Statement" (config.ts).
+    if (lodgementType === 'Original' || lodgementType === 'ClientAmended' || LATE_LODGEMENT_PHRASE.test(row.description)) {
       if (row.processedDate === null || row.effectiveDate === null) {
         warnings.push({
           rowIndex: row.rowIndex,
