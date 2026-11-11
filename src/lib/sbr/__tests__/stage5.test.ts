@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PRACTITIONER_FEE_RATE, formatFeeRate, isValidFeeRate } from '../fees'
 import { clientNames, withoutOwnRecord } from '../historicalCases'
-import { isPredictionStale, trainingDataChangedAt } from '../staleness'
+import { isPredictionStale, trainingDataChangedAt, applicableStaleReason, STALE_UNREADABLE_DATES } from '../staleness'
 import type { HistoricalSbrCase } from '../types'
 
 /** Synthetic names only. */
@@ -84,5 +84,16 @@ describe('never matching a client with its own record', () => {
 
   it('only drops exact name matches, not names that merely contain it', () => {
     expect(withoutOwnRecord([kase('x', 'Example Constructions North Pty Ltd')], ['Example Constructions'])).toHaveLength(1)
+  })
+})
+
+describe('a saved prediction marked as calculated on unreadable ATO dates', () => {
+  it('keeps the reason until a prediction is computed after the lodgement analysis it was marked for', () => {
+    // Marked, then the analysis re-run at 06:00: the 05:34 prediction is still the old one.
+    expect(applicableStaleReason(STALE_UNREADABLE_DATES, '2026-11-11T05:34:04Z', '2026-11-11T06:00:00Z')).toBe(STALE_UNREADABLE_DATES)
+    // Re-run afterwards (even by code that does not clear the reason): current.
+    expect(applicableStaleReason(STALE_UNREADABLE_DATES, '2026-11-11T07:00:00Z', '2026-11-11T06:00:00Z')).toBeNull()
+    expect(applicableStaleReason(STALE_UNREADABLE_DATES, '2026-11-11T07:00:00Z', null)).toBe(STALE_UNREADABLE_DATES)
+    expect(applicableStaleReason(null, '2026-11-11T05:34:04Z', '2026-11-11T06:00:00Z')).toBeNull()
   })
 })

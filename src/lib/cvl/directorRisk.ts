@@ -46,6 +46,12 @@ export interface PotentialByType {
   onTime: number
   late: number
   items: ReportedItem[]
+  /**
+   * Rows of the account it comes from whose dates could not be read (a file
+   * re-saved in Excel). Above 0 it has failed: no amounts (onTime and late 0,
+   * no items), and the panel says why instead.
+   */
+  unreadableRows?: number
 }
 
 export interface LoanYear {

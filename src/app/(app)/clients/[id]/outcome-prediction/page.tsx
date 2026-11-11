@@ -9,9 +9,9 @@ import { balanceSheetLabel, loanHistory, predictionFinancials } from '@/lib/prin
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
-import { storedLateLodgements } from '@/lib/analysis/config'
+import { storedLateLodgements, unparsedDateRows, unparsedDatesMessage } from '@/lib/analysis/config'
 import { DEFAULT_PRACTITIONER_FEE_RATE } from '@/lib/sbr/fees'
-import { isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
+import { applicableStaleReason, isPredictionStale, trainingDataChangedAt, type ImportChange } from '@/lib/sbr/staleness'
 import {
   dpnNote,
   inputsChanged,
@@ -42,7 +42,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle(),
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label, unparsed_date_rows')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
@@ -137,7 +137,11 @@ export default async function OutcomePredictionPage({ params }: Props) {
     changedAt: debt.source === 'ica' ? (lodgement.data?.analysed_at ?? null) : latest(confirmedAt('ato_debt'), printed.builtAt),
   })
 
-  const late = lodgement.data
+  // Dates that could not be read (a file re-saved in Excel): no late-lodgement figure is shown or used.
+  const unparsed = lodgement.data
+    ? Math.max(lodgement.data.unparsed_date_rows ?? 0, unparsedDateRows(lodgement.data.rows))
+    : 0
+  const late = lodgement.data && unparsed === 0
     ? storedLateLodgements(lodgement.data.rows, {
         numberOfLateLodgements: lodgement.data.number_of_late_lodgements,
         cumulativeDaysLate: lodgement.data.cumulative_days_late,
@@ -148,7 +152,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // The same count the prediction route makes (analysis/config.ts).
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
-    daysSinceLastPayment: lodgement.data ? daysSinceLastPayment(icaRows) : null,
+    daysSinceLastPayment: lodgement.data && unparsed === 0 ? daysSinceLastPayment(icaRows) : null,
     // The account's whole history, so "no payments" shows what was searched.
     icaHistory: (() => {
       const { first, last } = icaDateRange(icaRows)
@@ -175,6 +179,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     creditorMissing: debt.missing,
     latestFinancialYear: bsColumn?.financialYear ?? null,
     hasLodgement: Boolean(lodgement.data),
+    lodgementUnreadable: unparsed > 0 ? unparsedDatesMessage(unparsed) : null,
     hasFinancials: printed.comparison.tables.length > 0,
     // Creditors in the SBR: hints from the confirmed lines (latest balance sheet), and the rows saved last time.
     creditorHints: mappedCreditorHints(financials),
@@ -209,7 +214,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
           dpnDetail: dpnItem?.detail ?? '',
         }}
         initialAuto={{ ...initialAuto, atoAccountRows }}
-        initialPrediction={cached.data ? { ...serialiseCachedPrediction(cached.data, changedAt), inputsChanged: changed } : null}
+        initialPrediction={cached.data ? { ...serialiseCachedPrediction(cached.data, changedAt, lodgement.data?.analysed_at ?? null), inputsChanged: changed } : null}
       />
     </div>
   )
@@ -224,9 +229,11 @@ interface CachedRow {
   training_set_size: number
   computed_at: string
   practitioner_fee_rate?: number | null
+  /** Why it must not be used (0050), e.g. computed on unreadable ATO dates. */
+  stale_reason?: string | null
 }
 
-function serialiseCachedPrediction(row: CachedRow, changedAt: string | null) {
+function serialiseCachedPrediction(row: CachedRow, changedAt: string | null, lodgementAnalysedAt: string | null) {
   return {
     inputFeatures: row.input_features as unknown as Record<string, unknown>,
     predictedOutcomePercent: Number(row.predicted_outcome_percent),
@@ -237,5 +244,6 @@ function serialiseCachedPrediction(row: CachedRow, changedAt: string | null) {
     computedAt: row.computed_at,
     practitionerFeeRate: Number(row.practitioner_fee_rate ?? DEFAULT_PRACTITIONER_FEE_RATE),
     stale: isPredictionStale(row.computed_at, changedAt),
+    staleReason: applicableStaleReason(row.stale_reason, row.computed_at, lodgementAnalysedAt),
   }
 }

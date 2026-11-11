@@ -95,6 +95,7 @@ function row(over: Partial<AtoAccountAnalysisRow>): AtoAccountAnalysisRow {
     ai_summary_generated_at: null,
     ai_summary_model: null,
     analysed_at: '2026-10-20T00:00:00Z',
+    unparsed_date_rows: 0,
     ...over,
   }
 }

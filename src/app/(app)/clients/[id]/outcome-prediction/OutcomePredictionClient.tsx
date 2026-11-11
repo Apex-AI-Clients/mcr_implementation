@@ -93,6 +93,8 @@ interface InitialAuto {
   creditorMissing: string | null
   latestFinancialYear: number | null
   hasLodgement: boolean
+  /** The activity statement's dates could not be read: why the prediction cannot run (config.ts unparsedDatesMessage). */
+  lodgementUnreadable?: string | null
   hasFinancials: boolean
   /** A balance-sheet figure per kind of creditor; shown beside its row, never filled in. */
   creditorHints: CreditorHints
@@ -118,6 +120,11 @@ interface CachedSummary {
   practitionerFeeRate: number
   /** The historical cases changed after it was saved (staleness.ts). */
   stale: boolean
+  /**
+   * Why the saved prediction must not be used (sbr_outcome_predictions.stale_reason),
+   * e.g. computed on unreadable ATO dates: its figures are never shown, only this.
+   */
+  staleReason?: string | null
   /** Inputs the current evidence contradicts (inputPrecedence.ts); empty when none. */
   inputsChanged?: string[]
 }
@@ -474,7 +481,7 @@ export function OutcomePredictionClient({
   // "About this prediction" methodology now lives behind a header info button.
   const [methodologyOpen, setMethodologyOpen] = useState(false)
 
-  const lodgementReady = auto.hasLodgement
+  const lodgementReady = auto.hasLodgement && !auto.lodgementUnreadable
   const canRun =
     lodgementReady &&
     feeRate !== null &&
@@ -535,7 +542,7 @@ export function OutcomePredictionClient({
   const hydrated = useRef(false)
   useEffect(() => {
     if (hydrated.current) return
-    if (!initialPrediction || initialPrediction.stale) return
+    if (!initialPrediction || initialPrediction.stale || initialPrediction.staleReason) return
     // Inputs the evidence now contradicts: staff check them and re-run.
     if (inputsChanged.length > 0) return
     if (!lodgementReady || !readiness.canPredict || loanNotIdentified) return
@@ -559,7 +566,7 @@ export function OutcomePredictionClient({
           <div>
             <h1 className="text-xl font-semibold text-foreground">SBR Outcome Prediction</h1>
             <p className="text-sm text-foreground/60 mt-0.5">{clientName}</p>
-            {(prediction || initialPrediction) && (
+            {(prediction || (initialPrediction && !initialPrediction.staleReason)) && (
               <p className="text-xs text-foreground/40 mt-1">
                 Generated{' '}
                 {formatDateRelative(
@@ -600,7 +607,27 @@ export function OutcomePredictionClient({
         </div>
       )}
 
-      {initialPrediction?.stale && !prediction && (
+      {initialPrediction?.staleReason && !prediction && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <div role="alert" className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div>
+                <p className="text-sm font-medium text-foreground">{initialPrediction.staleReason}</p>
+                <p className="mt-1 text-xs text-foreground/60">
+                  The saved prediction is not shown: it must not be used. Re-run it to get a current one.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={runPrediction} loading={running} disabled={!canRun}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-run
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {initialPrediction?.stale && !initialPrediction.staleReason && !prediction && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -624,7 +651,7 @@ export function OutcomePredictionClient({
         </Card>
       )}
 
-      {inputsChanged.length > 0 && initialPrediction && !prediction && (
+      {inputsChanged.length > 0 && initialPrediction && !initialPrediction.staleReason && !prediction && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -670,7 +697,26 @@ export function OutcomePredictionClient({
         </Card>
       )}
 
-      {!lodgementReady && (
+      {auto.hasLodgement && auto.lodgementUnreadable && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <div role="alert" className="flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">The lodgement analysis cannot be used</p>
+              <p className="text-xs text-foreground/60 mt-1">{auto.lodgementUnreadable}</p>
+              <Link
+                href={`/clients/${clientId}/lodgement-compliance-analysis`}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
+              >
+                Open the lodgement analysis
+                <ArrowLeft className="h-3 w-3 rotate-180" />
+              </Link>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!auto.hasLodgement && (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
@@ -789,7 +835,7 @@ function PrereqMissingBlock({
                   <>
                     {m.message}{' '}
                     <Link href={m.actionUrl} className="text-accent hover:text-accent/80">
-                      Confirm key figures
+                      {m.blocker === 'lodgement_analyses' ? 'Open the lodgement analysis' : 'Confirm key figures'}
                     </Link>
                   </>
                 ) : (

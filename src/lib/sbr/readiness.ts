@@ -1,5 +1,6 @@
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import { noticeTypeLabel } from '@/lib/dpn/stored'
+import { unparsedDatesMessage } from '@/lib/analysis/config'
 
 /**
  * Whether a client is ready for an SBR outcome prediction: three items, each
@@ -71,7 +72,8 @@ export interface ReadinessInput {
   lodgement: {
     /** CSVs uploaded under the integrated client account. */
     csvCount: number
-    analysis: { id: string; analysedAt: string } | null
+    /** unparsedDateRows above 0: the export's dates could not be read, and the analysis failed (migration 0048). */
+    analysis: { id: string; analysedAt: string; unparsedDateRows?: number } | null
     /** An activity statement export not yet analysed. */
     outOfDate: boolean
     /** CSVs are uploaded, but none of them is an activity statement export. */
@@ -170,6 +172,9 @@ function lodgementItem(input: ReadinessInput): ReadinessItem {
       `/clients/${input.clientId}`,
     )
   }
+  // Dates that could not be read (a file re-saved in Excel): failed, and the prediction refuses it.
+  const unparsed = l.analysis.unparsedDateRows ?? 0
+  if (unparsed > 0) return item(input, 'lodgement', 'failed', unparsedDatesMessage(unparsed), href)
   // No summary under the heading: the figures are on the lodgement analysis.
   return item(input, 'lodgement', 'ready', null, href)
 }

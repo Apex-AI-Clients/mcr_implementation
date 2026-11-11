@@ -112,6 +112,7 @@ export type Database = {
           rows: Json
           summary: Json
           unexplained_difference: number | null
+          unparsed_date_rows: number
           warnings: Json
         }
         Insert: {
@@ -135,6 +136,7 @@ export type Database = {
           rows?: Json
           summary?: Json
           unexplained_difference?: number | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Update: {
@@ -158,6 +160,7 @@ export type Database = {
           rows?: Json
           summary?: Json
           unexplained_difference?: number | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Relationships: [
@@ -1706,6 +1709,7 @@ export type Database = {
           rows: Json
           source_filename: string
           statement_label: string | null
+          unparsed_date_rows: number
           warnings: Json
         }
         Insert: {
@@ -1725,6 +1729,7 @@ export type Database = {
           rows: Json
           source_filename: string
           statement_label?: string | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Update: {
@@ -1744,6 +1749,7 @@ export type Database = {
           rows?: Json
           source_filename?: string
           statement_label?: string | null
+          unparsed_date_rows?: number
           warnings?: Json
         }
         Relationships: [
@@ -1997,6 +2003,7 @@ export type Database = {
           predicted_high_percent: number
           predicted_low_percent: number
           predicted_outcome_percent: number
+          stale_reason: string | null
           total_creditor_amount: number | null
           training_set_size: number
         }
@@ -2012,6 +2019,7 @@ export type Database = {
           predicted_high_percent: number
           predicted_low_percent: number
           predicted_outcome_percent: number
+          stale_reason?: string | null
           total_creditor_amount?: number | null
           training_set_size: number
         }
@@ -2027,6 +2035,7 @@ export type Database = {
           predicted_high_percent?: number
           predicted_low_percent?: number
           predicted_outcome_percent?: number
+          stale_reason?: string | null
           total_creditor_amount?: number | null
           training_set_size?: number
         }

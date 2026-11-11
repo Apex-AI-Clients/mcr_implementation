@@ -159,6 +159,12 @@ export interface LodgementAnalysisResult {
   debtBreakdown: DebtBreakdown
   rows: EnrichedRow[]
   warnings: AnalysisWarning[]
+  /**
+   * Rows whose processed or effective date is blank or unreadable
+   * (config.ts unparsedDateRows). Above 0 the analysis has
+   * failed: its lateness figures are not shown and the prediction refuses it.
+   */
+  unparsedDateRows: number
 }
 
 /** Shape returned from the API route and stored in initialAnalysis on the page. */
@@ -180,5 +186,7 @@ export interface LodgementAnalysisPayload {
   aiSummaryGeneratedAt: string | null
   rows: EnrichedRow[]
   warnings: AnalysisWarning[]
+  /** Above 0: the dates could not be read and the figures are not shown (LodgementAnalysisResult). */
+  unparsedDateRows: number
   analysedAt: string
 }

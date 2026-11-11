@@ -7,6 +7,7 @@ import { DPN_TYPE_LABEL } from '@/lib/dpn/types'
 import { describeDaysLeft, formatIsoDate } from '@/lib/dpn/summary'
 import { REPORTED_LATE_DAYS, type PotentialByType, type ReportedItem } from '@/lib/cvl/directorRisk'
 import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
+import { unparsedDatesMessage } from '@/lib/analysis/config'
 
 interface DirectorRiskPanelProps {
   clientId: string
@@ -58,12 +59,18 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
         : 'No activity statement on file.'
   const hrefFor = (p: PotentialByType) => (p.type === 'sgc' ? null : risk.activityStatement ? asHref : null)
 
+  // An account whose dates could not be read gives no figure: no total either.
+  const potentialUnread = risk.potential.some((p) => (p.unreadableRows ?? 0) > 0)
   const lateTotal = risk.potential.reduce((s, p) => s + p.late, 0)
   const staysTotal = risk.issued.reduce((s, d) => s + d.stays, 0)
   const debtSource: AmountSource = {
     from: [
       'Every ATO account’s newest balance, credits netted off.',
-      ...risk.accounts.map((a) => `${a.label}: ${a.balance === null ? 'no balance read' : aud(a.balance)}${a.balanceDate ? ` at ${ddmmyyyy(a.balanceDate)}` : ''}`),
+      ...risk.accounts.map((a) =>
+        a.unparsedDateRows > 0
+          ? `${a.label}: not read (dates unreadable)`
+          : `${a.label}: ${a.balance === null ? 'no balance read' : aud(a.balance)}${a.balanceDate ? ` at ${ddmmyyyy(a.balanceDate)}` : ''}`,
+      ),
     ],
     link: { kind: 'href', href: asHref, label: 'Open the ATO accounts' },
   }
@@ -91,12 +98,27 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
         </div>
       </CardHeader>
 
+      {/* An ATO account whose dates could not be read: failed, never figures. */}
+      {risk.unreadable.length > 0 && (
+        <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs text-destructive">
+          {risk.unreadable.map((u) => (
+            <p key={u.label} className="font-medium">
+              {u.label}: {unparsedDatesMessage(u.rows)}
+            </p>
+          ))}
+          <p className="mt-1 text-foreground/70">
+            The total ATO debt and anything worked out from {risk.unreadable.length === 1 ? 'that account' : 'those accounts'} are not
+            shown until {risk.unreadable.length === 1 ? 'it is' : 'they are'} uploaded as downloaded from the ATO.
+          </p>
+        </div>
+      )}
+
       {/* The three numbers that matter most */}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[
-          ['Total ATO debt', risk.totalAtoDebt, debtSource, 'All ATO accounts on file'],
+          ['Total ATO debt', risk.totalAtoDebt, debtSource, risk.unreadable.length ? 'Not available: dates unreadable' : 'All ATO accounts on file'],
           ['Stays with the director (issued notices)', risk.issued.length ? staysTotal : null, staysSource, risk.issued.length ? 'Not removed by liquidation' : 'No notices on file'],
-          ['Reported late or never', lateTotal, lateSource, 'Could not be removed by liquidation'],
+          ['Reported late or never', potentialUnread ? null : lateTotal, lateSource, potentialUnread ? 'Not available: dates unreadable' : 'Could not be removed by liquidation'],
         ].map(([label, value, source, hint]) => (
           <div key={label as string} className="rounded-lg border border-border bg-surface/40 p-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-foreground/40">{label as string}</p>
@@ -181,6 +203,18 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
             </thead>
             <tbody>
               {risk.potential.map((p) => {
+                if ((p.unreadableRows ?? 0) > 0) {
+                  return (
+                    <tr key={p.type} className="border-b border-white/5 last:border-0">
+                      <td className="py-2 pr-3 font-medium text-foreground/80">
+                        {DPN_TYPE_LABEL[p.type]}
+                        <span className="block font-normal text-destructive">Dates unreadable: {unparsedDatesMessage(p.unreadableRows!)}</span>
+                      </td>
+                      <td className="py-2 pr-3 text-right text-destructive">Not read</td>
+                      <td className="py-2 text-right text-destructive">Not read</td>
+                    </tr>
+                  )
+                }
                 const onTime = p.items.filter((i) => !i.late)
                 const late = p.items.filter((i) => i.late)
                 return (

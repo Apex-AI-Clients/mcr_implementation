@@ -170,6 +170,7 @@ describe('CSV export', () => {
       aiSummaryGeneratedAt: null,
       rows,
       warnings: [],
+      unparsedDateRows: 0,
       analysedAt: '2026-03-02T00:00:00.000Z',
     }
   }

@@ -28,7 +28,7 @@ const AUTO = {
 
 const READY = { canPredict: true, waitingFor: [], dpn: true, dpnDetail: '1 notice read (PAYG withholding).' }
 
-function saved(overrides: { stale?: boolean; practitionerFeeRate?: number } = {}) {
+function saved(overrides: { stale?: boolean; practitionerFeeRate?: number; staleReason?: string | null; inputsChanged?: string[] } = {}) {
   return {
     inputFeatures: { dpn: false, paymentPlanType: 'plan', directorLoanAtAppointment: false },
     predictedOutcomePercent: 38.4,
@@ -58,6 +58,31 @@ const bodyOf = (fetchMock: ReturnType<typeof mockFetch>, call = 0) =>
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+})
+
+describe('a saved prediction calculated on unreadable ATO dates', () => {
+  it('shows the reason and never the saved figures, and does not re-run on its own', async () => {
+    const fetchMock = mockFetch()
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={AUTO}
+        // Also stale and with changed inputs: neither banner, with its figures, is shown instead.
+        initialPrediction={saved({ staleReason: 'Calculated on unreadable ATO dates — re-run', stale: true, inputsChanged: ['cumulative days late'] })}
+        readiness={READY}
+      />,
+    )
+    expect(screen.getByRole('alert').textContent).toContain('Calculated on unreadable ATO dates — re-run')
+    expect(document.body.textContent).not.toMatch(/38\.4/)
+    expect(document.body.textContent).not.toMatch(/Generated .* from 59 historical cases/)
+    expect(screen.queryByText('New historical data added — re-run')).toBeNull()
+    expect(screen.queryByText('Inputs changed — re-run')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getAllByRole('button', { name: /Re-run/ })[0])
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+  })
 })
 
 describe('stale saved prediction', () => {

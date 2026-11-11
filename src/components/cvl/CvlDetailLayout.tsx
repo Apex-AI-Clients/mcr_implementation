@@ -96,9 +96,16 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
       title: 'ATO accounts',
       what: 'Lodgement history and what is owed to the ATO.',
       status: atoAccounts.accounts.length
-        ? `${atoAccounts.accounts.length} ${atoAccounts.accounts.length === 1 ? 'account' : 'accounts'}${owing !== null ? ` · ${aud(owing, { cents: false })} owing` : ''}`
+        ? `${atoAccounts.accounts.length} ${atoAccounts.accounts.length === 1 ? 'account' : 'accounts'}${
+            atoAccounts.unreadable.length
+              ? ` · dates unreadable in ${atoAccounts.unreadable.map((u) => u.label).join(', ')}`
+              : owing !== null
+                ? ` · ${aud(owing, { cents: false })} owing`
+                : ''
+          }`
         : 'No ATO account uploaded',
-      ok: activity.length > 0,
+      // An account whose dates could not be read has failed.
+      ok: activity.length > 0 && atoAccounts.unreadable.length === 0,
     },
     {
       href: `${base}/director-penalty-notices`,

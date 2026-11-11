@@ -242,3 +242,20 @@ describe('subjectsFor', () => {
     expect(subjectsFor('509', { directors: 3 })).toEqual(['company'])
   })
 })
+
+describe('creditors when an ATO account cannot be read', () => {
+  it('never puts the balance sheet ATO figure in place of an ATO account whose dates could not be read', () => {
+    const ctx = context()
+    ctx.atoAccounts = {
+      accounts: [{ id: 'a1', documentId: 'doc-ica', kind: 'activity_statement', label: 'Activity statement 001', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 630 }],
+      totalDebt: null,
+      unreadable: [{ label: 'Activity statement 001', rows: 630 }],
+    }
+    const ato = creditorRows(ctx).filter((r) => r.row.name === 'Australian Taxation Office' || /BAS Payable/.test(JSON.stringify(r.source)))
+    expect(ato).toEqual([])
+    // With no ATO account on file at all, the balance sheet's line is used, as before.
+    const none = context()
+    none.atoAccounts = { accounts: [], totalDebt: null, unreadable: [] }
+    expect(creditorRows(none).some((r) => /BAS Payable/.test(JSON.stringify(r.source)))).toBe(true)
+  })
+})

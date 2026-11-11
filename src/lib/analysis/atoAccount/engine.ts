@@ -2,6 +2,7 @@ import { parseActivityStatementCsv } from '../parseActivityStatement'
 import { markBreakdownRows } from '../paymentAllocations'
 import { RECONCILIATION_LABEL } from '../debtReconciliation'
 import { readAtoAccountHeader, type AtoAccountKind } from '../atoAccountKind'
+import { unparsedDateRows } from '../config'
 import { icaPosition, type IcaRow } from '@/lib/sbr/creditorDebt'
 import type { CompositionRow, UncountedGroup } from '../debtComposition'
 import type { EnrichedRow, LodgementType } from '../types'
@@ -75,6 +76,12 @@ export interface AtoAccountCore {
   needsReview: boolean
   composition: AccountComposition
   payments: { count: number; total: number; first: string | null; last: string | null }
+  /**
+   * Rows whose processed or effective date is blank or unreadable (a file
+   * re-saved in a spreadsheet; config.ts unparsedDateRows). Above 0 the
+   * analysis has failed: no balance, payment or figure from it is shown or used.
+   */
+  unparsedDateRows: number
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -314,6 +321,7 @@ export function analyseAccountCore(csvText: string): AtoAccountCore {
     needsReview: unexplainedDifference !== null && Math.abs(unexplainedDifference) > NEEDS_REVIEW_THRESHOLD,
     composition: { lines, uncounted: [...uncounted.values()] },
     payments,
+    unparsedDateRows: unparsedDateRows(parsed.rows),
   }
 }
 

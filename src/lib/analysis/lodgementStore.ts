@@ -64,8 +64,9 @@ export type AnalyseOutcome =
   | { ok: true; row: LodgementRow; result: ReturnType<typeof computeLateLodgement> }
   | { ok: false; error: string }
 
-/** Is there anything for a summary to explain? */
+/** Is there anything for a summary to explain? Never for a file whose dates could not be read: its figures are not shown. */
 function needsSummary(result: ReturnType<typeof computeLateLodgement>): boolean {
+  if (result.unparsedDateRows > 0) return false
   return result.dpnRisk.totalGrossLate > 0 || result.summary.numberOfLateLodgements > 0
 }
 
@@ -120,6 +121,8 @@ export async function analyseAndStoreLodgement(
         row_count: result.rows.length,
         number_of_late_lodgements: result.summary.numberOfLateLodgements,
         cumulative_days_late: result.summary.cumulativeDaysLate,
+        // Above 0 the analysis failed: shown as such, and refused by the prediction.
+        unparsed_date_rows: result.unparsedDateRows,
         rows: result.rows as unknown as Record<string, unknown>[],
         warnings: result.warnings as unknown as Record<string, unknown>[],
         dpn_risk: result.dpnRisk as unknown as Record<string, unknown>,
@@ -169,6 +172,8 @@ export async function ensureLodgementSummary(supabase: ServerClient, clientId: s
   // The stored totals are whatever the code computed on the day: the current
   // code runs over the stored rows instead (the report does the same).
   const fresh = reanalyseStoredRows(row.rows)
+  // Dates that cannot be read: there are no figures to explain.
+  if (fresh && fresh.unparsedDateRows > 0) return { kind: 'not_needed' }
   const dpnRisk = fresh?.dpnRisk ?? (row.dpn_risk as unknown as ReturnType<typeof computeLateLodgement>['dpnRisk'])
   const summary = fresh?.summary ?? {
     numberOfLateLodgements: row.number_of_late_lodgements,

@@ -71,3 +71,28 @@ export function storedLateLodgements(
     rows.every((r) => r && typeof r === 'object' && typeof (r as EnrichedRow).lodgementType === 'string')
   return analysed ? lateLodgementSummary(rows as EnrichedRow[], scope) : stored
 }
+
+/**
+ * Rows whose processed or effective date is blank or could not be read. Every
+ * row of a genuine ATO export has both, so any such row means the file was
+ * changed (usually re-saved in a spreadsheet) and the lateness figures cannot
+ * be trusted. Works on parsed rows and on rows stored in lodgement_analyses
+ * (dates as ISO strings, or null where the parser of the day could not read them).
+ */
+export function unparsedDateRows(rows: unknown): number {
+  if (!Array.isArray(rows)) return 0
+  return rows.filter((r) => {
+    const row = r as { processedDate?: unknown; effectiveDate?: unknown } | null
+    return !row || !row.processedDate || !row.effectiveDate
+  }).length
+}
+
+/**
+ * What staff see when an activity statement export's dates cannot be read
+ * (unparsedDateRows above): the analysis has failed and
+ * the prediction does not use it. Here, not beside the parser, so the report
+ * card (a client component) can show it without bundling the CSV parser.
+ */
+export function unparsedDatesMessage(count: number): string {
+  return `We couldn't read the dates on ${count} ${count === 1 ? 'row' : 'rows'} of this file — was it edited in Excel? Upload the original ATO download.`
+}

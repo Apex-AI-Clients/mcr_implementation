@@ -61,12 +61,15 @@ const post = (body: unknown) => new NextRequest('http://localhost/x', { method: 
 const BASE = { paymentPlanType: 'upfront', directorLoanAtAppointment: false, practitionerFeeRate: 0.125 }
 
 let upsert: ReturnType<typeof vi.fn>
+const LODGEMENT = { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [] as unknown[], analysed_at: '2026-10-01', unparsed_date_rows: 0 }
+let lodgementRow: typeof LODGEMENT
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'log').mockImplementation(() => {})
   upsert = vi.fn(async () => ({ error: null }))
+  lodgementRow = { ...LODGEMENT }
   const from = vi.fn((table: string) => {
     const chain: Record<string, unknown> = {}
     chain.select = () => (table === 'sbr_historical_cases' ? Promise.resolve({ data: [{}], error: null }) : chain)
@@ -78,7 +81,7 @@ beforeEach(() => {
         table === 'clients'
           ? { id: 'client-1', name: 'Example Client', company_details: null }
           : table === 'lodgement_analyses'
-            ? { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [], analysed_at: '2026-10-01' }
+            ? lodgementRow
             : null,
     })
     chain.upsert = upsert
@@ -118,6 +121,8 @@ describe('POST predict-outcome — creditors in the SBR', () => {
 
     const saved = upsert.mock.calls[0][0] as Record<string, unknown>
     expect(saved.total_creditor_amount).toBe(150_000)
+    // A new prediction is current: a stale reason on the saved one is cleared.
+    expect(saved).toHaveProperty('stale_reason', null)
     expect(saved.creditors).toMatchObject({ atoDebt: 100_000, atoDebtEdited: false })
     expect((saved.creditors as { rows: unknown[] }).rows).toHaveLength(3)
   })
@@ -169,5 +174,37 @@ describe('POST predict-outcome — the DPN factor', () => {
     vi.mocked(loadReadiness).mockResolvedValue({ items: [], canPredict: true, waitingFor: [], dpn: true } as never)
     await PREDICT(post({ ...BASE, dpn: false }), PARAMS)
     expect(dpnSent()).toBe(true)
+  })
+})
+
+describe('POST predict-outcome — an activity statement whose dates could not be read', () => {
+  it('refuses the analysis, with the reason, when its record counts unread dates', async () => {
+    lodgementRow = { ...LODGEMENT, unparsed_date_rows: 630 }
+    const res = await PREDICT(post({ ...BASE, creditors: [] }), PARAMS)
+    expect(res.status).toBe(422)
+    const body = await res.json()
+    expect(body.error).toBe('PREREQUISITES_MISSING')
+    expect(body.missing).toEqual([
+      expect.objectContaining({
+        blocker: 'lodgement_analyses',
+        message: "We couldn't read the dates on 630 rows of this file — was it edited in Excel? Upload the original ATO download.",
+      }),
+    ])
+    expect(predictSbrOutcome).not.toHaveBeenCalled()
+    expect(upsert).not.toHaveBeenCalled()
+  })
+
+  it('refuses an analysis saved before the count existed, from its stored rows', async () => {
+    lodgementRow = {
+      ...LODGEMENT,
+      rows: [
+        { rowIndex: 0, processedDate: null, effectiveDate: null, lodgementType: 'Original', lateLodgeDaysCleaned: 0 },
+        { rowIndex: 1, processedDate: '2026-09-30T00:00:00.000Z', effectiveDate: '2026-09-28T00:00:00.000Z', lodgementType: 'Payment', lateLodgeDaysCleaned: 0 },
+      ],
+    }
+    const res = await PREDICT(post({ ...BASE, creditors: [] }), PARAMS)
+    expect(res.status).toBe(422)
+    expect((await res.json()).missing[0].message).toContain('on 1 row of this file')
+    expect(predictSbrOutcome).not.toHaveBeenCalled()
   })
 })
