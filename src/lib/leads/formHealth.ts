@@ -155,17 +155,23 @@ export async function getFacebookFormHealth(now: Date = new Date()): Promise<str
 
     // meta_field_keys arrives with migration 0051. Until it is applied the
     // column is missing (42703), and the check runs without unmapped keys.
-    let { data: subs, error } = await supabase
+    // The two selects return different row shapes, so each gets its own
+    // variable; both are read as HealthSubmission, where the keys are optional.
+    const withKeys = await supabase
       .from('lead_submissions')
       .select(`${SUBMISSION_COLUMNS}, meta_field_keys`)
       .eq('source', 'facebook')
       .gte('received_at', since)
+    let subs = withKeys.data as HealthSubmission[] | null
+    let error = withKeys.error
     if (error?.code === '42703') {
-      ;({ data: subs, error } = await supabase
+      const withoutKeys = await supabase
         .from('lead_submissions')
         .select(SUBMISSION_COLUMNS)
         .eq('source', 'facebook')
-        .gte('received_at', since))
+        .gte('received_at', since)
+      subs = withoutKeys.data as HealthSubmission[] | null
+      error = withoutKeys.error
     }
     if (error) throw new Error(`lead_submissions: ${error.message}`)
 
