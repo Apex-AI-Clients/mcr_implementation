@@ -37,6 +37,7 @@ const LEAD: IngestedLead = {
   metaCampaignName: 'Test campaign',
   metaAdName: 'Test ad',
   metaAccountId: 'act_1',
+  metaFieldKeys: ['full_name', 'email', 'phone_number'],
 }
 
 const rpc = vi.fn()
@@ -71,6 +72,7 @@ describe('toSubmissionPayload', () => {
       meta_campaign_name: 'Test campaign',
       meta_ad_name: 'Test ad',
       meta_account_id: 'act_1',
+      meta_field_keys: ['full_name', 'email', 'phone_number'],
     })
   })
 

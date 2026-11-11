@@ -1448,6 +1448,7 @@ export type Database = {
           meta_adgroup_id: string | null
           meta_campaign_id: string | null
           meta_campaign_name: string | null
+          meta_field_keys: string[] | null
           meta_form_id: string | null
           meta_page_id: string | null
           meta_state_options: string[] | null
@@ -1475,6 +1476,7 @@ export type Database = {
           meta_adgroup_id?: string | null
           meta_campaign_id?: string | null
           meta_campaign_name?: string | null
+          meta_field_keys?: string[] | null
           meta_form_id?: string | null
           meta_page_id?: string | null
           meta_state_options?: string[] | null
@@ -1502,6 +1504,7 @@ export type Database = {
           meta_adgroup_id?: string | null
           meta_campaign_id?: string | null
           meta_campaign_name?: string | null
+          meta_field_keys?: string[] | null
           meta_form_id?: string | null
           meta_page_id?: string | null
           meta_state_options?: string[] | null

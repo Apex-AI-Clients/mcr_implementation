@@ -205,9 +205,18 @@ export const UNSELECTED_STATE_SENTINELS = new Set(['', 'state', 'select', 'selec
  * Normalise a state answer for lookup. Meta sends the option key, so the
  * single-state key 'qld' and a grouped key 'nsw,_vic,_act,_tas' both arrive with
  * underscores standing in for the label's spaces.
+ *
+ * Full stops are dropped, not turned into spaces: form 1751128836351174 asks
+ * its state question as free text, and people type "N.S.W." and "Vic." — both
+ * of which have to land on the same key as "nsw" and "vic".
  */
 export function normaliseStateValue(raw: string): string {
-  return raw.toLowerCase().replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+  return raw
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/_+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** Free-text state to the AuState union. The website form has no NT option. */
@@ -228,6 +237,19 @@ export const STATE_ALIASES: Record<string, AuState> = {
   'australian capital territory': 'ACT',
   nt: 'NT',
   'northern territory': 'NT',
+
+  // Capital cities. Form 1751128836351174's state question is free text, and a
+  // city is a common answer to "which state are you in?". Capitals only: each
+  // names exactly one state. Anything less certain stays unresolved and is kept
+  // verbatim in meta_state_raw rather than guessed.
+  melbourne: 'VIC',
+  sydney: 'NSW',
+  brisbane: 'QLD',
+  perth: 'WA',
+  adelaide: 'SA',
+  hobart: 'TAS',
+  canberra: 'ACT',
+  darwin: 'NT',
 }
 
 /**
@@ -335,10 +357,17 @@ export const FIELD_MAPS: Record<'website' | 'google_form' | 'facebook', FieldMap
       'what_is_your_approximate_debt',
     ],
     state: [
+      // Form 1751128836351174, live from 4 Nov 2026. Free text, not a select —
+      // see normaliseStateValue. Copied verbatim from the production
+      // unmapped-key warnings, brackets, commas and all.
+      'which_australian_state_are_you_in?_(e.g._vic,_nsw,_qld)',
       'which_state_are_you_from?',
       'what_state_are_you_located_in?', // ATO Debt Aus-update-new, 1220173909314387
       'state',
       'which_state_are_you_in',
+      'region',
+      'your_state',
+      'state/territory',
     ],
     entityType: [
       'do_you_run_a_company_(pty_ltd)_or_trust?',
@@ -368,6 +397,15 @@ export const FACEBOOK_IGNORED_QUESTION_KEYS = new Set([
   'are_you_looking_to_reduce_your_ato_debt?',
   'have_you_had_any_professional_financial_advice_regarding_your_debt_previously?',
 ])
+
+/**
+ * A Facebook question key that looks like it asks for the lead's state, used
+ * only when none of the listed state keys is present (see `resolveLeadState`).
+ *
+ * Matched as a whole word inside the key, so "state" matches
+ * `which_australian_state_are_you_in?` but not `do_you_have_financial_statements?`.
+ */
+export const FACEBOOK_STATE_KEY_PATTERN = /(?:^|[^a-z])(?:state|region|territory|located)(?:[^a-z]|$)/
 
 /** The honeypot input name. Any value in it means a bot filled the form. */
 export const HONEYPOT_FIELD = 'website_url'

@@ -6,6 +6,7 @@ import {
   DEBT_LABELS,
   ENTITY_TYPE_ALIASES,
   FACEBOOK_IGNORED_QUESTION_KEYS,
+  FACEBOOK_STATE_KEY_PATTERN,
   FIELD_MAPS,
   HONEYPOT_FIELD,
   MIN_PLAUSIBLE_DEBT,
@@ -74,6 +75,12 @@ export interface IngestedLead {
   metaCampaignName: string | null
   metaAdName: string | null
   metaAccountId: string | null
+  /**
+   * Every question key the Facebook lead carried, answered or not — names only,
+   * never answers. Stored per enquiry so the next reworded question can be
+   * found from the database instead of from logs. Null on every other source.
+   */
+  metaFieldKeys: string[] | null
 }
 
 export type IngestResult =
@@ -293,6 +300,21 @@ export function flattenFacebookFields(fieldData: unknown, formId?: string | null
 }
 
 /**
+ * The question keys in a Facebook `field_data` array, in the order Meta sent
+ * them, de-duplicated. Answers are never read. Kept for keys whose answer was
+ * blank too: a question the lead skipped is still a question the form asked.
+ */
+export function facebookFieldKeys(fieldData: unknown): string[] {
+  if (!Array.isArray(fieldData)) return []
+  const keys: string[] = []
+  for (const entry of fieldData) {
+    const name = entry && typeof entry === 'object' ? (entry as { name?: unknown }).name : null
+    if (typeof name === 'string' && name && !keys.includes(name)) keys.push(name)
+  }
+  return keys
+}
+
+/**
  * Keys Meta attaches to a lead that are not answers to a question, so their
  * absence from the field map is correct rather than a gap. `inbox_url` is the
  * link back to the Page inbox; add to this set rather than to a field map when
@@ -319,17 +341,85 @@ function warnUnmappedFacebookFields(
   fieldMap: FieldMap,
   formId: string,
 ): void {
-  const mapped = new Set(Object.values(fieldMap).flat())
-  for (const key of Object.keys(payload)) {
-    if (
-      mapped.has(key) ||
-      FACEBOOK_NON_QUESTION_KEYS.has(key) ||
-      FACEBOOK_IGNORED_QUESTION_KEYS.has(key)
-    ) {
-      continue
-    }
+  for (const key of unmappedFacebookKeys(Object.keys(payload), fieldMap)) {
     console.warn(`[webhooks/leads] unmapped facebook field key=${key} form_id=${formId}`)
   }
+}
+
+/**
+ * The keys no Facebook field map claims, that are not Meta's own and not on
+ * the ignore list. Shared with the leads dashboard's form health check, which
+ * runs it over stored question names against the CURRENT map — so a warning
+ * clears the moment the key is added, without waiting for new leads.
+ */
+export function unmappedFacebookKeys(
+  keys: readonly string[],
+  fieldMap: FieldMap = FIELD_MAPS.facebook,
+): string[] {
+  const mapped = new Set(Object.values(fieldMap).flat())
+  return keys.filter(
+    (key) =>
+      !mapped.has(key) &&
+      !FACEBOOK_NON_QUESTION_KEYS.has(key) &&
+      !FACEBOOK_IGNORED_QUESTION_KEYS.has(key),
+  )
+}
+
+/**
+ * The lead's state, from the configured keys and — for Facebook only — a
+ * fallback for when a form's state question has a key nobody has listed yet.
+ *
+ * The fallback is narrow on purpose. It looks at answered keys no field map
+ * claims, keeps those whose key reads as a state question
+ * (FACEBOOK_STATE_KEY_PATTERN), and uses one only when:
+ *
+ *  - exactly one key qualifies — two would mean guessing which question is
+ *    the state one; and
+ *  - its answer resolves to a state or a group of states — an unknown key
+ *    whose answer is not a state is not known to be a state question at all,
+ *    so its answer is not stored as one.
+ *
+ * Either way the key still gets its unmapped-key warning from
+ * warnUnmappedFacebookFields; a fallback hit adds one more line naming the
+ * key, so the field map gets fixed rather than leaning on this.
+ *
+ * Shared by mapLead and the state backfill, so both read a payload the same way.
+ */
+export function resolveLeadState(
+  payload: Payload,
+  source: LeadSource,
+  formId: string | null = null,
+): StateMapping {
+  const fieldMap: FieldMap = FIELD_MAPS[source as keyof typeof FIELD_MAPS] ?? FIELD_MAPS.website
+  const configured = mapState(pick(payload, fieldMap.state))
+  if (configured.kind !== 'absent' || source !== 'facebook') return configured
+
+  const mapped = new Set(Object.values(fieldMap).flat())
+  const candidates = Object.keys(payload).filter(
+    (key) =>
+      !mapped.has(key) &&
+      !FACEBOOK_NON_QUESTION_KEYS.has(key) &&
+      !FACEBOOK_IGNORED_QUESTION_KEYS.has(key) &&
+      FACEBOOK_STATE_KEY_PATTERN.test(key.toLowerCase()) &&
+      pick(payload, [key]) !== null,
+  )
+  if (candidates.length !== 1) {
+    if (candidates.length > 1) {
+      console.warn(
+        `[webhooks/leads] ${candidates.length} unmapped state-like facebook keys, none used form_id=${formId ?? 'unknown'}`,
+      )
+    }
+    return configured
+  }
+
+  const [key] = candidates
+  const fallback = mapState(pick(payload, [key]))
+  if (fallback.kind !== 'state' && fallback.kind !== 'group') return configured
+
+  console.warn(
+    `[webhooks/leads] state read from unmapped facebook key=${key} form_id=${formId ?? 'unknown'} — add it to FIELD_MAPS.facebook.state`,
+  )
+  return fallback
 }
 
 export interface MapLeadOptions {
@@ -343,6 +433,8 @@ export interface MapLeadOptions {
   pageId?: string | null
   /** The ad resolved to its campaign. Absent when there was no ad to resolve. */
   ad?: AdAttribution
+  /** Facebook only: every question key the lead carried (`facebookFieldKeys`). */
+  fieldKeys?: string[] | null
 }
 
 /**
@@ -386,11 +478,13 @@ export function mapLead(
   // real enquiry, and dropping it would lose a lead to a validation rule.
   if (!phone) return { ok: false, error: 'Missing phone' }
 
-  const mappedState = mapState(pick(payload, fieldMap.state))
+  const mappedState = resolveLeadState(payload, source, options.formId ?? null)
   if (mappedState.kind === 'unresolved') {
     // The value is logged, unlike other answers: a state option is the form's
     // wording rather than anything about the lead, and without it there is no
-    // way to see which alias or separator is missing.
+    // way to see which alias or separator is missing. Form 1751128836351174
+    // asks this as free text, so there the value is what the lead typed —
+    // logged on request (Nov 2026), and capped at MAX_LOGGED_STATE_LENGTH.
     console.warn(
       `[webhooks/leads] unresolved state value=${JSON.stringify(
         mappedState.raw.slice(0, MAX_LOGGED_STATE_LENGTH),
@@ -462,6 +556,7 @@ export function mapLead(
       metaCampaignName: options.ad?.campaignName ?? null,
       metaAdName: options.ad?.adName ?? null,
       metaAccountId: options.ad?.accountId ?? null,
+      metaFieldKeys: options.fieldKeys?.length ? options.fieldKeys : null,
     },
   }
 }

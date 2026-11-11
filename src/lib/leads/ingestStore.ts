@@ -139,6 +139,10 @@ export function toSubmissionPayload(lead: IngestedLead): SubmissionPayload {
     meta_campaign_name: lead.metaCampaignName,
     meta_ad_name: lead.metaAdName,
     meta_account_id: lead.metaAccountId,
+    // Ignored by ingest_lead_submission until migration 0051 adds the column:
+    // jsonb_populate_record drops keys it does not recognise, so this is safe
+    // to deploy before or after the migration.
+    meta_field_keys: lead.metaFieldKeys,
   }
 }
 

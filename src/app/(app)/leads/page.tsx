@@ -2,6 +2,7 @@ import { LeadsPageClient } from '@/components/leads/LeadsPageClient'
 import { getLeadSourceOptions, getLeadViewCounts, getLeadsPage, getNotesForLeads } from '@/lib/leads/queries'
 import { parseLeadQuery, type RawSearchParams } from '@/lib/leads/searchParams'
 import { getCustomStages } from '@/lib/leads/customStages'
+import { getFacebookFormHealth } from '@/lib/leads/formHealth'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,10 +25,12 @@ export default async function LeadsPage({ searchParams }: Props) {
   const custom = await getCustomStages()
   const { filters, page } = parseLeadQuery(await searchParams, custom)
   const view = filters.view === 'all' ? 'leads' : filters.view
-  const [result, sources, counts] = await Promise.all([
+  const [result, sources, counts, formWarnings] = await Promise.all([
     getLeadsPage({ filters: { ...filters, view }, page }),
     getLeadSourceOptions(),
     getLeadViewCounts(filters, custom),
+    // Never throws; a failed check shows no warnings rather than no leads.
+    getFacebookFormHealth(),
   ])
 
   // Every tab shows each lead's notes.
@@ -45,6 +48,7 @@ export default async function LeadsPage({ searchParams }: Props) {
       view={view}
       sources={sources}
       counts={counts}
+      formWarnings={formWarnings}
     />
   )
 }

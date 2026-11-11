@@ -9,6 +9,8 @@ import {
   parseLooseDebt,
   mapDebtLabel,
   mapState,
+  facebookFieldKeys,
+  resolveLeadState,
   RAW_DEBT_NOTE_PREFIX,
 } from '../ingest'
 import { formatDebtRange } from '../format'
@@ -59,6 +61,7 @@ describe('mapLead — website form', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaFieldKeys: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -579,6 +582,7 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaFieldKeys: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -828,6 +832,7 @@ describe('mapLead — MCR26_MAIN delivering option keys', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaFieldKeys: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -1095,6 +1100,7 @@ describe('mapLead — the ATO Debt Aus-update-new Facebook form', () => {
       metaCampaignName: null,
       metaAdName: null,
       metaAccountId: null,
+      metaFieldKeys: null,
       metaStateRaw: 'NSW, VIC, ACT, TAS',
       metaStateOptions: ['NSW', 'VIC', 'ACT', 'TAS'],
     })
@@ -1326,5 +1332,286 @@ describe('grouped state values, end to end from field_data', () => {
   it('drops blank entries before deciding a field has several values', () => {
     const fields = flattenFacebookFields([{ name: 'state', values: ['', 'vic', '  '] }])
     expect(fields).toEqual({ state: 'vic' })
+  })
+})
+
+// ============================================================
+// Form 1751128836351174 — a free-text state question (Nov 2026)
+// ============================================================
+
+describe('mapLead — form 1751128836351174, free-text state', () => {
+  // Went live on 4 Nov 2026 with a state key no field map listed; every lead
+  // from it landed with a blank State. The key is copied from the production
+  // unmapped-key warnings. The lead's details are invented.
+  const FORM_ID = '1751128836351174'
+  const STATE_KEY = 'which_australian_state_are_you_in?_(e.g._vic,_nsw,_qld)'
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function map(answer?: string) {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const fieldData = fixture('facebook_state_free_text').field_data as Array<{
+      name: string
+      values: string[]
+    }>
+    const patched =
+      answer === undefined
+        ? fieldData
+        : fieldData.map((e) => (e.name === STATE_KEY ? { ...e, values: [answer] } : e))
+    const result = mapLead(flattenFacebookFields(patched, FORM_ID), 'facebook', 'fb-free', {
+      formId: FORM_ID,
+      fieldKeys: facebookFieldKeys(patched),
+    })
+    return { result, warnings: warn.mock.calls.map((call) => String(call[0])) }
+  }
+
+  it('lists the key first in the Facebook state map', () => {
+    expect(FIELD_MAPS.facebook.state[0]).toBe(STATE_KEY)
+  })
+
+  it('maps the fixture to VIC, with no warnings at all', () => {
+    const { result, warnings } = map()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBe('VIC')
+    expect(result.lead.metaStateRaw).toBeNull()
+    expect(result.lead.metaStateOptions).toBeNull()
+    expect(result.lead.metaFormId).toBe(FORM_ID)
+    expect(warnings).toEqual([])
+  })
+
+  it('records the question names, never the answers', () => {
+    const { result } = map()
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.lead.metaFieldKeys).toEqual([
+      'full_name',
+      'email',
+      'phone_number',
+      STATE_KEY,
+      'inbox_url',
+    ])
+    expect(JSON.stringify(result.lead.metaFieldKeys)).not.toMatch(/Halvorsen|"Vic"|\+614/)
+  })
+
+  it.each<[string, string]>([
+    // Abbreviations, any case, any spacing.
+    ['vic', 'VIC'],
+    ['VIC', 'VIC'],
+    ['  Vic  ', 'VIC'],
+    ['nsw', 'NSW'],
+    ['Qld', 'QLD'],
+    ['wa', 'WA'],
+    ['SA', 'SA'],
+    ['Tas', 'TAS'],
+    ['act', 'ACT'],
+    ['NT', 'NT'],
+    // Full names.
+    ['Victoria', 'VIC'],
+    ['new south wales', 'NSW'],
+    ['NEW  SOUTH  WALES', 'NSW'],
+    ['Queensland', 'QLD'],
+    ['Western Australia', 'WA'],
+    ['South Australia', 'SA'],
+    ['Tasmania', 'TAS'],
+    ['Australian Capital Territory', 'ACT'],
+    ['Northern Territory', 'NT'],
+    // Full stops.
+    ['N.S.W.', 'NSW'],
+    ['n.s.w', 'NSW'],
+    ['Vic.', 'VIC'],
+    ['Q.L.D', 'QLD'],
+    ['W.A.', 'WA'],
+    ['A.C.T.', 'ACT'],
+    // Capital cities.
+    ['Melbourne', 'VIC'],
+    ['Sydney', 'NSW'],
+    ['brisbane', 'QLD'],
+    ['PERTH', 'WA'],
+    ['Adelaide', 'SA'],
+    ['Hobart', 'TAS'],
+    ['Canberra', 'ACT'],
+    ['Darwin', 'NT'],
+    // A city and its own state is still one state.
+    ['Melbourne, VIC', 'VIC'],
+    ['Sydney / NSW', 'NSW'],
+  ])('reads %j as %s', (answer, state) => {
+    const { result, warnings } = map(answer)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.lead.state).toBe(state)
+    expect(result.lead.metaStateRaw).toBeNull()
+    expect(warnings).toEqual([])
+  })
+
+  it('reads two states typed as free text as a group, not as either one', () => {
+    const { result } = map('vic / nsw')
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateOptions).toEqual(['VIC', 'NSW'])
+    expect(result.lead.metaStateRaw).toBe('VIC, NSW')
+  })
+
+  it.each(['Auckland', 'regional area', 'Victoria, Australia', 'Gold Coast', 'Melbourne, Auckland'])(
+    'keeps %j verbatim as raw text, and logs it',
+    (answer) => {
+      const { result, warnings } = map(answer)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.lead.state).toBeNull()
+      expect(result.lead.metaStateOptions).toBeNull()
+      expect(result.lead.metaStateRaw).toBe(answer)
+      expect(warnings).toEqual([
+        `[webhooks/leads] unresolved state value=${JSON.stringify(answer)} source=facebook form_id=${FORM_ID}`,
+      ])
+    },
+  )
+
+  it('leaves the State blank when the question was skipped', () => {
+    const { result, warnings } = map('')
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.lead.state).toBeNull()
+    expect(result.lead.metaStateRaw).toBeNull()
+    expect(warnings).toEqual([])
+  })
+})
+
+describe('Facebook state map — generic keys', () => {
+  it.each(['region', 'your_state', 'state/territory'])('reads the key %s', (key) => {
+    const fields = flattenFacebookFields([
+      { name: 'full_name', values: ['Test Person'] },
+      { name: 'email', values: ['test@example.test'] },
+      { name: 'phone_number', values: ['0400000001'] },
+      { name: key, values: ['qld'] },
+    ])
+    expect(resolveLeadState(fields, 'facebook', 'f')).toEqual({ kind: 'state', state: 'QLD' })
+  })
+})
+
+describe('resolveLeadState — fallback for an unlisted Facebook state key', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const BASE = {
+    full_name: 'Test Person',
+    email: 'test@example.test',
+    phone_number: '0400000001',
+  }
+
+  function resolve(extra: Record<string, unknown>, source: 'facebook' | 'website' = 'facebook') {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mapping = resolveLeadState({ ...BASE, ...extra }, source, 'form-x')
+    return { mapping, warnings: warn.mock.calls.map((call) => String(call[0])) }
+  }
+
+  it.each([
+    'which_state_is_your_business_in?',
+    'what_region_do_you_operate_in?',
+    'state_or_territory',
+    'where_are_you_located?',
+  ])('reads the one state-like key %s and says so', (key) => {
+    const { mapping, warnings } = resolve({ [key]: 'qld' })
+    expect(mapping).toEqual({ kind: 'state', state: 'QLD' })
+    expect(warnings).toEqual([
+      `[webhooks/leads] state read from unmapped facebook key=${key} form_id=form-x — add it to FIELD_MAPS.facebook.state`,
+    ])
+  })
+
+  it('takes a grouped answer from the fallback key too', () => {
+    const { mapping } = resolve({ 'which_state_is_your_business_in?': 'nsw/vic' })
+    expect(mapping).toEqual({ kind: 'group', states: ['NSW', 'VIC'], label: 'NSW, VIC' })
+  })
+
+  it('uses nothing when two unlisted keys both look like state questions', () => {
+    const { mapping, warnings } = resolve({
+      'which_state_is_your_business_in?': 'qld',
+      'which_state_do_you_live_in?': 'nsw',
+    })
+    expect(mapping).toEqual({ kind: 'absent' })
+    expect(warnings).toEqual([
+      '[webhooks/leads] 2 unmapped state-like facebook keys, none used form_id=form-x',
+    ])
+  })
+
+  it('stores nothing when the fallback answer is not a state', () => {
+    // An unknown key is only taken to be a state question if it answers like
+    // one; otherwise its answer is not stored as a State.
+    const { mapping, warnings } = resolve({ 'where_are_you_located?': 'at the office' })
+    expect(mapping).toEqual({ kind: 'absent' })
+    expect(warnings).toEqual([])
+  })
+
+  it('does not take "statements" for "state"', () => {
+    const { mapping } = resolve({ 'do_you_have_financial_statements?': 'nsw' })
+    expect(mapping).toEqual({ kind: 'absent' })
+  })
+
+  it('ignores a state-like key whose answer is blank', () => {
+    const { mapping, warnings } = resolve({
+      'which_state_is_your_business_in?': '   ',
+      'which_state_do_you_live_in?': 'tas',
+    })
+    expect(mapping).toEqual({ kind: 'state', state: 'TAS' })
+    expect(warnings).toHaveLength(1)
+  })
+
+  it('never overrides a listed key', () => {
+    const { mapping, warnings } = resolve({
+      'which_state_are_you_from?': 'wa',
+      'which_state_is_your_business_in?': 'qld',
+    })
+    expect(mapping).toEqual({ kind: 'state', state: 'WA' })
+    expect(warnings).toEqual([])
+  })
+
+  it('keeps an unresolved listed answer rather than falling back past it', () => {
+    const { mapping } = resolve({
+      'which_state_are_you_from?': 'Auckland',
+      'which_state_is_your_business_in?': 'qld',
+    })
+    expect(mapping).toEqual({ kind: 'unresolved', raw: 'Auckland' })
+  })
+
+  it('is Facebook only', () => {
+    const { mapping } = resolve({ 'which_state_is_your_business_in?': 'qld' }, 'website')
+    expect(mapping).toEqual({ kind: 'absent' })
+  })
+
+  it('end to end: the lead lands with the fallback state', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = mapLead(
+      { ...BASE, 'which_state_is_your_business_in?': 'sa' },
+      'facebook',
+      'fb-fallback',
+    )
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.lead.state).toBe('SA')
+  })
+})
+
+describe('facebookFieldKeys', () => {
+  it('lists every key in order, once, answered or not', () => {
+    expect(
+      facebookFieldKeys([
+        { name: 'full_name', values: ['A'] },
+        { name: 'which_state?', values: [] },
+        { name: 'full_name', values: ['B'] },
+        { name: 'inbox_url', values: ['https://example.test'] },
+      ]),
+    ).toEqual(['full_name', 'which_state?', 'inbox_url'])
+  })
+
+  it('returns nothing for a payload that is not field_data', () => {
+    expect(facebookFieldKeys(undefined)).toEqual([])
+    expect(facebookFieldKeys({ name: 'x' })).toEqual([])
+    expect(facebookFieldKeys([null, 3, { values: ['no name'] }])).toEqual([])
+  })
+
+  it('is null on the lead when no keys are passed (every non-Facebook source)', () => {
+    const result = mapLead(fixture('website_lead'), 'website', 'w-keys')
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.lead.metaFieldKeys).toBeNull()
   })
 })
