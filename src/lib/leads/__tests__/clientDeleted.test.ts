@@ -38,6 +38,33 @@ describe('stageBeforeConversion', () => {
   })
 })
 
+describe('stageBeforeConversion — a file per enquiry (0052)', () => {
+  it('passes over conversions made while already at Client', () => {
+    const activities = [
+      entry(conversionBody('prospect'), '2026-09-01T00:00:00Z'),
+      entry(conversionBody('client', [], '2026-10-02T00:00:00Z'), '2026-10-03T00:00:00Z'),
+    ]
+    expect(stageBeforeConversion(activities)).toBe('prospect')
+  })
+
+  it('stops at an entry that recorded no stage', () => {
+    const activities = [
+      entry(conversionBody('prospect'), '2026-09-01T00:00:00Z'),
+      entry(conversionBody(null), '2026-09-15T00:00:00Z'),
+      entry(conversionBody('client'), '2026-10-03T00:00:00Z'),
+    ]
+    expect(stageBeforeConversion(activities)).toBe('lead')
+  })
+})
+
+describe('conversionBody', () => {
+  it('names the enquiry, keeping "Stage before" last to be read back', () => {
+    expect(conversionBody('prospect', [], '2026-08-26T01:00:00.000Z')).toBe(
+      'Converted to a client file in the restructuring workspace. From the enquiry of 26 Aug 2026. Stage before: Prospect.',
+    )
+  })
+})
+
 describe('deletedNote', () => {
   it('says when, by whom, and the stage set back to', () => {
     expect(deletedNote(new Date('2026-10-24T03:00:00Z'), 'Gabby', 'prospect')).toBe('Client file deleted on 24 Oct 2026 by Gabby. Stage set back to Prospect.')

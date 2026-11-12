@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
+  contactFromEnquiry,
   emptyConversionForm,
   toCompanyDetails,
   type ConversionForm,
 } from '../conversionForm'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadSubmission } from '@/types/leads'
 
 /**
  * The conversion form: what it starts from and what it sends. Nothing on it is
@@ -170,5 +171,31 @@ describe('toCompanyDetails', () => {
     const details = toCompanyDetails(company({ companyManual: true, trustManual: true }))
     expect(details).not.toHaveProperty('companyManual')
     expect(details).not.toHaveProperty('trustManual')
+  })
+})
+
+describe('contactFromEnquiry (0052)', () => {
+  const said = {
+    name: 'Enquiry Name',
+    email: 'Enquiry@Example.test',
+    phone: '0400000009',
+    entityType: 'trust',
+  } as unknown as LeadSubmission
+
+  it('takes what the enquiry said', () => {
+    expect(contactFromEnquiry(lead(), said)).toMatchObject({
+      name: 'Enquiry Name',
+      email: 'Enquiry@Example.test',
+      phone: '0400 000 009',
+      entityType: 'trust',
+      phoneNumber: '0400 000 009',
+      emailAddress: 'Enquiry@Example.test',
+    })
+  })
+
+  it("falls back to the lead for anything the enquiry left blank", () => {
+    const blank = { name: ' ', email: '', phone: '', entityType: null } as unknown as LeadSubmission
+    const fromLead = contactFromEnquiry(lead())
+    expect(contactFromEnquiry(lead(), blank)).toEqual(fromLead)
   })
 })

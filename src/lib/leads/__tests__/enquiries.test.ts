@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { LeadSubmission } from '@/types/leads'
 import {
+  clientFileLabel,
+  newestUnconvertedEnquiry,
   describeEnquirySource,
   describeLatestEnquiry,
   enquiryCountLabel,
@@ -91,6 +93,7 @@ describe('enquiryFields', () => {
     leadId: 'ld_1',
     receivedAt: '2026-09-10T00:00:00.000Z',
     afterClose: false,
+    convertedClientId: null,
     name: 'Test Person',
     email: 'test@example.test',
     phone: '0400000001',
@@ -169,6 +172,7 @@ describe('describeEnquirySource', () => {
     leadId: 'ld_1',
     receivedAt: '2026-09-10T00:00:00.000Z',
     afterClose: false,
+    convertedClientId: null,
     name: 'Test Person',
     email: 'test@example.test',
     phone: '0400000001',
@@ -219,5 +223,23 @@ describe('describeEnquirySource', () => {
         metaAdName: null,
       }),
     ).toEqual(['Facebook', 'Ad ad-1'])
+  })
+})
+
+describe('converting an enquiry (0052)', () => {
+  it('starts on the newest enquiry with no file', () => {
+    const list = [
+      { id: 'c', convertedClientId: 'cl_2' },
+      { id: 'b', convertedClientId: null },
+      { id: 'a', convertedClientId: null },
+    ]
+    expect(newestUnconvertedEnquiry(list)?.id).toBe('b')
+    expect(newestUnconvertedEnquiry([{ id: 'a', convertedClientId: 'cl_1' }])).toBeNull()
+  })
+
+  it('names a file by its workspace, and says when it is archived', () => {
+    expect(clientFileLabel({ workflow: 'sbr', archivedAt: null })).toBe('SBR client file')
+    expect(clientFileLabel({ workflow: 'cvl', archivedAt: null })).toBe('CVL client file')
+    expect(clientFileLabel({ workflow: 'sbr', archivedAt: '2026-10-01T00:00:00Z' })).toBe('SBR client file (archived)')
   })
 })

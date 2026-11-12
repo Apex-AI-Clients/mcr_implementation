@@ -1,7 +1,7 @@
 import { LeadRecordClient } from '@/components/leads/LeadRecordClient'
 import {
   getActivitiesForLead,
-  getConvertedClientDetails,
+  getClientFilesForLead,
   getLeadById,
   getSubmissionsForLead,
 } from '@/lib/leads/queries'
@@ -24,8 +24,9 @@ interface Props {
  * still consulted first on the client, which is what lets a lead created
  * moments ago open before its insert has come back.
  *
- * A converted lead also shows what its client file holds — the ABN, ACN and
- * the rest collected at conversion and in intake — so that is read here too.
+ * A converted lead also shows what its client files hold — the ABN, ACN and
+ * the rest collected at conversion and in intake — so those are read here too:
+ * one file per converted enquiry (0052).
  *
  * So is every enquiry the lead has made (lead_submissions), for the Lead history
  * list: the lead row shows only the newest values.
@@ -37,8 +38,8 @@ export default async function LeadRecordPage({ params }: Props) {
     getActivitiesForLead(id),
     getSubmissionsForLead(id),
   ])
-  const [convertedClient, formWarnings] = await Promise.all([
-    lead?.convertedClientId ? getConvertedClientDetails(lead.convertedClientId) : null,
+  const [clientFiles, formWarnings] = await Promise.all([
+    getClientFilesForLead(lead, enquiries),
     // Only for the Facebook forms this lead came through; never throws.
     getFacebookFormHealth(
       enquiries.filter((e) => e.source === 'facebook' && e.metaFormId).map((e) => e.metaFormId as string),
@@ -51,7 +52,7 @@ export default async function LeadRecordPage({ params }: Props) {
       initialLead={lead}
       initialActivities={activities}
       enquiries={enquiries}
-      convertedClient={convertedClient}
+      clientFiles={clientFiles}
       formWarnings={formWarnings}
     />
   )

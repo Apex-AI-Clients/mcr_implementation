@@ -28,13 +28,16 @@ const CreateClientSchema = z.object({
   phone: z.string().max(40).optional(),
   companyDetails: CompanyDetailsSchema.optional(),
   /**
-   * The lead this client file is being created from. When given, the lead is
-   * marked converted and linked here, in this request — not in a second one
-   * from the browser. A page reload, a closed tab or a dropped connection
-   * between two requests used to leave a client file whose lead still said
-   * "lead" and still offered to convert.
+   * The enquiry (lead_submissions row) this client file is being created from
+   * (migration 0052). When given, the enquiry is linked to the file and its
+   * lead marked converted here, in this request — not in a second one from
+   * the browser. A page reload, a closed tab or a dropped connection between
+   * two requests used to leave a client file whose lead still said "lead" and
+   * still offered to convert.
+   *
+   * One enquiry makes one file; a lead with two enquiries can make two.
    */
-  leadId: z.string().uuid().optional(),
+  enquiryId: z.string().uuid().optional(),
   /**
    * Which workspace the new file opens in (migration 0039): an SBR client
    * (the default) or a CVL client, whose case is opened in this request.
@@ -82,8 +85,9 @@ export async function GET() {
 
 /**
  * Create a client record. No Supabase auth user, no invite email — the email is
- * just a stored contact field. Staff then complete the intake wizard for the
- * returned client id.
+ * just a stored contact field, and not unique (0052): one person can have a
+ * file per enquiry. Staff then complete the intake wizard for the returned
+ * client id.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -100,41 +104,39 @@ export async function POST(req: NextRequest) {
     const email = parsed.data.email.trim().toLowerCase()
     const phone = normaliseClientPhone(parsed.data.phone)
     const supabase = getSupabaseServerClient()
-    const leadId = parsed.data.leadId
+    const enquiryId = parsed.data.enquiryId
 
-    // Before anything is created: a lead that is not there cannot be converted.
+    // Before anything is created: an enquiry that is not there, or that is
+    // already a client file, cannot be converted. Another file for the same
+    // email is fine (0052): each enquiry can become its own file.
+    let leadId: string | null = null
     let leadStage: string | null = null
-    if (leadId) {
+    let enquiryReceivedAt: string | null = null
+    if (enquiryId) {
+      const { data: enquiry, error: enquiryError } = await supabase
+        .from('lead_submissions')
+        .select('id, lead_id, received_at, converted_client_id')
+        .eq('id', enquiryId)
+        .maybeSingle()
+      if (enquiryError) throw enquiryError
+      if (!enquiry) return NextResponse.json({ error: 'Enquiry not found' }, { status: 404 })
+      if (enquiry.converted_client_id) {
+        return NextResponse.json(
+          { error: 'This enquiry already has a client file', clientId: enquiry.converted_client_id },
+          { status: 409 },
+        )
+      }
+      enquiryReceivedAt = enquiry.received_at
+
       const { data: lead, error: leadError } = await supabase
         .from('leads')
         .select('id, stage')
-        .eq('id', leadId)
+        .eq('id', enquiry.lead_id)
         .maybeSingle()
       if (leadError) throw leadError
       if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+      leadId = lead.id
       leadStage = lead.stage
-    }
-
-    const { data: existing } = await supabase
-      .from('clients')
-      .select('id, archived_at, workflow')
-      .eq('email', email)
-      .maybeSingle()
-    if (existing) {
-      // An archived file still owns its email. Said so, because the fix is
-      // different: restore it, or delete it permanently, from the Archive.
-      const archived = existing.archived_at !== null
-      return NextResponse.json(
-        {
-          error: archived
-            ? 'An archived client file has this email'
-            : 'A client with this email already exists',
-          clientId: existing.id,
-          archived,
-          workflow: existing.workflow,
-        },
-        { status: 409 },
-      )
     }
 
     const workflow = parsed.data.workflow ?? 'sbr'
@@ -190,8 +192,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // The lead, in the same request as the file it became.
-    if (leadId) {
+    // The enquiry and its lead, in the same request as the file they became.
+    if (enquiryId && leadId) {
+      // Only while still unconverted: two people converting the same enquiry
+      // at once get one file, not two. The unique index (0052) backs this up.
+      const { data: linked, error: enquiryError } = await supabase
+        .from('lead_submissions')
+        .update({ converted_client_id: client.id })
+        .eq('id', enquiryId)
+        .is('converted_client_id', null)
+        .select('id')
+      if (enquiryError || !linked || linked.length === 0) {
+        await supabase.from('clients').delete().eq('id', client.id)
+        if (enquiryError) {
+          console.error('[POST /api/admin/clients] enquiry link failed:', enquiryError.message)
+        }
+        const taken = !enquiryError || enquiryError.code === '23505'
+        return NextResponse.json(
+          {
+            error: taken
+              ? 'This enquiry was converted a moment ago. No client file was created.'
+              : 'Could not update the enquiry. No client file was created.',
+          },
+          { status: taken ? 409 : 500 },
+        )
+      }
+
       const at = new Date().toISOString()
       const activity = {
         id: crypto.randomUUID(),
@@ -201,6 +227,7 @@ export async function POST(req: NextRequest) {
         body: conversionBody(
           leadStage as LeadStage | null,
           leadStage && isCustomStage(leadStage) ? await getCustomStages() : [],
+          enquiryReceivedAt,
         ),
         // From the session, so a request cannot claim to be somebody else.
         author: staffAuthorName(staff),
@@ -211,6 +238,7 @@ export async function POST(req: NextRequest) {
         .from('leads')
         .update({
           stage: 'client',
+          // The newest file from this lead; each enquiry holds its own.
           converted_client_id: client.id,
           // Only restart the clock on an actual move.
           ...(leadStage !== 'client' ? { stage_since: at } : {}),
@@ -232,7 +260,8 @@ export async function POST(req: NextRequest) {
       if (leadError) {
         // Same reasoning as the details above: a client file whose lead was
         // never linked is the half-made state this request exists to rule
-        // out. company_details goes with the client (ON DELETE CASCADE).
+        // out. company_details goes with the client (ON DELETE CASCADE), and
+        // the enquiry's link clears with it (ON DELETE SET NULL).
         await supabase.from('clients').delete().eq('id', client.id)
         console.error('[POST /api/admin/clients] lead link failed:', leadError.message)
         return NextResponse.json(

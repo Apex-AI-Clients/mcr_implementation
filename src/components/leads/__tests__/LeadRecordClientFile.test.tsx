@@ -81,7 +81,7 @@ function renderRecord(client: ConvertedClientDetails) {
           initialLead={LEAD}
           initialActivities={[]}
           enquiries={[]}
-          convertedClient={client}
+          clientFiles={[client]}
         />
       </LeadsStoreProvider>
     </ToastProvider>,

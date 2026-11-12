@@ -465,6 +465,31 @@ export async function getConvertedClientDetails(
   }
 }
 
+/**
+ * Every client file made from this lead (0052): one per converted enquiry,
+ * plus the lead's own link when no enquiry holds it (two leads once linked to
+ * one file). Newest file first; files that can no longer be read are left out.
+ */
+export async function getClientFilesForLead(
+  lead: { convertedClientId: string | null } | null,
+  enquiries: { convertedClientId: string | null }[],
+): Promise<ConvertedClientDetails[]> {
+  const ids = [
+    ...new Set(
+      [lead?.convertedClientId ?? null, ...enquiries.map((e) => e.convertedClientId)].filter(
+        (id): id is string => !!id,
+      ),
+    ),
+  ]
+  const files = await Promise.all(ids.map((id) => getConvertedClientDetails(id)))
+  const order = new Map(enquiries.map((e, index) => [e.convertedClientId, index]))
+  // Enquiries come newest first, so their order is the files' order; the
+  // lead's own link, on no enquiry, goes last.
+  return files
+    .filter((file): file is ConvertedClientDetails => file !== null)
+    .sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity))
+}
+
 /** The timeline for one lead, newest first. */
 export async function getActivitiesForLead(leadId: string): Promise<LeadActivity[]> {
   const supabase = getSupabaseServerClient()
@@ -488,6 +513,17 @@ export async function getActivitiesForLead(leadId: string): Promise<LeadActivity
  */
 export async function getLeadIdForClient(clientId: string): Promise<string | null> {
   const supabase = getSupabaseServerClient()
+  // The enquiry the file was made from (0052); a lead's own link points only
+  // at its newest file.
+  const { data: enquiry, error: enquiryError } = await supabase
+    .from('lead_submissions')
+    .select('lead_id')
+    .eq('converted_client_id', clientId)
+    .limit(1)
+    .maybeSingle()
+  if (enquiryError) console.error('[getLeadIdForClient]', enquiryError.message)
+  if (enquiry?.lead_id) return enquiry.lead_id
+
   const { data, error } = await supabase
     .from('leads')
     .select('id')

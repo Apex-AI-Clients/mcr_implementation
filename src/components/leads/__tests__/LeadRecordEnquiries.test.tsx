@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { LeadRecordClient } from '../LeadRecordClient'
 import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
-import type { Lead, LeadSubmission } from '@/types/leads'
+import type { ConvertedClientDetails, Lead, LeadSubmission } from '@/types/leads'
 
 /**
  * The record's side of repeat enquiries: the Lead history list, and the
@@ -64,6 +64,7 @@ function enquiry(overrides: Partial<LeadSubmission>): LeadSubmission {
     leadId: 'ld_1',
     receivedAt: '2026-08-01T00:00:00.000Z',
     afterClose: false,
+    convertedClientId: null,
     name: 'Test Person',
     email: 'test@example.test',
     phone: '0400000001',
@@ -108,7 +109,7 @@ function renderRecord(lead: Lead = LEAD, persistence: LeadsPersistence = {}) {
           initialLead={lead}
           initialActivities={[]}
           enquiries={ENQUIRIES}
-          convertedClient={null}
+          clientFiles={[]}
         />
       </LeadsStoreProvider>
     </ToastProvider>,
@@ -193,5 +194,92 @@ describe('"Enquired again" notice', () => {
     await user.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(screen.getByText('New enquiry after closure')).toBeTruthy())
     expect(screen.getByText("That didn't save. The marker has been put back.")).toBeTruthy()
+  })
+})
+
+function clientFile(id: string, workflow: 'sbr' | 'cvl'): ConvertedClientDetails {
+  return {
+    id,
+    name: 'Test Person',
+    email: 'test@example.test',
+    phone: null,
+    archivedAt: null,
+    workflow,
+    entityType: null,
+    companyName: null,
+    acnNumber: null,
+    abnNumber: null,
+    trustName: null,
+    trustAbnNumber: null,
+    companyPhone: null,
+    companyEmail: null,
+    registeredOfficeAddress: null,
+    principalPlaceOfBusiness: null,
+    directors: [],
+    asicExtractDate: null,
+    companyDetailsSource: null,
+  }
+}
+
+describe('Converting from an enquiry (0052)', () => {
+  function renderWithFiles(enquiries: LeadSubmission[], files: ConvertedClientDetails[], lead: Lead = LEAD) {
+    return render(
+      <ToastProvider>
+        <LeadsStoreProvider author="Tester" persistence={{}}>
+          <LeadRecordClient
+            leadId={lead.id}
+            initialLead={lead}
+            initialActivities={[]}
+            enquiries={enquiries}
+            clientFiles={files}
+          />
+        </LeadsStoreProvider>
+      </ToastProvider>,
+    )
+  }
+
+  it('offers Convert on an enquiry with no file, and links the one that has its file', () => {
+    renderWithFiles(
+      [enquiry({ id: 'sub-2', receivedAt: '2026-09-10T04:05:00.000Z' }), enquiry({ id: 'sub-1', convertedClientId: 'cl_1' })],
+      [clientFile('cl_1', 'cvl')],
+      { ...LEAD, stage: 'client', convertedClientId: 'cl_1' },
+    )
+    const items = within(enquiriesSection()).getAllByRole('listitem')
+    expect(within(items[0]).getByRole('button', { name: /Convert to client/ })).toBeTruthy()
+    expect(within(items[1]).queryByRole('button', { name: /Convert to client/ })).toBeNull()
+    expect(within(items[1]).getByText('Client file')).toBeTruthy()
+    expect(within(items[1]).getByText('CVL client file · Test Person')).toBeTruthy()
+    expect(within(items[1]).getByRole('link', { name: /Open client file/ }).getAttribute('href')).toContain('cl_1')
+  })
+
+  it('opens the dialog on the enquiry whose button was pressed', async () => {
+    const user = userEvent.setup()
+    renderWithFiles(
+      [
+        enquiry({ id: 'sub-2', receivedAt: '2026-09-10T04:05:00.000Z', name: 'Newer Name' }),
+        enquiry({ id: 'sub-1', name: 'Older Name' }),
+      ],
+      [],
+    )
+    const items = within(enquiriesSection()).getAllByRole('listitem')
+    // The older one is collapsed; its button is still in the page.
+    await user.click(within(items[1]).getByRole('button', { name: /Convert to client/, hidden: true }))
+    const dialog = await screen.findByRole('dialog')
+    // Straight to the form: the enquiry was chosen by its button, no pick step.
+    expect(within(dialog).queryByRole('button', { name: 'Continue' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Change' })).toBeNull()
+    expect((within(dialog).getByLabelText('Lead name') as HTMLInputElement).value).toBe('Older Name')
+  })
+
+  it('lists every client file the lead became at the top', () => {
+    renderWithFiles(
+      [enquiry({ id: 'sub-2', convertedClientId: 'cl_2' }), enquiry({ id: 'sub-1', convertedClientId: 'cl_1' })],
+      [clientFile('cl_2', 'sbr'), clientFile('cl_1', 'cvl')],
+      { ...LEAD, stage: 'client', convertedClientId: 'cl_2' },
+    )
+    const progress = screen.getByRole('region', { name: 'Progress' })
+    expect(within(progress).getByRole('link', { name: /Open SBR client file/ })).toBeTruthy()
+    expect(within(progress).getByRole('link', { name: /Open CVL client file/ })).toBeTruthy()
+    expect(within(progress).getByText('2 client files, one per converted enquiry.')).toBeTruthy()
   })
 })

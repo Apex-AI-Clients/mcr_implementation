@@ -125,10 +125,4 @@ export const leadsPersistence: LeadsPersistence = {
   // Stage and activity together, so the clock and the history can't disagree.
   stageChange: ({ leadId, stage, activity }) =>
     write(`/api/admin/leads/${leadId}`, 'PATCH', { patch: { stage }, activity }),
-
-  conversion: ({ leadId, clientId, activity }) =>
-    write(`/api/admin/leads/${leadId}`, 'PATCH', {
-      patch: { stage: 'client', convertedClientId: clientId },
-      activity,
-    }),
 }

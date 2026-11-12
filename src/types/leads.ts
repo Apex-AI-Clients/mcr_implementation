@@ -167,6 +167,8 @@ export interface LeadSubmission {
   receivedAt: string
   /** The lead was converted or closed when this arrived. */
   afterClose: boolean
+  /** The client file this enquiry became (0052). Null: not converted. */
+  convertedClientId: string | null
   name: string
   email: string
   phone: string
