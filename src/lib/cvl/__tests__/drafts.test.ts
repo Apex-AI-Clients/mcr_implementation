@@ -30,6 +30,15 @@ describe('entryState', () => {
     expect(s.editedKeys).toEqual([])
   })
 
+  it('leaves Part A’s "signed by" blank, even from a draft saved when it was pre-filled', () => {
+    expect(entryState(partA, prefillForm('507a', 'company', context()), null).signedBy).toBeNull()
+    const old = { fields: {}, tables: {}, signedBy: 'Jordan Sample', editedKeys: [] }
+    expect(entryState(partA, prefillForm('507a', 'company', context()), old).signedBy).toBeNull()
+    // Typed by staff: kept.
+    const typed = { fields: {}, tables: {}, signedBy: 'Typed Name', editedKeys: ['signedBy'] }
+    expect(entryState(partA, prefillForm('507a', 'company', context()), typed).signedBy).toBe('Typed Name')
+  })
+
   it('takes the draft’s answer over the pre-filled one where it was typed in, blank included', () => {
     const draft = { fields: { b1_name: 'Jordan A. Sample', b1_phone: null, b2: 'yes' }, tables: {}, signedBy: null, editedKeys: ['b1_name', 'b1_phone', 'b2'] }
     const s = entryState(partB, prefillForm('507b', 'director:1', context()), draft)

@@ -53,7 +53,9 @@ export function entryState(map: FormMap, prefill: Prefill, draft: (DraftAnswers 
   return {
     fields,
     tables,
-    signedBy: draft && (edited.has('signedBy') || !preSigned) ? draft.signedBy : preSigned,
+    // Only a name staff typed is kept: one a draft saved from an earlier
+    // pre-fill (Part A's tables, before they were left for the client) is not.
+    signedBy: draft && edited.has('signedBy') ? draft.signedBy : preSigned,
     editedKeys: draft?.editedKeys ?? [],
   }
 }

@@ -303,14 +303,14 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
             ) : (
               <p className="text-xs italic text-foreground/40">
                 No company details yet.{' '}
-                <Link href={`${base}/intake`} className="not-italic text-accent hover:underline">
+                <Link href={`${base}/intake?step=company`} className="not-italic text-accent hover:underline">
                   Add them
                 </Link>
                 , or upload the ASIC extract.
               </p>
             )}
             {/* Whether the PDF itself is kept: the forms' registration and appointment dates come from it. */}
-            <AsicExtractOnFile clientId={client.id} uploadHref={`${base}/intake`} className="mt-3 border-t border-border/60 pt-3" />
+            <AsicExtractOnFile clientId={client.id} uploadHref={`${base}/intake?step=company`} className="mt-3 border-t border-border/60 pt-3" />
           </Card>
 
           <Card>

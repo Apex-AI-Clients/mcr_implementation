@@ -111,7 +111,7 @@ export function CvlClientTable({ list, path, keep = {}, rowHref, deletable = fal
                           {r.asicExtract ? formatExtractDate(r.asicExtract) : 'On file'}
                         </span>
                       ) : (
-                        <Link href={`${rowHref(r.clientId)}/intake`} className="text-warning hover:underline" title="No ASIC extract on file: upload it on the intake page">
+                        <Link href={`${rowHref(r.clientId)}/intake?step=company`} className="text-warning hover:underline" title="No ASIC extract on file: upload it under Company and Trust Details">
                           — Not on file
                         </Link>
                       )}

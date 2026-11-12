@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react'
 import { PortalStepper, type StepDescriptor } from '@/components/portal/PortalStepper'
 import { CategoryUploadSection } from '@/components/portal/CategoryUploadSection'
@@ -61,7 +61,12 @@ export function IntakeClient({
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<State>(clientId ? { phase: 'loading' } : { phase: 'new' })
-  const [activeStepId, setActiveStepId] = useState<string>('details')
+  // ?step=company opens on Company and Trust Details, where the ASIC extract
+  // is uploaded: the "Upload it" links on the CVL file and list go there.
+  const searchParams = useSearchParams()
+  const [activeStepId, setActiveStepId] = useState<string>(() =>
+    clientId && searchParams?.get('step') === 'company' ? 'company' : 'details',
+  )
   // Asks again whether the ASIC extract PDF is kept, after each save.
   const [savedCount, setSavedCount] = useState(0)
 

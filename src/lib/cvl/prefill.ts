@@ -341,7 +341,8 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
     const source = companySource(ctx, 'The first director listed.', 'directors')
     put(out, 'a9_name', d.name, source)
     put(out, 'a9_position', 'Director', source)
-    out.signedBy = { value: d.name, source }
+    // The appendix tables' "signed by" name is left blank: the client signs
+    // and names themselves there by hand.
   }
 }
 

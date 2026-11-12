@@ -118,7 +118,7 @@ describe('CvlClientTable: ASIC extract on file', () => {
     render(<CvlClientTable list={withAsic} path="/cvl" rowHref={(id) => `/cvl/${id}`} empty="No CVL clients yet." />)
     expect(screen.getByRole('columnheader', { name: 'ASIC extract' })).toBeTruthy()
     expect(screen.getByText('3 October 2026')).toBeTruthy()
-    expect(screen.getByRole('link', { name: '— Not on file' }).getAttribute('href')).toBe('/cvl/cl_2/intake')
+    expect(screen.getByRole('link', { name: '— Not on file' }).getAttribute('href')).toBe('/cvl/cl_2/intake?step=company')
     expect(screen.getByText('On file')).toBeTruthy()
   })
 

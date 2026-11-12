@@ -198,10 +198,11 @@ describe('Part A', () => {
     expect(creditorRows(context()).length).toBeGreaterThan(0)
   })
 
-  it('fills the declaration name from the first director (ASIC extract)', () => {
+  it('fills the declaration name from the first director (ASIC extract), never the tables\u2019 "signed by"', () => {
     const p = prefillForm('507a', 'company', context())
     expect(value(p, 'a9_name')).toBe('Jordan Sample')
-    expect(p.signedBy?.value).toBe('Jordan Sample')
+    // The client signs and names themselves on the appendix tables by hand.
+    expect(p.signedBy).toBeNull()
   })
 })
 
