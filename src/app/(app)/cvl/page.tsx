@@ -22,7 +22,7 @@ export default async function CvlClientsPage({ searchParams }: Props) {
         <h1 className="text-xl font-semibold text-foreground">CVL clients</h1>
         <p className="mt-1 text-sm text-foreground/50">
           {list.total} {list.total === 1 ? 'client' : 'clients'} in creditors&rsquo; voluntary liquidation.{' '}
-          <Link href="/sbr/archive?workflow=cvl" className="text-accent hover:underline">
+          <Link href="/cvl/archive" className="text-accent hover:underline">
             Archived CVL files
           </Link>
         </p>

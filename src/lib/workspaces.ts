@@ -81,6 +81,8 @@ export const WORKSPACES: Workspace[] = [
     icon: Gavel,
     nav: [
       { href: '/cvl', label: 'Clients', icon: Users },
+      // The archived CVL files, kept in this workspace (the SBR Archive's CVL tab).
+      { href: '/cvl/archive', label: 'Archive', icon: Archive },
       // The items waiting for Gabby's confirmation (cvl_settings, migration 0039).
       { href: '/cvl/settings', label: 'CVL settings', icon: Settings },
     ],

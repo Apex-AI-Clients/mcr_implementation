@@ -300,12 +300,89 @@ describe('CvlFormEditor', () => {
 
     const top = watching((el) => el.hasAttribute('data-form-top'))
     const marker = document.querySelector('[data-form-top]')!
+    // Scrolled back up: B24 leaves the middle, the top comes into view.
+    act(() => sections.report([{ isIntersecting: false, target: section('B24'), boundingClientRect: { top: 900 } }]))
     act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
     // The questions start as the PDF does: page 1 (ASIC's cover, nothing to fill), from its top.
     expect(marker.getAttribute('data-page')).toBe('1')
     await waitFor(() => expect(screen.getByRole('button', { name: '1' }).getAttribute('aria-current')).toBe('page'))
     // The first section starts its page from the top, not at its own first box.
     expect(document.querySelector('section[data-page]')!.getAttribute('data-top')).toBe('0')
+  })
+
+  it('shows a tall section’s page when it is already across the middle as the screen opens, never skipping it (Part A page 2)', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+    const top = watching((el) => el.hasAttribute('data-form-top'))
+    const marker = document.querySelector('[data-form-top]')!
+    // B10 (page 4) stands in for the tall box: on opening it is already across
+    // the middle, and the top marker is in view too.
+    const tall = section('B10')
+    expect(tall.dataset.page).toBe('4')
+    act(() => sections.report([{ isIntersecting: true, target: tall, boundingClientRect: { top: 200 } }]))
+    act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
+    // The section across the middle wins over the top marker.
+    await waitFor(() => expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page'))
+
+    // Scrolling on: the top marker leaves, the tall box is still across the middle: still its page.
+    act(() => top.report([{ isIntersecting: false, target: marker, boundingClientRect: { top: -50 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page')
+
+    // It leaves and the next section comes in: the next page.
+    act(() =>
+      sections.report([
+        { isIntersecting: false, target: tall, boundingClientRect: { top: -400 } },
+        { isIntersecting: true, target: section('B24'), boundingClientRect: { top: 300 } },
+      ]),
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: '8' }).getAttribute('aria-current')).toBe('page'))
+  })
+
+  it('turns to the page reported before the preview was ready, once it is (Part A opening on page 2)', async () => {
+    const { watching } = stubObservers()
+    let finish: (v: unknown) => void = () => {}
+    vi.mocked(fillInBrowser).mockImplementation(() => new Promise((resolve) => (finish = resolve)) as never)
+    renderPartB()
+    const viewer = screen.getByLabelText(/: every page$/)
+    const scrollTo = vi.fn()
+    viewer.scrollTo = scrollTo as never
+    const sections = watching((el) => el.tagName === 'SECTION')
+
+    // The questions report their section while the form is still being filled.
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 200 } }]))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(scrollTo).not.toHaveBeenCalled()
+
+    // The fill lands: the preview turns to that page without waiting for another section.
+    await act(async () => {
+      finish({ pdf: new Uint8Array([37, 80, 68, 70]), pageSources: [1, 2, 3, 4, 5, 6, 7, 8, 9], pages: 9, warnings: [] })
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page'))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('turns to the page of the section across the middle when the top marker scrolls away', async () => {
+    const { watching } = stubObservers()
+    stubFetch()
+    renderPartB()
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^[1-9]$/ })).toHaveLength(9))
+    const sections = watching((el) => el.tagName === 'SECTION')
+    const top = watching((el) => el.hasAttribute('data-form-top'))
+    const marker = document.querySelector('[data-form-top]')!
+    // At the top, only the first section across the middle: page 1.
+    const first = document.querySelector<HTMLElement>('section[data-page]')!
+    act(() => top.report([{ isIntersecting: true, target: marker, boundingClientRect: { top: 0 } }]))
+    act(() => sections.report([{ isIntersecting: true, target: first, boundingClientRect: { top: 200 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '1' }).getAttribute('aria-current')).toBe('page'))
+    // A section on page 4 comes across while the top is still in view, then the top leaves.
+    act(() => sections.report([{ isIntersecting: false, target: first, boundingClientRect: { top: -10 } }]))
+    act(() => sections.report([{ isIntersecting: true, target: section('B10'), boundingClientRect: { top: 250 } }]))
+    act(() => top.report([{ isIntersecting: false, target: marker, boundingClientRect: { top: -50 } }]))
+    await waitFor(() => expect(screen.getByRole('button', { name: '4' }).getAttribute('aria-current')).toBe('page'))
   })
 
   it('says "Updating" to the left of the size buttons, in a slot that is always there, so the buttons never move', async () => {

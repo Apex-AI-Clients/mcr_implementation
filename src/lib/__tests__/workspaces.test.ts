@@ -38,13 +38,15 @@ describe('WORKSPACES', () => {
     ])
   })
 
-  it('gives the CVL workspace Clients and CVL settings', () => {
+  it('gives the CVL workspace Clients, Archive and CVL settings', () => {
     const cvl = WORKSPACES.find((w) => w.id === 'cvl')!
     expect(cvl.nav.map((n) => [n.label, n.href])).toEqual([
       ['Clients', '/cvl'],
+      ['Archive', '/cvl/archive'],
       ['CVL settings', '/cvl/settings'],
     ])
     expect(activeNavHref(cvl.nav, '/cvl/settings')).toBe('/cvl/settings')
+    expect(activeNavHref(cvl.nav, '/cvl/archive')).toBe('/cvl/archive')
     expect(activeNavHref(cvl.nav, '/cvl/abc-123/forms/509')).toBe('/cvl')
   })
 

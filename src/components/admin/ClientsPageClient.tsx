@@ -17,6 +17,8 @@ interface ClientsPageClientProps {
   mode?: 'active' | 'archived'
   /** Kept on search and paging links (the Archive's ?workflow= filter). */
   keep?: Record<string, string>
+  /** The page's own address, for search and paging. Default: /clients, or /sbr/archive when archived. */
+  path?: string
 }
 
 export function ClientsPageClient({
@@ -27,8 +29,9 @@ export function ClientsPageClient({
   query,
   mode = 'active',
   keep,
+  path,
 }: ClientsPageClientProps) {
-  const basePath = mode === 'archived' ? '/sbr/archive' : '/clients'
+  const basePath = path ?? (mode === 'archived' ? '/sbr/archive' : '/clients')
   const router = useRouter()
   const [term, setTerm] = useState(query)
   const [prevQuery, setPrevQuery] = useState(query)

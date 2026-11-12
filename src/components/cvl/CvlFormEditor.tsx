@@ -192,30 +192,53 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   }, [])
   // The browser reports crossings
   // (IntersectionObserver), so nothing runs while scrolling within a section.
+  // Which sections are across the middle is kept, not just the latest
+  // crossing: a tall section already across the middle when the screen opens
+  // (Part A's External Administrator box, all of page 2) never crosses again,
+  // and its page was skipped once the top marker had shown page 1.
   const questions = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const root = questions.current
     if (!root || typeof IntersectionObserver === 'undefined') return
+    const marker = root.querySelector<HTMLElement>('[data-form-top]')
+    const firstSection = root.querySelector<HTMLElement>('section[data-page]')
+    const across = new Set<HTMLElement>()
+    let topInView = false
+
+    const show = (el: HTMLElement | null | undefined, top?: number) => {
+      if (!el?.dataset.page) return
+      const next = { page: Number(el.dataset.page), top: top ?? Number(el.dataset.top ?? 0) }
+      setSpot((cur) => (cur && cur.page === next.page && cur.top === next.top ? cur : next))
+    }
+    const topmostAcross = () => [...across].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]
+    // Back at the top of the questions, with nothing but the first section
+    // across the middle: the first page, from its top.
+    const topWins = () => topInView && [...across].every((el) => el === firstSection)
+
     const observer = new IntersectionObserver(
       (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) across.add(e.target as HTMLElement)
+          else across.delete(e.target as HTMLElement)
+        }
         if (jumped.current) return
+        if (topWins()) return show(marker, 0)
         const hit = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]
-        const el = hit?.target as HTMLElement | undefined
-        if (!el?.dataset.page) return
-        const next = { page: Number(el.dataset.page), top: Number(el.dataset.top ?? 0) }
-        setSpot((cur) => (cur && cur.page === next.page && cur.top === next.top ? cur : next))
+        // Only a section leaving: whichever is still across the middle.
+        show((hit?.target as HTMLElement | undefined) ?? topmostAcross())
       },
       { rootMargin: '-45% 0px -45% 0px' },
     )
     root.querySelectorAll('section[data-page]').forEach((el) => observer.observe(el))
 
-    // Back at the top of the questions: the first page, from its top.
-    const marker = root.querySelector<HTMLElement>('[data-form-top]')
     const atTop = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1]
+      if (last) topInView = last.isIntersecting
       if (jumped.current) return
-      if (!entries.some((e) => e.isIntersecting) || !marker?.dataset.page) return
-      const next = { page: Number(marker.dataset.page), top: 0 }
-      setSpot((cur) => (cur && cur.page === next.page && cur.top === 0 ? cur : next))
+      if (topWins()) show(marker, 0)
+      // Scrolled away from the top: the section across the middle, even one
+      // that was already there.
+      else show(topmostAcross())
     })
     if (marker) atTop.observe(marker)
     return () => {
@@ -687,8 +710,13 @@ function LivePreview({
   // column stays still: it never scrolls within a page to chase a section.
   // Only when the section changes, never on a refill, so scrolling the
   // column by hand is not undone while typing.
+  // Also once the first fill lands: the questions report their section as the
+  // screen opens, before there is a page to turn to, and a tall section (Part
+  // A's External Administrator box, page 2) reports nothing new while it is
+  // scrolled through, so its page was never shown.
   const currentRef = useRef(current)
   currentRef.current = current
+  const ready = filled !== null
   useEffect(() => {
     const f = filledRef.current
     if (!f || !spot) return
@@ -696,7 +724,7 @@ function LivePreview({
     if (at < 0 || at + 1 === currentRef.current) return
     setCurrent(at + 1)
     scrollToPage(at)
-  }, [spot, scrollToPage])
+  }, [spot, ready, scrollToPage])
 
   // Stable, so a page drawing is never restarted by a re-render.
   const onPageError = useCallback(() => setError('The preview could not be drawn. Download the PDF instead.'), [])
