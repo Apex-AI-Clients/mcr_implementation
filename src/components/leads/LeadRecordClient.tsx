@@ -30,7 +30,7 @@ import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { EditLeadDialog } from '@/components/leads/EditLeadDialog'
 import { identityDisplay } from '@/lib/clients/identityDisplay'
 import { clientHref } from '@/lib/clients/archive'
-import { reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
+import { clientFileLabel, reenquiryMarkerLabel, showsReenquiryMarker } from '@/lib/leads/enquiries'
 import {
   describeUncertainState,
   formatAge,
@@ -48,8 +48,8 @@ interface LeadRecordClientProps {
   initialActivities: LeadActivity[]
   /** Every enquiry, newest first, read server-side. */
   enquiries: LeadSubmission[]
-  /** The client file this lead became, read server-side. Null when not converted. */
-  convertedClient: ConvertedClientDetails | null
+  /** The client files this lead's enquiries became, newest first, read server-side (0052). */
+  clientFiles: ConvertedClientDetails[]
   /** Warnings about the Facebook form(s) this lead came through (lib/leads/formHealth). */
   formWarnings?: string[]
 }
@@ -73,12 +73,14 @@ export function LeadRecordClient({
   initialLead,
   initialActivities,
   enquiries,
-  convertedClient,
+  clientFiles,
   formWarnings = [],
 }: LeadRecordClientProps) {
   const router = useRouter()
   const { getLead, activitiesFor, syncFromServer, dismissReenquiry } = useLeads()
-  const [convertTarget, setConvertTarget] = useState<Lead | null>(null)
+  // The lead being converted, and the enquiry to start on (null: the newest
+  // not yet converted).
+  const [convertTarget, setConvertTarget] = useState<{ lead: Lead; enquiryId: string | null } | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
 
@@ -94,16 +96,18 @@ export function LeadRecordClient({
   const lead = getLead(leadId) ?? initialLead
 
   // Converting happens in a dialog on this page and only updates the store, so
-  // the client file's details were never read. Re-read the page once for each
-  // newly linked file — once, so a file that cannot be read cannot loop.
+  // the new file's details and its enquiry's link were never read. Re-read the
+  // page once for each newly linked file — once, so a file that cannot be read
+  // cannot loop.
   const linkedClientId = lead?.convertedClientId ?? null
+  const linkedIsLoaded = clientFiles.some((file) => file.id === linkedClientId)
   const refreshedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!linkedClientId || linkedClientId === convertedClient?.id) return
+    if (!linkedClientId || linkedIsLoaded) return
     if (refreshedFor.current === linkedClientId) return
     refreshedFor.current = linkedClientId
     router.refresh()
-  }, [linkedClientId, convertedClient?.id, router])
+  }, [linkedClientId, linkedIsLoaded, router])
 
   if (!lead) {
     return (
@@ -151,9 +155,8 @@ export function LeadRecordClient({
 
       <ProgressCard
         lead={lead}
-        onConvert={() => setConvertTarget(lead)}
-        // The file in its own workspace (SBR or CVL), once it has been read.
-        clientFile={convertedClient && convertedClient.id === lead.convertedClientId ? clientHref(convertedClient) : null}
+        onConvert={() => setConvertTarget({ lead, enquiryId: null })}
+        clientFiles={clientFiles}
       />
 
       <KeyFacts lead={lead} activities={activities} />
@@ -173,17 +176,29 @@ export function LeadRecordClient({
         <div className="min-w-0 space-y-4">
           <ContactCard lead={lead} />
 
-          {convertedClient && convertedClient.id === lead.convertedClientId && (
-            <ClientFileDetails client={convertedClient} />
-          )}
+          {clientFiles.map((file) => (
+            <ClientFileDetails key={file.id} client={file} labelled={clientFiles.length > 1} />
+          ))}
 
-          <LeadEnquiries lead={lead} enquiries={enquiries} />
+          <LeadEnquiries
+            lead={lead}
+            enquiries={enquiries}
+            clientFiles={clientFiles}
+            onConvert={(enquiryId) => setConvertTarget({ lead, enquiryId })}
+          />
         </div>
       </div>
 
       {/* Mounted only while open, so it prefills from the lead as it is now. */}
       {editOpen && <EditLeadDialog lead={lead} onClose={() => setEditOpen(false)} />}
-      <ConvertToClientDialog lead={convertTarget} onClose={() => setConvertTarget(null)} />
+      <ConvertToClientDialog
+        lead={convertTarget?.lead ?? null}
+        enquiries={enquiries}
+        enquiryId={convertTarget?.enquiryId ?? null}
+        onClose={() => setConvertTarget(null)}
+        // The enquiry list and the files are read on the server.
+        onConverted={() => router.refresh()}
+      />
       <DeleteLeadsDialog
         leads={deleteOpen ? [lead] : null}
         onClose={() => setDeleteOpen(false)}
@@ -219,11 +234,19 @@ function SectionHeading({
 }
 
 /**
- * Where the lead has got to, and the controls that move it on. The convert
- * action sits here rather than at the bottom of a column, because it is the
- * step the track leads to.
+ * Where the lead has got to, and the controls that move it on, with the client
+ * files it has become. Converting itself is on each enquiry under Lead
+ * history (0052), or by choosing "Client" as the stage.
  */
-function ProgressCard({ lead, onConvert, clientFile }: { lead: Lead; onConvert: () => void; clientFile: string | null }) {
+function ProgressCard({
+  lead,
+  onConvert,
+  clientFiles,
+}: {
+  lead: Lead
+  onConvert: () => void
+  clientFiles: ConvertedClientDetails[]
+}) {
   return (
     <section
       aria-label="Progress"
@@ -245,20 +268,39 @@ function ProgressCard({ lead, onConvert, clientFile }: { lead: Lead; onConvert: 
             Since {formatAge(lead.stageSince).toLowerCase()}
           </span>
         </div>
-        <ConvertAction lead={lead} onConvert={onConvert} clientFile={clientFile} />
+        <ClientFilesAction lead={lead} files={clientFiles} />
       </div>
     </section>
   )
 }
 
-/** The join between the two halves of the product. */
-function ConvertAction({ lead, onConvert, clientFile }: { lead: Lead; onConvert: () => void; clientFile: string | null }) {
+/** The join between the two halves of the product: every file this lead became. */
+function ClientFilesAction({ lead, files }: { lead: Lead; files: ConvertedClientDetails[] }) {
+  const linkClass =
+    'inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success transition-colors hover:bg-success/15'
+
+  if (files.length > 0) {
+    return (
+      <div className="flex flex-col items-start gap-1.5 sm:items-end">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {files.map((file) => (
+            <Link key={file.id} href={clientHref(file)} className={linkClass}>
+              {files.length > 1 ? `Open ${clientFileLabel(file)}` : 'Open their client file'}
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          ))}
+        </div>
+        {files.length > 1 && (
+          <p className="text-xs text-foreground/40">{files.length} client files, one per converted enquiry.</p>
+        )}
+      </div>
+    )
+  }
+
+  // Just converted here: the store has the link before the page re-reads the file.
   if (lead.convertedClientId) {
     return (
-      <Link
-        href={clientFile ?? `/clients/${lead.convertedClientId}`}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success transition-colors hover:bg-success/15"
-      >
+      <Link href={`/clients/${lead.convertedClientId}`} className={linkClass}>
         Open their client file
         <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
       </Link>
@@ -266,22 +308,14 @@ function ConvertAction({ lead, onConvert, clientFile }: { lead: Lead; onConvert:
   }
 
   // A lead can sit at a converted stage with no file behind it — an imported
-  // sheet row, or a conversion whose lead update failed. Say so rather than
-  // pretending it was never converted.
-  const markedButUnlinked = lead.stage === 'converted' || lead.stage === 'client'
-
+  // sheet row, or a file since deleted. Say so rather than pretending it was
+  // never converted.
+  // Converting happens on each enquiry under Lead history.
+  if (lead.stage !== 'converted' && lead.stage !== 'client') return null
   return (
-    <div className="flex flex-col items-start gap-1 sm:items-end">
-      <Button type="button" onClick={onConvert}>
-        {markedButUnlinked ? 'Create their client file' : 'Convert to client'}
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Button>
-      <p className="text-xs text-foreground/40">
-        {markedButUnlinked
-          ? 'Marked converted, but no client file is linked.'
-          : 'Creates their file in the restructuring workspace.'}
-      </p>
-    </div>
+    <p className="max-w-xs text-xs text-foreground/40 sm:text-right">
+      Marked converted, but no client file is linked.
+    </p>
   )
 }
 
@@ -497,7 +531,7 @@ function recordedOnly(rows: DetailRow[]): DetailRow[] {
  * trustee company with no ABN says "No ABN of its own" rather than leaving a
  * gap. Edited on the client file, which the link opens.
  */
-function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
+function ClientFileDetails({ client, labelled = false }: { client: ConvertedClientDetails; labelled?: boolean }) {
   const contact = recordedOnly([
     { label: 'Name', value: client.name },
     { label: 'Email', value: client.email },
@@ -521,8 +555,8 @@ function ClientFileDetails({ client }: { client: ConvertedClientDetails }) {
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-foreground/40">
-          Client file
-          {client.archivedAt && (
+          {labelled ? clientFileLabel(client) : 'Client file'}
+          {!labelled && client.archivedAt && (
             <span className="ml-2 normal-case tracking-normal text-warning">Archived</span>
           )}
         </p>

@@ -116,18 +116,27 @@ describe('createClientFromLead', () => {
     })
   })
 
-  it('sends the lead id, so the route links the lead in the same request', async () => {
+  it('sends the enquiry id, so the route links the enquiry and its lead in the same request', async () => {
     const fetchMock = mockFetch(201, { id: 'client-1' })
-    await createClientFromLead(FORM, 'ld_1')
+    await createClientFromLead(FORM, 'sub_1')
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(JSON.parse(init.body as string).leadId).toBe('ld_1')
+    expect(JSON.parse(init.body as string).enquiryId).toBe('sub_1')
   })
 
-  it('sends no lead id when there is no lead', async () => {
+  it('sends no enquiry id when there is none', async () => {
     const fetchMock = mockFetch(201, { id: 'client-1' })
     await createClientFromLead(FORM)
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(JSON.parse(init.body as string)).not.toHaveProperty('leadId')
+    expect(JSON.parse(init.body as string)).not.toHaveProperty('enquiryId')
+  })
+
+  it('reports an enquiry that already has a file, with that file (0052)', async () => {
+    mockFetch(409, { error: 'This enquiry already has a client file', clientId: 'client-7' })
+    expect(await createClientFromLead(FORM, 'sub_1')).toEqual({
+      kind: 'enquiry_converted',
+      clientId: 'client-7',
+      message: 'This enquiry already has a client file',
+    })
   })
 
   it('reports that the lead was linked, with the timeline entry the route wrote', async () => {
@@ -140,7 +149,7 @@ describe('createClientFromLead', () => {
       createdAt: '2026-09-30T09:06:07.000Z',
     }
     mockFetch(201, { id: 'client-1', leadLinked: true, leadActivity })
-    expect(await createClientFromLead(FORM, 'ld_1')).toEqual({
+    expect(await createClientFromLead(FORM, 'sub_1')).toEqual({
       kind: 'created',
       clientId: 'client-1',
       leadLinked: true,
@@ -150,36 +159,12 @@ describe('createClientFromLead', () => {
 
   it('ignores a timeline entry that is not one', async () => {
     mockFetch(201, { id: 'client-1', leadLinked: true, leadActivity: { id: 7 } })
-    const result = await createClientFromLead(FORM, 'ld_1')
+    const result = await createClientFromLead(FORM, 'sub_1')
     expect(result).toMatchObject({ kind: 'created', leadLinked: true, activity: null })
   })
 
-  it('reports a 409 as a duplicate carrying the existing file id', async () => {
-    mockFetch(409, { error: 'A client with this email already exists', clientId: 'client-9' })
-    expect(await createClientFromLead(FORM)).toEqual({
-      kind: 'duplicate',
-      clientId: 'client-9',
-      archived: false,
-      workflow: 'sbr',
-    })
-  })
-
-  it('says when the file that owns the email is archived', async () => {
-    mockFetch(409, {
-      error: 'An archived client file has this email',
-      clientId: 'client-9',
-      archived: true,
-    })
-    expect(await createClientFromLead(FORM)).toEqual({
-      kind: 'duplicate',
-      clientId: 'client-9',
-      archived: true,
-      workflow: 'sbr',
-    })
-  })
-
-  it('falls back to a plain failure when a 409 carries no client id', async () => {
-    mockFetch(409, { error: 'A client with this email already exists' })
+  it('reports a 409 with no enquiry as a plain failure — no file is offered for linking', async () => {
+    mockFetch(409, { error: 'Conflict', clientId: 'client-9' })
     const result = await createClientFromLead(FORM)
     expect(result.kind).toBe('failed')
   })

@@ -34,6 +34,10 @@ function mockDb(
   convertedLeads: { id: string; activities: { type: string; body: string; created_at: string }[] }[] = [],
   /** Still in CVL: its CVL case not removed (migration 0047). */
   inCvl = false,
+  /** Leads whose enquiry this file was made from (0052). */
+  enquiryLeads: string[] = [],
+  /** Each lead's other files, still on its other enquiries. */
+  otherFiles: Record<string, string[]> = {},
 ) {
   const caseUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
   const leadUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({ eq: () => Promise.resolve({ error: null }) }))
@@ -49,6 +53,10 @@ function mockDb(
     clients: {
       select: () => ({
         eq: () => ({ maybeSingle: () => Promise.resolve({ data: client, error: null }) }),
+        // The newest of a lead's other files.
+        in: (_: string, ids: string[]) => ({
+          order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: { id: ids[ids.length - 1] }, error: null }) }) }),
+        }),
       }),
       update,
       delete: remove,
@@ -72,6 +80,22 @@ function mockDb(
     leads: {
       select: () => ({ eq: () => Promise.resolve({ data: convertedLeads.map(({ id }) => ({ id })), error: null }) }),
       update: leadUpdate,
+    },
+    lead_submissions: {
+      select: () => ({
+        eq: (column: string, value: string) =>
+          column === 'converted_client_id'
+            ? Promise.resolve({ data: enquiryLeads.map((lead_id) => ({ lead_id })), error: null })
+            : {
+                not: () => ({
+                  neq: () =>
+                    Promise.resolve({
+                      data: (otherFiles[value] ?? []).map((id) => ({ converted_client_id: id })),
+                      error: null,
+                    }),
+                }),
+              },
+      }),
     },
     lead_activities: {
       select: () => ({
@@ -241,5 +265,33 @@ describe('DELETE — permanent, from the Archive only', () => {
       expect.objectContaining({ lead_id: 'lead-1', type: 'stage_change', body: expect.stringMatching(/^Client file deleted on .+\. Stage set back to Prospect\.$/) }),
     )
     expect(leadUpdate.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0])
+  })
+
+  it('finds the lead through the enquiry the file was made from (0052)', async () => {
+    const { leadUpdate } = mockDb({ id: 'cl_1', archived_at: '2026-09-30T00:00:00.000Z', auth_user_id: null }, [], false, ['lead-1'])
+    const response = await DELETE(req('DELETE'), PARAMS)
+    expect(response.status).toBe(200)
+    expect(leadUpdate).toHaveBeenCalledWith(expect.objectContaining({ stage: 'lead', converted_client_id: null }))
+  })
+
+  it('keeps a lead with another file at Client, pointing at that file (0052)', async () => {
+    const { leadUpdate, activityInsert } = mockDb(
+      { id: 'cl_1', archived_at: '2026-09-30T00:00:00.000Z', auth_user_id: null },
+      [],
+      false,
+      ['lead-1'],
+      { 'lead-1': ['cl_2'] },
+    )
+    const response = await DELETE(req('DELETE'), PARAMS)
+
+    expect(response.status).toBe(200)
+    expect(leadUpdate).toHaveBeenCalledWith({ converted_client_id: 'cl_2' })
+    expect(activityInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lead_id: 'lead-1',
+        type: 'note',
+        body: expect.stringMatching(/The lead keeps 1 other client file, so it stays at Client\.$/),
+      }),
+    )
   })
 })

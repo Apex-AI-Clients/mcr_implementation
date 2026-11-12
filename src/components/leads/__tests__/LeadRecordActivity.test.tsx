@@ -91,7 +91,7 @@ function renderRecord(lead: Lead = makeLead(), activities = ACTIVITIES) {
           initialLead={lead}
           initialActivities={activities}
           enquiries={[]}
-          convertedClient={null}
+          clientFiles={[]}
         />
       </LeadsStoreProvider>
     </ToastProvider>,
@@ -180,12 +180,14 @@ describe('Lead record — key facts and contact', () => {
 })
 
 describe('Lead record — progress', () => {
-  it('puts the stage control and Convert beside the track', () => {
+  it('puts the stage control beside the track, with no convert prompt there (0052)', () => {
     renderRecord()
     const progress = screen.getByRole('region', { name: 'Progress' })
     expect(within(progress).getByRole('list', { name: 'Stage progress' })).toBeTruthy()
     expect(within(progress).getByRole('combobox')).toBeTruthy()
-    expect(within(progress).getByRole('button', { name: /Convert to client/ })).toBeTruthy()
+    expect(within(progress).queryByRole('button', { name: /Convert to client/ })).toBeNull()
+    expect(within(progress).queryByText(/Convert an enquiry/)).toBeNull()
+    expect(within(progress).queryByText(/to create their client file/)).toBeNull()
   })
 
   it('links to the client file once converted', () => {

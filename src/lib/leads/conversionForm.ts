@@ -7,7 +7,7 @@ import {
   type IdentityFormState,
   type TrusteeOfferReason,
 } from '@/lib/clients/identityForm'
-import type { EntityType, Lead } from '@/types/leads'
+import type { EntityType, Lead, LeadSubmission } from '@/types/leads'
 
 /**
  * The details that can be given when a lead becomes a client file.
@@ -62,17 +62,43 @@ export interface ConversionForm extends IdentityFormState {
   trusteeOffer: TrusteeOfferReason | null
 }
 
-export function emptyConversionForm(lead: Lead | null): ConversionForm {
+/**
+ * The contact half of the form, from the enquiry being converted (0052): what
+ * that enquiry said, falling back to the lead row for anything it left blank.
+ * Without an enquiry, the lead's own values.
+ */
+export function contactFromEnquiry(
+  lead: Lead | null,
+  enquiry: LeadSubmission | null = null,
+): Pick<ConversionForm, 'name' | 'email' | 'phone' | 'entityType' | 'phoneNumber' | 'emailAddress'> {
+  const name = enquiry?.name.trim() || lead?.name || ''
+  const email = enquiry?.email.trim() || lead?.email || ''
+  const rawPhone = enquiry?.phone.trim() || lead?.phone || ''
+  // Every captured lead has a phone, and it is this person's own number, so it
+  // carries straight over. Shown grouped ("0412 345 678"); the API stores it
+  // normalised, the same shape the lead held it in.
+  const phone = rawPhone ? formatPhone(rawPhone) : ''
   return {
-    name: lead?.name ?? '',
-    email: lead?.email ?? '',
-    // Every captured lead has a phone, and it is this person's own number, so
-    // it carries straight over. Shown grouped ("0412 345 678"); the API stores
-    // it normalised, the same shape the lead held it in.
-    phone: lead?.phone ? formatPhone(lead.phone) : '',
+    name,
+    email,
+    phone,
     // The capture forms ask this, so it is usually already known. Defaults to
     // company because it is far the commoner of the two on this pipeline.
-    entityType: lead?.entityType ?? 'company',
+    entityType: enquiry?.entityType ?? lead?.entityType ?? 'company',
+    // In practice the person who enquired is the company's contact, so their
+    // phone and email are the company's too. Both stay editable.
+    phoneNumber: phone,
+    emailAddress: email,
+  }
+}
+
+export function emptyConversionForm(lead: Lead | null, enquiry: LeadSubmission | null = null): ConversionForm {
+  const contact = contactFromEnquiry(lead, enquiry)
+  return {
+    name: contact.name,
+    email: contact.email,
+    phone: contact.phone,
+    entityType: contact.entityType,
     companyName: '',
     acnNumber: '',
     abnNumber: '',
@@ -80,11 +106,8 @@ export function emptyConversionForm(lead: Lead | null): ConversionForm {
     trustAbnNumber: '',
     companyManual: false,
     trustManual: false,
-    // Pre-filled from the lead: in practice the person who enquired is the
-    // company's contact, so their phone and email are the company's too. Both
-    // stay editable for the case where the company has its own line.
-    phoneNumber: lead?.phone ? formatPhone(lead.phone) : '',
-    emailAddress: lead?.email ?? '',
+    phoneNumber: contact.phoneNumber,
+    emailAddress: contact.emailAddress,
     registeredOfficeAddress: '',
     principalPlaceOfBusiness: '',
     directors: [],

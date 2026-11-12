@@ -18,6 +18,7 @@ import { POST } from '../route'
 
 const JANE = { name: 'Jane Sample', dateOfBirth: '1970-03-14' }
 const LEAD_ID = '11111111-1111-4111-8111-111111111111'
+const ENQUIRY_ID = '22222222-2222-4222-8222-222222222222'
 
 const BODY = {
   name: 'Dean Whitlock',
@@ -52,8 +53,16 @@ function mockDb({
   lead = { id: LEAD_ID, stage: 'prospect' } as { id: string; stage: string } | null,
   leadUpdateError = null as DbError,
   activityError = null as DbError,
-  existingClient = null as { id: string; archived_at: string | null; workflow?: string } | null,
   caseError = null as DbError,
+  enquiry = {
+    id: ENQUIRY_ID,
+    lead_id: LEAD_ID,
+    received_at: '2026-08-26T01:00:00.000Z',
+    converted_client_id: null,
+  } as { id: string; lead_id: string; received_at: string; converted_client_id: string | null } | null,
+  /** Rows the guarded link update returns: none when another request got there first. */
+  enquiryLinkRows = [{ id: ENQUIRY_ID }] as { id: string }[],
+  enquiryLinkError = null as (DbError & { code?: string }) | null,
 } = {}) {
   const clientInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
     select: () => ({ single: () => Promise.resolve({ data: { id: 'cl_1' }, error: null }) }),
@@ -69,12 +78,22 @@ function mockDb({
     Promise.resolve({ error: activityError }),
   )
   const caseInsert = vi.fn<(row: Record<string, unknown>) => unknown>(() => Promise.resolve({ error: caseError }))
+  const enquiryUpdate = vi.fn<(row: Record<string, unknown>) => unknown>(() => ({
+    eq: () => ({
+      is: () => ({ select: () => Promise.resolve({ data: enquiryLinkRows, error: enquiryLinkError }) }),
+    }),
+  }))
+  const clientSelect = vi.fn()
   const tables: Record<string, unknown> = {
     cvl_cases: { insert: caseInsert },
-    clients: {
+    lead_submissions: {
       select: () => ({
-        eq: () => ({ maybeSingle: () => Promise.resolve({ data: existingClient }) }),
+        eq: () => ({ maybeSingle: () => Promise.resolve({ data: enquiry, error: null }) }),
       }),
+      update: enquiryUpdate,
+    },
+    clients: {
+      select: clientSelect,
       insert: clientInsert,
       delete: clientDelete,
     },
@@ -90,7 +109,7 @@ function mockDb({
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => tables[table],
   } as never)
-  return { clientInsert, clientDelete, detailsInsert, leadUpdate, activityInsert, caseInsert }
+  return { clientInsert, clientDelete, clientSelect, detailsInsert, leadUpdate, activityInsert, caseInsert, enquiryUpdate }
 }
 
 function signedIn(user: { id: string; email?: string } | null) {
@@ -187,13 +206,14 @@ describe('POST /api/admin/clients — company details from conversion', () => {
   })
 })
 
-describe('POST /api/admin/clients — converting a lead', () => {
-  it('marks the lead converted and links it, in the same request as the file', async () => {
-    const { leadUpdate, activityInsert } = mockDb()
+describe('POST /api/admin/clients — converting an enquiry (0052)', () => {
+  it('links the enquiry and marks its lead converted, in the same request as the file', async () => {
+    const { leadUpdate, activityInsert, enquiryUpdate } = mockDb()
 
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
 
     expect(response.status).toBe(201)
+    expect(enquiryUpdate).toHaveBeenCalledWith({ converted_client_id: 'cl_1' })
     expect(leadUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ stage: 'client', converted_client_id: 'cl_1' }),
     )
@@ -203,7 +223,7 @@ describe('POST /api/admin/clients — converting a lead', () => {
         lead_id: LEAD_ID,
         type: 'stage_change',
         // With the stage it came from, to go back to if the file is ever deleted.
-        body: 'Converted to a client file in the restructuring workspace. Stage before: Prospect.',
+        body: 'Converted to a client file in the restructuring workspace. From the enquiry of 26 Aug 2026. Stage before: Prospect.',
         // From the session, not the request.
         author: 'gabby',
       }),
@@ -216,13 +236,46 @@ describe('POST /api/admin/clients — converting a lead', () => {
 
   it('does not restart the stage clock for a lead already at client', async () => {
     const { leadUpdate } = mockDb({ lead: { id: LEAD_ID, stage: 'client' } })
-    await POST(post({ ...BODY, leadId: LEAD_ID }))
+    await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
     expect(leadUpdate.mock.calls[0][0]).not.toHaveProperty('stage_since')
   })
 
-  it('creates nothing for a lead that does not exist', async () => {
+  it('creates nothing for an enquiry that does not exist', async () => {
+    const { clientInsert } = mockDb({ enquiry: null })
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
+    expect(response.status).toBe(404)
+    expect(clientInsert).not.toHaveBeenCalled()
+  })
+
+  it('answers 409 with the file for an enquiry already converted, creating nothing', async () => {
+    const { clientInsert } = mockDb({
+      enquiry: { id: ENQUIRY_ID, lead_id: LEAD_ID, received_at: '2026-08-26T01:00:00.000Z', converted_client_id: 'cl_7' },
+    })
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ clientId: 'cl_7' })
+    expect(clientInsert).not.toHaveBeenCalled()
+  })
+
+  it('undoes the file when another request converted the enquiry first', async () => {
+    const { clientDelete, leadUpdate } = mockDb({ enquiryLinkRows: [] })
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
+    expect(response.status).toBe(409)
+    expect(clientDelete).toHaveBeenCalled()
+    expect(leadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('undoes the file when the enquiry cannot be linked', async () => {
+    const { clientDelete, leadUpdate } = mockDb({ enquiryLinkError: { message: 'boom' } })
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
+    expect(response.status).toBe(500)
+    expect(clientDelete).toHaveBeenCalled()
+    expect(leadUpdate).not.toHaveBeenCalled()
+  })
+
+  it("creates nothing when the enquiry's lead is gone", async () => {
     const { clientInsert } = mockDb({ lead: null })
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
     expect(response.status).toBe(404)
     expect(clientInsert).not.toHaveBeenCalled()
   })
@@ -230,7 +283,7 @@ describe('POST /api/admin/clients — converting a lead', () => {
   it('undoes the client file when the lead cannot be updated', async () => {
     const { clientDelete, activityInsert } = mockDb({ leadUpdateError: { message: 'boom' } })
 
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
 
     expect(response.status).toBe(500)
     expect((await response.json()).error).toBe(
@@ -243,7 +296,7 @@ describe('POST /api/admin/clients — converting a lead', () => {
   it('keeps the conversion when only the timeline entry fails', async () => {
     const { clientDelete } = mockDb({ activityError: { message: 'boom' } })
 
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
 
     expect(response.status).toBe(201)
     expect(await response.json()).toMatchObject({ id: 'cl_1', leadLinked: true, leadActivity: null })
@@ -259,43 +312,28 @@ describe('POST /api/admin/clients — converting a lead', () => {
     expect(activityInsert).not.toHaveBeenCalled()
   })
 
-  it('rejects a lead id that is not a uuid', async () => {
+  it('rejects an enquiry id that is not a uuid', async () => {
     const { clientInsert } = mockDb()
-    expect((await POST(post({ ...BODY, leadId: 'ld_1' }))).status).toBe(400)
+    expect((await POST(post({ ...BODY, enquiryId: 'sub_1' }))).status).toBe(400)
     expect(clientInsert).not.toHaveBeenCalled()
   })
 })
 
-describe('POST /api/admin/clients — an email that already has a file', () => {
-  it('answers 409 with the file, saying it is not archived', async () => {
-    const { clientInsert } = mockDb({ existingClient: { id: 'cl_9', archived_at: null } })
-    const response = await POST(post(BODY))
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ clientId: 'cl_9', archived: false })
-    expect(clientInsert).not.toHaveBeenCalled()
-  })
-
-  it('says so when the file that owns the email is in the Archive', async () => {
-    const { clientInsert } = mockDb({
-      existingClient: { id: 'cl_9', archived_at: '2026-10-01T00:00:00.000Z' },
-    })
-    const response = await POST(post(BODY))
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({
-      error: 'An archived client file has this email',
-      clientId: 'cl_9',
-      archived: true,
-    })
-    expect(clientInsert).not.toHaveBeenCalled()
+describe('POST /api/admin/clients — an email that already has a file (0052)', () => {
+  it('creates another file: one person can have a file per enquiry', async () => {
+    const { clientInsert, clientSelect } = mockDb()
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
+    expect(response.status).toBe(201)
+    expect(clientInsert).toHaveBeenCalled()
+    // No lookup by email any more.
+    expect(clientSelect).not.toHaveBeenCalled()
   })
 })
 
 describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () => {
   it('opens an SBR client when no workflow is given, with no CVL case', async () => {
     const { clientInsert, caseInsert } = mockDb()
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID }))
     expect(response.status).toBe(201)
     expect(clientInsert.mock.calls[0][0]).toMatchObject({ workflow: 'sbr' })
     expect(caseInsert).not.toHaveBeenCalled()
@@ -303,7 +341,7 @@ describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () =>
 
   it('opens a CVL client and its case, from the lead, in the same request', async () => {
     const { clientInsert, caseInsert, detailsInsert, leadUpdate } = mockDb()
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID, workflow: 'cvl' }))
     expect(response.status).toBe(201)
     expect(clientInsert.mock.calls[0][0]).toMatchObject({ workflow: 'cvl' })
     expect(caseInsert).toHaveBeenCalledWith({ client_id: 'cl_1', origin: 'lead', created_by: 'gabby' })
@@ -313,7 +351,7 @@ describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () =>
 
   it('undoes the client when its CVL case cannot be written, and goes no further', async () => {
     const { clientDelete, detailsInsert, leadUpdate } = mockDb({ caseError: { message: 'boom' } })
-    const response = await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))
+    const response = await POST(post({ ...BODY, enquiryId: ENQUIRY_ID, workflow: 'cvl' }))
     expect(response.status).toBe(500)
     expect(clientDelete).toHaveBeenCalled()
     expect(detailsInsert).not.toHaveBeenCalled()
@@ -323,7 +361,7 @@ describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () =>
   it('makes no CVL client while CVL is switched off', async () => {
     vi.stubEnv('NEXT_PUBLIC_CVL_ENABLED', '')
     const { clientInsert } = mockDb()
-    expect((await POST(post({ ...BODY, leadId: LEAD_ID, workflow: 'cvl' }))).status).toBe(400)
+    expect((await POST(post({ ...BODY, enquiryId: ENQUIRY_ID, workflow: 'cvl' }))).status).toBe(400)
     expect(clientInsert).not.toHaveBeenCalled()
     vi.unstubAllEnvs()
   })
@@ -331,12 +369,5 @@ describe('POST /api/admin/clients — SBR or CVL client (migration 0039)', () =>
   it('refuses a workflow it does not know', async () => {
     mockDb()
     expect((await POST(post({ ...BODY, workflow: 'liquidation' }))).status).toBe(400)
-  })
-
-  it('says which workspace the file that owns the email is in', async () => {
-    mockDb({ existingClient: { id: 'cl_9', archived_at: null, workflow: 'cvl' } })
-    const response = await POST(post(BODY))
-    expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ clientId: 'cl_9', archived: false, workflow: 'cvl' })
   })
 })

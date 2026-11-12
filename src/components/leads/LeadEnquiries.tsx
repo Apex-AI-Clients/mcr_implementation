@@ -1,12 +1,20 @@
+import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { describeEnquirySource, enquiryFields } from '@/lib/leads/enquiries'
+import { Button } from '@/components/ui/Button'
+import { clientHref } from '@/lib/clients/archive'
+import { clientFileLabel, describeEnquirySource, enquiryFields } from '@/lib/leads/enquiries'
 import { formatDateTime, formatFullDate } from '@/lib/leads/format'
-import type { Lead, LeadSubmission } from '@/types/leads'
+import type { ConvertedClientDetails, Lead, LeadSubmission } from '@/types/leads'
 
 interface LeadEnquiriesProps {
   lead: Pick<Lead, 'reenquiryDismissedAt' | 'reenquiryDismissedBy'>
   /** Newest first, as getSubmissionsForLead returns them. */
   enquiries: LeadSubmission[]
+  /** The files the enquiries became, read server-side (0052). */
+  clientFiles?: ConvertedClientDetails[]
+  /** "Convert to client" on an enquiry with no file yet. Left out: no button. */
+  onConvert?: (enquiryId: string) => void
 }
 
 /**
@@ -21,8 +29,11 @@ interface LeadEnquiriesProps {
  * The newest is open; older ones are collapsed to their date and source, and
  * open with a click or Enter — native <details>, so keyboard and screen
  * readers get the disclosure for free.
+ *
+ * Each enquiry can become one client file (0052): an enquiry with a file links
+ * to it, and one without offers "Convert to client".
  */
-export function LeadEnquiries({ lead, enquiries }: LeadEnquiriesProps) {
+export function LeadEnquiries({ lead, enquiries, clientFiles = [], onConvert }: LeadEnquiriesProps) {
   if (enquiries.length === 0) return null
 
   const views = enquiries.map((enquiry, index) => ({
@@ -74,6 +85,7 @@ export function LeadEnquiries({ lead, enquiries }: LeadEnquiriesProps) {
                   {enquiry.afterClose && (
                     <Badge variant="warning">After conversion or closure</Badge>
                   )}
+                  {enquiry.convertedClientId && <Badge variant="success">Client file</Badge>}
                 </summary>
 
                 <div className="space-y-2 border-t border-border px-3 pb-3 pt-2">
@@ -105,6 +117,11 @@ export function LeadEnquiries({ lead, enquiries }: LeadEnquiriesProps) {
                       </div>
                     ))}
                   </dl>
+                  <EnquiryConversion
+                    enquiry={enquiry}
+                    file={clientFiles.find((file) => file.id === enquiry.convertedClientId) ?? null}
+                    onConvert={onConvert}
+                  />
                 </div>
               </details>
             </li>
@@ -112,5 +129,42 @@ export function LeadEnquiries({ lead, enquiries }: LeadEnquiriesProps) {
         })}
       </ol>
     </section>
+  )
+}
+
+/** The file this enquiry became, or the button that makes one. */
+function EnquiryConversion({
+  enquiry,
+  file,
+  onConvert,
+}: {
+  enquiry: LeadSubmission
+  file: ConvertedClientDetails | null
+  onConvert?: (enquiryId: string) => void
+}) {
+  if (enquiry.convertedClientId) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2">
+        <span className="text-xs text-foreground/50">
+          {file ? `${clientFileLabel(file)} · ${file.name}` : 'Client file'}
+        </span>
+        <Link
+          href={file ? clientHref(file) : `/clients/${enquiry.convertedClientId}`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+        >
+          Open client file
+          <ArrowRight className="h-3 w-3" aria-hidden="true" />
+        </Link>
+      </div>
+    )
+  }
+  if (!onConvert) return null
+  return (
+    <div className="flex justify-end border-t border-border pt-2">
+      <Button type="button" size="sm" onClick={() => onConvert(enquiry.id)}>
+        Convert to client
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </Button>
+    </div>
   )
 }

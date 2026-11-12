@@ -6,7 +6,7 @@ import { LeadsStoreProvider } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
 import { ASIC_PDF_MAX_BYTES, UPLOAD_MESSAGES } from '@/lib/asic/upload'
 import type { AsicExtract } from '@/lib/asic/types'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadSubmission } from '@/types/leads'
 
 /**
  * The ASIC extract upload on the Convert to client dialog.
@@ -58,6 +58,31 @@ const REGISTERED = 'Registered office (optional)'
 const PRINCIPAL = 'Principal place of business (optional)'
 const UPLOAD = 'Upload ASIC extract (PDF)'
 
+/** The one enquiry being converted (0052), handed in so the dialog reads nothing. */
+const ENQUIRY: LeadSubmission = {
+  id: 'sub_1',
+  leadId: LEAD.id,
+  receivedAt: '2026-08-26T01:00:00.000Z',
+  afterClose: false,
+  convertedClientId: null,
+  name: LEAD.name,
+  email: LEAD.email,
+  phone: LEAD.phone,
+  debtMin: null,
+  debtMax: null,
+  state: null,
+  metaStateRaw: null,
+  metaStateOptions: null,
+  entityType: null,
+  message: null,
+  preferredCallTime: null,
+  source: 'website',
+  metaFormId: null,
+  metaAdId: null,
+  metaCampaignName: null,
+  metaAdName: null,
+}
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
@@ -71,7 +96,7 @@ function mockRoutes(extract: { status: number; body: unknown } = { status: 200, 
     const url = String(input)
     if (url.startsWith('/api/asic/extract-pdf')) return json(extract.status, extract.body)
     if (url === '/api/admin/clients/client-1/asic-extract') return json(201, { id: 'ex-1' })
-    if (url.startsWith('/api/admin/clients')) return json(201, { id: 'client-1' })
+    if (url.startsWith('/api/admin/clients')) return json(201, { id: 'client-1', leadLinked: true })
     return json(503, { error: 'not configured', configured: false })
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -96,9 +121,9 @@ function renderDialog() {
         initialLeads={[LEAD]}
         initialActivities={[]}
         author="Gabby"
-        persistence={{ markConverted: vi.fn(async () => {}) } as never}
+        persistence={{}}
       >
-        <ConvertToClientDialog lead={LEAD} onClose={vi.fn()} />
+        <ConvertToClientDialog lead={LEAD} enquiries={[ENQUIRY]} onClose={vi.fn()} />
       </LeadsStoreProvider>
     </ToastProvider>,
   )

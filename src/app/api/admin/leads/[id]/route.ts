@@ -91,7 +91,6 @@ const PatchSchema = z.object({
       z.string().regex(/^custom_[a-z0-9]+$/, 'Unknown stage') as z.ZodType<CustomStageKey>,
     ])
     .optional(),
-  convertedClientId: z.string().uuid().nullable().optional(),
   dismissReenquiry: z.literal(true).optional(),
 })
 
@@ -161,9 +160,6 @@ export async function PATCH(req: NextRequest, { params }: Props) {
       update.preferred_call_time = patch.preferredCallTime?.trim() || null
     }
     if (patch.nextStep !== undefined) update.next_step = patch.nextStep
-    if (patch.convertedClientId !== undefined) {
-      update.converted_client_id = patch.convertedClientId
-    }
     if (patch.dismissReenquiry) {
       update.reenquiry_dismissed_at = new Date().toISOString()
       update.reenquiry_dismissed_by = staffAuthorName(staff)

@@ -30,9 +30,12 @@ function request(ids: string[]) {
 function mockDb({
   deleted,
   archiveError = null,
+  enquiryFiles = [],
 }: {
   deleted: { id: string; converted_client_id: string | null }[]
   archiveError?: { message: string } | null
+  /** Enquiries converted into files (0052), read before the delete. */
+  enquiryFiles?: { lead_id: string; converted_client_id: string }[]
 }) {
   const clientUpdate = vi.fn<(row: Record<string, unknown>) => unknown>()
   const archivedIds = vi.fn<(ids: string[]) => void>()
@@ -61,6 +64,11 @@ function mockDb({
       }),
     },
     clients: { update: clientUpdate },
+    lead_submissions: {
+      select: () => ({
+        in: () => ({ not: () => Promise.resolve({ data: enquiryFiles, error: null }) }),
+      }),
+    },
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => tables[table],
@@ -116,6 +124,27 @@ describe('POST /api/admin/leads/delete', () => {
     })
     await POST(request([A, B]))
     expect(archivedIds).toHaveBeenCalledWith(['cl_1'])
+  })
+
+  it("archives every enquiry's file, not just the lead's newest (0052)", async () => {
+    const { archivedIds } = mockDb({
+      deleted: [{ id: A, converted_client_id: 'cl_2' }],
+      enquiryFiles: [
+        { lead_id: A, converted_client_id: 'cl_1' },
+        { lead_id: A, converted_client_id: 'cl_2' },
+      ],
+    })
+    await POST(request([A]))
+    expect(archivedIds).toHaveBeenCalledWith(['cl_2', 'cl_1'])
+  })
+
+  it('leaves the files of a lead that was not actually deleted', async () => {
+    const { archivedIds } = mockDb({
+      deleted: [{ id: A, converted_client_id: null }],
+      enquiryFiles: [{ lead_id: B, converted_client_id: 'cl_9' }],
+    })
+    await POST(request([A, B]))
+    expect(archivedIds).not.toHaveBeenCalled()
   })
 
   it('still reports the leads deleted when archiving fails', async () => {

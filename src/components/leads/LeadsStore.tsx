@@ -87,17 +87,6 @@ export interface LeadsPersistence {
    * logged action, so the follow-up clock is left where it was.
    */
   dismissReenquiry?: (input: { leadId: string }) => Promise<void>
-  /**
-   * Records the client file against the lead. If this throws, the client file
-   * exists but the lead does not know about it — the caller must say so rather
-   * than retry, because a duplicate client row is worse than a visible
-   * inconsistency.
-   */
-  conversion?: (link: {
-    leadId: string
-    clientId: string
-    activity: LeadActivity
-  }) => Promise<void>
 }
 
 const NO_PERSISTENCE: LeadsPersistence = {}
@@ -318,8 +307,6 @@ interface LeadsContextValue {
    * custom stages doesn't have yet; without it the entry would read "Custom stage".
    */
   changeStage: (leadId: string, stage: LeadStage, label?: string) => Promise<void>
-  /** Rejects when the client file exists but the lead could not be updated. */
-  markConverted: (leadId: string, clientId: string) => Promise<void>
   /**
    * Show a conversion the server has already written — the create-client
    * request links the lead itself. Nothing is sent; `activity` is the timeline
@@ -586,27 +573,6 @@ export function LeadsStoreProvider({
     [state.leads, author, persistence, custom],
   )
 
-  const markConverted = useCallback(
-    async (leadId: string, clientId: string) => {
-      const at = new Date().toISOString()
-      const activity: LeadActivity = {
-        id: newId(),
-        leadId,
-        type: 'stage_change',
-        body: CONVERSION_ACTIVITY_BODY,
-        author,
-        createdAt: at,
-      }
-
-      // Persist first, then apply: the client file already exists at this
-      // point, so the caller has to be able to tell the difference between
-      // "linked" and "created but not linked".
-      await persistence.conversion?.({ leadId, clientId, activity })
-      dispatch({ type: 'SET_CONVERTED', leadId, clientId, activity, at })
-    },
-    [author, persistence],
-  )
-
   const applyConverted = useCallback(
     (leadId: string, clientId: string, activity: LeadActivity | null) => {
       const at = activity?.createdAt ?? new Date().toISOString()
@@ -743,7 +709,6 @@ export function LeadsStoreProvider({
       updateLead,
       logActivity,
       changeStage,
-      markConverted,
       applyConverted,
       deleteLeads,
       editActivity,
@@ -761,7 +726,6 @@ export function LeadsStoreProvider({
       updateLead,
       logActivity,
       changeStage,
-      markConverted,
       applyConverted,
       deleteLeads,
       editActivity,

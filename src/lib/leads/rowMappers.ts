@@ -93,6 +93,7 @@ export function toLeadSubmission(row: LeadSubmissionRow): LeadSubmission {
     leadId: row.lead_id,
     receivedAt: row.received_at,
     afterClose: row.after_close,
+    convertedClientId: row.converted_client_id,
     name: row.name,
     email: row.email,
     phone: row.phone,

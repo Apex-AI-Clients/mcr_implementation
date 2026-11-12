@@ -1434,6 +1434,7 @@ export type Database = {
       lead_submissions: {
         Row: {
           after_close: boolean
+          converted_client_id: string | null
           debt_max: number | null
           debt_min: number | null
           email: string
@@ -1462,6 +1463,7 @@ export type Database = {
         }
         Insert: {
           after_close?: boolean
+          converted_client_id?: string | null
           debt_max?: number | null
           debt_min?: number | null
           email: string
@@ -1490,6 +1492,7 @@ export type Database = {
         }
         Update: {
           after_close?: boolean
+          converted_client_id?: string | null
           debt_max?: number | null
           debt_min?: number | null
           email?: string
@@ -1517,6 +1520,13 @@ export type Database = {
           state?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_submissions_converted_client_id_fkey"
+            columns: ["converted_client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lead_submissions_lead_id_fkey"
             columns: ["lead_id"]

@@ -131,3 +131,28 @@ export function describeEnquirySource(enquiry: LeadSubmission): string[] {
 function blankToNull(value: string | null): string | null {
   return value && value.trim() ? value.trim() : null
 }
+
+// ============================================================
+// Converting an enquiry (0052)
+// ============================================================
+
+/**
+ * The enquiry "Convert to client" starts on: the newest one not yet a client
+ * file. Null when every enquiry has its file. `enquiries` newest first.
+ */
+export function newestUnconvertedEnquiry<T extends Pick<LeadSubmission, 'convertedClientId'>>(
+  enquiries: T[],
+): T | null {
+  return enquiries.find((enquiry) => !enquiry.convertedClientId) ?? null
+}
+
+/** "26 Aug 2026 · Facebook", for picking an enquiry. */
+export function enquiryOptionLabel(enquiry: LeadSubmission): string {
+  return `${formatFullDate(enquiry.receivedAt)} · ${formatLeadSource(enquiry)}`
+}
+
+/** "SBR client file", "CVL client file", with "(archived)" when it is in the Archive. */
+export function clientFileLabel(file: { workflow: string; archivedAt: string | null }): string {
+  const label = `${file.workflow === 'cvl' ? 'CVL' : 'SBR'} client file`
+  return file.archivedAt ? `${label} (archived)` : label
+}

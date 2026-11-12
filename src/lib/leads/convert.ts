@@ -3,7 +3,8 @@ import type { LeadActivity } from '@/types/leads'
 import type { ClientWorkspace } from '@/lib/clients/workspace'
 
 /**
- * Creating a client file from a lead.
+ * Creating a client file from one enquiry of a lead (0052): a lead with two
+ * enquiries can become two files.
  *
  * The details collected at conversion go with the create call rather than in
  * a second request: two requests can half-succeed, and a client file that
@@ -17,8 +18,8 @@ import type { ClientWorkspace } from '@/lib/clients/workspace'
  * the same request and says so (`leadLinked`), handing back the timeline entry
  * it wrote so the screen can show it without asking again.
  *
- * It answers 409 with the id of the client that already owns the email, which
- * is not an error to show raw — it's an opportunity to link the two records.
+ * Another file with the same email is fine (0052). The one 409 left is an
+ * enquiry that already has its file, answered with that file's id.
  */
 
 export type ConvertResult =
@@ -30,12 +31,8 @@ export type ConvertResult =
       /** The timeline entry it wrote, when it wrote one. */
       activity: LeadActivity | null
     }
-  /**
-   * The email already belongs to a client file; offer to link to it. An
-   * archived file is not offered for linking: it is restored, or deleted
-   * permanently, from the Archive first.
-   */
-  | { kind: 'duplicate'; clientId: string; archived: boolean; workflow: ClientWorkspace }
+  /** The enquiry already became this file. */
+  | { kind: 'enquiry_converted'; clientId: string | null; message: string }
   | { kind: 'failed'; message: string }
 
 const GENERIC_FAILURE = "That didn't work. No client file was created."
@@ -58,7 +55,8 @@ function readActivity(value: unknown): LeadActivity | null {
 
 export async function createClientFromLead(
   form: ConversionForm,
-  leadId?: string,
+  /** The enquiry (lead_submissions id) the file is made from. */
+  enquiryId?: string,
   /** The workspace the file opens in: an SBR client (default) or a CVL client. */
   workflow: ClientWorkspace = 'sbr',
 ): Promise<ConvertResult> {
@@ -72,7 +70,7 @@ export async function createClientFromLead(
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
         companyDetails: toCompanyDetails(form),
-        ...(leadId ? { leadId } : {}),
+        ...(enquiryId ? { enquiryId } : {}),
         workflow,
       }),
     })
@@ -92,20 +90,17 @@ export async function createClientFromLead(
     error?: unknown
     leadLinked?: unknown
     leadActivity?: unknown
-    archived?: unknown
-    workflow?: unknown
   }
 
-  if (response.status === 409) {
-    // Only useful if the route told us which file it collided with.
-    return typeof payload.clientId === 'string' && payload.clientId
-      ? {
-          kind: 'duplicate',
-          clientId: payload.clientId,
-          archived: payload.archived === true,
-          workflow: payload.workflow === 'cvl' ? 'cvl' : 'sbr',
-        }
-      : { kind: 'failed', message: 'A client with this email already exists.' }
+  if (response.status === 409 && enquiryId) {
+    return {
+      kind: 'enquiry_converted',
+      clientId: typeof payload.clientId === 'string' && payload.clientId ? payload.clientId : null,
+      message:
+        typeof payload.error === 'string' && payload.error
+          ? payload.error
+          : 'This enquiry already has a client file.',
+    }
   }
 
   if (!response.ok) {

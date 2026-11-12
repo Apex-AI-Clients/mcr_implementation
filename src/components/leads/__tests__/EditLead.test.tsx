@@ -68,7 +68,7 @@ function renderRecord(lead: Lead = LEAD) {
           initialLead={lead}
           initialActivities={[]}
           enquiries={[]}
-          convertedClient={null}
+          clientFiles={[]}
         />
       </LeadsStoreProvider>
     </ToastProvider>,

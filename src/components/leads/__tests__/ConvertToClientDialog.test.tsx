@@ -1,15 +1,16 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LeadsPageClient } from '../LeadsPageClient'
 import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
 import { EMPTY_FILTERS } from '@/lib/leads/filter'
-import type { Lead } from '@/types/leads'
+import type { Lead, LeadSubmission } from '@/types/leads'
 
 /**
  * Conversion, driven through the real list so the whole path is exercised:
- * stage select → confirmation → POST → store update → toast.
+ * stage select → the lead's enquiries read → confirmation → POST → store
+ * update → toast. Since 0052 an enquiry, not the lead, becomes the file.
  */
 
 vi.mock('next/navigation', () => ({
@@ -20,6 +21,12 @@ vi.mock('next/navigation', () => ({
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+})
+
+// Opening the dialog reads the lead's enquiries; a case that sends nothing
+// still needs that answered. Cases that check what is sent stub their own.
+beforeEach(() => {
+  mockFetch(201, { id: 'client-1', leadLinked: true })
 })
 
 const LEAD: Lead = {
@@ -62,17 +69,52 @@ const LEAD: Lead = {
   updatedAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
 }
 
-/** Returns the spy, so a caller can assert on what was actually sent. */
-function mockFetch(status: number, body: unknown) {
-  const fetchMock = vi.fn(
-    async () =>
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+function enquiry(overrides: Partial<LeadSubmission> = {}): LeadSubmission {
+  return {
+    id: 'sub_1',
+    leadId: 'ld_1',
+    receivedAt: '2026-08-26T01:00:00.000Z',
+    afterClose: false,
+    convertedClientId: null,
+    name: 'Dean Whitlock',
+    email: 'dean@whitlockcivil.example.com.au',
+    phone: '0407552118',
+    debtMin: 100_000,
+    debtMax: 124_999,
+    state: 'QLD',
+    metaStateRaw: null,
+    metaStateOptions: null,
+    entityType: 'company',
+    message: null,
+    preferredCallTime: null,
+    source: 'google_form',
+    metaFormId: null,
+    metaAdId: null,
+    metaCampaignName: null,
+    metaAdName: null,
+    ...overrides,
+  }
+}
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+/**
+ * The lead's enquiries for the GET the dialog makes on opening; `status` and
+ * `body` for everything else (the create request). Returns the spy, so a
+ * caller can assert on what was actually sent.
+ */
+function mockFetch(status: number, body: unknown, enquiries: LeadSubmission[] = [enquiry()]) {
+  const fetchMock = vi.fn(async (url: string) =>
+    url.endsWith('/enquiries') ? json(200, { enquiries }) : json(status, body),
   )
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
+}
+
+/** The create requests sent, as [url, init]. */
+function creates(fetchMock: ReturnType<typeof mockFetch>) {
+  return (fetchMock.mock.calls as unknown as [string, RequestInit][]).filter(([url]) => url === '/api/admin/clients')
 }
 
 function renderList(persistence?: LeadsPersistence) {
@@ -105,9 +147,20 @@ function stageSelect(): HTMLSelectElement {
   ) as HTMLSelectElement
 }
 
+/** Opens conversion on a lead with two or more enquiries: the pick step comes first. */
+async function pickEnquiry(user: ReturnType<typeof userEvent.setup>) {
+  await user.selectOptions(stageSelect(), 'client')
+  const dialog = await screen.findByRole('dialog')
+  await within(dialog).findByRole('button', { name: 'Continue' })
+  return dialog
+}
+
 async function openConversion(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(stageSelect(), 'client')
-  return screen.findByRole('dialog')
+  const dialog = await screen.findByRole('dialog')
+  // The enquiries are read first; the form follows.
+  await within(dialog).findByLabelText('Lead name')
+  return dialog
 }
 
 /**
@@ -166,7 +219,6 @@ describe('ConvertToClientDialog', () => {
 
   it("starts the company phone and email as the lead's own, editable", async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -180,14 +232,14 @@ describe('ConvertToClientDialog', () => {
     expect(email.value).toBe('accounts@whitlockcivil.example.com.au')
   })
 
-  it('does not touch the API until Convert is pressed', async () => {
+  it('reads the enquiries but creates nothing until Convert is pressed', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+    const fetchMock = mockFetch(201, { id: 'client-1', leadLinked: true })
     renderList()
 
     await openConversion(user)
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/leads/ld_1/enquiries')
+    expect(creates(fetchMock)).toHaveLength(0)
     expect(stageSelect().value).toBe('prospect')
   })
 
@@ -248,7 +300,6 @@ describe('ConvertToClientDialog', () => {
 
   it('offers Company and Trust, and shows the Trust section for both — optional for a company', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -305,7 +356,6 @@ describe('ConvertToClientDialog', () => {
 
   it('puts the trust straight under the company ABN, before the registered office', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -323,7 +373,6 @@ describe('ConvertToClientDialog', () => {
 
   it('has an "Enter manually" checkbox for each section', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -337,7 +386,6 @@ describe('ConvertToClientDialog', () => {
 
   it("moves a trust's ABN out of the company ABN, and offers the trustee type", async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -382,7 +430,6 @@ describe('ConvertToClientDialog', () => {
 
   it('links to the ACN and ABN registers in a new tab, opening a typed ABN directly', async () => {
     const user = userEvent.setup()
-    vi.stubGlobal('fetch', vi.fn())
     renderList()
 
     const dialog = await openConversion(user)
@@ -415,8 +462,8 @@ describe('ConvertToClientDialog', () => {
     const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    await waitFor(() => expect(creates(fetchMock)).toHaveLength(1))
+    const [, init] = creates(fetchMock)[0]
     const sent = JSON.parse(init.body as string)
     expect(sent.companyDetails).toMatchObject({
       entityType: 'company',
@@ -440,7 +487,7 @@ describe('ConvertToClientDialog', () => {
 
   it('creates the file, moves the lead to client and offers a link', SLOW, async () => {
     const user = userEvent.setup()
-    mockFetch(201, { id: 'client-1' })
+    mockFetch(201, { id: 'client-1', leadLinked: true })
     renderList()
 
     const dialog = await openAndFill(user)
@@ -457,52 +504,17 @@ describe('ConvertToClientDialog', () => {
     )
   })
 
-  it('offers to link to the existing file on a 409 instead of showing a raw error', SLOW, async () => {
+  it('says so when the enquiry already has a client file, creating nothing more', SLOW, async () => {
     const user = userEvent.setup()
-    mockFetch(409, { error: 'A client with this email already exists', clientId: 'client-9' })
+    const fetchMock = mockFetch(409, { error: 'This enquiry already has a client file', clientId: 'client-9' })
     renderList()
 
     const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
 
-    await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: 'Link to existing file' })).toBeTruthy(),
-    )
-    // The route's own wording is never put in front of the user.
-    expect(within(dialog).queryByText(/A client with this email already exists/)).toBeNull()
+    expect(await within(dialog).findByText('This enquiry already has a client file')).toBeTruthy()
+    expect(creates(fetchMock)).toHaveLength(1)
     expect(stageSelect().value).toBe('prospect')
-  })
-
-  it('points to the Archive, and offers no link, when the email belongs to an archived file', SLOW, async () => {
-    const user = userEvent.setup()
-    mockFetch(409, {
-      error: 'An archived client file has this email',
-      clientId: 'client-9',
-      archived: true,
-    })
-    renderList()
-
-    const dialog = await openAndFill(user)
-    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
-
-    const open = await within(dialog).findByRole('link', { name: /Open the archived file/ })
-    expect(open.getAttribute('href')).toBe('/sbr/archive/client-9')
-    expect(within(dialog).queryByRole('button', { name: 'Link to existing file' })).toBeNull()
-    expect(stageSelect().value).toBe('prospect')
-  })
-
-  it('links the lead to the existing file without creating a second one', SLOW, async () => {
-    const user = userEvent.setup()
-    mockFetch(409, { error: 'exists', clientId: 'client-9' })
-    renderList()
-
-    const dialog = await openAndFill(user)
-    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
-    await user.click(await within(dialog).findByRole('button', { name: 'Link to existing file' }))
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(stageSelect().value).toBe('client')
-    expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 
   it('reports a failure and allows a retry when nothing was created', SLOW, async () => {
@@ -522,14 +534,9 @@ describe('ConvertToClientDialog', () => {
 
   it('says so, and offers no retry, when the file was created but the lead was not updated', SLOW, async () => {
     const user = userEvent.setup()
-    mockFetch(201, { id: 'client-1' })
-    // The Stage 4 shape of this failure: the client file is created, then the
-    // write that records it against the lead fails.
-    renderList({
-      conversion: async () => {
-        throw new Error('lead update failed')
-      },
-    })
+    // The file is created, but the route does not say the lead was updated.
+    const fetchMock = mockFetch(201, { id: 'client-1' })
+    renderList()
 
     const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
@@ -544,7 +551,7 @@ describe('ConvertToClientDialog', () => {
     expect(within(dialog).queryByRole('button', { name: 'Try again' })).toBeNull()
     expect(within(dialog).queryByRole('button', { name: 'Convert' })).toBeNull()
     expect(within(dialog).getByRole('link', { name: /Open the client file/ })).toBeTruthy()
-    expect(global.fetch).toHaveBeenCalledTimes(1)
+    expect(creates(fetchMock)).toHaveLength(1)
 
     // The lead is left visibly unconverted rather than quietly marked done.
     expect(stageSelect().value).toBe('prospect')
@@ -552,13 +559,11 @@ describe('ConvertToClientDialog', () => {
 })
 
 /**
- * The route now links the lead in the same request that creates the file. A
- * second request from the browser used to do it, and a page reload between the
- * two left a client file whose lead still said "lead" and still offered to
- * convert.
+ * The route links the enquiry and its lead in the same request that creates
+ * the file, so nothing is sent after it for a reload to get between.
  */
-describe('ConvertToClientDialog: the lead is linked by the create request', () => {
-  it('sends the lead id with the create request, and nothing after it', SLOW, async () => {
+describe('ConvertToClientDialog: an enquiry becomes the file (0052)', () => {
+  it('sends the enquiry id with the create request, and nothing after it', SLOW, async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch(201, {
       id: 'client-1',
@@ -572,32 +577,103 @@ describe('ConvertToClientDialog: the lead is linked by the create request', () =
         createdAt: new Date().toISOString(),
       },
     })
-    const conversion = vi.fn(async () => {})
-    renderList({ conversion })
+    renderList()
 
     const dialog = await openAndFill(user)
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('/api/admin/clients')
-    expect(JSON.parse(init.body as string).leadId).toBe('ld_1')
-    // No second write for a reload to get between.
-    expect(conversion).not.toHaveBeenCalled()
+    const sent = creates(fetchMock)
+    expect(sent).toHaveLength(1)
+    expect(JSON.parse(sent[0][1].body as string)).toMatchObject({ enquiryId: 'sub_1' })
+    expect(JSON.parse(sent[0][1].body as string)).not.toHaveProperty('leadId')
+    // Nothing after the create.
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/admin/clients')
     expect(stageSelect().value).toBe('client')
   })
 
-  it('still marks the lead itself when an older route did not', SLOW, async () => {
+  it('asks which enquiry first, starting on the newest without a file, then fills in what it said', async () => {
     const user = userEvent.setup()
-    mockFetch(201, { id: 'client-1' })
-    const conversion = vi.fn(async () => {})
-    renderList({ conversion })
+    const fetchMock = mockFetch(201, { id: 'client-2', leadLinked: true }, [
+      enquiry({ id: 'sub_2', receivedAt: '2026-10-05T01:00:00.000Z', name: 'Dean W', phone: '0400000002', source: 'facebook' }),
+      enquiry({ id: 'sub_1', convertedClientId: 'client-1' }),
+    ])
+    renderList()
 
-    const dialog = await openAndFill(user)
+    let dialog = await pickEnquiry(user)
+    expect((within(dialog).getAllByRole('radio')[0] as HTMLInputElement).checked).toBe(true)
+    expect((within(dialog).getAllByRole('radio')[1] as HTMLInputElement).disabled).toBe(true)
+    expect(within(dialog).getByText('Already has a client file')).toBeTruthy()
+    expect(within(dialog).queryByLabelText('Lead name')).toBeNull()
+    expect(creates(fetchMock)).toHaveLength(0)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    dialog = await screen.findByRole('dialog')
+    await within(dialog).findByLabelText('Lead name')
+    expect((within(dialog).getByLabelText('Lead name') as HTMLInputElement).value).toBe('Dean W')
+    expect(within(dialog).getByText('This lead already has 1 client file.', { exact: false })).toBeTruthy()
+
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(creates(fetchMock)).toHaveLength(1))
+    expect(JSON.parse(creates(fetchMock)[0][1].body as string)).toMatchObject({ enquiryId: 'sub_2', name: 'Dean W' })
+  })
 
-    expect(conversion).toHaveBeenCalledTimes(1)
-    expect(stageSelect().value).toBe('client')
+  it('lets staff pick between two enquiries without files, never one that has a file', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, { id: 'client-3', leadLinked: true }, [
+      enquiry({ id: 'sub_3', receivedAt: '2026-10-05T01:00:00.000Z', name: 'Newest Name' }),
+      enquiry({ id: 'sub_2', receivedAt: '2026-09-05T01:00:00.000Z', name: 'Older Name' }),
+      enquiry({ id: 'sub_1', convertedClientId: 'client-1' }),
+    ])
+    renderList()
+
+    let dialog = await pickEnquiry(user)
+    const radios = within(dialog).getAllByRole('radio') as HTMLInputElement[]
+    expect(radios.map((r) => r.value)).toEqual(['sub_3', 'sub_2', 'sub_1'])
+    expect(radios[0].checked).toBe(true)
+    expect(radios[2].disabled).toBe(true)
+
+    await user.click(radios[1])
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    dialog = await screen.findByRole('dialog')
+    expect(((await within(dialog).findByLabelText('Lead name')) as HTMLInputElement).value).toBe('Older Name')
+
+    // Change goes back to the pick step, keeping what was picked.
+    await user.click(within(dialog).getByRole('button', { name: 'Change' }))
+    dialog = await screen.findByRole('dialog')
+    expect((within(dialog).getByRole('radio', { checked: true }) as HTMLInputElement).value).toBe('sub_2')
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    dialog = await screen.findByRole('dialog')
+    await within(dialog).findByLabelText('Lead name')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
+    await waitFor(() => expect(creates(fetchMock)).toHaveLength(1))
+    expect(JSON.parse(creates(fetchMock)[0][1].body as string)).toMatchObject({ enquiryId: 'sub_2' })
+  })
+
+  it('goes straight to the form when the lead has one enquiry', async () => {
+    const user = userEvent.setup()
+    mockFetch(201, { id: 'client-1', leadLinked: true })
+    renderList()
+
+    const dialog = await openConversion(user)
+    expect(within(dialog).queryByRole('radio', { name: /enquiry/i })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Continue' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Change' })).toBeNull()
+  })
+
+  it('offers nothing to convert when every enquiry already has its file', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(201, { id: 'client-9', leadLinked: true }, [
+      enquiry({ id: 'sub_1', convertedClientId: 'client-1' }),
+    ])
+    renderList()
+
+    await user.selectOptions(stageSelect(), 'client')
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/Every enquiry from this lead already has a client file/)).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'Convert' })).toBeNull()
+    expect(within(dialog).queryByLabelText('Lead name')).toBeNull()
+    expect(creates(fetchMock)).toHaveLength(0)
   })
 })

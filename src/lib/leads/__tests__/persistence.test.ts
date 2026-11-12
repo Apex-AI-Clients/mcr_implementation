@@ -145,20 +145,6 @@ describe('leadsPersistence', () => {
     expect((body.activity as LeadActivity).id).toBe(ACTIVITY.id)
   })
 
-  it('sends a conversion as stage plus client id plus activity', async () => {
-    await leadsPersistence.conversion!({
-      leadId: LEAD.id,
-      clientId: '33333333-3333-4333-8333-333333333333',
-      activity: ACTIVITY,
-    })
-    const { body } = lastCall()
-    expect(body.patch).toEqual({
-      stage: 'client',
-      convertedClientId: '33333333-3333-4333-8333-333333333333',
-    })
-    expect(body.activity).toBeTruthy()
-  })
-
   it('posts an activity to the lead it belongs to', async () => {
     await leadsPersistence.logActivity!({ activity: { ...ACTIVITY, type: 'call' } })
     const { url, method } = lastCall()

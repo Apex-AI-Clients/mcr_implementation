@@ -24,7 +24,9 @@ export const dynamic = 'force-dynamic'
  *
  * What is archived, not deleted:
  *
- *  - A client file the lead was converted into. It leaves the SBR client list
+ *  - Every client file the lead was converted into: its own link, and the
+ *    file of each of its enquiries (0052), read before the delete because
+ *    lead_submissions goes with the lead. Each leaves the SBR client list
  *    for the Archive (reason 'lead_deleted'), where staff can make it a client
  *    again or delete it permanently. Archived after the leads are deleted, and
  *    only for the leads actually deleted, so a failed delete archives nothing.
@@ -58,6 +60,14 @@ export async function POST(req: NextRequest) {
     const ids = [...new Set(parsed.data.ids)]
     const supabase = getSupabaseServerClient()
 
+    // Read first: the enquiries, and their links, are deleted with the lead.
+    const { data: enquiryFiles, error: enquiryError } = await supabase
+      .from('lead_submissions')
+      .select('lead_id, converted_client_id')
+      .in('lead_id', ids)
+      .not('converted_client_id', 'is', null)
+    if (enquiryError) throw enquiryError
+
     const { data, error } = await supabase
       .from('leads')
       .delete()
@@ -69,9 +79,16 @@ export async function POST(req: NextRequest) {
 
     // Their client files go to the Archive. Ones already archived keep the
     // reason and date they were archived with.
+    // Only for the leads actually deleted.
+    const deletedIds = new Set((data ?? []).map((lead) => lead.id))
     const clientIds = [
-      ...new Set((data ?? []).map((lead) => lead.converted_client_id).filter(Boolean)),
-    ] as string[]
+      ...new Set([
+        ...(data ?? []).map((lead) => lead.converted_client_id),
+        ...(enquiryFiles ?? [])
+          .filter((row) => deletedIds.has(row.lead_id))
+          .map((row) => row.converted_client_id),
+      ]),
+    ].filter(Boolean) as string[]
     let archivedClients = 0
     if (clientIds.length > 0) {
       const { data: archived, error: archiveError } = await supabase
