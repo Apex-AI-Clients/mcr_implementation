@@ -6,8 +6,9 @@ import { LeadsStoreProvider, type LeadsPersistence } from '../LeadsStore'
 import { ToastProvider } from '@/components/ui/Toast'
 
 /**
- * Add lead with an email that already has a lead: staff are warned first, and
- * only "Add anyway" sends it. Synthetic data only.
+ * Add lead with an email that already has a lead: added straight away, no
+ * warning and no lookup first. The server makes it a new enquiry on that
+ * lead. Synthetic data only.
  */
 
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }
@@ -40,65 +41,22 @@ async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, dialog: H
   await user.click(within(dialog).getByRole('button', { name: 'Add lead' }))
 }
 
-const EXISTING = { id: '00000000-0000-4000-8000-000000000001', name: 'Earlier Person', stage: 'prospect' as const }
-
 describe('AddLeadDialog — an email that already has a lead', () => {
-  it('adds straight away when the email is new', async () => {
+  it('adds straight away, without looking the email up or warning', async () => {
     const user = userEvent.setup()
     const createLead = vi.fn(async () => {})
-    const findLeadByEmail = vi.fn(async () => null)
+    const findLeadByEmail = vi.fn(async () => ({
+      id: '00000000-0000-4000-8000-000000000001',
+      name: 'Earlier Person',
+      stage: 'prospect' as const,
+    }))
     const dialog = renderDialog({ createLead, findLeadByEmail })
 
     await fillAndSubmit(user, dialog)
 
     await waitFor(() => expect(createLead).toHaveBeenCalledTimes(1))
-    expect(findLeadByEmail).toHaveBeenCalledWith('test.person@example.test')
+    expect(findLeadByEmail).not.toHaveBeenCalled()
     expect(screen.queryByText('A lead with this email already exists.')).toBeNull()
-  })
-
-  it('warns and sends nothing until Add anyway', async () => {
-    const user = userEvent.setup()
-    const createLead = vi.fn(async () => {})
-    const dialog = renderDialog({ createLead, findLeadByEmail: async () => EXISTING })
-
-    await fillAndSubmit(user, dialog)
-
-    expect(await within(dialog).findByText('A lead with this email already exists.')).toBeTruthy()
-    expect(within(dialog).getByText(/Earlier Person \(Prospect\)/)).toBeTruthy()
-    expect(within(dialog).getByRole('link', { name: 'Open their lead' }).getAttribute('href')).toBe(
-      `/leads/${EXISTING.id}`,
-    )
-    expect(createLead).not.toHaveBeenCalled()
-
-    await user.click(within(dialog).getByRole('button', { name: 'Add anyway' }))
-    await waitFor(() => expect(createLead).toHaveBeenCalledTimes(1))
-  })
-
-  it('Cancel on the warning goes back to the form with nothing sent', async () => {
-    const user = userEvent.setup()
-    const createLead = vi.fn(async () => {})
-    const dialog = renderDialog({ createLead, findLeadByEmail: async () => EXISTING })
-
-    await fillAndSubmit(user, dialog)
-    await within(dialog).findByText('A lead with this email already exists.')
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-
-    expect(within(dialog).queryByText('A lead with this email already exists.')).toBeNull()
-    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Test Person')
-    expect(createLead).not.toHaveBeenCalled()
-  })
-
-  it('does not add unchecked when the check fails', async () => {
-    const user = userEvent.setup()
-    const createLead = vi.fn(async () => {})
-    const findLeadByEmail = vi.fn(async () => {
-      throw new Error('offline')
-    })
-    const dialog = renderDialog({ createLead, findLeadByEmail })
-
-    await fillAndSubmit(user, dialog)
-
-    expect(await within(dialog).findByText(/Could not check whether this email/)).toBeTruthy()
-    expect(createLead).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Add anyway' })).toBeNull()
   })
 })
