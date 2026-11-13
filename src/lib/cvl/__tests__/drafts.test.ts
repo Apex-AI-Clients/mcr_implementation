@@ -26,17 +26,20 @@ describe('entryState', () => {
     const yesNo = partB.fields.filter((f) => f.type === 'yesno').map((f) => s.fields[f.key])
     expect(yesNo).toHaveLength(32)
     expect(yesNo.every((v) => v === 'no')).toBe(true)
-    expect(s.signedBy).toBe('Jordan Sample')
+    // The tables' "signed by" is left for the director to write by hand.
+    expect(s.signedBy).toBeNull()
     expect(s.editedKeys).toEqual([])
   })
 
-  it('leaves Part A’s "signed by" blank, even from a draft saved when it was pre-filled', () => {
-    expect(entryState(partA, prefillForm('507a', 'company', context()), null).signedBy).toBeNull()
-    const old = { fields: {}, tables: {}, signedBy: 'Jordan Sample', editedKeys: [] }
-    expect(entryState(partA, prefillForm('507a', 'company', context()), old).signedBy).toBeNull()
-    // Typed by staff: kept.
+  it('never fills the tables’ "signed by" on Part A or Part B, not even from a name a draft kept from before', () => {
+    expect(prefillForm('507b', 'director:1', context()).signedBy).toBeNull()
+    expect(prefillForm('507a', 'company', context()).signedBy).toBeNull()
+    const preFilled = { fields: {}, tables: {}, signedBy: 'Jordan Sample', editedKeys: [] }
     const typed = { fields: {}, tables: {}, signedBy: 'Typed Name', editedKeys: ['signedBy'] }
-    expect(entryState(partA, prefillForm('507a', 'company', context()), typed).signedBy).toBe('Typed Name')
+    for (const draft of [null, preFilled, typed]) {
+      expect(entryState(partB, prefillForm('507b', 'director:1', context()), draft).signedBy).toBeNull()
+      expect(entryState(partA, prefillForm('507a', 'company', context()), draft).signedBy).toBeNull()
+    }
   })
 
   it('takes the draft’s answer over the pre-filled one where it was typed in, blank included', () => {
@@ -45,8 +48,8 @@ describe('entryState', () => {
     expect(s.fields.b1_name).toBe('Jordan A. Sample')
     expect(s.fields.b1_phone).toBeNull()
     expect(s.fields.b2).toBe('yes')
-    // The name on the tables was never typed: it follows the pre-fill.
-    expect(s.signedBy).toBe('Jordan Sample')
+    // The name on the tables was never typed: it follows the pre-fill, which is blank.
+    expect(s.signedBy).toBeNull()
     expect(s.editedKeys).toEqual(['b1_name', 'b1_phone', 'b2'])
   })
 
@@ -83,7 +86,8 @@ describe('cleanAnswers', () => {
     expect(cleaned).toEqual({
       fields: { b1_name: 'Jordan Sample' },
       tables: { B28: [{ name: 'Adviser', amount: 100 }] },
-      signedBy: 'Jordan Sample',
+      // Signed by hand on the tables: never kept.
+      signedBy: null,
     })
   })
 
@@ -93,7 +97,7 @@ describe('cleanAnswers', () => {
   })
 
   it('keeps changed keys only for the form’s own answers', () => {
-    expect(cleanEditedKeys('507a', '20220801', ['a9_name', 'a9_date', 'table:A7', 'signedBy', 'other', 7])).toEqual(['a9_name', 'table:A7', 'signedBy'])
+    expect(cleanEditedKeys('507a', '20220801', ['a9_name', 'a9_date', 'table:A7', 'signedBy', 'other', 7])).toEqual(['a9_name', 'table:A7'])
   })
 
   it('reads back what it saved', () => {

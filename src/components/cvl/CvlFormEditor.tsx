@@ -111,10 +111,6 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     setState((s) => markEdited(`table:${id}`, true, { ...s, tables: { ...s.tables, [id]: rows } }))
   }
 
-  function setSignedBy(value: string) {
-    setState((s) => markEdited('signedBy', !same(prefill.signedBy?.value ?? null, value || null), { ...s, signedBy: value || null }))
-  }
-
   async function save() {
     setSaving(true)
     setError(null)
@@ -391,23 +387,6 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                     />
                   ))}
               </div>
-              {s.kind === 'table' && s === map.sections.find((x) => x.kind === 'table') && (
-                <div className="mb-3">
-                  <label htmlFor="signed-by" className="text-xs font-medium text-muted">
-                    Name on the appendix tables (&ldquo;signed by&rdquo;, at the top of every table page)
-                  </label>
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <input
-                      id="signed-by"
-                      value={state.signedBy ?? ''}
-                      onChange={(e) => setSignedBy(e.target.value)}
-                      className="h-9 w-full max-w-sm rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground focus:border-accent focus:outline-none"
-                    />
-                    {prefill.signedBy && !state.editedKeys.includes('signedBy') && <SourceButton source={prefill.signedBy.source} label="Name on the tables" />}
-                  </div>
-                  <p className="mt-1 text-xs text-foreground/40">The &ldquo;and dated&rdquo; beside it is dated by hand on the day.</p>
-                </div>
-              )}
               {s.tableRefs?.map((t) => (
                 <p key={t.id} className="mt-3 text-xs text-foreground/60">
                   The rows go in{' '}

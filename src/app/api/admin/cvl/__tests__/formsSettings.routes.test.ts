@@ -56,7 +56,8 @@ describe('PUT /api/admin/cvl/[caseId]/forms/[form]', () => {
       form_code: '507b',
       form_version: '20220801',
       subject: 'director:2',
-      answers: { fields: { b1_name: 'Casey Example' }, tables: {}, signedBy: 'Casey Example' },
+      // The tables' "signed by" is signed by hand: not kept.
+      answers: { fields: { b1_name: 'Casey Example' }, tables: {}, signedBy: null },
       edited_keys: ['b1_name'],
       updated_by: 'Casey',
     })

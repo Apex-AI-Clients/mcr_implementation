@@ -49,13 +49,12 @@ export function entryState(map: FormMap, prefill: Prefill, draft: (DraftAnswers 
     const pre = prefill.tables[t.id]
     tables[t.id] = saved && (edited.has(`table:${t.id}`) || !pre?.length) ? saved : (pre ?? []).map((r) => r.row)
   }
-  const preSigned = (prefill.signedBy?.value as string | undefined) ?? null
   return {
     fields,
     tables,
-    // Only a name staff typed is kept: one a draft saved from an earlier
-    // pre-fill (Part A's tables, before they were left for the client) is not.
-    signedBy: draft && edited.has('signedBy') ? draft.signedBy : preSigned,
+    // The appendix tables' "signed by" is signed by hand: never filled in, and
+    // a name a draft kept from before is not brought back.
+    signedBy: null,
     editedKeys: draft?.editedKeys ?? [],
   }
 }
@@ -90,27 +89,27 @@ export function cleanAnswers(code: FormCode, version: string, input: unknown): D
       .filter((r) => Object.values(r).some((v) => !isBlank(v) && v !== false))
     if (rows.length) tables[t.id] = rows
   }
-  // The appendix tables' "...and dated" (signedDate) is not in the schema: never kept.
-  return { fields, tables, signedBy: parsed.signedBy?.trim() || null }
+  // The appendix tables' "signed by" and "...and dated" are by hand: never kept.
+  return { fields, tables, signedBy: null }
 }
 
 /** Staff's changed keys, kept only for the form's own fields and tables. */
 export function cleanEditedKeys(code: FormCode, version: string, keys: unknown): string[] {
   if (!Array.isArray(keys)) return []
   const { map } = formVersion(code, version)
-  const known = new Set([...map.fields.map((f) => f.key), ...map.tables.map((t) => `table:${t.id}`), 'signedBy'])
+  const known = new Set([...map.fields.map((f) => f.key), ...map.tables.map((t) => `table:${t.id}`)])
   const handwritten = new Set(handwrittenKeys(code, version))
   return [...new Set(keys.filter((k): k is string => typeof k === 'string' && known.has(k) && !handwritten.has(k)))].slice(0, 500)
 }
 
-/** A saved draft as the PDF engine takes it (Stage 4). */
+/** A saved draft as the PDF engine takes it (Stage 4). No "signed by": that line is signed by hand. */
 export function toFormData(answers: DraftAnswers): FormData {
-  return { fields: answers.fields, tables: answers.tables, ...(answers.signedBy ? { signedBy: answers.signedBy } : {}) }
+  return { fields: answers.fields, tables: answers.tables }
 }
 
 /** A stored draft read safely; anything unreadable is no draft. */
 export function readDraft(value: unknown): DraftAnswers | null {
   const parsed = Body.safeParse(value)
   if (!parsed.success) return null
-  return { fields: parsed.data.fields, tables: (parsed.data.tables ?? {}) as Record<string, TableRow[]>, signedBy: parsed.data.signedBy ?? null }
+  return { fields: parsed.data.fields, tables: (parsed.data.tables ?? {}) as Record<string, TableRow[]>, signedBy: null }
 }

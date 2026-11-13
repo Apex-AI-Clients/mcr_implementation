@@ -360,7 +360,8 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
     put(out, 'b1_name', d.name, source)
     put(out, 'b1_role', 'Director', source)
     put(out, 'b31_name', d.name, source)
-    out.signedBy = { value: d.name, source }
+    // The appendix tables' "signed by" name (B2, B3, B21, B28) is left blank:
+    // the director signs and names themselves there by hand.
     if (!d.appointedOn) out.notes.b1_role = ctx.asicExtract ? 'The kept ASIC extract has no appointment date for this director.' : 'Upload the ASIC extract again to fill the appointment date.'
   }
   putRegistration(out, ctx, 'b10_date', true)
