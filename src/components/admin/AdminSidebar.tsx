@@ -18,8 +18,8 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
   // The intake wizard is full-screen — hide the sidebar so it spans the page.
   if (pathname.endsWith('/intake')) return null
 
-  // The workspace chooser at "/" owns the full viewport, and anything outside a
-  // workspace has no nav to show. Same mechanism, one check.
+  // Home ("/") uses the top bar, and anything outside a workspace has no nav
+  // to show. Same mechanism, one check.
   const workspace = workspaceForPath(pathname)
   if (!workspace) return null
 
@@ -33,9 +33,14 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
-        <div className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center">
+        <Link
+          href="/"
+          aria-label="Home"
+          title="Home"
+          className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        >
           <span className="text-white text-sm font-bold">M</span>
-        </div>
+        </Link>
         <div>
           <p className="text-sm font-semibold text-foreground leading-none">MCR Partners</p>
           <WorkspaceSwitcher current={workspace} />

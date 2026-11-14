@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { cvlEnabled, isCvlPath } from '../flag'
-import { homeFor } from '@/lib/lastWorkspace'
 import { ClientTable } from '@/components/admin/ClientTable'
 import type { ClientSummary } from '@/types/app'
 
@@ -29,12 +28,6 @@ describe('the CVL switch', () => {
   it('knows the CVL pages and API, and nothing else', () => {
     for (const p of ['/cvl', '/cvl/abc/forms/509', '/cvl/settings', '/api/admin/cvl/convert', '/api/admin/cvl/case-1/preview']) expect(isCvlPath(p), p).toBe(true)
     for (const p of ['/cvlx', '/clients/abc', '/sbr/archive', '/api/admin/clients', '/api/admin/clients/abc/asic-extract']) expect(isCvlPath(p), p).toBe(false)
-  })
-
-  it('never opens the app on CVL while it is off', () => {
-    off()
-    expect(homeFor('cvl')).toBe('/leads')
-    expect(homeFor('sbr')).toBe('/sbr')
   })
 
   it('shows no Workflow column in the Archive while it is off', () => {

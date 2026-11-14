@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from '@/lib/supabase/server'
+import { selectAll } from '@/lib/supabase/selectAll'
 import { REQUIRED_CATEGORIES, displayCategory, type DocCategory } from '@/lib/constants'
 
 /**
@@ -53,7 +54,10 @@ export async function getCompletenessSummary(): Promise<CompletenessSummary> {
       // SBR files only: CVL files are not part of the SBR portfolio.
       .eq('workflow', 'sbr')
       .order('created_at', { ascending: false }),
-    supabase.from('documents').select('client_id, doc_category, status'),
+    // Every document, in pages: one plain select stops at the API's row cap.
+    selectAll((from, to) =>
+      supabase.from('documents').select('id, client_id, doc_category, status').order('id').range(from, to),
+    ).then((data) => ({ data })),
   ])
 
   // Count unique (non-rejected) categories per client.

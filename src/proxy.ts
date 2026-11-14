@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { LAST_WORKSPACE_COOKIE, lastWorkspaceForPath } from '@/lib/lastWorkspace'
 import { cvlEnabled, isCvlPath } from '@/lib/cvl/flag'
 
 /**
@@ -47,12 +46,6 @@ export async function proxy(request: NextRequest) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', request.nextUrl.pathname)
     return NextResponse.redirect(loginUrl)
-  }
-
-  // Remember the workspace, so opening the app goes back to it (lastWorkspace.ts).
-  const workspace = lastWorkspaceForPath(request.nextUrl.pathname)
-  if (workspace && request.cookies.get(LAST_WORKSPACE_COOKIE)?.value !== workspace) {
-    response.cookies.set(LAST_WORKSPACE_COOKIE, workspace, { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
   }
 
   return response

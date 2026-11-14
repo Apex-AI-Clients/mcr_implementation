@@ -7,7 +7,8 @@ import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { WorkspaceSwitcher } from '@/components/admin/WorkspaceSwitcher'
 // import { useFollowUpCount } from '@/components/leads/LeadsStore'
-import { workspaceForPath } from '@/lib/workspaces'
+import { WORKSPACES, workspaceForPath } from '@/lib/workspaces'
+import { cvlEnabled } from '@/lib/cvl/flag'
 
 interface WorkspaceTopBarProps {
   userEmail: string
@@ -15,7 +16,7 @@ interface WorkspaceTopBarProps {
 }
 
 /**
- * Slim header for the routes that have no sidebar: the workspace chooser and
+ * Slim header for the routes that have no sidebar: Home (the dashboard) and
  * any single-page workspace. It carries the same controls the sidebar footer
  * does — theme, who you are, sign out — so dropping the sidebar doesn't drop
  * them with it.
@@ -33,7 +34,7 @@ export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-3">
-        <Link href="/" className="flex items-center gap-2.5" aria-label="Workspaces">
+        <Link href="/" className="flex items-center gap-2.5" aria-label="Home">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
             <span className="text-sm font-bold text-white">M</span>
           </div>
@@ -42,7 +43,25 @@ export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
           </span>
         </Link>
 
-        {/* Only meaningful inside a workspace — on the chooser you're already here. */}
+        {/* On Home: a link to each workspace. */}
+        {!workspace && (
+          <nav aria-label="Main" className="ml-2 flex items-center gap-1">
+            <span aria-current="page" className="rounded-lg bg-accent/10 px-3 py-1.5 text-sm font-semibold text-accent">
+              Home
+            </span>
+            {WORKSPACES.filter((w) => w.id !== 'cvl' || cvlEnabled()).map((w) => (
+              <Link
+                key={w.id}
+                href={w.href}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {w.name}
+              </Link>
+            ))}
+          </nav>
+        )}
+
+        {/* Only meaningful inside a workspace. */}
         {workspace && (
           <>
             <span aria-hidden="true" className="text-border">

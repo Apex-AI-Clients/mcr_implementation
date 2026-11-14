@@ -16,6 +16,12 @@
   --color-card: var(--mcr-card);
   --color-input-bg: var(--mcr-input-bg);
 
+  /* Chart series (home dashboard): one categorical set, readable in both themes */
+  --color-chart-1: var(--mcr-chart-1);
+  --color-chart-2: var(--mcr-chart-2);
+  --color-chart-3: var(--mcr-chart-3);
+  --color-chart-4: var(--mcr-chart-4);
+
   /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -51,6 +57,10 @@
   --mcr-border: rgba(0, 0, 0, 0.12);
   --mcr-muted: rgba(11, 14, 22, 0.72);
   --mcr-input-bg: #F0F2F5;
+  --mcr-chart-1: #2563EB;
+  --mcr-chart-2: #0EA5A4;
+  --mcr-chart-3: #8B5CF6;
+  --mcr-chart-4: #A3AFC2;
   color-scheme: light;
 }
 
@@ -69,6 +79,10 @@
   --mcr-border: rgba(255, 255, 255, 0.08);
   --mcr-muted: rgba(255, 255, 255, 0.45);
   --mcr-input-bg: #0F1322;
+  --mcr-chart-1: #4F86F7;
+  --mcr-chart-2: #2BC4C2;
+  --mcr-chart-3: #A78BFA;
+  --mcr-chart-4: #6B778C;
   color-scheme: dark;
 }
 
