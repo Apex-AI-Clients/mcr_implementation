@@ -19,7 +19,9 @@ import { cn } from '@/lib/utils'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { RANGES, RANGE_KEYS, type RangeKey } from '@/lib/dashboard/range'
 import { loadCvlDashboard, loadLeadsDashboard, loadSbrDashboard } from '@/lib/dashboard/load'
+import type { ClientAmount, SbrDashboard } from '@/lib/dashboard/portfolio'
 import { Pill, StatTile } from './Panel'
+import { ScrollLink } from './ScrollLink'
 import { formatChange, formatCount, formatMoneyShort, plural } from './format'
 
 /** The dashboards on Home: one per workspace, or all of them down one page. */
@@ -27,15 +29,16 @@ export type DashboardView = 'all' | 'leads' | 'sbr' | 'cvl'
 
 export function readView(value: string | string[] | undefined): DashboardView {
   const v = Array.isArray(value) ? value[0] : value
-  if (v === 'all') return 'all'
+  if (v === 'leads') return 'leads'
   if (v === 'sbr') return 'sbr'
   if (v === 'cvl' && cvlEnabled()) return 'cvl'
-  return 'leads'
+  // Home opens on every dashboard (Gabby, 14 Nov 2026).
+  return 'all'
 }
 
 export function viewHref(view: DashboardView, range?: RangeKey): string {
   const params = new URLSearchParams()
-  if (view !== 'leads') params.set('view', view)
+  if (view !== 'all') params.set('view', view)
   // The range only means something where the Leads dashboard is shown.
   if ((view === 'leads' || view === 'all') && range && range !== 'd30') params.set('range', range)
   const q = params.toString()
@@ -92,16 +95,16 @@ export async function HeaderSummary() {
   const parts: React.ReactNode[] = []
   if (leads.followUpsDue > 0) {
     parts.push(
-      <Link key="fu" href="/#follow-ups" className="font-semibold text-warning underline-offset-2 hover:underline">
+      <ScrollLink key="fu" target="follow-ups" href="/?view=leads#follow-ups" className="font-semibold text-warning underline-offset-2 hover:underline">
         {plural(leads.followUpsDue, 'follow-up')} due
-      </Link>,
+      </ScrollLink>,
     )
   }
   if (cvl && cvl.thisWeek > 0) {
     parts.push(
-      <Link key="cvl" href="/?view=cvl#cvl-dates" className="font-semibold text-foreground underline-offset-2 hover:underline">
+      <ScrollLink key="cvl" target="cvl-dates" href="/?view=cvl#cvl-dates" className="font-semibold text-foreground underline-offset-2 hover:underline">
         {plural(cvl.thisWeek, 'CVL date')} in the next 7 days
-      </Link>,
+      </ScrollLink>,
     )
   }
   if (parts.length === 0) return <p>Nothing is overdue today.</p>
@@ -319,6 +322,7 @@ export async function SbrKpis() {
         value={formatMoneyShort(sbr.predictions.creditorTotal)}
         aside={<span className="text-xs font-semibold text-muted">AUD</span>}
         footnote={`Total creditors on ${plural(sbr.predictions.count, 'file')} with a prediction`}
+        info={<CreditorsInfo p={sbr.predictions} />}
       />
       <StatTile
         label="Owed to the ATO"
@@ -326,6 +330,7 @@ export async function SbrKpis() {
         value={formatMoneyShort(sbr.ato.total)}
         aside={<span className="text-xs font-semibold text-muted">AUD</span>}
         footnote={`From ATO account exports on ${plural(sbr.ato.filesWithBalance, 'file')}`}
+        info={<AtoInfo ato={sbr.ato} />}
       />
     </KpiRow>
   )
@@ -368,5 +373,72 @@ export async function CvlKpis() {
         href="/cvl"
       />
     </KpiRow>
+  )
+}
+
+// ── Where the money figures come from ───────────────────────────────────────
+
+const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 })
+
+/** Each client's amount, largest first, then the total they add up to. Names open the file. */
+function ClientSum({
+  title,
+  rows,
+  total,
+  footnote,
+}: {
+  title: string
+  rows: readonly ClientAmount[]
+  total: number
+  footnote?: string | null
+}) {
+  return (
+    <span className="flex flex-col gap-2 whitespace-normal">
+      <span className="font-semibold">{title}</span>
+      {rows.length === 0 ? (
+        <span className="text-muted">No client has an amount yet.</span>
+      ) : (
+        <span className="flex flex-col">
+          {rows.map((r) => (
+            <span key={r.clientId} className="flex flex-col border-t border-border py-1.5 first:border-t-0 first:pt-0">
+              <span className="flex justify-between gap-3">
+                <Link href={`/clients/${r.clientId}`} className="truncate font-medium text-foreground hover:text-accent hover:underline">
+                  {r.name || 'Unnamed client'}
+                </Link>
+                <span className="shrink-0 tabular-nums">{money.format(r.amount)}</span>
+              </span>
+              {r.parts && <span className="text-[11px] text-muted">{r.parts}</span>}
+            </span>
+          ))}
+          <span className="mt-1 flex justify-between gap-3 border-t-2 border-border pt-1.5 font-semibold">
+            <span>Total, {plural(rows.length, 'client')}</span>
+            <span className="tabular-nums">{money.format(total)}</span>
+          </span>
+        </span>
+      )}
+      {footnote && <span className="text-[11px] text-muted">{footnote}</span>}
+    </span>
+  )
+}
+
+function CreditorsInfo({ p }: { p: SbrDashboard['predictions'] }) {
+  return (
+    <ClientSum
+      title={`Where ${money.format(p.creditorTotal)} comes from`}
+      rows={p.creditorsByClient}
+      total={p.creditorTotal}
+      footnote={p.filesWithout > 0 ? `Not included: ${plural(p.filesWithout, 'client')} with no prediction yet.` : null}
+    />
+  )
+}
+
+function AtoInfo({ ato }: { ato: SbrDashboard['ato'] }) {
+  return (
+    <ClientSum
+      title={`Where ${money.format(ato.total)} comes from`}
+      rows={ato.byClient}
+      total={ato.total}
+      footnote={ato.accountsLeftOut > 0 ? `Not included: ${plural(ato.accountsLeftOut, 'ATO account')} whose export could not be read.` : null}
+    />
   )
 }

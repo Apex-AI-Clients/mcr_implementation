@@ -166,9 +166,9 @@ const completeness: CompletenessSummary = {
 
 describe('summariseSbr', () => {
   const files = [
-    { id: 'c1', createdAt: daysAgo(10) },
-    { id: 'c2', createdAt: daysAgo(10) },
-    { id: 'c3', createdAt: daysAgo(90) },
+    { id: 'c1', name: 'One', createdAt: daysAgo(10) },
+    { id: 'c2', name: 'Two', createdAt: daysAgo(10) },
+    { id: 'c3', name: 'Three', createdAt: daysAgo(90) },
   ]
 
   it('bands predictions by rejected neighbours and leaves out files no longer active', () => {
@@ -177,9 +177,9 @@ describe('summariseSbr', () => {
       archivedFiles: 4,
       completeness,
       predictions: [
-        { clientId: 'c1', outcomePercent: 20, lowPercent: 10, highPercent: 30, creditorTotal: 1_000_000, comparableCaseIds: ['h1', 'h2'] },
-        { clientId: 'c2', outcomePercent: 30, lowPercent: 20, highPercent: 40, creditorTotal: 500_000, comparableCaseIds: ['h1', 'h3', 'h4'] },
-        { clientId: 'gone', outcomePercent: 90, lowPercent: 90, highPercent: 90, creditorTotal: 9_000_000, comparableCaseIds: [] },
+        { clientId: 'c1', outcomePercent: 20, lowPercent: 10, highPercent: 30, creditorTotal: 1_000_000, creditorAto: 400_000, comparableCaseIds: ['h1', 'h2'] },
+        { clientId: 'c2', outcomePercent: 30, lowPercent: 20, highPercent: 40, creditorTotal: 500_000, creditorAto: null, comparableCaseIds: ['h1', 'h3', 'h4'] },
+        { clientId: 'gone', outcomePercent: 90, lowPercent: 90, highPercent: 90, creditorTotal: 9_000_000, creditorAto: 1, comparableCaseIds: [] },
       ],
       historicalAccepted: new Map([
         ['h1', true],
@@ -194,9 +194,15 @@ describe('summariseSbr', () => {
     })
     expect(d.activeFiles).toBe(3)
     expect(d.newInLast30Days).toBe(2)
-    expect(d.predictions).toMatchObject({ count: 2, averageOutcome: 25, creditorTotal: 1_500_000 })
+    expect(d.predictions).toMatchObject({ count: 2, averageOutcome: 25, creditorTotal: 1_500_000, creditorAto: 400_000, creditorOthers: 1_100_000, filesWithout: 1 })
     expect(d.predictions.bands).toEqual({ likely_accepted: 1, borderline: 1, high_rejection_risk: 0 })
     expect(d.documents.furthestBehind.map((f) => f.id)).toEqual(['c3', 'c2'])
+    // Each file's total, largest first, adding up to the card's figure; the inactive file is left out.
+    expect(d.predictions.creditorsByClient.map((c) => [c.name, c.amount])).toEqual([
+      ['One', 1_000_000],
+      ['Two', 500_000],
+    ])
+    expect(d.predictions.creditorsByClient[0].parts).toBe('ATO $400,000 + others $600,000')
   })
 
   it('totals ATO balances by kind, skipping unreadable accounts', () => {
@@ -227,6 +233,12 @@ describe('summariseSbr', () => {
     expect(d.ato.total).toBe(1500.5)
     expect(d.ato.byKind.income_tax).toBe(0)
     expect(d.ato.filesWithBalance).toBe(2)
+    expect(d.ato).toMatchObject({ accountsCounted: 2, accountsLeftOut: 1 })
+    expect(d.ato.byClient.map((c) => [c.name, c.amount])).toEqual([
+      ['One', 1000],
+      ['Two', 500.5],
+    ])
+    expect(d.ato.byClient.reduce((s, c) => s + c.amount, 0)).toBe(d.ato.total)
     expect(d.lodgement).toEqual({ lateLodgements: 3, daysLate: 120, filesWithLate: 1 })
     expect(d.dpn).toMatchObject({ notices: 2, files: 1, toCheck: 1 })
   })

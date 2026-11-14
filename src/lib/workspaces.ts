@@ -1,4 +1,4 @@
-import { Archive, ChartScatter, Gavel, LayoutDashboard, Settings, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
+import { Archive, ChartScatter, Gavel, Settings, Users, UserPlus, Briefcase, type LucideIcon } from 'lucide-react'
 
 /**
  * The workspaces behind the single staff login.
@@ -57,10 +57,10 @@ export const WORKSPACES: Workspace[] = [
     name: 'SBR',
     fullName: 'Small Business Restructuring',
     description: 'Client files, documents and restructuring analysis',
-    href: '/sbr',
+    // Opens on the client list: the SBR figures are on the home dashboard (14 Nov 2026).
+    href: '/clients',
     icon: Briefcase,
     nav: [
-      { href: '/sbr', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/clients', label: 'Clients', icon: Users },
       // The historical cases the outcome prediction learns from (migration 0028).
       { href: '/sbr/prediction-data', label: 'Prediction data', icon: ChartScatter },

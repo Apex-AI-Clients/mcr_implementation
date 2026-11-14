@@ -1,12 +1,15 @@
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { Sparkline } from './charts'
+import { ScrollLink } from './ScrollLink'
 
 /** A dashboard card. */
-export function Panel({ className, children }: { className?: string; children: React.ReactNode }) {
+export function Panel({ id, className, children }: { id?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn('flex min-w-0 flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-sm', className)}>
+    <div id={id} className={cn('flex min-w-0 flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-sm', className)}>
       {children}
     </div>
   )
@@ -81,6 +84,7 @@ export function StatTile({
   sparkUnit,
   footnote,
   href,
+  info,
 }: {
   label: string
   icon: LucideIcon
@@ -94,11 +98,26 @@ export function StatTile({
   sparkUnit?: string
   footnote?: React.ReactNode
   href?: string
+  /** "How is this worked out?", behind an ⓘ beside the label. Not for a tile with `href` (a link can't hold it). */
+  info?: React.ReactNode
 }) {
   const body = (
     <>
       <div className="flex items-center justify-between gap-2 text-muted">
-        <span className="text-[13px] font-medium">{label}</span>
+        <span className="flex items-center gap-1.5 text-[13px] font-medium">
+          {label}
+          {info && (
+            <Tooltip
+              content={info}
+              interactive
+              maxHeightClassName="max-h-[26rem]"
+              className="inline-flex cursor-help rounded-full text-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">How this figure is worked out</span>
+            </Tooltip>
+          )}
+        </span>
         <Icon className="h-4 w-4" aria-hidden="true" />
       </div>
       <div className="flex flex-wrap items-baseline gap-2">
@@ -110,6 +129,15 @@ export function StatTile({
     </>
   )
   const cls = 'flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border bg-card p-[18px] shadow-sm'
+  const linkCls = cn(cls, 'transition-colors hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent')
+  // "#follow-ups": a section of this page, scrolled to on every click (ScrollLink).
+  if (href?.startsWith('#')) {
+    return (
+      <ScrollLink target={href.slice(1)} href={href} className={linkCls}>
+        {body}
+      </ScrollLink>
+    )
+  }
   return href ? (
     <Link href={href} className={cn(cls, 'transition-colors hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent')}>
       {body}

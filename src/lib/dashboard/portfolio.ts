@@ -23,6 +23,8 @@ export interface DashPrediction {
   lowPercent: number
   highPercent: number
   creditorTotal: number | null
+  /** The ATO's part of that total, as saved with the prediction; null when not saved. */
+  creditorAto: number | null
   comparableCaseIds: string[]
 }
 
@@ -50,6 +52,15 @@ export interface DashNotice {
   status: string
 }
 
+/** One client's share of a total, for the "where it comes from" lists. */
+export interface ClientAmount {
+  clientId: string
+  name: string
+  amount: number
+  /** Optional second line: "ATO $X + others $Y". */
+  parts?: string
+}
+
 export interface SbrDashboard {
   activeFiles: number
   newInLast30Days: number
@@ -71,6 +82,13 @@ export interface SbrDashboard {
     averageLow: number | null
     averageHigh: number | null
     creditorTotal: number
+    /** The ATO debt inside creditorTotal, and everyone else. */
+    creditorAto: number
+    creditorOthers: number
+    /** Active files with no prediction yet: not in creditorTotal. */
+    filesWithout: number
+    /** Each file's total, largest first: these add up to creditorTotal. */
+    creditorsByClient: ClientAmount[]
     bands: Record<SbrRiskBand, number>
   }
   ato: {
@@ -78,6 +96,11 @@ export interface SbrDashboard {
     byKind: Record<AtoAccountKind, number>
     filesWithBalance: number
     accountsToCheck: number
+    /** ATO accounts whose balance is in the total, and those left out (dates unreadable, or no balance). */
+    accountsCounted: number
+    accountsLeftOut: number
+    /** Each file's ATO balance, largest first: these add up to total. */
+    byClient: ClientAmount[]
   }
   lodgement: { lateLodgements: number; daysLate: number; filesWithLate: number }
   dpn: { notices: number; files: number; byType: Record<string, number>; toCheck: number }
@@ -89,7 +112,7 @@ function mean(values: number[]): number | null {
 }
 
 export function summariseSbr(input: {
-  files: readonly { id: string; createdAt: string }[]
+  files: readonly { id: string; name: string; createdAt: string }[]
   archivedFiles: number
   completeness: CompletenessSummary
   predictions: readonly DashPrediction[]
@@ -101,6 +124,7 @@ export function summariseSbr(input: {
   now: Date
 }): SbrDashboard {
   const { files, completeness, now } = input
+  const round = (n: number) => Math.round(n * 100) / 100
   const active = new Set(files.map((f) => f.id))
   const mine = <T extends { clientId: string }>(rows: readonly T[]) => rows.filter((r) => active.has(r.clientId))
 
@@ -120,7 +144,37 @@ export function summariseSbr(input: {
     byKind[a.kind] = (byKind[a.kind] ?? 0) + a.balance
     if (a.balance > 0) withBalance.add(a.clientId)
   }
-  const round = (n: number) => Math.round(n * 100) / 100
+
+  const nameOf = new Map(files.map((f) => [f.id, f.name]))
+  const largestFirst = (a: ClientAmount, b: ClientAmount) => b.amount - a.amount || a.name.localeCompare(b.name)
+  const money = (n: number) => `$${Math.round(n).toLocaleString('en-AU')}`
+
+  const creditorsByClient: ClientAmount[] = predictions
+    .filter((p) => p.creditorTotal !== null)
+    .map((p) => {
+      const atoPart = p.creditorAto ?? 0
+      return {
+        clientId: p.clientId,
+        name: nameOf.get(p.clientId) ?? '',
+        amount: round(p.creditorTotal!),
+        parts: `ATO ${money(atoPart)} + others ${money(p.creditorTotal! - atoPart)}`,
+      }
+    })
+    .sort(largestFirst)
+
+  const atoTotals = new Map<string, number>()
+  for (const a of ato) if (a.balance !== null) atoTotals.set(a.clientId, (atoTotals.get(a.clientId) ?? 0) + a.balance)
+  const atoByClient: ClientAmount[] = [...atoTotals.entries()]
+    .map(([clientId, amount]) => {
+      const kinds = ato.filter((a) => a.clientId === clientId && a.balance !== null)
+      return {
+        clientId,
+        name: nameOf.get(clientId) ?? '',
+        amount: round(amount),
+        parts: kinds.map((a) => `${a.label} ${money(a.balance!)}`).join(' + '),
+      }
+    })
+    .sort(largestFirst)
 
   const lodgements = mine(input.lodgements)
   const notices = mine(input.notices)
@@ -149,6 +203,10 @@ export function summariseSbr(input: {
       averageLow: mean(predictions.map((p) => p.lowPercent)),
       averageHigh: mean(predictions.map((p) => p.highPercent)),
       creditorTotal: round(predictions.reduce((s, p) => s + (p.creditorTotal ?? 0), 0)),
+      creditorAto: round(predictions.reduce((s, p) => s + (p.creditorTotal === null ? 0 : (p.creditorAto ?? 0)), 0)),
+      creditorOthers: round(predictions.reduce((s, p) => s + (p.creditorTotal === null ? 0 : p.creditorTotal - (p.creditorAto ?? 0)), 0)),
+      filesWithout: files.filter((f) => !predictions.some((p) => p.clientId === f.id)).length,
+      creditorsByClient,
       bands,
     },
     ato: {
@@ -160,6 +218,9 @@ export function summariseSbr(input: {
       },
       filesWithBalance: withBalance.size,
       accountsToCheck: ato.filter((a) => a.needsReview && !a.reviewedAt).length,
+      accountsCounted: ato.filter((a) => a.balance !== null).length,
+      accountsLeftOut: ato.filter((a) => a.balance === null).length,
+      byClient: atoByClient,
     },
     lodgement: {
       lateLodgements: lodgements.reduce((s, l) => s + l.lateLodgements, 0),

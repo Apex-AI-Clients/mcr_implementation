@@ -89,7 +89,11 @@ export async function FollowUpsPanel() {
 export async function LeadsCharts({ range }: { range: RangeKey }) {
   const d = await loadLeadsDashboard(range)
   const { phrase } = RANGES[range]
-  const sources = ALL_SOURCES.map((s) => ({ source: s, label: SOURCE_META[s].label, ...SOURCE_COLOR[s] }))
+  // Google Form is not used (Gabby, 14 Nov 2026): left off the charts unless a
+  // lead from it turns up, so the charts still add up to the total.
+  const used = (source: LeadSource) => source !== 'google_form' || (d.bySource.find((x) => x.source === source)?.count ?? 0) > 0
+  const sources = ALL_SOURCES.filter(used).map((s) => ({ source: s, label: SOURCE_META[s].label, ...SOURCE_COLOR[s] }))
+  const bySource = d.bySource.filter((s) => used(s.source))
 
   return (
     <>
@@ -114,7 +118,7 @@ export async function LeadsCharts({ range }: { range: RangeKey }) {
               spans={d.series.spans}
               unit="new leads"
               series={sources.map((s) => ({ name: s.label, values: d.series.bySource[s.source], colorClass: s.text, swatchClass: s.bg }))}
-              ariaLabel={`New leads by source, ${phrase}: ${d.bySource.map((s) => `${s.label} ${s.count}`).join(', ')}.`}
+              ariaLabel={`New leads by source, ${phrase}: ${bySource.map((s) => `${s.label} ${s.count}`).join(', ')}.`}
             />
           )}
         </Panel>
@@ -122,7 +126,7 @@ export async function LeadsCharts({ range }: { range: RangeKey }) {
         <Panel className="flex-[1_1_320px]">
           <PanelTitle title="Where leads come from" subtitle={`Share of ${formatCount(d.newLeads)} new leads ${phrase}`} />
           <DonutWithLegend
-            slices={d.bySource.map((s) => ({
+            slices={bySource.map((s) => ({
               key: s.source,
               label: s.label,
               value: s.count,
@@ -130,7 +134,7 @@ export async function LeadsCharts({ range }: { range: RangeKey }) {
               swatchClass: SOURCE_COLOR[s.source].bg,
             }))}
             caption="new leads"
-            ariaLabel={`New leads by source: ${d.bySource.map((s) => `${s.label} ${s.count}`).join(', ')}`}
+            ariaLabel={`New leads by source: ${bySource.map((s) => `${s.label} ${s.count}`).join(', ')}`}
           />
           <div className="flex flex-col gap-2.5 border-t border-border pt-4">
             <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">Top Facebook campaigns</span>

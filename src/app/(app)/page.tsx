@@ -24,9 +24,9 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Home: three dashboards — Leads, SBR and CVL — picked with the small switcher
- * top right (`?view=`), or All of them one after another. Gabby (Nov 2026):
- * one long page mixing all three took too much effort to read, so each is
- * its own block with its own title, and Leads opens first.
+ * top right (`?view=`), or All of them one after another, where Home opens.
+ * Gabby (Nov 2026): one long page mixing all three took too much effort to
+ * read, so each is its own block with its own title.
  *
  * Each dashboard opens with what needs doing (follow-ups, items to check,
  * dates coming up), then the numbers, then the charts. Every list item links
@@ -102,7 +102,7 @@ function SbrView() {
         id="sbr-dashboard"
         title="SBR dashboard"
         description="What needs checking, how complete each file’s documents are, the predicted outcomes and the tax position. All figures as of today."
-        href="/sbr"
+        href="/clients"
         cta="Open SBR"
       />
       <Suspense fallback={<TilesSkeleton count={4} />}>

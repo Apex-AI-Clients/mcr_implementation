@@ -7,6 +7,7 @@ import { leadRecordHref, SOURCE_META } from '@/lib/leads/constants'
 import { CATEGORY_META } from '@/lib/constants'
 import { atoAccountsOverview, type AtoAccountAnalysisRow } from '@/lib/analysis/atoAccount/store'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
+import { readSavedCreditors } from '@/lib/sbr/creditors'
 import { readCvlStatus } from '@/lib/cvl/cases'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { sydneyToday } from '@/lib/dpn/view'
@@ -156,7 +157,7 @@ export const loadSbrDashboard = cache(async (): Promise<SbrDashboard> => {
     selectAll((from, to) =>
       supabase
         .from('sbr_outcome_predictions')
-        .select('id, client_id, predicted_outcome_percent, predicted_low_percent, predicted_high_percent, total_creditor_amount, comparable_case_ids')
+        .select('id, client_id, predicted_outcome_percent, predicted_low_percent, predicted_high_percent, total_creditor_amount, creditors, comparable_case_ids')
         .order('id')
         .range(from, to),
     ),
@@ -189,6 +190,7 @@ export const loadSbrDashboard = cache(async (): Promise<SbrDashboard> => {
       lowPercent: Number(p.predicted_low_percent),
       highPercent: Number(p.predicted_high_percent),
       creditorTotal: p.total_creditor_amount === null ? null : Number(p.total_creditor_amount),
+      creditorAto: readSavedCreditors(p.creditors)?.atoDebt ?? null,
       comparableCaseIds: p.comparable_case_ids ?? [],
     })),
     historicalAccepted: new Map(historical.map((h) => [h.id, h.accepted])),

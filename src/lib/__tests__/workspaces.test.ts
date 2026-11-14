@@ -28,10 +28,10 @@ describe('WORKSPACES', () => {
     }
   })
 
-  it('gives the SBR workspace Dashboard, Clients, Prediction data and Archive', () => {
+  it('gives the SBR workspace Clients, Prediction data and Archive, opening on Clients', () => {
     const sbr = WORKSPACES.find((w) => w.id === 'sbr')!
+    expect(sbr.href).toBe('/clients')
     expect(sbr.nav.map((n) => [n.label, n.href])).toEqual([
-      ['Dashboard', '/sbr'],
       ['Clients', '/clients'],
       ['Prediction data', '/sbr/prediction-data'],
       ['Archive', '/sbr/archive'],
@@ -96,8 +96,8 @@ describe('activeNavHref', () => {
     expect(activeNavHref(sbr, '/sbr/archive/cl_1')).toBe('/sbr/archive')
   })
 
-  it('still lights up Dashboard and Clients on their own pages', () => {
-    expect(activeNavHref(sbr, '/sbr')).toBe('/sbr')
+  it('lights up Clients on its own pages, and nothing on the old /sbr address', () => {
+    expect(activeNavHref(sbr, '/sbr')).toBeNull()
     expect(activeNavHref(sbr, '/clients/cl_1')).toBe('/clients')
   })
 

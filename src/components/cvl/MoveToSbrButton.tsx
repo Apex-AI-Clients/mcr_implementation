@@ -27,7 +27,7 @@ export function MoveToSbrButton({ caseId, clientName }: { caseId: string; client
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to move the client to SBR')
       setConfirming(false)
-      router.push(typeof data.href === 'string' ? data.href : '/sbr')
+      router.push(typeof data.href === 'string' ? data.href : '/clients')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

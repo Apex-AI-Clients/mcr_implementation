@@ -77,8 +77,7 @@ export async function CvlSection() {
           </div>
         </Panel>
 
-        <Panel className="order-first flex-[1.6_1_520px] scroll-mt-6 gap-2 pb-3">
-          <span id="cvl-dates" />
+        <Panel id="cvl-dates" className="order-first flex-[1.6_1_520px] scroll-mt-6 gap-2 pb-3">
           <PanelTitle title="Upcoming dates" subtitle="Appointments, report and summary dates entered on CVL files, soonest first" action={{ href: '/cvl', label: 'All CVL files' }} />
           {d.upcoming.length === 0 ? (
             <EmptyNote>No upcoming dates entered on CVL files.</EmptyNote>
