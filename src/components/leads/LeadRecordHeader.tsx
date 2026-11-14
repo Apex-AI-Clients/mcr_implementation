@@ -14,15 +14,17 @@ interface LeadRecordHeaderProps {
   lead: Lead
   /** Record-level actions, right-aligned against the name. */
   actions?: React.ReactNode
+  /** The list the record was opened from (its tab, filters and page). Default: /leads. */
+  backHref?: string
 }
 
-export function LeadRecordHeader({ lead, actions }: LeadRecordHeaderProps) {
+export function LeadRecordHeader({ lead, actions, backHref = '/leads' }: LeadRecordHeaderProps) {
   const stage = stageMeta(lead.stage, useLeadStages().custom)
 
   return (
     <div className="mb-6">
       <Link
-        href="/leads"
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />

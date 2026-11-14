@@ -11,6 +11,7 @@ import { getSupabaseAuthClient, getSupabaseServerClient } from '@/lib/supabase/s
 import { POST } from '../route'
 import { PATCH } from '../[key]/route'
 import { POST as DELETE_STAGE } from '../[key]/delete/route'
+import { PUT as ORDER } from '../order/route'
 
 /**
  * Stages staff add by typing (lead_stages, migration 0042): adding, renaming
@@ -194,9 +195,25 @@ describe('PATCH /api/admin/lead-stages/[key]', () => {
     expect(updates).toEqual([{ key: 'custom_aaaa1111', patch: { label: 'Waiting on accountant' } }])
   })
 
-  it('never changes a built-in stage', async () => {
-    mockDb({ stages: [...BUILT_IN, CUSTOM] })
-    expect((await patch('unresponsive', { label: 'Ghosted' })).status).toBe(400)
+  it('renames a built-in stage too, keeping its old name for earlier activity entries (0055)', async () => {
+    const { updates } = mockDb({ stages: [...BUILT_IN.map((r) => ({ ...r, former_labels: [] as string[] })), CUSTOM] })
+    const res = await patch('unresponsive', { label: 'Ghosted' })
+    expect(res.status).toBe(200)
+    expect(updates).toEqual([{ key: 'unresponsive', patch: { label: 'Ghosted', former_labels: ['Unresponsive'] } }])
+    expect((await res.json()).stage).toMatchObject({ key: 'unresponsive', label: 'Ghosted', formerLabels: ['Unresponsive'] })
+  })
+
+  it('keeps the built-in names reserved, but lets a built-in stage take its own back', async () => {
+    mockDb({ stages: [...BUILT_IN, { ...BUILT_IN[1], key: 'prospect', label: 'Hot' }, CUSTOM] })
+    // "Prospect" is the prospect stage's default name: no other stage takes it.
+    expect((await patch('unresponsive', { label: 'Prospect' })).status).toBe(409)
+    expect((await patch(CUSTOM.key, { label: 'Prospect' })).status).toBe(409)
+    expect((await patch('prospect', { label: 'Prospect' })).status).toBe(200)
+  })
+
+  it('says so for a key that is no stage at all', async () => {
+    mockDb()
+    expect((await patch('not_a_stage', { label: 'Anything' })).status).toBe(404)
   })
 
   it('says so for a stage that does not exist', async () => {
@@ -266,5 +283,30 @@ describe('POST /api/admin/lead-stages/[key]/delete', () => {
   it('says so when a lead was moved in at the last moment', async () => {
     mockDb({ stages: [...BUILT_IN, CUSTOM], deleteError: { code: '23503' } })
     expect((await remove('custom_aaaa1111')).status).toBe(409)
+  })
+})
+
+describe('PUT /api/admin/lead-stages/order (0055)', () => {
+  const order = (keys: string[]) => ORDER(request('PUT', 'http://localhost/api/admin/lead-stages/order', { keys }))
+  const CUSTOM: StageRow = { key: 'custom_aaaa1111', label: 'Waiting', position: 1, hidden_at: null, built_in: false }
+  const HIDDEN = { key: 'custom_hidden01', label: 'Old', position: 102, hidden_at: '2026-11-01T00:00:00Z', built_in: false }
+
+  it('saves every shown stage\u2019s place, built-in and staff-added, and leaves a hidden one be', async () => {
+    const { updates } = mockDb({ stages: [...BUILT_IN, CUSTOM, HIDDEN] })
+    const res = await order([CUSTOM.key, 'unresponsive', 'lead'])
+    expect(res.status).toBe(200)
+    expect(updates).toEqual([
+      { key: CUSTOM.key, patch: { position: 0 } },
+      { key: 'unresponsive', patch: { position: 1 } },
+      { key: 'lead', patch: { position: 2 } },
+    ])
+  })
+
+  it('refuses a list that leaves a stage out, names one twice, or names one that is not there', async () => {
+    const { updates } = mockDb({ stages: [...BUILT_IN, CUSTOM] })
+    expect((await order(['lead', 'unresponsive'])).status).toBe(409)
+    expect((await order(['lead', 'lead', 'unresponsive'])).status).toBe(409)
+    expect((await order(['lead', 'unresponsive', CUSTOM.key, 'custom_nope0000'])).status).toBe(409)
+    expect(updates).toEqual([])
   })
 })

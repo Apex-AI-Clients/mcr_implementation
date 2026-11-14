@@ -1,4 +1,4 @@
-import type { AuState, CustomStage, Lead, LeadActivity, LeadActivityType } from '@/types/leads'
+import type { AuState, StageSetting, Lead, LeadActivity, LeadActivityType } from '@/types/leads'
 import {
   AU_STATES,
   stageLabel,
@@ -709,7 +709,7 @@ export function leadsToCsv(
    */
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
   /** The stages staff added, for the Stage column's names. */
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
 ): string {
   const rows = leads.map((lead) =>
     [

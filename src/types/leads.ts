@@ -23,13 +23,24 @@ export type CustomStageKey = `custom_${string}`
 
 export type LeadStage = BuiltInStage | CustomStageKey
 
-/** A stage staff added, as lead_stages holds it. */
-export interface CustomStage {
-  key: CustomStageKey
+/**
+ * A stage as lead_stages holds it: one staff added, or a built-in one (0055),
+ * whose label is its default name until renamed.
+ */
+export interface StageSetting {
+  key: LeadStage
   label: string
+  /** Tab order, built-in and staff-added stages together (0055). */
   position: number
   /** Set when hidden; a hidden stage has no tab and is not offered. */
   hiddenAt: string | null
+  /** Names it had before a rename, for activity entries written under them (0055). */
+  formerLabels?: string[]
+}
+
+/** A stage staff added, as lead_stages holds it. */
+export interface CustomStage extends StageSetting {
+  key: CustomStageKey
 }
 
 export type LeadSource = 'facebook' | 'website' | 'google_form' | 'manual'

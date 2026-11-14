@@ -1,4 +1,5 @@
 import { LeadRecordClient } from '@/components/leads/LeadRecordClient'
+import { safeLeadsReturn } from '@/lib/leads/constants'
 import {
   getActivitiesForLead,
   getClientFilesForLead,
@@ -11,6 +12,8 @@ export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+  /** `from`: the list the record was opened from, for "All leads" (constants.ts safeLeadsReturn). */
+  searchParams?: Promise<{ from?: string }>
 }
 
 /**
@@ -31,8 +34,9 @@ interface Props {
  * So is every enquiry the lead has made (lead_submissions), for the Lead history
  * list: the lead row shows only the newest values.
  */
-export default async function LeadRecordPage({ params }: Props) {
+export default async function LeadRecordPage({ params, searchParams }: Props) {
   const { id } = await params
+  const backHref = safeLeadsReturn((await searchParams)?.from ?? null) ?? '/leads'
   const [lead, activities, enquiries] = await Promise.all([
     getLeadById(id),
     getActivitiesForLead(id),
@@ -57,6 +61,7 @@ export default async function LeadRecordPage({ params }: Props) {
       enquiries={enquiries}
       clientFiles={clientFiles}
       formWarnings={formWarnings}
+      backHref={backHref}
     />
   )
 }

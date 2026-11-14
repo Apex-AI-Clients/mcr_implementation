@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `"${same.label}" is already a stage` }, { status: 409 })
     }
 
-    const position = Math.max(0, ...(rows ?? []).filter((row) => !row.built_in).map((row) => row.position)) + 1
+    // After every tab: built-in tabs can be moved anywhere since 0055.
+    const position = Math.max(0, ...(rows ?? []).map((row) => row.position)) + 1
     const { data: created, error: insertError } = await supabase
       .from('lead_stages')
       .insert({

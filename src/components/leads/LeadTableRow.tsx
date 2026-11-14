@@ -11,7 +11,7 @@ import { Copy, NotebookPen, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { useToast } from '@/components/ui/Toast'
-import { contactAgain, ENTITY_TYPE_META } from '@/lib/leads/constants'
+import { contactAgain, ENTITY_TYPE_META, leadRecordHref } from '@/lib/leads/constants'
 import {
   describeLatestEnquiry,
   enquiryCountLabel,
@@ -41,6 +41,8 @@ interface LeadRowProps {
   selected: boolean
   onToggleSelect: (leadId: string) => void
   onRequestDelete: (lead: Lead) => void
+  /** The list's own address, so the record's "All leads" goes back to this tab and page. */
+  returnTo?: string
   /** The lead's notes, newest first; undefined when the table has no notes column. */
   notes?: LeadNote[]
 }
@@ -65,13 +67,15 @@ export function LeadTableRow({
   onToggleSelect,
   onRequestDelete,
   notes,
+  returnTo,
 }: LeadRowProps) {
   const router = useRouter()
   const uncertainState = describeUncertainState(lead)
+  const record = leadRecordHref(lead.id, returnTo)
 
   return (
     <tr
-      onClick={() => router.push(`/leads/${lead.id}`)}
+      onClick={() => router.push(record)}
       className={`cursor-pointer transition-colors hover:bg-surface/40 ${
         selected ? 'bg-accent/5' : 'bg-primary'
       }`}
@@ -110,7 +114,7 @@ export function LeadTableRow({
           test lead) is cut, in full on hover; real names fit. */}
       <td className="px-3 py-3.5 whitespace-nowrap">
         <Link
-          href={`/leads/${lead.id}`}
+          href={record}
           onClick={(event) => event.stopPropagation()}
           title={lead.name}
           className="block max-w-[14rem] truncate font-medium text-foreground hover:text-accent"
@@ -206,13 +210,15 @@ export function LeadCard({
   onToggleSelect,
   onRequestDelete,
   notes,
+  returnTo,
 }: LeadRowProps) {
   const router = useRouter()
   const uncertainState = describeUncertainState(lead)
+  const record = leadRecordHref(lead.id, returnTo)
 
   return (
     <div
-      onClick={() => router.push(`/leads/${lead.id}`)}
+      onClick={() => router.push(record)}
       className={`cursor-pointer space-y-3 border-b border-white/5 p-4 last:border-b-0 ${
         selected ? 'bg-accent/5' : 'bg-primary'
       }`}
@@ -229,7 +235,7 @@ export function LeadCard({
               className="h-4 w-4 shrink-0 cursor-pointer accent-accent"
             />
             <Link
-              href={`/leads/${lead.id}`}
+              href={record}
               onClick={(event) => event.stopPropagation()}
               className="truncate font-medium text-foreground hover:text-accent"
             >

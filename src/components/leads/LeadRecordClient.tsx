@@ -53,6 +53,8 @@ interface LeadRecordClientProps {
   clientFiles: ConvertedClientDetails[]
   /** Warnings about the Facebook form(s) this lead came through (lib/leads/formHealth). */
   formWarnings?: string[]
+  /** Where "All leads" goes: the list the record was opened from. Default /leads. */
+  backHref?: string
 }
 
 /**
@@ -76,6 +78,7 @@ export function LeadRecordClient({
   enquiries,
   clientFiles,
   formWarnings = [],
+  backHref = '/leads',
 }: LeadRecordClientProps) {
   const router = useRouter()
   const { getLead, activitiesFor, syncFromServer, dismissReenquiry } = useLeads()
@@ -128,6 +131,7 @@ export function LeadRecordClient({
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <LeadRecordHeader
+        backHref={backHref}
         lead={lead}
         actions={
           <div className="flex items-center gap-2">

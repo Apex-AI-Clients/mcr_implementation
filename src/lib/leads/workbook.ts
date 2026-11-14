@@ -6,7 +6,7 @@ import {
   formatLeadNotes,
   formatPhone,
 } from './format'
-import type { CustomStage, Lead, LeadActivity } from '@/types/leads'
+import type { StageSetting, Lead, LeadActivity } from '@/types/leads'
 
 /**
  * The leads export as a real spreadsheet.
@@ -49,7 +49,7 @@ interface ColumnSpec {
   width: number
   wrap?: boolean
   /** `custom`: the stages staff added, for the Stage column's names. */
-  value: (lead: Lead, activities: LeadActivity[], custom: readonly CustomStage[]) => string | number | null
+  value: (lead: Lead, activities: LeadActivity[], custom: readonly StageSetting[]) => string | number | null
   numeric?: boolean
 }
 
@@ -107,7 +107,7 @@ export const LEAD_SHEET_WIDTHS = COLUMNS.map((column) => ({ width: column.width 
 export function leadsSheetData(
   leads: Lead[],
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
 ): SheetRow[] {
   const header: SheetCell[] = COLUMNS.map((column) => ({
     value: column.header,
@@ -143,7 +143,7 @@ export function leadsSheetData(
 export async function buildLeadsWorkbook(
   leads: Lead[],
   activitiesByLead: ReadonlyMap<string, LeadActivity[]> = new Map(),
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
 ): Promise<Buffer> {
   // Imported here rather than at module scope: it is only needed when an
   // export is actually requested, and it has no business being pulled in by

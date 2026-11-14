@@ -9,7 +9,7 @@ import { debtSearchAmount, type LeadFilterState } from '@/lib/leads/filter'
 import type { LeadNote } from '@/lib/leads/notes'
 import type {
   ConvertedClientDetails,
-  CustomStage,
+  StageSetting,
   Lead,
   LeadActivity,
   LeadSource,
@@ -552,7 +552,7 @@ export async function getLeadIdForClient(clientId: string): Promise<string | nul
  */
 export async function getLeadViewCounts(
   filters: LeadFilterState,
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
   now: Date = new Date(),
 ): Promise<Record<LeadView, number>> {
   const supabase = getSupabaseServerClient()

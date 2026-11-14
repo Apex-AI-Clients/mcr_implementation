@@ -8,8 +8,21 @@ import {
   mightBeInState,
   type LeadFilterState,
 } from '../filter'
-import type { CustomStage, Lead, LeadStage } from '@/types/leads'
-import { ALL_STAGES, allViews, viewForStage, viewForTab, viewStages } from '../constants'
+import type { CustomStage, Lead, LeadStage, StageSetting } from '@/types/leads'
+import {
+  ALL_STAGES,
+  allViews,
+  BUILT_IN_VIEWS,
+  builtInRename,
+  leadRecordHref,
+  safeLeadsReturn,
+  stageLabel,
+  stageMeta,
+  viewDef,
+  viewForStage,
+  viewForTab,
+  viewStages,
+} from '../constants'
 
 const NOW = new Date('2026-09-01T02:00:00.000Z')
 const DAY_MS = 86_400_000
@@ -414,5 +427,58 @@ describe('lead tabs', () => {
     expect(viewForTab('unresponsive')).toBe('unresponsive')
     expect(viewForTab('contact-in-30-days')).toBe('contact_in_30_days')
     expect(viewForStage('contact_in_30_days')).toBe('contact_in_30_days')
+  })
+})
+
+/** Renamed and reordered stages (0055). */
+describe('stage names and tab order (0055)', () => {
+  const row = (key: string, label: string, position: number) => ({ key, label, position, hiddenAt: null }) as StageSetting
+  const DEFAULTS: StageSetting[] = [
+    row('lead', 'Lead', 0), row('prospect', 'Prospect', 1), row('client', 'Client', 2), row('unresponsive', 'Unresponsive', 3),
+    row('do_not_contact', 'Do not contact again', 4), row('contact_in_30_days', 'Contact in 30 days', 5),
+    row('non_proceeding', 'Non-proceeding – other', 6), row('converted', 'Converted', 7),
+  ]
+
+  it('keeps the plural tab names and default stage names until renamed', () => {
+    expect(viewDef('clients', DEFAULTS).label).toBe('Clients')
+    expect(stageLabel('client', DEFAULTS)).toBe('Client')
+    expect(builtInRename('client', DEFAULTS)).toBeNull()
+  })
+
+  it('uses a new name for the tab and the stage alike', () => {
+    const renamed = DEFAULTS.map((s) => (s.key === 'client' ? { ...s, label: 'Signed' } : s))
+    expect(viewDef('clients', renamed).label).toBe('Signed')
+    expect(stageLabel('client', renamed)).toBe('Signed')
+    expect(stageMeta('client', renamed).badge).toBe('success')
+  })
+
+  it('orders the tabs by position, a staff-added one anywhere among the built-in ones', () => {
+    const moved = [
+      // Converted first, then Leads, the staff-added stage, and the rest.
+      ...DEFAULTS.map((s) => (s.key === 'converted' ? { ...s, position: 0 } : s.key === 'lead' ? { ...s, position: 1 } : { ...s, position: s.position + 2 })),
+      row('custom_aaaa1111', 'Waiting on docs', 2),
+    ]
+    expect(allViews(moved).slice(0, 4)).toEqual(['converted', 'leads', 'custom_aaaa1111', 'prospects'])
+    expect(allViews(moved)).toHaveLength(9)
+  })
+
+  it('keeps the usual order with no positions read yet', () => {
+    expect(allViews([row('custom_aaaa1111', 'Waiting on docs', 1)])).toEqual([...BUILT_IN_VIEWS, 'custom_aaaa1111'])
+  })
+})
+
+describe('the record remembers its list (back to the right tab)', () => {
+  it('carries the list\u2019s address, tab and page included', () => {
+    expect(leadRecordHref('ld_1', '/leads?tab=clients&page=2')).toBe('/leads/ld_1?from=%2Fleads%3Ftab%3Dclients%26page%3D2')
+    expect(leadRecordHref('ld_1', '/leads')).toBe('/leads/ld_1')
+    expect(leadRecordHref('ld_1')).toBe('/leads/ld_1')
+  })
+
+  it('goes back only to a leads list, never another page or site', () => {
+    expect(safeLeadsReturn('/leads?tab=clients')).toBe('/leads?tab=clients')
+    expect(safeLeadsReturn('/leads')).toBe('/leads')
+    for (const bad of ['https://example.test/leads', '//example.test', '/clients', '/leads/abc', '/leadsx', null, '']) {
+      expect(safeLeadsReturn(bad)).toBeNull()
+    }
   })
 })

@@ -1,8 +1,8 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
-import { CONVERSION_ACTIVITY_BODY, FORMER_STAGE_LABELS, STAGE_META, stageLabel, visibleCustomStages } from './constants'
+import { CONVERSION_ACTIVITY_BODY, FORMER_STAGE_LABELS, isCustomStage, STAGE_META, stageLabel, visibleCustomStages } from './constants'
 import { getCustomStages } from './customStages'
 import { formatFullDate } from './format'
-import type { BuiltInStage, CustomStage, LeadStage } from '@/types/leads'
+import type { BuiltInStage, StageSetting, LeadStage } from '@/types/leads'
 
 /**
  * A client file deleted for good leaves its lead pointing at nothing:
@@ -25,7 +25,7 @@ type ServerClient = ReturnType<typeof getSupabaseServerClient>
  */
 export function conversionBody(
   previous: LeadStage | null,
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
   enquiryReceivedAt: string | null = null,
 ): string {
   const parts = [CONVERSION_ACTIVITY_BODY]
@@ -48,7 +48,7 @@ const NOT_BACK_TO: LeadStage[] = ['client', 'converted']
  */
 export function stageBeforeConversion(
   activities: { type: string; body: string; created_at: string }[],
-  custom: readonly CustomStage[] = [],
+  custom: readonly StageSetting[] = [],
 ): LeadStage {
   for (const label of labelsBeforeConversion(activities)) {
     const stage = stageLabelled(label, custom)
@@ -58,8 +58,18 @@ export function stageBeforeConversion(
   return 'lead'
 }
 
-function stageLabelled(label: string, custom: readonly CustomStage[]): LeadStage | undefined {
-  return builtInStageLabelled(label) ?? visibleCustomStages(custom).find((c) => c.label === label)?.key
+/**
+ * The stage an activity entry names. Default built-in names (reserved: no
+ * other stage can take one), then a stage's current name or one it had before
+ * a rename (0055): a renamed built-in, or a staff-added stage still shown.
+ */
+function stageLabelled(label: string, custom: readonly StageSetting[]): LeadStage | undefined {
+  const named = (s: StageSetting) => s.label === label || (s.formerLabels ?? []).includes(label)
+  return (
+    builtInStageLabelled(label) ??
+    custom.find((s) => !isCustomStage(s.key) && named(s))?.key ??
+    visibleCustomStages(custom).find(named)?.key
+  )
 }
 
 /**
@@ -86,7 +96,7 @@ function builtInStageLabelled(label: string): BuiltInStage | undefined {
   )
 }
 
-export function deletedNote(at: Date, by: string, stage: LeadStage, custom: readonly CustomStage[] = []): string {
+export function deletedNote(at: Date, by: string, stage: LeadStage, custom: readonly StageSetting[] = []): string {
   const date = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(at)
   return `Client file deleted on ${date} by ${by}. Stage set back to ${stageLabel(stage, custom)}.`
 }

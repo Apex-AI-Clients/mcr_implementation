@@ -1,7 +1,7 @@
 import { AU_STATES, DATE_RANGES, DEBT_FLOORS, viewDef, viewForTab } from './constants'
 import { EMPTY_FILTERS, type LeadFilterState } from './filter'
 import { PER_PAGE_OPTIONS, type PerPage } from './pagination'
-import type { AuState, CustomStage } from '@/types/leads'
+import type { AuState, StageSetting } from '@/types/leads'
 
 /**
  * The list's state, carried in the URL.
@@ -54,7 +54,7 @@ function oneOf<T extends string>(
 
 /** Read a list URL. Unknown or malformed values fall back to the default. */
 /** `custom`: the stages staff added (getCustomStages), so their tabs parse. */
-export function parseLeadQuery(params: RawSearchParams, custom: readonly CustomStage[] = []): LeadQuery {
+export function parseLeadQuery(params: RawSearchParams, custom: readonly StageSetting[] = []): LeadQuery {
   const debtRaw = one(params[PARAM.debtFloor])
   // Only the floors the filter actually offers — an arbitrary ?debt=1 would
   // otherwise become a query nobody can reproduce from the UI.

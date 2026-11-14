@@ -1577,6 +1577,7 @@ export type Database = {
           built_in: boolean
           created_at: string
           created_by: string | null
+          former_labels: string[]
           hidden_at: string | null
           key: string
           label: string
@@ -1587,6 +1588,7 @@ export type Database = {
           built_in?: boolean
           created_at?: string
           created_by?: string | null
+          former_labels?: string[]
           hidden_at?: string | null
           key: string
           label: string
@@ -1597,6 +1599,7 @@ export type Database = {
           built_in?: boolean
           created_at?: string
           created_by?: string | null
+          former_labels?: string[]
           hidden_at?: string | null
           key?: string
           label?: string

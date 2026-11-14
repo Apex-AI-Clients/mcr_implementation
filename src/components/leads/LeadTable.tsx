@@ -24,6 +24,8 @@ interface LeadTableProps {
    * Each lead's notes: given, the Notes column shows; absent, it does not exist.
    */
   notes?: Record<string, LeadNote[]>
+  /** The list's own address, for each record's "All leads". */
+  returnTo?: string
 }
 
 /**
@@ -94,6 +96,7 @@ export function LeadTable({
   onToggleAll,
   onRequestDelete,
   notes,
+  returnTo,
 }: LeadTableProps) {
   const showNotes = notes !== undefined
   // Just before Stage. Paired with the Notes <td> in LeadTableRow, which also
@@ -175,6 +178,7 @@ export function LeadTable({
                 selected={selectedIds.has(lead.id)}
                 onToggleSelect={onToggleLead}
                 onRequestDelete={(target) => onRequestDelete([target])}
+                returnTo={returnTo}
               />
             ))}
           </tbody>
@@ -192,6 +196,7 @@ export function LeadTable({
             selected={selectedIds.has(lead.id)}
             onToggleSelect={onToggleLead}
             onRequestDelete={(target) => onRequestDelete([target])}
+            returnTo={returnTo}
           />
         ))}
       </div>

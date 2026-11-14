@@ -16,6 +16,7 @@ import { DeleteLeadsDialog } from '@/components/leads/DeleteLeadsDialog'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { useLeadStages } from '@/components/leads/LeadStages'
 import { StageNameDialog } from '@/components/leads/StageNameDialog'
+import { EditStagesDialog } from '@/components/leads/EditStagesDialog'
 import { DeleteStageDialog } from '@/components/leads/DeleteStageDialog'
 import { StageTabStrip } from '@/components/leads/StageTabStrip'
 import { useToast } from '@/components/ui/Toast'
@@ -24,7 +25,7 @@ import { buildLeadQuery, leadsHref } from '@/lib/leads/searchParams'
 import { PER_PAGE_OPTIONS, pageRangeLabel, type PerPage } from '@/lib/leads/pagination'
 import { allViews, isCustomStage, stageLabel, viewDef, viewForStage, viewStages, type LeadView } from '@/lib/leads/constants'
 import { cn } from '@/lib/utils'
-import type { Lead, LeadStage } from '@/types/leads'
+import type { CustomStageKey, Lead, LeadStage } from '@/types/leads'
 import type { LeadNote } from '@/lib/leads/notes'
 
 const SEARCH_DEBOUNCE_MS = 250
@@ -85,7 +86,9 @@ export function LeadsPageClient({
   const { custom, addStage, renameStage, deleteStage } = useLeadStages()
   const { toast } = useToast()
   // Adding a stage from the tab bar, or renaming or deleting this tab's.
-  const [stageDialog, setStageDialog] = useState<'add' | 'rename' | 'delete' | null>(null)
+  const [stageDialog, setStageDialog] = useState<'add' | 'rename' | 'delete' | 'edit' | null>(null)
+  // The stage staff added that is being deleted: the open tab's, or one picked in Edit stages.
+  const [deleteKey, setDeleteKey] = useState<CustomStageKey | null>(null)
 
   const [term, setTerm] = useState(filters.search)
   const [addOpen, setAddOpen] = useState(false)
@@ -193,16 +196,18 @@ export function LeadsPageClient({
   }
 
   async function handleDeleteStage(moveTo: LeadStage) {
-    if (!view || !isCustomStage(view)) return
-    const name = stageLabel(view, custom)
+    const key = deleteKey
+    if (!key) return
+    const name = stageLabel(key, custom)
     // A thrown error shows in the dialog.
-    const moved = await deleteStage(view, moveTo)
+    const moved = await deleteStage(key, moveTo)
     toast(
       moved > 0
         ? `Stage "${name}" deleted. ${moved} lead${moved === 1 ? '' : 's'} moved to ${stageLabel(moveTo, custom)}.`
         : `Stage "${name}" deleted.`,
     )
-    startTransition(() => router.push(leadsHref({ ...filters, view: viewForStage(moveTo) }, 1)))
+    // Its tab is gone: from it, go where its leads went. From another tab, stay.
+    if (key === view) startTransition(() => router.push(leadsHref({ ...filters, view: viewForStage(moveTo) }, 1)))
   }
 
   const active = hasActiveFilters(filters)
@@ -267,14 +272,25 @@ export function LeadsPageClient({
           <StageTabStrip
             active={view ?? 'leads'}
             trailing={
-              <button
-                type="button"
-                onClick={() => setStageDialog('add')}
-                className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                Add stage
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setStageDialog('add')}
+                  className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  Add stage
+                </button>
+                {/* Rename any stage and reorder the tabs (0055). */}
+                <button
+                  type="button"
+                  onClick={() => setStageDialog('edit')}
+                  className="inline-flex cursor-pointer items-center gap-1 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-foreground/50 transition-colors hover:text-foreground"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                  Edit stages
+                </button>
+              </>
             }
           >
             {allViews(custom).map((tab) => {
@@ -323,7 +339,10 @@ export function LeadsPageClient({
           </button>
           <button
             type="button"
-            onClick={() => setStageDialog('delete')}
+            onClick={() => {
+              setDeleteKey(view)
+              setStageDialog('delete')
+            }}
             className="inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 hover:bg-destructive/10 hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
@@ -354,13 +373,26 @@ export function LeadsPageClient({
           }}
         />
       )}
-      {counts && view && isCustomStage(view) && (
+      <EditStagesDialog
+        open={stageDialog === 'edit'}
+        onClose={() => setStageDialog(null)}
+        onRequestDelete={(stage) => {
+          setDeleteKey(stage)
+          setStageDialog('delete')
+        }}
+        onSaved={toast}
+      />
+      {counts && deleteKey && (
         <DeleteStageDialog
           open={stageDialog === 'delete'}
-          onClose={() => setStageDialog(null)}
-          stage={view}
-          leadCount={counts[view] ?? 0}
-          filtered={active}
+          onClose={() => {
+            setStageDialog(null)
+            setDeleteKey(null)
+          }}
+          stage={deleteKey}
+          leadCount={counts[deleteKey] ?? 0}
+          // Off its tab, the count may be narrowed by filters as well: ask where its leads go either way.
+          filtered={active || deleteKey !== view}
           onDelete={handleDeleteStage}
         />
       )}
@@ -458,6 +490,8 @@ export function LeadsPageClient({
             onToggleAll={toggleAll}
             onRequestDelete={setDeleteTarget}
             notes={notes}
+            // This tab, its filters and page: where the record's "All leads" goes back to.
+            returnTo={leadsHref(filters, page)}
           />
 
           <Pagination

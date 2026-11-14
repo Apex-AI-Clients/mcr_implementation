@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { CustomStage, CustomStageKey, LeadStage } from '@/types/leads'
+import type { CustomStage, CustomStageKey, LeadStage, StageSetting } from '@/types/leads'
 
 /**
  * The stages staff added (lead_stages), for every leads screen: the tabs, the
@@ -15,14 +15,18 @@ import type { CustomStage, CustomStageKey, LeadStage } from '@/types/leads'
  */
 
 interface LeadStagesValue {
-  custom: CustomStage[]
+  /** Every stage row: staff-added ones, and the built-ins (their new name and tab position, 0055). */
+  custom: StageSetting[]
   /**
    * `refresh: false` leaves the re-read to the caller: the stage select moves
    * a lead into the new stage first, and a re-read started before that move
    * is saved would bring the lead back in its old stage.
    */
   addStage: (label: string, options?: { refresh?: boolean }) => Promise<CustomStage>
-  renameStage: (key: CustomStageKey, label: string) => Promise<CustomStage>
+  /** Any stage, built-in ones included (0055). `refresh: false` leaves the re-read to the caller. */
+  renameStage: (key: LeadStage, label: string, options?: { refresh?: boolean }) => Promise<StageSetting>
+  /** The tab order: every shown stage, in order (0055). */
+  reorderStages: (keys: LeadStage[], options?: { refresh?: boolean }) => Promise<void>
   /** Any leads in it go to `moveTo` first. Resolves with how many moved. */
   deleteStage: (key: CustomStageKey, moveTo?: LeadStage) => Promise<number>
   /** Re-read the page, for a caller that passed `refresh: false`. */
@@ -36,22 +40,23 @@ const NO_PROVIDER: LeadStagesValue = {
   custom: [],
   addStage: () => Promise.reject(new Error('No LeadStagesProvider')),
   renameStage: () => Promise.reject(new Error('No LeadStagesProvider')),
+  reorderStages: () => Promise.reject(new Error('No LeadStagesProvider')),
   deleteStage: () => Promise.reject(new Error('No LeadStagesProvider')),
   refresh: () => {},
 }
 
-async function send(url: string, method: 'POST' | 'PATCH', body: unknown): Promise<CustomStage> {
+async function send<T extends StageSetting = CustomStage>(url: string, method: 'POST' | 'PATCH', body: unknown): Promise<T> {
   const response = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  const data = (await response.json().catch(() => ({}))) as { stage?: CustomStage; error?: string }
+  const data = (await response.json().catch(() => ({}))) as { stage?: T; error?: string }
   if (!response.ok || !data.stage) throw new Error(data.error ?? 'That did not save')
   return data.stage
 }
 
-export function LeadStagesProvider({ initial, children }: { initial: CustomStage[]; children: React.ReactNode }) {
+export function LeadStagesProvider({ initial, children }: { initial: StageSetting[]; children: React.ReactNode }) {
   const router = useRouter()
   const [custom, setCustom] = useState(initial)
 
@@ -63,7 +68,7 @@ export function LeadStagesProvider({ initial, children }: { initial: CustomStage
     setCustom(initial)
   }
 
-  const put = useCallback((stage: CustomStage) => {
+  const put = useCallback((stage: StageSetting) => {
     setCustom((current) => [...current.filter((c) => c.key !== stage.key), stage])
   }, [])
 
@@ -78,13 +83,28 @@ export function LeadStagesProvider({ initial, children }: { initial: CustomStage
   )
 
   const renameStage = useCallback(
-    async (key: CustomStageKey, label: string) => {
-      const stage = await send(`/api/admin/lead-stages/${key}`, 'PATCH', { label })
+    async (key: LeadStage, label: string, { refresh = true }: { refresh?: boolean } = {}) => {
+      const stage = await send<StageSetting>(`/api/admin/lead-stages/${key}`, 'PATCH', { label })
       put(stage)
-      router.refresh()
+      if (refresh) router.refresh()
       return stage
     },
     [put, router],
+  )
+
+  const reorderStages = useCallback(
+    async (keys: LeadStage[], { refresh = true }: { refresh?: boolean } = {}) => {
+      const response = await fetch('/api/admin/lead-stages/order', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys }),
+      })
+      const data = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) throw new Error(data.error ?? 'That did not save')
+      setCustom((current) => current.map((s) => (keys.includes(s.key) ? { ...s, position: keys.indexOf(s.key) } : s)))
+      if (refresh) router.refresh()
+    },
+    [router],
   )
 
   const deleteStage = useCallback(
@@ -106,8 +126,8 @@ export function LeadStagesProvider({ initial, children }: { initial: CustomStage
   const refresh = useCallback(() => router.refresh(), [router])
 
   const value = useMemo(
-    () => ({ custom, addStage, renameStage, deleteStage, refresh }),
-    [custom, addStage, renameStage, deleteStage, refresh],
+    () => ({ custom, addStage, renameStage, reorderStages, deleteStage, refresh }),
+    [custom, addStage, renameStage, reorderStages, deleteStage, refresh],
   )
   return <LeadStagesContext.Provider value={value}>{children}</LeadStagesContext.Provider>
 }

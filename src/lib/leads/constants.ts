@@ -1,6 +1,7 @@
 import type {
   BuiltInStage,
   CustomStage,
+  StageSetting,
   CustomStageKey,
   LeadStage,
   LeadSource,
@@ -57,22 +58,34 @@ export function isCustomStage(stage: string): stage is CustomStageKey {
   return stage.startsWith('custom_')
 }
 
+/**
+ * A built-in stage's new name, when Gabby renamed it (0055): its lead_stages
+ * label differs from the default. Null when it keeps its default name.
+ */
+export function builtInRename(stage: BuiltInStage, stages: readonly StageSetting[]): string | null {
+  const label = stages.find((s) => s.key === stage)?.label?.trim()
+  return label && label !== STAGE_META[stage].label ? label : null
+}
+
 /** Any stage, built-in or one staff added: name, group and badge. */
-export function stageMeta(stage: LeadStage, custom: readonly CustomStage[] = []): StageMeta {
-  if (!isCustomStage(stage)) return STAGE_META[stage]
+export function stageMeta(stage: LeadStage, custom: readonly StageSetting[] = []): StageMeta {
+  if (!isCustomStage(stage)) {
+    const renamed = builtInRename(stage, custom)
+    return renamed ? { ...STAGE_META[stage], label: renamed } : STAGE_META[stage]
+  }
   // Closed: a stage staff invent is a place to park leads, so it never flags
   // for follow-up. Muted, so it reads as neither good nor bad news.
   return { label: custom.find((c) => c.key === stage)?.label ?? 'Custom stage', group: 'closed', badge: 'muted' }
 }
 
-export function stageLabel(stage: LeadStage, custom: readonly CustomStage[] = []): string {
+export function stageLabel(stage: LeadStage, custom: readonly StageSetting[] = []): string {
   return stageMeta(stage, custom).label
 }
 
 /** The custom stages that have a tab and are offered, in tab order. */
-export function visibleCustomStages(custom: readonly CustomStage[]): CustomStage[] {
+export function visibleCustomStages(custom: readonly StageSetting[]): CustomStage[] {
   return custom
-    .filter((stage) => !stage.hiddenAt)
+    .filter((stage): stage is CustomStage => isCustomStage(stage.key) && !stage.hiddenAt)
     .sort((a, b) => a.position - b.position || a.label.localeCompare(b.label, 'en-AU'))
 }
 
@@ -88,7 +101,7 @@ export const STAGE_GROUPS: { label: string; stages: LeadStage[] }[] = [
 ]
 
 /** STAGE_GROUPS, with the stages staff added as a group of their own. */
-export function stageGroups(custom: readonly CustomStage[]): { label: string; stages: LeadStage[] }[] {
+export function stageGroups(custom: readonly StageSetting[]): { label: string; stages: LeadStage[] }[] {
   const added = visibleCustomStages(custom).map((stage) => stage.key)
   return added.length > 0 ? [...STAGE_GROUPS, { label: 'Added by staff', stages: added }] : STAGE_GROUPS
 }
@@ -176,8 +189,12 @@ export const LEAD_VIEWS: Record<BuiltInView, ViewDef> = {
 export const BUILT_IN_VIEWS = Object.keys(LEAD_VIEWS) as BuiltInView[]
 
 /** Any tab, built-in or a custom stage's. A custom stage's tab is its key. */
-export function viewDef(view: LeadView, custom: readonly CustomStage[] = []): ViewDef {
-  if (!isCustomStage(view)) return LEAD_VIEWS[view]
+export function viewDef(view: LeadView, custom: readonly StageSetting[] = []): ViewDef {
+  if (!isCustomStage(view)) {
+    // A renamed built-in stage: one name for its tab and the stage (0055).
+    const renamed = builtInRename(LEAD_VIEWS[view].stages[0] as BuiltInStage, custom)
+    return renamed ? { ...LEAD_VIEWS[view], label: renamed } : LEAD_VIEWS[view]
+  }
   return { label: stageLabel(view, custom), tab: view, stages: [view] }
 }
 
@@ -186,15 +203,43 @@ export function viewStages(view: LeadView): LeadStage[] {
   return isCustomStage(view) ? [view] : LEAD_VIEWS[view].stages
 }
 
-/** Every tab, in order: the built-in ones, then each visible custom stage. */
-export function allViews(custom: readonly CustomStage[] = []): LeadView[] {
-  return [...BUILT_IN_VIEWS, ...visibleCustomStages(custom).map((stage) => stage.key)]
+/**
+ * Every tab, in Gabby's order (lead_stages.position, 0055): built-in and
+ * visible custom stages together. With no positions saved (before 0055, or
+ * no rows), the built-in ones first in their usual order, then the custom.
+ */
+export function allViews(custom: readonly StageSetting[] = []): LeadView[] {
+  // No built-in rows in the list (none read yet): the usual order.
+  if (!custom.some((s) => !isCustomStage(s.key))) {
+    return [...BUILT_IN_VIEWS, ...visibleCustomStages(custom).map((stage) => stage.key)]
+  }
+  const positionOf = (stage: LeadStage, fallback: number) => custom.find((s) => s.key === stage)?.position ?? fallback
+  const tabs = [
+    ...BUILT_IN_VIEWS.map((view, i) => ({ view: view as LeadView, position: positionOf(LEAD_VIEWS[view].stages[0], i), builtIn: 0, i })),
+    ...visibleCustomStages(custom).map((stage, i) => ({ view: stage.key as LeadView, position: stage.position, builtIn: 1, i })),
+  ]
+  return tabs.sort((a, b) => a.position - b.position || a.builtIn - b.builtIn || a.i - b.i).map((t) => t.view)
 }
 
 /** The tab a URL names, or null for none or an unknown one. */
-export function viewForTab(tab: string | null, custom: readonly CustomStage[] = []): LeadView | null {
+export function viewForTab(tab: string | null, custom: readonly StageSetting[] = []): LeadView | null {
   if (tab === null) return null
   return allViews(custom).find((view) => viewDef(view, custom).tab === tab) ?? null
+}
+
+/**
+ * A lead's record, remembering the list it was opened from (tab, filters,
+ * page) so "All leads" goes back there. Only a /leads list address is kept.
+ */
+export function leadRecordHref(leadId: string, returnTo?: string | null): string {
+  const back = safeLeadsReturn(returnTo)
+  return back && back !== '/leads' ? `/leads/${leadId}?from=${encodeURIComponent(back)}` : `/leads/${leadId}`
+}
+
+/** A list address to go back to: /leads or /leads?…, nothing else (no other site, no other page). */
+export function safeLeadsReturn(value: string | null | undefined): string | null {
+  if (!value) return null
+  return /^\/leads(\?[^#]*)?$/.test(value) ? value : null
 }
 
 /** The screen a lead in this stage is listed on. */

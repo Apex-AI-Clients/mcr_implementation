@@ -70,3 +70,28 @@ describe('deletedNote', () => {
     expect(deletedNote(new Date('2026-10-24T03:00:00Z'), 'Gabby', 'prospect')).toBe('Client file deleted on 24 Oct 2026 by Gabby. Stage set back to Prospect.')
   })
 })
+
+/** Renamed stages (0055): earlier entries still read back to the right stage. */
+describe('stageBeforeConversion — renamed stages', () => {
+  const stages = [
+    { key: 'prospect' as const, label: 'Hot', position: 1, hiddenAt: null, formerLabels: ['Prospect', 'Warm'] },
+    { key: 'custom_aaaa1111' as const, label: 'Waiting on docs', position: 100, hiddenAt: null, formerLabels: ['Waiting'] },
+  ]
+  const at = '2026-11-14T01:00:00Z'
+
+  it('reads the new name, the default name and a name in between', () => {
+    for (const label of ['Hot', 'Prospect', 'Warm']) {
+      expect(stageBeforeConversion([entry(`Converted to a client file in the restructuring workspace. Stage before: ${label}.`, at)], stages)).toBe('prospect')
+    }
+  })
+
+  it('reads a staff-added stage by its old name too', () => {
+    expect(stageBeforeConversion([entry('Converted to a client file in the restructuring workspace. Stage before: Waiting.', at)], stages)).toBe(
+      'custom_aaaa1111',
+    )
+  })
+
+  it('writes the new name on a conversion entry', () => {
+    expect(conversionBody('prospect', stages)).toContain('Stage before: Hot.')
+  })
+})
