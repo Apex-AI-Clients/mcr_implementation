@@ -1,11 +1,12 @@
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { Suspense } from 'react'
 import { loadReadinessDashboard, loadSbrDashboard } from '@/lib/dashboard/load'
 import { RISK_BAND_LABELS } from '@/lib/sbr/riskBands'
 import { STATUS_LABEL, type ReadinessStatus } from '@/lib/sbr/readiness'
 import type { SbrRiskBand } from '@/lib/sbr/types'
 import { SegmentBar } from './charts'
-import { EmptyNote, Meter, Panel, PanelTitle, Pill, SectionHeader } from './Panel'
+import { EmptyNote, Meter, Panel, PanelTitle, Pill } from './Panel'
 import { formatCount, formatMoneyShort, plural } from './format'
 import { PanelSkeleton } from './Skeletons'
 
@@ -44,13 +45,24 @@ export async function SbrSection() {
   const atoMax = Math.max(1, ...atoKinds.map((k) => k.value))
 
   return (
-    <section aria-labelledby="sbr-h" className="flex flex-col gap-4">
-      <SectionHeader id="sbr-h" title="Small Business Restructuring" note={plural(d.activeFiles, 'active file')} href="/sbr" linkLabel="Open SBR" />
+    <section aria-label="SBR details" className="flex flex-col gap-5">
 
       {d.activeFiles === 0 ? (
         <EmptyNote>No active SBR files yet. Convert a lead or add a client in the SBR workspace.</EmptyNote>
       ) : (
         <>
+          {/* What needs doing first; it reads every file, so it streams in on its own. */}
+          <Suspense
+            fallback={
+              <div className="grid gap-5 lg:grid-cols-2">
+                <PanelSkeleton rows={3} />
+                <PanelSkeleton rows={5} />
+              </div>
+            }
+          >
+            <ReadinessPanels />
+          </Suspense>
+
           <div className="grid gap-5 lg:grid-cols-3">
             {/* Document collection */}
             <Panel>
@@ -157,16 +169,6 @@ export async function SbrSection() {
             </Panel>
           </div>
 
-          <Suspense
-            fallback={
-              <div className="grid gap-5 lg:grid-cols-2">
-                <PanelSkeleton rows={3} />
-                <PanelSkeleton rows={5} />
-              </div>
-            }
-          >
-            <ReadinessPanels />
-          </Suspense>
         </>
       )}
     </section>
@@ -228,7 +230,7 @@ async function ReadinessPanels() {
         </ul>
       </Panel>
 
-      <Panel className="gap-2 pb-3">
+      <Panel className="order-first gap-2 pb-3">
         <PanelTitle
           title="Needs attention"
           badge={r.attention.length > 0 ? <Pill tone="warning">{formatCount(r.attention.length)}</Pill> : undefined}
@@ -242,13 +244,17 @@ async function ReadinessPanels() {
               <li key={`${a.clientId}-${i}`} className="border-t border-border first:border-t-0">
                 <Link
                   href={a.href}
-                  className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-semibold text-foreground">{a.name}</span>
+                    <span className="truncate text-sm font-semibold text-foreground group-hover:text-accent">{a.name}</span>
                     <span className="line-clamp-1 text-xs text-muted">{a.detail}</span>
                   </div>
                   <Pill tone={a.status === 'failed' ? 'destructive' : 'warning'}>{a.status === 'failed' ? 'Failed' : 'Needs review'}</Pill>
+                  <span className="flex shrink-0 items-center gap-0.5 text-xs font-semibold text-accent">
+                    Open
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
                 </Link>
               </li>
             ))}

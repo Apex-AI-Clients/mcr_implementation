@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { ArrowUpRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sparkline } from './charts'
@@ -42,47 +41,6 @@ export function PanelTitle({
         </Link>
       )}
     </div>
-  )
-}
-
-/** "LEADS · Last 30 days ……… Open CRM ↗" */
-export function SectionHeader({
-  id,
-  title,
-  note,
-  href,
-  linkLabel,
-}: {
-  id: string
-  title: string
-  note?: string
-  href: string
-  linkLabel: string
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <h2 id={id} className="text-xl font-semibold tracking-tight text-foreground">
-          {title}
-        </h2>
-        {note && <span className="text-sm text-muted">{note}</span>}
-      </div>
-      <Link
-        href={href}
-        className="flex min-h-11 items-center gap-1.5 rounded text-sm font-semibold text-accent hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        {linkLabel}
-        <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-      </Link>
-    </div>
-  )
-}
-
-export function Eyebrow({ id, children }: { id?: string; children: React.ReactNode }) {
-  return (
-    <h2 id={id} className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">
-      {children}
-    </h2>
   )
 }
 

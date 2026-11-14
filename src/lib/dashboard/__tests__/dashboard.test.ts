@@ -100,6 +100,8 @@ describe('summariseLeads', () => {
     expect(d.followUpsDue).toBe(2)
     expect(d.followUps.map((f) => f.id)).toEqual(['b', 'a'])
     expect(d.followUps[0].meta).toBe('Company · NSW · $50k–$150k · Facebook')
+    expect(d.followUpsByStage.find((s) => s.stage === 'lead')).toMatchObject({ count: 2, href: '/leads?tab=leads&followup=1' })
+    expect(d.followUpsByStage.find((s) => s.stage === 'contact_in_30_days')!.href).toBe('/leads?tab=contact-in-30-days&followup=1')
   })
 
   it('dates conversions by the file they became, split by workspace', () => {

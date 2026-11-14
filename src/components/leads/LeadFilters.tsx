@@ -1,7 +1,6 @@
 'use client'
 
-// Flag is only used by the follow-up toggle, hidden for now.
-import { X } from 'lucide-react'
+import { Flag, X } from 'lucide-react'
 import { Select } from '@/components/ui/Select'
 import { AU_STATES, DATE_RANGES, DEBT_FLOORS, SORT_OPTIONS } from '@/lib/leads/constants'
 import { hasActiveFilters, type LeadFilterState } from '@/lib/leads/filter'
@@ -100,6 +99,21 @@ export function LeadFilters({ filters, onChange, onReset, sources = [] }: LeadFi
         Follow-up
       </button>
       */}
+
+      {/* The toggle above is hidden, but the home dashboard links here with
+          the follow-up filter on (?followup=1): say so, and let it be removed. */}
+      {filters.followUpOnly && (
+        <button
+          type="button"
+          onClick={() => onChange({ followUpOnly: false })}
+          aria-label="Remove the follow-up due filter"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/15 px-3 text-xs font-medium text-warning transition-colors hover:bg-warning/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Flag className="h-3 w-3" aria-hidden="true" />
+          Follow-up due
+          <X className="h-3 w-3" aria-hidden="true" />
+        </button>
+      )}
 
       {/* Sort is not a filter — it changes the order, not the set, so it sits
           outside the active-filter count and the clear control. */}

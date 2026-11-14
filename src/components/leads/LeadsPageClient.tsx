@@ -265,12 +265,11 @@ export function LeadsPageClient({
 
       {/* One tab per group of stages, each with its count, then one per stage
           staff added. The tab is in the URL (?tab=), so it can be bookmarked;
-          the other filters carry over. However many there are, they stay on
-          one line that scrolls (StageTabStrip). */}
+          the other filters carry over. However many there are, they wrap onto
+          more rows so all are in sight (StageTabStrip). */}
       {counts && (
         <nav aria-label="Lead stages">
           <StageTabStrip
-            active={view ?? 'leads'}
             trailing={
               <>
                 <button

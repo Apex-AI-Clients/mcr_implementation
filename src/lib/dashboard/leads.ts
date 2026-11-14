@@ -1,6 +1,6 @@
 import type { EntityType, LeadSource, LeadStage, StageSetting } from '@/types/leads'
-import { ALL_SOURCES, ENTITY_TYPE_META, SOURCE_META, stageLabel } from '@/lib/leads/constants'
-import { FOLLOW_UP_DAYS, isOpenStage } from '@/lib/leads/followUp'
+import { ALL_SOURCES, ENTITY_TYPE_META, SOURCE_META, stageLabel, viewDef, viewForStage } from '@/lib/leads/constants'
+import { FOLLOW_UP_DAYS, OPEN_STAGES, isOpenStage } from '@/lib/leads/followUp'
 import { bucketIndex, buckets, inWindow, windows, type RangeKey } from './range'
 
 /**
@@ -85,6 +85,14 @@ export interface LeadsDashboard {
   followUpsDue: number
   /** The quietest open leads, longest first. */
   followUps: FollowUpRow[]
+  /** Follow-ups due per open stage, each with the Leads list filtered to them. */
+  followUpsByStage: { stage: LeadStage; label: string; count: number; href: string }[]
+}
+
+/** The Leads list on a stage's tab, showing only the leads due a follow-up. */
+export function followUpListHref(stage: LeadStage, stages: readonly StageSetting[] = []): string {
+  const tab = viewDef(viewForStage(stage), stages).tab
+  return `/leads?tab=${encodeURIComponent(tab)}&followup=1`
 }
 
 const DAY_MS = 86_400_000
@@ -224,6 +232,12 @@ export function summariseLeads(input: {
       meta: leadMeta(lead),
       stage: stageLabel(lead.stage, stages),
       daysQuiet: days,
+    })),
+    followUpsByStage: OPEN_STAGES.map((stage) => ({
+      stage,
+      label: stageLabel(stage, stages),
+      count: quiet.filter((x) => x.lead.stage === stage).length,
+      href: followUpListHref(stage, stages),
     })),
   }
 }

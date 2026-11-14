@@ -1,10 +1,12 @@
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { ALL_SOURCES, SOURCE_META, leadRecordHref } from '@/lib/leads/constants'
 import { RANGES, type RangeKey } from '@/lib/dashboard/range'
 import { loadLeadsDashboard } from '@/lib/dashboard/load'
 import type { LeadSource } from '@/types/leads'
+import { cn } from '@/lib/utils'
 import { DonutWithLegend, Funnel, StackedArea } from './charts'
-import { EmptyNote, Panel, PanelTitle, Pill, SectionHeader } from './Panel'
+import { EmptyNote, Panel, PanelTitle, Pill } from './Panel'
 import { formatCount } from './format'
 
 /** One colour per delivered source, the same in every chart. */
@@ -15,20 +17,86 @@ export const SOURCE_COLOR: Record<LeadSource, { text: string; bg: string }> = {
   manual: { text: 'text-chart-4', bg: 'bg-chart-4' },
 }
 
-export async function LeadsSection({ range }: { range: RangeKey }) {
+/** Who to call: follow-ups by stage (each a filtered list), then the quietest leads. */
+export async function FollowUpsPanel() {
+  const d = await loadLeadsDashboard('d30')
+  return (
+    <section id="follow-ups" className="scroll-mt-6">
+    <Panel className="gap-4">
+      <PanelTitle
+        title="Follow-ups due"
+        badge={d.followUpsDue > 0 ? <Pill tone="warning">{formatCount(d.followUpsDue)}</Pill> : <Pill tone="success">All clear</Pill>}
+        subtitle="Open leads nobody has noted, called, emailed or moved in 30+ days. Click a stage to open those leads."
+      />
+
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(170px,1fr))]">
+        {d.followUpsByStage.map((s) => (
+          <Link
+            key={s.stage}
+            href={s.href}
+            className={cn(
+              'group flex items-center justify-between gap-2 rounded-xl border p-3.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              s.count > 0 ? 'border-warning/40 bg-warning/10 hover:bg-warning/15' : 'border-border bg-surface hover:border-accent/40',
+            )}
+          >
+            <span className="flex flex-col gap-0.5">
+              <span className={cn('text-2xl font-semibold tabular-nums', s.count > 0 ? 'text-warning' : 'text-foreground')}>{formatCount(s.count)}</span>
+              <span className="text-[13px] text-muted">{s.label}</span>
+            </span>
+            <span className="flex items-center gap-0.5 text-xs font-semibold text-accent">
+              Open
+              <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      {d.followUps.length === 0 ? (
+        <EmptyNote>Every open lead has been contacted in the last 30 days.</EmptyNote>
+      ) : (
+        <div className="flex flex-col">
+          <span className="pb-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted">Quiet the longest</span>
+          <ul className="flex flex-col">
+            {d.followUps.map((f) => (
+              <li key={f.id} className="border-t border-border first:border-t-0">
+                <Link
+                  href={leadRecordHref(f.id)}
+                  className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <Initials name={f.name} />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-sm font-semibold text-foreground group-hover:text-accent">{f.name}</span>
+                    <span className="truncate text-xs text-muted">{f.meta}</span>
+                  </div>
+                  <Pill tone="neutral">{f.stage}</Pill>
+                  <span className="hidden w-24 shrink-0 text-right text-xs font-semibold text-warning tabular-nums sm:block">{f.daysQuiet} days quiet</span>
+                  <span className="flex shrink-0 items-center gap-0.5 text-xs font-semibold text-accent">
+                    Open lead
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Panel>
+    </section>
+  )
+}
+
+/** Where leads come from and how far they get, over the chosen range. */
+export async function LeadsCharts({ range }: { range: RangeKey }) {
   const d = await loadLeadsDashboard(range)
-  const { label, phrase } = RANGES[range]
+  const { phrase } = RANGES[range]
   const sources = ALL_SOURCES.map((s) => ({ source: s, label: SOURCE_META[s].label, ...SOURCE_COLOR[s] }))
 
   return (
-    <section aria-labelledby="leads-h" className="flex flex-col gap-4">
-      <SectionHeader id="leads-h" title="Leads" note={label} href="/leads" linkLabel="Open CRM" />
-
+    <>
       <div className="flex flex-wrap gap-5">
-        {/* New leads over time */}
         <Panel className="flex-[2_1_560px]">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <PanelTitle title="New leads over time" subtitle="By source" />
+            <PanelTitle title="New leads over time" subtitle="How many came in, by source. Hover for the numbers." />
             <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
               {sources.map((s) => (
                 <li key={s.source} className="flex items-center gap-1.5 text-[13px] text-muted">
@@ -51,9 +119,8 @@ export async function LeadsSection({ range }: { range: RangeKey }) {
           )}
         </Panel>
 
-        {/* Share by source + top campaigns */}
         <Panel className="flex-[1_1_320px]">
-          <PanelTitle title="Where leads come from" subtitle={`Share of ${formatCount(d.newLeads)} new leads`} />
+          <PanelTitle title="Where leads come from" subtitle={`Share of ${formatCount(d.newLeads)} new leads ${phrase}`} />
           <DonutWithLegend
             slices={d.bySource.map((s) => ({
               key: s.source,
@@ -88,60 +155,37 @@ export async function LeadsSection({ range }: { range: RangeKey }) {
         </Panel>
       </div>
 
-      <div className="flex flex-wrap gap-5">
-        {/* Pipeline */}
-        <Panel className="flex-[1_1_380px]">
-          <PanelTitle title="Pipeline" subtitle="How far this period’s new leads have moved" />
+      <Panel>
+        <PanelTitle
+          title="How far new leads got"
+          subtitle={`Of the leads that came in ${phrase}, how many reached each stage. Hover a bar for the step-by-step rate.`}
+        />
+        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <Funnel steps={d.funnel} />
-          <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-            <MiniStat value={d.contactLater} label="Contact in 30 days" />
-            <MiniStat value={d.closed} label="Closed" />
-            <MiniStat value={d.repeatEnquiries} label="Repeat enquiries" />
+          <div className="grid grid-cols-3 content-start gap-3 lg:grid-cols-1 lg:border-l lg:border-border lg:pl-6">
+            <MiniStat value={d.contactLater} label="Parked: contact in 30 days" href="/leads?tab=contact-in-30-days" />
+            <MiniStat value={d.closed} label="Closed without converting" />
+            <MiniStat value={d.repeatEnquiries} label="Enquired again" />
           </div>
-        </Panel>
-
-        {/* Follow-ups due */}
-        <Panel className="flex-[1.6_1_520px] gap-2 pb-3">
-          <PanelTitle
-            title="Follow-ups due"
-            badge={d.followUpsDue > 0 ? <Pill tone="warning">{formatCount(d.followUpsDue)}</Pill> : undefined}
-            subtitle="Open leads with no note, call, email or stage change in 30+ days"
-            action={{ href: '/leads', label: 'View all' }}
-          />
-          {d.followUps.length === 0 ? (
-            <EmptyNote>Every open lead has been contacted in the last 30 days.</EmptyNote>
-          ) : (
-            <ul className="flex flex-col">
-              {d.followUps.map((f) => (
-                <li key={f.id} className="border-t border-border first:border-t-0">
-                  <Link
-                    href={leadRecordHref(f.id)}
-                    className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <Initials name={f.name} />
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate text-sm font-semibold text-foreground">{f.name}</span>
-                      <span className="truncate text-xs text-muted">{f.meta}</span>
-                    </div>
-                    <Pill tone="neutral">{f.stage}</Pill>
-                    <span className="w-24 shrink-0 text-right text-xs font-semibold text-warning tabular-nums">{f.daysQuiet} days quiet</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-      </div>
-    </section>
+        </div>
+      </Panel>
+    </>
   )
 }
 
-function MiniStat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
+function MiniStat({ value, label, href }: { value: number; label: string; href?: string }) {
+  const body = (
+    <>
       <span className="text-lg font-semibold text-foreground tabular-nums">{formatCount(value)}</span>
       <span className="text-xs text-muted">{label}</span>
-    </div>
+    </>
+  )
+  return href ? (
+    <Link href={href} className="flex flex-col gap-0.5 rounded hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      {body}
+    </Link>
+  ) : (
+    <div className="flex flex-col gap-0.5">{body}</div>
   )
 }
 

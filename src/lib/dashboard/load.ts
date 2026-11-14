@@ -4,6 +4,7 @@ import { selectAll } from '@/lib/supabase/selectAll'
 import { getCompletenessSummary } from '@/lib/clients/completeness'
 import { getCustomStages } from '@/lib/leads/customStages'
 import { leadRecordHref, SOURCE_META } from '@/lib/leads/constants'
+import { CATEGORY_META } from '@/lib/constants'
 import { atoAccountsOverview, type AtoAccountAnalysisRow } from '@/lib/analysis/atoAccount/store'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { readCvlStatus } from '@/lib/cvl/cases'
@@ -18,6 +19,7 @@ import {
   summariseReadiness,
   summariseSbr,
   type ActivityEvent,
+  type ActivityTag,
   type CvlDashboard,
   type DashAtoAccount,
   type ReadinessDashboard,
@@ -288,56 +290,100 @@ function leadTitle(lead: LeadName | null): string {
   return lead ? lead.company?.trim() || lead.name : 'a lead'
 }
 
-export const loadRecentActivity = cache(async (limit = 8): Promise<ActivityEvent[]> => {
+/** A document category's label, short: "Financial Statements", not the full heading. */
+function categoryLabel(category: string): string {
+  const label = (CATEGORY_META as Record<string, { label: string } | undefined>)[category]?.label ?? 'Document'
+  return label.replace(/\s*\(.*\)\s*$/, '')
+}
+
+/** What happened lately in one workspace, newest first. */
+export const loadRecentActivity = cache(async (tag: ActivityTag, limit = 8): Promise<ActivityEvent[]> => {
   const supabase = getSupabaseServerClient()
-  const withCvl = cvlEnabled()
-  const [activities, enquiries, files, forms] = await Promise.all([
+
+  if (tag === 'CRM') {
+    const [activities, enquiries] = await Promise.all([
+      supabase
+        .from('lead_activities')
+        .select('lead_id, type, author, created_at, leads(name, company)')
+        .order('created_at', { ascending: false })
+        .limit(limit),
+      supabase
+        .from('lead_submissions')
+        .select('lead_id, source, after_close, received_at, leads(name, company)')
+        .order('received_at', { ascending: false })
+        .limit(limit),
+    ])
+    const done: ActivityEvent[] = (activities.data ?? []).map((a) => ({
+      who: a.author,
+      what: ACTIVITY_VERB[a.type as LeadActivityType] ?? 'updated',
+      subject: leadTitle(one(a.leads as LeadName | LeadName[] | null)),
+      href: leadRecordHref(a.lead_id),
+      tag: 'CRM',
+      at: a.created_at,
+    }))
+    const arrived: ActivityEvent[] = (enquiries.data ?? []).map((e) => ({
+      who: null,
+      what: `${e.after_close ? 'Re-enquiry' : 'New enquiry'} (${SOURCE_META[e.source as LeadSource]?.label ?? 'Unknown source'}) from`,
+      subject: leadTitle(one(e.leads as LeadName | LeadName[] | null)),
+      href: leadRecordHref(e.lead_id),
+      tag: 'CRM',
+      at: e.received_at,
+    }))
+    return mergeActivity([done, arrived], limit)
+  }
+
+  if (tag === 'SBR') {
+    const [files, documents] = await Promise.all([
+      supabase.from('clients').select('id, name, created_at').eq('workflow', 'sbr').order('created_at', { ascending: false }).limit(limit),
+      supabase
+        .from('documents')
+        .select('client_id, doc_category, uploaded_at, clients!inner(name, workflow)')
+        .eq('clients.workflow', 'sbr')
+        .neq('status', 'rejected')
+        .order('uploaded_at', { ascending: false })
+        .limit(limit),
+    ])
+    const opened: ActivityEvent[] = (files.data ?? []).map((c) => ({
+      who: null,
+      what: 'New SBR file opened for',
+      subject: c.name,
+      href: `/clients/${c.id}`,
+      tag: 'SBR',
+      at: c.created_at,
+    }))
+    const uploaded: ActivityEvent[] = (documents.data ?? []).map((d) => ({
+      who: null,
+      what: `${categoryLabel(d.doc_category)} uploaded for`,
+      subject: one(d.clients as { name: string } | { name: string }[] | null)?.name ?? 'a client',
+      href: `/clients/${d.client_id}`,
+      tag: 'SBR',
+      at: d.uploaded_at,
+    }))
+    return mergeActivity([opened, uploaded], limit)
+  }
+
+  if (!cvlEnabled()) return []
+  const [cases, forms] = await Promise.all([
     supabase
-      .from('lead_activities')
-      .select('lead_id, type, author, created_at, leads(name, company)')
+      .from('cvl_cases')
+      .select('client_id, origin, created_at, clients(name)')
+      .is('removed_at', null)
       .order('created_at', { ascending: false })
       .limit(limit),
     supabase
-      .from('lead_submissions')
-      .select('lead_id, source, after_close, received_at, leads(name, company)')
-      .order('received_at', { ascending: false })
+      .from('cvl_generated_documents')
+      .select('client_id, form_code, generated_by, generated_at, clients(name)')
+      .order('generated_at', { ascending: false })
       .limit(limit),
-    supabase.from('clients').select('id, name, workflow, created_at').order('created_at', { ascending: false }).limit(limit),
-    withCvl
-      ? supabase
-          .from('cvl_generated_documents')
-          .select('client_id, form_code, generated_by, generated_at, clients(name)')
-          .order('generated_at', { ascending: false })
-          .limit(limit)
-      : Promise.resolve({ data: [] as { client_id: string; form_code: string; generated_by: string; generated_at: string; clients: unknown }[] }),
   ])
-
-  const crm: ActivityEvent[] = (activities.data ?? []).map((a) => ({
-    who: a.author,
-    what: ACTIVITY_VERB[a.type as LeadActivityType] ?? 'updated',
-    subject: leadTitle(one(a.leads as LeadName | LeadName[] | null)),
-    href: leadRecordHref(a.lead_id),
-    tag: 'CRM',
-    at: a.created_at,
-  }))
-  const arrived: ActivityEvent[] = (enquiries.data ?? []).map((e) => ({
+  const opened: ActivityEvent[] = (cases.data ?? []).map((c) => ({
     who: null,
-    what: `${e.after_close ? 'Re-enquiry' : 'New enquiry'} (${SOURCE_META[e.source as LeadSource]?.label ?? 'Unknown source'}) from`,
-    subject: leadTitle(one(e.leads as LeadName | LeadName[] | null)),
-    href: leadRecordHref(e.lead_id),
-    tag: 'CRM',
-    at: e.received_at,
+    what: c.origin === 'sbr_client' ? 'Moved from SBR to CVL:' : 'New CVL file opened for',
+    subject: one(c.clients as { name: string } | { name: string }[] | null)?.name ?? 'a CVL file',
+    href: `/cvl/${c.client_id}`,
+    tag: 'CVL',
+    at: c.created_at,
   }))
-  const opened: ActivityEvent[] = (files.data ?? [])
-    .filter((c) => withCvl || c.workflow !== 'cvl')
-    .map((c) => ({
-      who: null,
-      what: c.workflow === 'cvl' ? 'New CVL file opened for' : 'New SBR file opened for',
-      subject: c.name,
-      href: c.workflow === 'cvl' ? `/cvl/${c.id}` : `/clients/${c.id}`,
-      tag: c.workflow === 'cvl' ? 'CVL' : 'SBR',
-      at: c.created_at,
-    }))
   const generated: ActivityEvent[] = (forms.data ?? []).map((f) => ({
     who: f.generated_by,
     what: `generated form ${f.form_code.toUpperCase()} for`,
@@ -346,6 +392,5 @@ export const loadRecentActivity = cache(async (limit = 8): Promise<ActivityEvent
     tag: 'CVL',
     at: f.generated_at,
   }))
-
-  return mergeActivity([crm, arrived, opened, generated], limit)
+  return mergeActivity([opened, generated], limit)
 })
