@@ -1279,7 +1279,7 @@
     81.37,
     105.03
    ],
-   "handwritten": true
+   "signatureDate": true
   },
   {
    "key": "a10_name",
@@ -1306,7 +1306,7 @@
     353.82,
     377.48
    ],
-   "handwritten": true
+   "signatureDate": true
   },
   {
    "key": "f507a_company_name",
@@ -1375,7 +1375,7 @@
    "x1": 334.12,
    "bot": 786.9,
    "format": "date",
-   "handwritten": true
+   "signatureDate": true
   }
  ],
  "tables": [

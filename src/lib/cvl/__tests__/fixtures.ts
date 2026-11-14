@@ -27,6 +27,8 @@ export function context(over: Partial<CvlContext> = {}): CvlContext {
     client: { name: 'Jordan Sample', email: 'jordan@example.test', phone: '0400 000 001' },
     company: {
       companyName: 'Example Trading Pty Ltd',
+      phone: null,
+      email: null,
       entityType: 'company',
       acn: '123456780',
       abn: '11123456780',

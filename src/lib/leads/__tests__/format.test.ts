@@ -470,12 +470,12 @@ describe('leadsToCsv', () => {
     const lines = csv.split('\r\n')
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe(
-      'Date added,Last enquiry,Enquiries,Name,Email,Phone,Debt min,Debt max,Entity type,State,Message,Stage,Source,Last action,Notes count,Notes',
+      'Date added,Last enquiry,Enquiries,Name,Email,Phone,Debt min,Debt max,Debt as typed,Entity type,State,Message,Stage,Source,Last action,Notes count,Notes',
     )
     // No history passed, so the notes columns are an explicit 0 and a blank
     // rather than absent — the header keeps its shape either way.
     expect(lines[1]).toBe(
-      '2026-08-26,2026-08-26,1,Test Lead,test@example.com.au,0402 915 338,100000,124999,Company,VIC,,Lead,Facebook,2026-08-26,0,',
+      '2026-08-26,2026-08-26,1,Test Lead,test@example.com.au,0402 915 338,100000,124999,,Company,VIC,,Lead,Facebook,2026-08-26,0,',
     )
   })
 
@@ -491,6 +491,13 @@ describe('leadsToCsv', () => {
     const csv = leadsToCsv([makeLead({ debtMin: 250_000, debtMax: 500_000 })])
     expect(csv).toContain(',250000,500000,')
     expect(csv).not.toContain('$')
+  })
+
+  it('gives a typed debt as the amount in both numbers, and the words exactly as sent (0053)', () => {
+    const csv = leadsToCsv([makeLead({ debtMin: 200_000, debtMax: 200_000, debtText: '200,000' })])
+    expect(csv).toContain(',200000,200000,"200,000",')
+    const unread = leadsToCsv([makeLead({ debtMin: null, debtMax: null, debtText: 'about two hundred grand' })])
+    expect(unread).toContain(',,,about two hundred grand,')
   })
 
   it('leaves the max blank for an open-ended range', () => {

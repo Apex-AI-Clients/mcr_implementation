@@ -5,7 +5,7 @@ import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import type { FormCode } from '@/lib/forms/types'
 import { loadCvlContext } from '@/lib/cvl/context'
 import { isSubject, prefillForm, subjectsFor, type Subject } from '@/lib/cvl/prefill'
-import { entryState, readDraft } from '@/lib/cvl/drafts'
+import { entryState, readDraft, savedA7Total, savedSummaryDate } from '@/lib/cvl/drafts'
 import { entryMap } from '@/lib/cvl/entryMap'
 import { CvlFormEditor } from '@/components/cvl/CvlFormEditor'
 
@@ -31,7 +31,7 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
   // round trip to the database). The drafts of this form for every subject
   // come back together; the one for the subject shown is picked below, once
   // the directors are known.
-  const [{ data: client }, { data: cvlCase }, ctx, { subject: asked = '' }, { data: draftRows }] = await Promise.all([
+  const [{ data: client }, { data: cvlCase }, loaded, { subject: asked = '' }, { data: draftRows }, { data: form509 }] = await Promise.all([
     supabase.from('clients').select('id, archived_at, workflow, cvl_cases(removed_at)').eq('id', id).maybeSingle(),
     supabase.from('cvl_cases').select('id').eq('client_id', id).is('removed_at', null).maybeSingle(),
     loadCvlContext(supabase, id),
@@ -41,7 +41,16 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
       .select('subject, answers, edited_keys, form_version, updated_by, updated_at, cvl_cases!inner(client_id)')
       .eq('cvl_cases.client_id', id)
       .eq('form_code', code),
+    // Form 509's saved summary date (every signature date starts from it) and
+    // Part A's saved Table A7 (its total is 509's row 6): Nov 2026.
+    supabase
+      .from('cvl_form_answers')
+      .select('form_code, subject, answers, cvl_cases!inner(client_id)')
+      .eq('cvl_cases.client_id', id)
+      .in('form_code', ['509', '507a'])
+      .eq('subject', 'company'),
   ])
+  const ctx = { ...loaded, summaryDate: savedSummaryDate(form509 ?? []), a7Total: savedA7Total(form509 ?? []) }
   if (!client) notFound()
   const elsewhere = sharedPageRedirect(client, 'cvl', `/forms/${code}`)
   // Forms are CVL only: an SBR file opens its client page, not an SBR form page.

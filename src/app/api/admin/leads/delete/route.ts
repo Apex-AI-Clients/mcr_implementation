@@ -33,6 +33,11 @@ export const dynamic = 'force-dynamic'
  *    A restored file has no lead to link back to. The UI says so before
  *    deleting a converted lead.
  *
+ * Who deleted which lead, and when, is kept in lead_deletions (0053): the lead
+ * id, its source, external id and stage, never a name, email or answer. It is
+ * written before the delete, so no lead goes without its record; rows for
+ * leads that were not deleted after all are taken out again.
+ *
  * This is a hard delete, as asked for. If these ever need to be recoverable,
  * the change is a `deleted_at` column and a filter in getLeadsPage, not a
  * change here.
@@ -59,6 +64,18 @@ export async function POST(req: NextRequest) {
     // the reported count a lie.
     const ids = [...new Set(parsed.data.ids)]
     const supabase = getSupabaseServerClient()
+    const by = staffAuthorName(staff)
+
+    // The deletion record, before anything goes (0053).
+    const { data: toDelete, error: readError } = await supabase
+      .from('leads')
+      .select('id, source, external_id, stage')
+      .in('id', ids)
+    if (readError) throw readError
+    const logged = await recordDeletions(supabase, toDelete ?? [], by)
+    if (logged === 'failed') {
+      return NextResponse.json({ error: 'Could not record the deletion, so nothing was deleted.' }, { status: 500 })
+    }
 
     // Read first: the enquiries, and their links, are deleted with the lead.
     const { data: enquiryFiles, error: enquiryError } = await supabase
@@ -73,9 +90,17 @@ export async function POST(req: NextRequest) {
       .delete()
       .in('id', ids)
       .select('id, converted_client_id')
-    if (error) throw error
+    if (error) {
+      if (logged === 'ok') await unrecord(supabase, ids)
+      throw error
+    }
 
     const deleted = data?.length ?? 0
+    // Somebody else's delete got some first: their record is theirs.
+    if (logged === 'ok' && deleted < (toDelete ?? []).length) {
+      const gone = new Set((data ?? []).map((lead) => lead.id))
+      await unrecord(supabase, (toDelete ?? []).map((lead) => lead.id).filter((id) => !gone.has(id)))
+    }
 
     // Their client files go to the Archive. Ones already archived keep the
     // reason and date they were archived with.
@@ -93,7 +118,7 @@ export async function POST(req: NextRequest) {
     if (clientIds.length > 0) {
       const { data: archived, error: archiveError } = await supabase
         .from('clients')
-        .update(archiveUpdate('lead_deleted', staffAuthorName(staff)))
+        .update(archiveUpdate('lead_deleted', by))
         .in('id', clientIds)
         .is('archived_at', null)
         .select('id')
@@ -120,4 +145,42 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/admin/leads/delete]', message, err)
     return NextResponse.json({ error: 'Failed to delete', detail: message }, { status: 500 })
   }
+}
+
+type Supabase = ReturnType<typeof getSupabaseServerClient>
+
+/**
+ * One lead_deletions row per lead about to be deleted. 'missing' before
+ * migration 0053 adds the table: deleting goes ahead as it did before the log
+ * existed, with a warning, rather than be blocked by a migration not yet run.
+ */
+async function recordDeletions(
+  supabase: Supabase,
+  leads: { id: string; source: string | null; external_id: string | null; stage: string | null }[],
+  by: string,
+): Promise<'ok' | 'missing' | 'failed'> {
+  if (leads.length === 0) return 'ok'
+  const { error } = await supabase.from('lead_deletions').insert(
+    leads.map((lead) => ({
+      lead_id: lead.id,
+      source: lead.source,
+      external_id: lead.external_id,
+      stage: lead.stage,
+      deleted_by: by,
+    })),
+  )
+  if (!error) return 'ok'
+  if (error.code === '42P01' || error.code === 'PGRST205') {
+    console.warn('[POST /api/admin/leads/delete] lead_deletions missing (apply 0053): deleting without a record')
+    return 'missing'
+  }
+  console.error('[POST /api/admin/leads/delete] lead_deletions insert failed:', error.message)
+  return 'failed'
+}
+
+/** Takes the record back out for leads that were not deleted after all. */
+async function unrecord(supabase: Supabase, leadIds: string[]): Promise<void> {
+  if (leadIds.length === 0) return
+  const { error } = await supabase.from('lead_deletions').delete().in('lead_id', leadIds)
+  if (error) console.error('[POST /api/admin/leads/delete] lead_deletions cleanup failed:', error.message)
 }

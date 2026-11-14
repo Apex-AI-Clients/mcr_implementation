@@ -1,7 +1,8 @@
 import { ENTITY_TYPE_META, SOURCE_META } from '@/lib/leads/constants'
 import {
   describeUncertainState,
-  formatDebtRange,
+  DEBT_AS_TYPED,
+  describeDebt,
   formatFullDate,
   formatLeadSource,
   formatPhone,
@@ -67,6 +68,8 @@ export interface EnquiryField {
   label: string
   /** What to show. Null when the enquiry did not give this field. */
   value: string | null
+  /** A small note beside the value: "as typed" for a typed debt (0053). */
+  hint?: string
   /** Given, and different from what the enquiry before it said. */
   changed: boolean
 }
@@ -93,10 +96,10 @@ export function enquiryFields(
     ['Phone', (e) => (blankToNull(e.phone) ? formatPhone(e.phone) : null)],
     [
       'Debt',
-      (e) =>
-        e.debtMin === null && e.debtMax === null
-          ? null
-          : formatDebtRange(e.debtMin, e.debtMax, 'full'),
+      (e) => {
+        const debt = describeDebt(e, 'full')
+        return debt.empty ? null : debt.text
+      },
     ],
     ['State', (e) => e.state ?? describeUncertainState(e)?.description ?? null],
     ['Business type', (e) => (e.entityType ? ENTITY_TYPE_META[e.entityType].label : null)],
@@ -107,10 +110,12 @@ export function enquiryFields(
   return rows.map(([label, read]) => {
     const value = read(enquiry)
     const before = previous ? read(previous) : null
+    const typedDebt = label === 'Debt' && value !== null && describeDebt(enquiry).typed
     return {
       label,
       value,
       changed: previous !== undefined && value !== null && value !== before,
+      ...(typedDebt ? { hint: DEBT_AS_TYPED } : {}),
     }
   })
 }

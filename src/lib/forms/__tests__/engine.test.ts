@@ -2,9 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { PDFDocument } from 'pdf-lib'
-import { dateParts, formatAmount, withComputed } from '../engine'
+import { appendixNumber, dateParts, formatAmount, withComputed } from '../engine'
 import { fillOfficialForm, readTemplate } from '../fill'
-import { FORM_CODES, TABLE_DATED_KEY, formVersion, handwrittenKeys } from '../registry'
+import { FORM_CODES, TABLE_DATED_KEY, formVersion, handwrittenKeys, signatureDateKeys } from '../registry'
 import type { FormCode, FormData, FormMap } from '../types'
 import { OVERFLOW_PARTB, SAMPLE_509, SAMPLE_PARTA, SAMPLE_PARTB } from './fixtures/samples'
 
@@ -92,12 +92,19 @@ describe('maps', () => {
     expect(formVersion('507b').map.tables.map((t) => t.id)).toEqual(['B2', 'B3', 'B21', 'B28'])
   })
 
-  it('marks B6, the B1 address and every date beside a signature as handwritten', () => {
+  it('marks only B6 and the B1 address as handwritten', () => {
     expect(handwrittenKeys('507b').sort()).toEqual(
-      ['b1_address', 'b1_postcode', 'b1_state', 'b1_street', 'b1_suburb', 'b31_date', 'b6_password', 'b6_username', TABLE_DATED_KEY].sort(),
+      ['b1_address', 'b1_postcode', 'b1_state', 'b1_street', 'b1_suburb', 'b6_password', 'b6_username'].sort(),
     )
-    expect(handwrittenKeys('507a').sort()).toEqual(['a10_date', 'a9_date', 'f507a_date_signed', TABLE_DATED_KEY].sort())
-    expect(handwrittenKeys('509')).toEqual(['date_signed'])
+    expect(handwrittenKeys('507a')).toEqual([])
+    expect(handwrittenKeys('509')).toEqual([])
+  })
+
+  it('marks every date beside a signature as a signature date, the tables\u2019 "...and dated" included (Nov 2026)', () => {
+    expect(signatureDateKeys('509')).toEqual(['date_signed'])
+    // One date per table page; A6's two tables share one.
+    expect(signatureDateKeys('507a')).toEqual(['a9_date', 'a10_date', 'f507a_date_signed', 'signedDate:A4', 'signedDate:A5', 'signedDate:A6_unrelated', 'signedDate:A7'])
+    expect(signatureDateKeys('507b')).toEqual(['b31_date', 'signedDate:B2', 'signedDate:B3', 'signedDate:B21', 'signedDate:B28'])
   })
 
   it('has no signature field on any form: signatures are by hand', () => {
@@ -152,13 +159,33 @@ describe('fill', () => {
     }
   })
 
-  it('writes the form’s own page count in the appendix header ("of 6" on Part A, "of 9" on Part B)', async () => {
-    const a = await pageTexts((await fillOfficialForm('507a', SAMPLE_PARTA)).pdf)
-    const tableA4 = a.find((t) => t.includes('Table A4'))!
-    expect(tableA4).toMatch(/\b4\b[\s\S]*\b6\b/)
-    expect(tableA4).not.toMatch(/\b9\b/)
-    const b = await pageTexts((await fillOfficialForm('507b', SAMPLE_PARTB)).pdf)
-    expect(b.find((t) => t.includes('Table B2'))).toMatch(/\b9\b/)
+  it('numbers each table page with its appendix number, as ASIC labels the page (Nov 2026)', async () => {
+    // ASIC's own label at the foot of each page: the cover is p1, then each table page.
+    for (const code of ['507a', '507b'] as const) {
+      const { map } = formVersion(code)
+      const template = await pageTexts(await readTemplate(code))
+      for (const page of [map.appendixCoverPage!, ...new Set(map.tables.map((t) => t.page))]) {
+        const n = appendixNumber(map, page)!
+        expect(template[page - 1]).toMatch(new RegExp(`p\\s?${n.page}\\s+of\\s+${n.of}`))
+      }
+    }
+    expect(appendixNumber(formVersion('507a').map, 9)).toEqual({ page: 2, of: 5 }) // A4
+    expect(appendixNumber(formVersion('507a').map, 12)).toEqual({ page: 5, of: 5 }) // A7
+    expect(appendixNumber(formVersion('507a').map, 6)).toBeNull() // a form page
+  })
+
+  it('writes the appendix number top and bottom of each table page: A4 is 2 of 5, A7 is 5 of 5', async () => {
+    const doc = await getDocumentProxy(new Uint8Array((await fillOfficialForm('507a', SAMPLE_PARTA, { tables: 'all' })).pdf))
+    const numbers = async (n: number) => {
+      const items = (await (await doc.getPage(n)).getTextContent()).items
+      return items.flatMap((i) => ('str' in i && /^\d$/.test(i.str) ? [i.str] : []))
+    }
+    const pages = (await pageTexts((await fillOfficialForm('507a', SAMPLE_PARTA, { tables: 'all' })).pdf))
+    const a4 = pages.findIndex((t) => t.includes('Table A4')) + 1
+    const a7 = pages.findIndex((t) => t.includes('Table A7')) + 1
+    // Top "Page/s 2 of 5", foot "Page 2 of 5" (single digits only, so amounts are not counted).
+    expect((await numbers(a4)).filter((d) => d === '2' || d === '5').slice(0, 4)).toEqual(['2', '5', '2', '5'])
+    expect((await numbers(a7)).filter((d) => d === '5')).toHaveLength(4)
   })
 
   it('never draws handwritten fields, whatever the data holds', async () => {
@@ -170,11 +197,11 @@ describe('fill', () => {
   })
 
   it.each([['509', SAMPLE_509], ['507a', SAMPLE_PARTA], ['507b', SAMPLE_PARTB]] as const)(
-    '%s: handwritten answers in the data change nothing on the printout (signature dates, table "and dated")',
+    '%s: handwritten answers in the data change nothing on the printout (B6 log-ins, B1 address)',
     async (code, sample) => {
       const keys = handwrittenKeys(code)
-      const withAll = { ...sample, fields: { ...sample.fields }, [TABLE_DATED_KEY]: '2026-10-20' } as FormData
-      for (const k of keys) if (k !== TABLE_DATED_KEY) withAll.fields[k] ??= '2026-10-20'
+      const withAll = { ...sample, fields: { ...sample.fields } } as FormData
+      for (const k of keys) withAll.fields[k] ??= 'Written by hand'
       const without = { ...sample, fields: Object.fromEntries(Object.entries(sample.fields).filter(([k]) => !keys.includes(k))) }
       const opts = { include: ['507a'] }
       const a = await pageTexts((await fillOfficialForm(code, withAll, opts)).pdf)
@@ -185,6 +212,39 @@ describe('fill', () => {
     },
   )
 
+  it.each([['509'], ['507a'], ['507b']] as const)(
+    '%s: prints every signature date given, the tables\u2019 "...and dated" included (Nov 2026)',
+    async (code) => {
+      const opts = { include: ['507a'], tables: 'all' as const }
+      const dates: FormData = { fields: {}, signedDate: '2026-10-20' }
+      for (const k of signatureDateKeys(code)) if (!k.startsWith(TABLE_DATED_KEY)) dates.fields[k] = '2026-10-20'
+      const withDates = await pageTexts((await fillOfficialForm(code, dates, opts)).pdf)
+      const blank = await pageTexts((await fillOfficialForm(code, { fields: {} }, opts)).pdf)
+      const changed = withDates.map((text, i) => text !== blank[i])
+      const { map } = formVersion(code)
+      // Each signature date's own page, and every table page, now carries the date.
+      const datePages = map.fields.filter((f) => f.signatureDate).map((f) => f.page)
+      const order = [...map.formPages, ...(map.optionalPages ?? []).map((p) => p.page),
+        ...(map.appendixCoverPage ? [map.appendixCoverPage] : []), ...new Set(map.tables.map((t) => t.page))]
+      for (const page of [...datePages, ...new Set(map.tables.map((t) => t.page))]) {
+        expect(changed[order.indexOf(page)]).toBe(true)
+      }
+      expect(withDates.join('\n')).toMatch(/20/)
+    },
+  )
+
+  it('prints each table page’s own "...and dated" (A4 and A5 apart)', async () => {
+    const r = await fillOfficialForm('507a', { fields: {}, signedDates: { A4: '2026-10-20', A5: '2026-12-25' } }, { tables: 'all' })
+    const pages = await pageTexts(r.pdf)
+    // Template pages 9, 10 and 12 are Tables A4, A5 and A7.
+    const at = (templatePage: number) => pages[r.pageSources.indexOf(templatePage)]
+    expect(at(9)).toMatch(/\b20\b[\s\S]*\b10\b[\s\S]*2026/)
+    expect(at(9)).not.toMatch(/\b25\b/)
+    expect(at(10)).toMatch(/\b25\b[\s\S]*\b12\b[\s\S]*2026/)
+    // A table page with no date of its own prints none.
+    expect(at(12)).not.toMatch(/2026/)
+  })
+
   it('a blank fill adds no text to any page', async () => {
     for (const code of FORM_CODES) {
       const blank = await fillOfficialForm(code, { fields: {} }, { tables: 'all', include: ['507a'] })
@@ -193,7 +253,13 @@ describe('fill', () => {
       const order = [...map.formPages, ...(map.optionalPages ?? []).map((p) => p.page),
         ...(map.appendixCoverPage ? [map.appendixCoverPage] : []), ...new Set(map.tables.map((t) => t.page))]
       const filled = await pageTexts(blank.pdf)
-      expect(filled).toEqual(order.map((p) => original[p - 1]))
+      // Table pages carry their page numbers even when blank (Nov 2026); every
+      // other page is ASIC's, untouched.
+      const tablePages = new Set(map.tables.map((t) => t.page))
+      order.forEach((p, i) => {
+        if (!tablePages.has(p)) expect(filled[i]).toEqual(original[p - 1])
+        else expect(filled[i]).not.toEqual(original[p - 1])
+      })
     }
   })
 
@@ -230,7 +296,7 @@ describe('overflow', () => {
     expect(b28[1]).toContain('Example Adviser 20')
   })
 
-  it('numbers continuation pages "Page 1 of 2", "Page 2 of 2"', async () => {
+  it('repeats the page\u2019s appendix number on a continuation copy (B28: 5 of 5 on both)', async () => {
     const r = await fillOfficialForm('507b', OVERFLOW_PARTB)
     // The two B28 copies are the last two pages; read what is written in the
     // footer's "Page ___ of ___" (bottom right, below the grid).
@@ -240,8 +306,8 @@ describe('overflow', () => {
       return content.items
         .flatMap((i) => ('str' in i && /^\d+$/.test(i.str) && i.transform[4] > 700 && i.transform[5] < 70 ? [i.str] : []))
     }
-    expect(await footer(r.pages - 1)).toEqual(['1', '2'])
-    expect(await footer(r.pages)).toEqual(['2', '2'])
+    expect(await footer(r.pages - 1)).toEqual(['5', '5'])
+    expect(await footer(r.pages)).toEqual(['5', '5'])
   })
 
   it('keeps shrunk text centred on its row (A7 row 2: a long email beside full-size cells)', async () => {

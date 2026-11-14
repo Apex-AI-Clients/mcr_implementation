@@ -20,12 +20,14 @@ const partB = formVersion('507b').map
 const partA = formVersion('507a').map
 
 describe('entryState', () => {
-  it('opens with the pre-filled answers, and every Yes/No at "No"', () => {
+  it('opens with the pre-filled answers, and every Yes/No at "No" but the ones that start at Yes', () => {
     const s = entryState(partB, prefillForm('507b', 'director:1', context()), null)
     expect(s.fields.b1_name).toBe('Jordan Sample')
-    const yesNo = partB.fields.filter((f) => f.type === 'yesno').map((f) => s.fields[f.key])
+    const yesNo = partB.fields.filter((f) => f.type === 'yesno')
     expect(yesNo).toHaveLength(32)
-    expect(yesNo.every((v) => v === 'no')).toBe(true)
+    const yes = ['b8', 'b9', 'b14', 'b15', 'b27']
+    expect(yesNo.filter((f) => s.fields[f.key] === 'yes').map((f) => f.key)).toEqual([...yes, 'b30', 'b30_permission'])
+    expect(yesNo.filter((f) => ![...yes, 'b30', 'b30_permission'].includes(f.key)).every((f) => s.fields[f.key] === 'no')).toBe(true)
     // The tables' "signed by" is left for the director to write by hand.
     expect(s.signedBy).toBeNull()
     expect(s.editedKeys).toEqual([])
@@ -73,7 +75,7 @@ describe('entryState', () => {
 })
 
 describe('cleanAnswers', () => {
-  it('keeps the form’s own fields and columns only, never a handwritten one or signedDate', () => {
+  it('keeps the form’s own fields and columns only, never a handwritten one; signature dates kept (Nov 2026)', () => {
     const cleaned = cleanAnswers('507b', '20220801', {
       fields: { b1_name: 'Jordan Sample', b6_username: 'nope', b6_password: 'nope', b1_street: '1 Home St', b31_date: '2026-10-29', made_up: 'x' },
       tables: {
@@ -81,13 +83,15 @@ describe('cleanAnswers', () => {
         ZZ: [{ a: 1 }],
       },
       signedBy: ' Jordan Sample ',
-      signedDate: '2026-10-29',
+      signedDates: { B2: '2026-10-29', ZZ: '2026-01-01' },
     })
     expect(cleaned).toEqual({
-      fields: { b1_name: 'Jordan Sample' },
+      fields: { b1_name: 'Jordan Sample', b31_date: '2026-10-29' },
       tables: { B28: [{ name: 'Adviser', amount: 100 }] },
-      // Signed by hand on the tables: never kept.
+      // Signed by hand on the tables: never kept. Their date is.
       signedBy: null,
+      // One per table page, the form's own only.
+      signedDates: { B2: '2026-10-29', B3: null, B21: null, B28: null },
     })
   })
 
@@ -97,7 +101,7 @@ describe('cleanAnswers', () => {
   })
 
   it('keeps changed keys only for the form’s own answers', () => {
-    expect(cleanEditedKeys('507a', '20220801', ['a9_name', 'a9_date', 'table:A7', 'signedBy', 'other', 7])).toEqual(['a9_name', 'table:A7'])
+    expect(cleanEditedKeys('507a', '20220801', ['a9_name', 'a9_date', 'table:A7', 'signedBy', 'other', 7])).toEqual(['a9_name', 'a9_date', 'table:A7'])
   })
 
   it('reads back what it saved', () => {
@@ -144,6 +148,8 @@ describe('entryMap', () => {
       'f507a_report_date',
       'f507a_name',
       'f507a_capacity',
+      // Typed since Nov 2026: starts from Form 509's summary date.
+      'f507a_date_signed',
     ])
     expect(m.sections.flatMap((s) => s.tables.map((t) => t.id))).toEqual(['A4', 'A5', 'A6_unrelated', 'A6_related', 'A7'])
     // The CVL printout: pages 1 to 7, the appendix after.
@@ -171,7 +177,8 @@ describe('entryMap', () => {
       ['cvl_liquidator', 'Liquidator – creditors’ voluntary winding up – s497(4) 507D'],
       ['voluntary_administrator', 'Voluntary Administrator - s438B(2) 507K'],
     ])
-    expect(m.sections.find((s) => s.q === 'A9')!.fields.find((f) => f.key === 'a9_date')!.handwritten).toBe(true)
+    // A signature date is asked for on screen now (Nov 2026), not left for the hand.
+    expect(m.sections.find((s) => s.q === 'A9')!.fields.find((f) => f.key === 'a9_date')!.handwritten).toBeFalsy()
     // Only where each answer starts on its page (for the preview to follow), never the boxes themselves.
     expect(JSON.stringify(m)).not.toMatch(/"x0"|"x1"|"bot"|"slashes"|"cells"/)
     const name = m.sections.find((s) => s.q === 'A3')!.fields.find((f) => f.key === 'company_name')!

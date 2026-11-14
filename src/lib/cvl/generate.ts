@@ -3,7 +3,7 @@ import { combinePdfs } from '@/lib/forms/engine'
 import { fillOfficialForm } from '@/lib/forms/fill'
 import { CURRENT_VERSION, FORM_CODES, formVersion } from '@/lib/forms/registry'
 import type { FillResult, FormCode, FormWarning } from '@/lib/forms/types'
-import { entryState, readDraft, toFormData, type DraftAnswers } from './drafts'
+import { entryState, readDraft, savedA7Total, savedSummaryDate, toFormData, type DraftAnswers } from './drafts'
 import { prefillForm, subjectsFor, type Prefill, type Subject } from './prefill'
 import type { CvlContext } from './context'
 import { cvlFillOptions } from './printPages'
@@ -52,6 +52,8 @@ export function caseJobs(ctx: CvlContext, drafts: readonly DraftRow[]): FormJob[
 }
 
 export function jobFor(ctx: CvlContext, drafts: readonly DraftRow[], code: FormCode, subject: Subject): FormJob {
+  // Every signature date starts from Form 509's saved summary date.
+  ctx = { ...ctx, summaryDate: ctx.summaryDate ?? savedSummaryDate(drafts), a7Total: ctx.a7Total ?? savedA7Total(drafts) }
   const directors = ctx.company?.directors ?? []
   const row = drafts.find((d) => d.form_code === code && d.subject === subject)
   const draft = row ? readDraft(row.answers) : null
@@ -63,7 +65,7 @@ export function jobFor(ctx: CvlContext, drafts: readonly DraftRow[], code: FormC
     code,
     subject,
     version,
-    answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy },
+    answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy, signedDates: state.signedDates },
     fromDraft: !!draft,
     label: `${SHORT[code]}${who}`,
     prefill,

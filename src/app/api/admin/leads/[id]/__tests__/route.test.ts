@@ -26,7 +26,7 @@ function request(body: unknown) {
   })
 }
 
-function mockDb(updateError: { code: string; message: string } | null = null) {
+function mockDb(updateError: { code: string; message: string } | null = null, existing: Record<string, unknown> = {}) {
   const updateEq = vi.fn(() => Promise.resolve({ error: updateError }))
   const update = vi.fn(() => ({ eq: updateEq }))
   const insert = vi.fn(() => Promise.resolve({ error: null }))
@@ -37,7 +37,7 @@ function mockDb(updateError: { code: string; message: string } | null = null) {
             eq: () => ({
               maybeSingle: () =>
                 Promise.resolve({
-                  data: { id: 'ld_1', stage: 'non_proceeding', debt_min: null, debt_max: null },
+                  data: { id: 'ld_1', stage: 'non_proceeding', debt_min: null, debt_max: null, ...existing },
                   error: null,
                 }),
             }),
@@ -57,6 +57,27 @@ beforeEach(() => {
     user_metadata: { full_name: 'Test Staff' },
   } as never)
   vi.spyOn(console, 'error').mockImplementation(() => {})
+})
+
+describe('PATCH /api/admin/leads/[id] — debt typed by the lead (0053)', () => {
+  it("clears the lead's typed words when staff enter the debt", async () => {
+    const { update } = mockDb(null, { debt_text: 'about two hundred grand' })
+    const res = await send({ patch: { debtMin: 200_000, debtMax: 200_000 } })
+    expect(res.status).toBe(200)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ debt_min: 200_000, debt_max: 200_000, debt_text: null }))
+  })
+
+  it('leaves the typed words alone when the debt is not touched', async () => {
+    const { update } = mockDb(null, { debt_text: '200,000' })
+    await send({ patch: { name: 'Test Person' } })
+    expect(update).toHaveBeenCalledWith(expect.not.objectContaining({ debt_text: null }))
+  })
+
+  it('works before 0053, when there is no typed-debt column to clear', async () => {
+    const { update } = mockDb()
+    await send({ patch: { debtMin: 200_000, debtMax: 200_000 } })
+    expect(update).toHaveBeenCalledWith(expect.not.objectContaining({ debt_text: null }))
+  })
 })
 
 describe('PATCH /api/admin/leads/[id] — dismiss', () => {

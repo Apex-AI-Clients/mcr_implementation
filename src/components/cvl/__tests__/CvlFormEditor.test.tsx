@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, within, cleanup, act } from '@testing-library/react'
+import { render, screen, waitFor, within, cleanup, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }))
@@ -9,7 +9,7 @@ vi.mock('unpdf/pdfjs', () => ({ getDocument: vi.fn(() => ({ promise: Promise.rej
 // default here, so the preview falls back to the server stub below.
 vi.mock('@/lib/forms/browserFill', () => ({ fillInBrowser: vi.fn() }))
 
-import { CvlFormEditor } from '../CvlFormEditor'
+import { CvlFormEditor, isoDateForInput, STARTING_ROWS, withStartingRows } from '../CvlFormEditor'
 import { entryMap } from '@/lib/cvl/entryMap'
 import { entryState } from '@/lib/cvl/drafts'
 import { prefillForm } from '@/lib/cvl/prefill'
@@ -19,6 +19,8 @@ import { fillInBrowser } from '@/lib/forms/browserFill'
 
 // Each test renders a whole ASIC form; under full-suite load that can pass 20s.
 vi.setConfig({ testTimeout: 60_000 })
+/** The tests that drive the whole Part B screen (40 table rows and their dates) with simulated clicks. */
+const HEAVY = 120_000
 
 /** The Part B entry screen. Synthetic client file only. */
 
@@ -145,8 +147,12 @@ describe('CvlFormEditor', () => {
     expect(table.dataset.page).toBe('13')
     expect(within(table).getByRole('button', { name: 'Add a row' })).toBeTruthy()
     expect(within(table).getByText(/a page · printed on an appendix page \(page 13\)/)).toBeTruthy()
-    // The "signed by" name sits with the first table, where it prints.
-    expect(within(section('Table B2')).getByLabelText(/Name on the appendix tables/)).toBeTruthy()
+    // No "signed by" name to type (the client writes it), but the tables' date
+    // sits with the first table, where it prints (Nov 2026).
+    expect(within(section('Table B2')).queryByLabelText(/Name on the appendix tables/)).toBeNull()
+    // Each table page has its own date (Nov 2026).
+    expect(within(section('Table B2')).getByLabelText(/Date on this table/)).toBeTruthy()
+    expect(within(section('Table B21')).getByLabelText(/Date on this table/)).toBeTruthy()
   })
 
   it('warns on a table cell too long for its cell', async () => {
@@ -427,7 +433,7 @@ describe('CvlFormEditor', () => {
     expect((screen.getByLabelText('Page 1 of 9').parentElement as HTMLElement).style.width).toBe('100%')
     expect(window.localStorage.getItem('cvl.preview.fit')).toBe('width')
     window.localStorage.removeItem('cvl.preview.fit')
-  })
+  }, HEAVY)
 
   it('shows the page a section starts on, from its top, and keeps still for a section on the page already in view', async () => {
     const { watching } = stubObservers()
@@ -509,7 +515,7 @@ describe('CvlFormEditor', () => {
     expect(slot.className).toContain('h-[calc(100vh-9rem)]')
     expect(slot.className).toContain('snap-start')
     expect(screen.getByLabelText(/: every page$/).className).toContain('snap-mandatory')
-  })
+  }, HEAVY)
 
   it('jumps the column to a page from the page buttons', async () => {
     const user = userEvent.setup({ delay: null })
@@ -692,5 +698,196 @@ describe('CvlFormEditor — Form 509 summary', () => {
     await user.clear(erv)
     await user.type(erv, '1250000')
     expect(erv.getAttribute('aria-invalid')).toBeNull()
+  })
+})
+
+/**
+ * Signature dates (Nov 2026): typed on screen, starting from Form 509's
+ * "Date to which summary is made up". Synthetic client file only.
+ */
+describe('CvlFormEditor — signature dates', () => {
+  function renderForm(code: '509' | '507b', summaryDate: string | null = null) {
+    const map = formVersion(code).map
+    const subject = code === '509' ? 'company' : 'director:1'
+    const prefill = prefillForm(code, subject, { ...context(), summaryDate })
+    render(
+      <CvlFormEditor
+        caseId="case-1"
+        clientId="cl_1"
+        map={entryMap(map)}
+        subject={subject}
+        subjects={[{ subject, label: subject === 'company' ? 'Company' : 'Jordan Sample' }]}
+        prefill={prefill}
+        initial={entryState(map, prefill, null)}
+        saved={null}
+      />,
+    )
+  }
+  const input = (key: string) => document.getElementById(`f-${key}`) as HTMLInputElement
+
+  it('on Form 509, Date signed follows the summary date as it is typed, until changed by hand', async () => {
+    renderForm('509')
+    expect(input('date_signed').type).toBe('date')
+    fireEvent.change(input('summary_date'), { target: { value: '2026-11-14' } })
+    expect(input('date_signed').value).toBe('2026-11-14')
+    fireEvent.change(input('date_signed'), { target: { value: '2026-11-20' } })
+    fireEvent.change(input('summary_date'), { target: { value: '2026-11-15' } })
+    expect(input('date_signed').value).toBe('2026-11-20')
+  })
+
+  it('on Part B, B31 and the tables’ date start from the saved summary date, and the tables’ date is saved', async () => {
+    const fetchMock = stubFetch()
+    renderForm('507b', '2026-11-14')
+    expect(input('b31_date').value).toBe('2026-11-14')
+    // A date at each table: B2, B3, B21 and B28.
+    for (const id of ['B2', 'B3', 'B21', 'B28']) expect(input(`signedDate:${id}`).value).toBe('2026-11-14')
+    fireEvent.change(input('signedDate:B3'), { target: { value: '2026-11-21' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true))
+    const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'PUT')!
+    const body = JSON.parse(init!.body as string)
+    expect(body.answers.signedDates).toEqual({ B2: '2026-11-14', B3: '2026-11-21', B21: '2026-11-14', B28: '2026-11-14' })
+    expect(body.answers.fields.b31_date).toBe('2026-11-14')
+    expect(body.editedKeys).toContain('signedDate:B3')
+    expect(body.editedKeys).not.toContain('signedDate:B2')
+  })
+
+  it('leaves them blank, with a note, until Form 509 is saved with its summary date', () => {
+    renderForm('507b', null)
+    expect(input('b31_date').value).toBe('')
+    expect(input('signedDate:B2').value).toBe('')
+    expect(screen.getAllByText(/once Form 509 is saved with it/).length).toBeGreaterThan(0)
+  })
+})
+
+/** B10 (prod, Nov 2026): the date was printed on the PDF but the input showed it empty. */
+describe('CvlFormEditor — B10 shows the date it prints', () => {
+  it('shows B10 from Form 509\u2019s saved summary date', () => {
+    const map = formVersion('507b').map
+    const prefill = prefillForm('507b', 'director:1', { ...context(), summaryDate: '2026-11-14' })
+    render(
+      <CvlFormEditor
+        caseId="case-1"
+        clientId="cl_1"
+        map={entryMap(map)}
+        subject="director:1"
+        subjects={[{ subject: 'director:1', label: 'Jordan Sample' }]}
+        prefill={prefill}
+        initial={entryState(map, prefill, null)}
+        saved={null}
+      />,
+    )
+    expect((document.getElementById('f-b10_date') as HTMLInputElement).value).toBe('2026-11-14')
+  })
+
+  it('shows a DD/MM/YYYY date a draft holds, instead of an empty box', () => {
+    expect(isoDateForInput('28/09/2016')).toBe('2016-09-28')
+    expect(isoDateForInput('1/2/2020')).toBe('2020-02-01')
+    expect(isoDateForInput('2016-09-28')).toBe('2016-09-28')
+    expect(isoDateForInput(null)).toBeNull()
+    expect(isoDateForInput('not a date')).toBe('not a date')
+  })
+})
+
+/** A3 (Nov 2026): Yes to "a trustee of a Trust?" brings in the client file's trust name; No takes it out. */
+describe('CvlFormEditor — A3 trust name', () => {
+  function renderPartA(trustName: string | null) {
+    const map = formVersion('507a').map
+    const ctx = context()
+    ctx.company!.trustName = trustName
+    const prefill = prefillForm('507a', 'company', ctx)
+    render(
+      <CvlFormEditor
+        caseId="case-1"
+        clientId="cl_1"
+        map={entryMap(map)}
+        subject="company"
+        subjects={[{ subject: 'company', label: 'Company' }]}
+        prefill={prefill}
+        initial={entryState(map, prefill, null)}
+        saved={null}
+      />,
+    )
+  }
+  const a3 = () => document.getElementById('q-A3')!.closest('section') as HTMLElement
+  const trustBox = () => document.getElementById('f-a3_trust_name') as HTMLTextAreaElement
+  const answer = (v: 'Yes' | 'No') =>
+    fireEvent.click(within(within(a3()).getByRole('radiogroup', { name: /trustee of a Trust/ })).getByLabelText(v))
+
+  it('starts with no trust name while the answer is No', () => {
+    renderPartA('Example Family Trust')
+    expect(trustBox().value).toBe('')
+  })
+
+  it('puts in the trust name on Yes, and takes it out on No', () => {
+    renderPartA('Example Family Trust')
+    answer('Yes')
+    expect(trustBox().value).toBe('Example Family Trust')
+    answer('No')
+    expect(trustBox().value).toBe('')
+  })
+
+  it('leaves a name typed before Yes alone, and fills nothing when the file has no trust', () => {
+    renderPartA(null)
+    answer('Yes')
+    expect(trustBox().value).toBe('')
+    fireEvent.change(trustBox(), { target: { value: 'Typed Trust' } })
+    answer('Yes')
+    expect(trustBox().value).toBe('Typed Trust')
+  })
+})
+
+/** Tables open with empty rows to type into (Nov 2026). */
+describe('CvlFormEditor — starting rows', () => {
+  const rowsIn = (q: string) => within(section(q)).getAllByRole('button', { name: /^Remove row \d+$/ }).length
+
+  it('opens each Part B table with 10 empty rows, each with its own Remove', () => {
+    renderPartB()
+    for (const q of ['Table B2', 'Table B3', 'Table B21', 'Table B28']) expect(rowsIn(q)).toBe(10)
+  })
+
+  it('opens Part A’s tables with 10, 9, 3 and 3, and 6 rows', () => {
+    const map = formVersion('507a').map
+    const prefill = prefillForm('507a', 'company', context())
+    render(
+      <CvlFormEditor
+        caseId="case-1"
+        clientId="cl_1"
+        map={entryMap(map)}
+        subject="company"
+        subjects={[{ subject: 'company', label: 'Company' }]}
+        prefill={prefill}
+        initial={entryState(map, prefill, null)}
+        saved={null}
+      />,
+    )
+    expect(rowsIn('Table A4')).toBe(10)
+    expect(rowsIn('Table A5')).toBe(9)
+    expect(rowsIn('Table A7')).toBe(6)
+    const a6 = within(section('Table A6 unrelated')).getAllByRole('button', { name: /^Remove row \d+$/ }).length
+    const a6r = within(section('Table A6 related')).getAllByRole('button', { name: /^Remove row \d+$/ }).length
+    expect([a6, a6r]).toEqual([3, 3])
+  })
+
+  it('does not count the empty rows as a change to save, and Remove takes a row away', async () => {
+    renderPartB()
+    // Nothing to save: the button says Saved and is off.
+    expect((screen.getByRole('button', { name: 'Saved' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(section('Table B2')).getByRole('button', { name: 'Remove row 10' }))
+    expect(rowsIn('Table B2')).toBe(9)
+  })
+
+  it('tops a table up to its starting rows, keeping the rows it has', () => {
+    const s = withStartingRows({
+      fields: {},
+      tables: { B2: [{ year: '2024' }], B3: [] },
+      signedBy: null,
+      signedDates: {},
+      editedKeys: [],
+    })
+    expect(s.tables.B2).toHaveLength(10)
+    expect(s.tables.B2[0]).toEqual({ year: '2024' })
+    expect(s.tables.B3).toHaveLength(10)
+    expect(STARTING_ROWS).toMatchObject({ A4: 10, A5: 9, A6_unrelated: 3, A6_related: 3, A7: 6, B2: 10, B3: 10, B21: 10, B28: 10 })
   })
 })

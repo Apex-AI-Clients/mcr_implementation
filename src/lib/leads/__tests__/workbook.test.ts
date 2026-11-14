@@ -129,6 +129,16 @@ describe('leadsSheetData', () => {
     expect(row[col('Debt max')]).toBeNull()
   })
 
+  it('carries a typed debt as sent beside its numbers, and nothing for a dropdown range (0053)', () => {
+    const [header, row] = leadsSheetData([makeLead({ debtMin: 200_000, debtMax: 200_000, debtText: '200,000' })])
+    expect(header.map((c) => c?.value)).toContain('Debt as typed')
+    expect(row[col('Debt min')]?.value).toBe(200_000)
+    expect(row[col('Debt max')]?.value).toBe(200_000)
+    expect(row[col('Debt as typed')]?.value).toBe('200,000')
+    const [, picked] = leadsSheetData([makeLead({ debtMin: 100_000, debtMax: 124_999 })])
+    expect(picked[col('Debt as typed')]?.value).toBe('')
+  })
+
   it('carries the notes and their count', () => {
     const rows = leadsSheetData(
       [makeLead({ id: 'ld_1' })],

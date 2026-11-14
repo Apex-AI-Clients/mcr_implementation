@@ -5,8 +5,10 @@ vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import {
   assessFacebookFormHealth,
+  assessFormHealth,
   formHealthMessage,
   getFacebookFormHealth,
+  getWebsiteFormHealth,
   shortFormId,
   type HealthSubmission,
 } from '../formHealth'
@@ -259,5 +261,139 @@ describe('getFacebookFormHealth', () => {
     expect(await getFacebookFormHealth([NEW_FORM], new Date('2026-11-11T00:00:00Z'))).toEqual([
       'Facebook form 175112…: 1 lead was turned away for a missing email in the last 14 days.',
     ])
+  })
+})
+
+/**
+ * Website forms (0053): the same checks, against the website field map; a
+ * business type only flagged when the form sends one that cannot be read.
+ */
+describe('assessFormHealth — website', () => {
+  const RESULTS_KEYS = ['external_id', 'form_id', 'page_url', 'name', 'email', 'phone', 'debt_code', 'debt_label', 'state', 'message']
+  function web(day: number, extra: Partial<HealthSubmission> = {}): HealthSubmission {
+    return {
+      meta_form_id: 'website_results',
+      received_at: `2026-11-${String(day).padStart(2, '0')}T01:00:00Z`,
+      meta_field_keys: RESULTS_KEYS,
+      state: 'NSW',
+      meta_state_raw: null,
+      meta_state_options: null,
+      debt_min: 200_000,
+      debt_max: 200_000,
+      debt_text: '200,000',
+      entity_type: null,
+      ...extra,
+    }
+  }
+  const messages = (subs: HealthSubmission[]) => assessFormHealth('website', subs, []).map(formHealthMessage)
+
+  it('is quiet for a form that does not ask business type, with typed debts', () => {
+    expect(messages([web(5), web(6), web(7)])).toEqual([])
+  })
+
+  it('does not call typed text that is not an amount a blank debt', () => {
+    const unread = { debt_min: null, debt_max: null, debt_text: 'about two hundred grand' }
+    expect(messages([web(5, unread), web(6, unread), web(7, unread)])).toEqual([])
+  })
+
+  it('flags a form whose last three leads arrived with no debt at all', () => {
+    const none = { debt_min: null, debt_max: null, debt_text: null }
+    expect(messages([web(5, none), web(6, none), web(7, none)])).toEqual([
+      'Website form website_results: its last 3 leads arrived with no Debt.',
+    ])
+  })
+
+  it('flags a business type the form sends but that could not be read, three times running', () => {
+    const asked = { meta_form_id: 'website_home', meta_field_keys: [...RESULTS_KEYS, 'biz_type'] }
+    expect(messages([web(5, asked), web(6, asked), web(7, asked)])).toEqual([
+      'Website form website_home: its last 3 leads sent a business type we could not read.',
+    ])
+    expect(messages([web(5, asked), web(6, asked), web(7, { ...asked, entity_type: 'company' })])).toEqual([])
+  })
+
+  it('names a key the website map does not read', () => {
+    expect(messages([web(5, { meta_field_keys: [...RESULTS_KEYS, 'company_size'] })])).toEqual([
+      "Website form website_results is sending a field we don't recognise: company_size",
+    ])
+  })
+
+  it('groups enquiries that came with no form id', () => {
+    const none = { meta_form_id: null, debt_min: null, debt_max: null, debt_text: null }
+    expect(messages([web(5, none), web(6, none), web(7, none)])).toEqual([
+      'Website leads with no form id: its last 3 leads arrived with no Debt.',
+    ])
+  })
+})
+
+describe('getWebsiteFormHealth', () => {
+  type Result = { data: unknown; error: { code?: string; message: string } | null }
+
+  function client(results: Result[]) {
+    const calls: { select: string; eqs: [string, unknown][] }[] = []
+    let i = 0
+    const from = () => {
+      const call = { select: '', eqs: [] as [string, unknown][] }
+      calls.push(call)
+      const chain = {
+        select: (cols: string) => ((call.select = cols), chain),
+        eq: (column: string, value: unknown) => (call.eqs.push([column, value]), chain),
+        gte: () => chain,
+        then: (resolve: (v: Result) => void) => resolve(results[i++] ?? { data: [], error: null }),
+      }
+      return chain
+    }
+    vi.mocked(getSupabaseServerClient).mockReturnValue({ from } as never)
+    return calls
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  const blankDebt = (formId: string | null, day: number) => ({
+    meta_form_id: formId,
+    received_at: `2026-11-0${day}T01:00:00Z`,
+    meta_field_keys: ['name', 'email', 'phone', 'debt_code'],
+    state: 'NSW',
+    meta_state_raw: null,
+    meta_state_options: null,
+    debt_min: null,
+    debt_max: null,
+    debt_text: null,
+    entity_type: null,
+  })
+
+  it("checks only this lead's website forms, website rows only, never the payload", async () => {
+    const calls = client([
+      { data: [blankDebt(null, 5), blankDebt(null, 6), blankDebt(null, 7), blankDebt('website_home', 7)], error: null },
+      { data: [], error: null },
+    ])
+    expect(await getWebsiteFormHealth(['unknown'], new Date('2026-11-11T00:00:00Z'))).toEqual([
+      'Website leads with no form id: its last 3 leads arrived with no Debt.',
+    ])
+    expect(calls[0].eqs).toContainEqual(['source', 'website'])
+    expect(calls[0].select).toContain('debt_text')
+    expect(calls[1].select).toBe('error, created_at, form_id:raw_body->>form_id')
+  })
+
+  it('works before migration 0053, without the typed-debt column', async () => {
+    const calls = client([
+      { data: null, error: { code: '42703', message: 'column does not exist' } },
+      { data: [], error: null },
+      { data: [], error: null },
+    ])
+    expect(await getWebsiteFormHealth(['unknown'])).toEqual([])
+    expect(calls[1].select).not.toContain('debt_text')
+  })
+
+  it('asks the database nothing for a lead with no website enquiry', async () => {
+    const calls = client([])
+    expect(await getWebsiteFormHealth([])).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('shows no warnings rather than failing the page', async () => {
+    client([{ data: null, error: { message: 'boom' } }])
+    expect(await getWebsiteFormHealth(['unknown'])).toEqual([])
   })
 })

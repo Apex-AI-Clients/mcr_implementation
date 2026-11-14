@@ -44,17 +44,27 @@ const blank = (v: FieldValue) => v === null || v === undefined || v === ''
  */
 export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefill, initial, saved: savedAtOpen }: CvlFormEditorProps) {
   const router = useRouter()
-  const [state, setState] = useState(initial)
-  const [savedState, setSavedState] = useState(initial)
+  // The tables open with empty rows to type into (withStartingRows). Blank
+  // rows are never saved or printed, so they are not a change to save.
+  const [opening] = useState(() => withStartingRows(initial))
+  const [state, setState] = useState(opening)
+  const [savedState, setSavedState] = useState(opening)
   const [saved, setSaved] = useState(savedAtOpen)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // The template page being edited: the preview turns to it.
   const [spot, setSpot] = useState<Spot | null>(null)
   const dirty = !same(state, savedState)
-  const answersOf = (st: EntryState) => JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy })
+  // The tables that carry a date: the first on each printed page (A6's two share one).
+  const seenPages = new Set<number>()
+  const datedIds = map.sections
+    .flatMap((x) => x.tables)
+    .filter((t) => !seenPages.has(t.page) && seenPages.add(t.page))
+    .map((t) => t.id)
+  const answersOf = (st: EntryState) =>
+    JSON.stringify({ fields: st.fields, tables: st.tables, signedBy: st.signedBy, signedDates: st.signedDates })
   // What the preview shows: filled on opening, and again on Save (never while typing).
-  const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(initial), n: 0 }))
+  const [previewRequest, setPreviewRequest] = useState(() => ({ answers: answersOf(opening), n: 0 }))
   const onScreen = answersOf(state)
   const stale = onScreen !== previewRequest.answers
   const refreshPreview = () => setPreviewRequest((r) => ({ answers: answersOf(state), n: r.n + 1 }))
@@ -101,11 +111,40 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
 
   function setField(key: string, value: FieldValue) {
     setState((s) => {
-      const next = { ...s, fields: { ...s.fields, [key]: value } }
+      const fields = { ...s.fields, [key]: value }
+      // Form 509: "Date signed" follows the summary date as it is typed, until
+      // staff change "Date signed" themselves (Nov 2026).
+      if (map.code === '509' && key === SUMMARY_DATE_KEY && !s.editedKeys.includes(SIGNED_509_KEY)) {
+        fields[SIGNED_509_KEY] = value
+      }
+      // Part A's A3: Yes to "a trustee of a Trust?" puts in the client file's
+      // trust name when the box is empty; No takes the name out (Nov 2026).
+      let next: EntryState = { ...s, fields }
+      if (map.code === '507a' && key === TRUSTEE_KEY) {
+        if (value === 'yes' && blank(fields[TRUST_NAME_KEY]) && prefill.trustName) {
+          fields[TRUST_NAME_KEY] = prefill.trustName.value
+          next = markEdited(TRUST_NAME_KEY, true, next)
+        } else if (value !== 'yes') {
+          fields[TRUST_NAME_KEY] = null
+          next = markEdited(TRUST_NAME_KEY, false, next)
+        }
+      }
       const pre = prefill.fields[key]
       return markEdited(key, pre ? !same(pre.value, value) : !blank(value), next)
     })
   }
+
+  // A table page's "...and dated" (by its first table id).
+  function setSignedDate(tableId: string, value: FieldValue) {
+    const date = typeof value === 'string' && value.trim() ? value.trim() : null
+    setState((s) =>
+      markEdited(`${TABLE_DATED_KEY}:${tableId}`, !same(prefill.signedDates?.[tableId]?.value ?? null, date), {
+        ...s,
+        signedDates: { ...s.signedDates, [tableId]: date },
+      }),
+    )
+  }
+
 
   function setTable(id: string, rows: TableRow[]) {
     setState((s) => markEdited(`table:${id}`, true, { ...s, tables: { ...s.tables, [id]: rows } }))
@@ -120,7 +159,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject,
-          answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy },
+          answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy, signedDates: state.signedDates },
           editedKeys: state.editedKeys,
         }),
       })
@@ -153,6 +192,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
   }
 
   const sourceOf = (key: string): AmountSource | null => {
+    // A3's trust name, while it is still the client file's.
+    if (key === TRUST_NAME_KEY && prefill.trustName && same(prefill.trustName.value, state.fields[key])) return prefill.trustName.source
     const pre = prefill.fields[key]
     return pre && !state.editedKeys.includes(key) && same(pre.value, state.fields[key]) ? pre.source : null
   }
@@ -387,6 +428,23 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                     />
                   ))}
               </div>
+              {s.kind === 'table' && s.tables[0] && datedIds.includes(s.tables[0].id) && (
+                <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                  <FieldInput
+                    field={tablesDatedField(s.page, s.tables[0].id)}
+                    value={state.signedDates?.[s.tables[0].id] ?? null}
+                    source={
+                      prefill.signedDates?.[s.tables[0].id] &&
+                      !state.editedKeys.includes(`${TABLE_DATED_KEY}:${s.tables[0].id}`) &&
+                      same(prefill.signedDates[s.tables[0].id].value, state.signedDates?.[s.tables[0].id] ?? null)
+                        ? prefill.signedDates[s.tables[0].id].source
+                        : null
+                    }
+                    note={prefill.signedDates?.[s.tables[0].id] ? null : TABLES_DATED_NOTE}
+                    onChange={(v) => setSignedDate(s.tables[0].id, v)}
+                  />
+                </div>
+              )}
               {s.tableRefs?.map((t) => (
                 <p key={t.id} className="mt-3 text-xs text-foreground/60">
                   The rows go in{' '}
@@ -959,6 +1017,63 @@ function TooLong({ id, over, room }: { id: string; over: number; room: Room }) {
   )
 }
 
+/**
+ * Empty rows each appendix table opens with, to type into (Nov 2026). A table
+ * with rows already is topped up to this many. Rows can still be added and
+ * deleted; blank rows are dropped when the form is saved or printed.
+ */
+export const STARTING_ROWS: Record<string, number> = {
+  A4: 10,
+  A5: 9,
+  A6_unrelated: 3,
+  A6_related: 3,
+  A7: 6,
+  B2: 10,
+  B3: 10,
+  B21: 10,
+  B28: 10,
+}
+
+export function withStartingRows(s: EntryState): EntryState {
+  const tables = { ...s.tables }
+  for (const [id, n] of Object.entries(STARTING_ROWS)) {
+    if (!(id in tables)) continue
+    const rows = tables[id] ?? []
+    if (rows.length < n) tables[id] = [...rows, ...Array.from({ length: n - rows.length }, () => ({}))]
+  }
+  return { ...s, tables }
+}
+
+/** Part A's A3: the trustee question, and the trust name it brings in on Yes (Nov 2026). */
+const TRUSTEE_KEY = 'a3_trustee'
+const TRUST_NAME_KEY = 'a3_trust_name'
+
+/** Form 509's summary date, and the "Date signed" that follows it on that form (Nov 2026). */
+const SUMMARY_DATE_KEY = 'summary_date'
+const SIGNED_509_KEY = 'date_signed'
+/** The tables' "...and dated": registry.ts TABLE_DATED_KEY (not imported: it would bring every form map to the browser). */
+const TABLE_DATED_KEY = 'signedDate'
+
+const TABLES_DATED_NOTE = 'Fills from Form 509\'s "Date to which summary is made up" once Form 509 is saved with it.'
+
+/** A table page's "...and dated" as an answer on screen: a date, shown with that page's first table. */
+function tablesDatedField(page: number, tableId: string): EntryField {
+  return {
+    key: `${TABLE_DATED_KEY}:${tableId}`,
+    label: 'Date on this table (\u201c\u2026and dated\u201d, at the top of its page)',
+    type: 'date',
+    page,
+    top: 0,
+  }
+}
+
+/** A date answer as a date input takes it: "28/09/2016" or "28-9-2016" to "2016-09-28"; anything else unchanged. */
+export function isoDateForInput(value: FieldValue): FieldValue {
+  if (typeof value !== 'string') return value
+  const m = /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\s*$/.exec(value)
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : value
+}
+
 function FieldInput({
   field: f,
   value,
@@ -1046,13 +1161,16 @@ function FieldInput({
     )
   } else {
     const type = f.type === 'date' ? 'date' : 'text'
+    // A date input shows only YYYY-MM-DD: a draft holding "28/09/2016" would
+    // look empty while the PDF printed it. Shown as the date it is.
+    const shown = type === 'date' ? isoDateForInput(value) : value
     control = (
       <div className="flex items-center gap-1">
         <input
           id={id}
           type={type}
           inputMode={f.type === 'money' ? 'decimal' : undefined}
-          value={value === null || value === undefined ? '' : String(value)}
+          value={shown === null || shown === undefined ? '' : String(shown)}
           onChange={(e) => {
             const raw = e.target.value
             if (f.type === 'money') onChange(moneyValue(raw))

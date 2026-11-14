@@ -22,10 +22,15 @@ interface FieldBase {
   page: number
   /**
    * Filled in by hand on the printout: the engine never draws it and the app
-   * never stores it (Part B B6 user name/password, B1 address, and every
-   * date beside a signature: dated by hand on the day).
+   * never stores it (Part B B6 user name/password and the B1 address).
    */
   handwritten?: boolean
+  /**
+   * The date beside a signature (Form 509 "Date signed", A9, A10, Form 507A,
+   * B31). Typed and printed since Nov 2026: it starts from Form 509's "Date
+   * to which summary is made up" and can be changed on each form.
+   */
+  signatureDate?: boolean
 }
 
 export type FormField =
@@ -102,7 +107,7 @@ export interface FormTable {
     pageFrom: TextSpot
     pageOf: TextSpot
     signedBy: TextSpot
-    /** "...and dated": mapped for reference only, never drawn (dated by hand). */
+    /** "...and dated": the form's signature date (FormData.signedDate), either side of its two "/". */
     dated: { s1: number; s2: number; slashWidth: number; baseline: number }
   }
   footer: { page: TextSpot; of: TextSpot }
@@ -148,10 +153,14 @@ export interface FormData {
   fields: Record<string, FieldValue>
   tables?: Record<string, TableRow[]>
   /**
-   * Printed on every appendix table header ("signed by ..."). The "...and
-   * dated" beside it is left blank: it is dated by hand on the day.
+   * Printed on every appendix table header ("signed by ..."). Not filled by
+   * the CVL screens: the client names and signs themselves there.
    */
   signedBy?: string
+  /** "...and dated" on every appendix table header: a date, DD/MM/YYYY or ISO. Used where a page has none of its own. */
+  signedDate?: string
+  /** "...and dated" per table page, by the page's first table id (registry.ts datedTables). */
+  signedDates?: Record<string, string>
 }
 
 export interface FormWarning {

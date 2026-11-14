@@ -137,6 +137,19 @@ describe('enquiryFields', () => {
     expect(fields['Business type']).toMatchObject({ value: null, changed: false })
   })
 
+  it('shows a typed debt as the amount sent, marked as typed (0053)', () => {
+    const fields = byLabel(enquiryFields(enquiry({ debtMin: 200_000, debtMax: 200_000, debtText: '200,000' }), undefined))
+    expect(fields.Debt).toMatchObject({ value: '$200,000', hint: 'as typed' })
+    const unread = byLabel(enquiryFields(enquiry({ debtMin: null, debtMax: null, debtText: 'about two hundred grand' }), undefined))
+    expect(unread.Debt).toMatchObject({ value: 'about two hundred grand', hint: 'as typed' })
+  })
+
+  it('shows a dropdown debt as its range, with no hint', () => {
+    const fields = byLabel(enquiryFields(enquiry(), undefined))
+    expect(fields.Debt.value).toBe('$100,000 – $124,999')
+    expect(fields.Debt.hint).toBeUndefined()
+  })
+
   it('does not call a reformatted phone number or a re-cased email a change', () => {
     const fields = byLabel(
       enquiryFields(

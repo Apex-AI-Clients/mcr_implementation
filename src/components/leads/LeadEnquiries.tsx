@@ -113,6 +113,9 @@ export function LeadEnquiries({ lead, enquiries, clientFiles = [], onConvert }: 
                               )}
                             </span>
                           )}
+                          {field.value !== null && field.hint && (
+                            <span className="ml-1.5 text-xs text-foreground/40">{field.hint}</span>
+                          )}
                         </dd>
                       </div>
                     ))}

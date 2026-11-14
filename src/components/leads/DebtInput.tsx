@@ -5,7 +5,7 @@ import { Check, Pencil, X } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useLeads } from '@/components/leads/LeadsStore'
 import { parseLooseDebt, type LooseDebtFailure } from '@/lib/leads/ingest'
-import { formatDebtRange } from '@/lib/leads/format'
+import { DEBT_AS_TYPED, describeDebt, formatDebtRange } from '@/lib/leads/format'
 import { MIN_PLAUSIBLE_DEBT } from '@/lib/leads/ingestConfig'
 import type { Lead } from '@/types/leads'
 
@@ -44,6 +44,8 @@ export function DebtInput({ lead }: DebtInputProps) {
 
   const isExact = lead.debtMin !== null && lead.debtMin === lead.debtMax
   const display = formatDebtRange(lead.debtMin, lead.debtMax)
+  // What the row shows: a typed debt as sent (0053), else the range.
+  const shown = describeDebt(lead)
 
   function begin() {
     // Prefill only when the stored value is already an exact figure. Prefilling
@@ -67,10 +69,11 @@ export function DebtInput({ lead }: DebtInputProps) {
       return
     }
 
+    // Staff's figure replaces what the lead typed (the server clears it too).
     const next =
       parsed.kind === 'absent'
-        ? { debtMin: null, debtMax: null }
-        : { debtMin: parsed.min, debtMax: parsed.max }
+        ? { debtMin: null, debtMax: null, debtText: null }
+        : { debtMin: parsed.min, debtMax: parsed.max, debtText: null }
 
     if (next.debtMin === lead.debtMin && next.debtMax === lead.debtMax) {
       cancel()
@@ -140,12 +143,15 @@ export function DebtInput({ lead }: DebtInputProps) {
       aria-label={`Edit debt for ${lead.name}`}
       className="group/debt flex w-full items-center justify-start gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      <span
-        className={`whitespace-nowrap tabular-nums ${
-          lead.debtMin === null ? 'text-foreground/25' : 'font-medium text-foreground'
-        }`}
-      >
-        {display}
+      <span className="min-w-0 text-left">
+        <span
+          className={`block tabular-nums ${shown.typed ? 'break-words' : 'whitespace-nowrap'} ${
+            shown.empty ? 'text-foreground/25' : 'font-medium text-foreground'
+          }`}
+        >
+          {shown.text}
+        </span>
+        {shown.typed && <span className="block text-[11px] leading-tight text-foreground/40">{DEBT_AS_TYPED}</span>}
       </span>
       <Pencil className="h-3 w-3 shrink-0 text-muted opacity-0 transition-opacity group-hover/debt:opacity-100" />
     </button>

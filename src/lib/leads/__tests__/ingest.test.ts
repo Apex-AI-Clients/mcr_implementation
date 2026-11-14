@@ -62,6 +62,8 @@ describe('mapLead — website form', () => {
       metaAdName: null,
       metaAccountId: null,
       metaFieldKeys: null,
+      pageUrl: null,
+      debtText: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -332,15 +334,15 @@ describe('mapLead — website_results free-text debt', () => {
     expect(result.lead.message).not.toContain(RAW_DEBT_NOTE_PREFIX)
   })
 
-  it('nulls the range for "not sure" and keeps the raw text in the message', () => {
+  it('nulls the range for "not sure" and keeps the text as the debt, as typed (0053)', () => {
     const result = mapLead(fixture('website_results_notsure'), 'website', 'r3', opts)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.lead.debtMin).toBeNull()
     expect(result.lead.debtMax).toBeNull()
-    expect(result.lead.message).toBe(
-      'Freight hire, behind on GST.\n\nDebt (as entered): not sure',
-    )
+    expect(result.lead.debtText).toBe('not sure')
+    // Shown as the debt now, so the message is left as written.
+    expect(result.lead.message).toBe('Freight hire, behind on GST.')
   })
 
   it('leaves the message untouched when the field was left empty', () => {
@@ -364,7 +366,9 @@ describe('mapLead — website_results free-text debt', () => {
     expect(result.lead.debtMax).not.toBe(124_999)
     expect(result.lead.debtMin).toBeNull()
     expect(result.lead.debtMax).toBeNull()
-    expect(result.lead.message).toContain('Debt (as entered): 3')
+    // Kept exactly as typed (0053): too small to be an amount, never a code.
+    expect(result.lead.debtText).toBe('3')
+    expect(result.lead.message).toBe('Freight hire, behind on GST.')
   })
 
   it('reads the same "3" through the code table on a select-based form', () => {
@@ -384,7 +388,8 @@ describe('mapLead — website_results free-text debt', () => {
     const result = mapLead(payload, 'website', 'r6', opts)
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.lead.message).toBe('Debt (as entered): not sure')
+    expect(result.lead.debtText).toBe('not sure')
+    expect(result.lead.message).toBeNull()
   })
 
   it('ignores debt_label, which this form always posts empty', () => {
@@ -583,6 +588,8 @@ describe('mapLead — the live MCR26_MAIN Facebook form', () => {
       metaAdName: null,
       metaAccountId: null,
       metaFieldKeys: null,
+      pageUrl: null,
+      debtText: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -833,6 +840,8 @@ describe('mapLead — MCR26_MAIN delivering option keys', () => {
       metaAdName: null,
       metaAccountId: null,
       metaFieldKeys: null,
+      pageUrl: null,
+      debtText: null,
       metaStateRaw: null,
       metaStateOptions: null,
     })
@@ -1101,6 +1110,8 @@ describe('mapLead — the ATO Debt Aus-update-new Facebook form', () => {
       metaAdName: null,
       metaAccountId: null,
       metaFieldKeys: null,
+      pageUrl: null,
+      debtText: null,
       metaStateRaw: 'NSW, VIC, ACT, TAS',
       metaStateOptions: ['NSW', 'VIC', 'ACT', 'TAS'],
     })

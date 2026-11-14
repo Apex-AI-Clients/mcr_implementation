@@ -123,6 +123,10 @@ export function toSubmissionPayload(lead: IngestedLead): SubmissionPayload {
     phone: lead.phone,
     debt_min: lead.debtMin,
     debt_max: lead.debtMax,
+    // 0053. Like meta_field_keys below, dropped by jsonb_populate_record until
+    // the migration adds the columns, so this is safe either side of it.
+    debt_text: lead.debtText,
+    page_url: lead.pageUrl,
     state: lead.state,
     meta_state_raw: lead.metaStateRaw,
     meta_state_options: lead.metaStateOptions,

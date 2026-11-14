@@ -167,7 +167,8 @@ describe('Edit lead', () => {
 
     expect(updateLead).toHaveBeenCalledWith({
       leadId: 'ld_1',
-      patch: { debtMin: 187_000, debtMax: 187_000 },
+      // Staff's figure replaces any words the lead typed (0053).
+      patch: { debtMin: 187_000, debtMax: 187_000, debtText: null },
     })
   })
 

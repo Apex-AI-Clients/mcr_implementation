@@ -198,7 +198,8 @@ export function EditLeadDialog({ lead, onClose }: EditLeadDialogProps) {
       ;({ min, max } = decodeDebtRange(form.debt))
     }
     if (min === lead.debtMin && max === lead.debtMax) return {}
-    return { debtMin: min, debtMax: max }
+    // Staff's figure replaces what the lead typed (the server clears it too).
+    return { debtMin: min, debtMax: max, debtText: null }
   }
 
   function statePatch(): Partial<Lead> {

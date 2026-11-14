@@ -43,6 +43,12 @@ export interface IngestedLead {
   phone: string
   debtMin: number | null
   debtMax: number | null
+  /**
+   * Website only (migration 0053): the debt exactly as the lead typed it, when
+   * the answer was typed rather than picked from a dropdown. A typed amount
+   * also sets debtMin = debtMax; unreadable text sets neither. Null otherwise.
+   */
+  debtText: string | null
   state: AuState | null
   /**
    * Only set when state is null. For a resolved grouping, its display labels
@@ -81,6 +87,8 @@ export interface IngestedLead {
    * found from the database instead of from logs. Null on every other source.
    */
   metaFieldKeys: string[] | null
+  /** Website only (0053): the page the form was posted from, no query string. */
+  pageUrl: string | null
 }
 
 export type IngestResult =
@@ -157,6 +165,91 @@ export function mapState(raw: string | null): StateMapping {
 
 /** Long enough to show any real option key, short enough not to flood a log. */
 const MAX_LOGGED_STATE_LENGTH = 80
+
+/** Which of `keys` gave the answer `pick` used: names the key in a warning. */
+function keyOf(payload: Payload, keys: string[]): string {
+  return keys.find((key) => pick(payload, [key]) !== null) ?? keys.join(',')
+}
+
+/** A website debt answer, read (0053). */
+export type WebsiteDebt =
+  | { kind: 'absent' }
+  /** A dropdown's code or option: a range, shown as a range. */
+  | { kind: 'dropdown'; min: number | null; max: number | null }
+  /** Typed, and one amount: shown as that amount, "as typed". */
+  | { kind: 'typed'; amount: number; text: string }
+  /** Typed, and not one amount: the text is shown exactly as sent. */
+  | { kind: 'unrecognised'; text: string }
+
+/**
+ * A website debt answer, from any of its forms (0053).
+ *
+ * The website's forms post debt in the same key: a dropdown's position code
+ * ("3"), its option ("100k_125k" or the label), or, on the results-page form,
+ * whatever was typed ("200,000"). So every form's answer is read the same way:
+ * a code or option first, then a typed amount ("200,000", "$200,000", "200k",
+ * "80000", "1.2m"), and anything else is kept as text.
+ *
+ * The one collision: a bare "-1" or "1"–"5" is both a dropdown code and
+ * something a person could type. Read as the code — except on a form known to
+ * be free text (`format` 'free_text', from the form_id the form posts), where
+ * codes are never applied and a "3" is kept as the text "3".
+ */
+export function readWebsiteDebt(raw: string | null, format: DebtFieldFormat = 'code'): WebsiteDebt {
+  const text = raw?.trim() ?? ''
+  if (!text) return { kind: 'absent' }
+  if (format !== 'free_text') {
+    const code = WEBSITE_DEBT_CODES[text.toLowerCase()]
+    if (code) return { kind: 'dropdown', min: code.min, max: code.max }
+    const option = mapDebtLabel(text)
+    if (option) return { kind: 'dropdown', min: option.min, max: option.max }
+  }
+  const parsed = parseLooseDebt(text)
+  if (parsed.kind === 'parsed') return { kind: 'typed', amount: parsed.min, text }
+  return { kind: 'unrecognised', text }
+}
+
+/**
+ * The keys a website lead carried, names only (0053), so a form that stops
+ * sending a field can be seen from the database. Capped, so a malformed body
+ * cannot store an unbounded list.
+ */
+export function websiteFieldKeys(body: Record<string, unknown>): string[] {
+  return Object.keys(body)
+    .filter((key) => key.length > 0 && key.length <= 100)
+    .slice(0, 100)
+}
+
+/** The form id a website form posts (`form_id`), or null. */
+export function websiteFormId(body: Record<string, unknown>): string | null {
+  const value = body.form_id
+  if (typeof value !== 'string') return null
+  const id = value.trim()
+  return id && id.length <= 100 ? id : null
+}
+
+/**
+ * The page a website form was posted from (`page_url`), without its query
+ * string or fragment — those can carry tracking ids or a visitor's details.
+ */
+export function websitePageUrl(body: Record<string, unknown>): string | null {
+  const value = body.page_url
+  if (typeof value !== 'string') return null
+  const page = value.split(/[?#]/)[0].trim()
+  return page ? page.slice(0, 500) : null
+}
+
+/**
+ * Keys a website form sends that are not answers, or are read elsewhere: the
+ * form's own ids, the honeypot, and fields kept for reference only.
+ */
+const WEBSITE_NON_ANSWER_KEYS = new Set(['external_id', 'form_id', 'page_url', 'submitted_at', 'debt_label', HONEYPOT_FIELD])
+
+/** Website keys the field map does not read: for the form health check. */
+export function unmappedWebsiteKeys(keys: readonly string[], fieldMap: FieldMap = FIELD_MAPS.website): string[] {
+  const mapped = new Set(Object.values(fieldMap).flat())
+  return keys.filter((key) => !mapped.has(key) && !WEBSITE_NON_ANSWER_KEYS.has(key))
+}
 
 /** Unmapped or absent debt is null. Never a guess. */
 function mapDebt(raw: string | null): DebtRange {
@@ -433,8 +526,10 @@ export interface MapLeadOptions {
   pageId?: string | null
   /** The ad resolved to its campaign. Absent when there was no ad to resolve. */
   ad?: AdAttribution
-  /** Facebook only: every question key the lead carried (`facebookFieldKeys`). */
+  /** Every key the lead carried, names only: Facebook (`facebookFieldKeys`) and website (`websiteFieldKeys`). */
   fieldKeys?: string[] | null
+  /** Website only: the page the form was posted from (`websitePageUrl`). */
+  pageUrl?: string | null
 }
 
 /**
@@ -495,8 +590,27 @@ export function mapLead(
   const rawDebt = pick(payload, fieldMap.debt)
   let message = pick(payload, fieldMap.message)
   let debt: DebtRange
+  let debtText: string | null = null
 
-  if (debtFormat === 'free_text') {
+  const formForLog = options.formId ?? 'unknown'
+  if (source === 'website') {
+    // Every website form, whichever sent it: a dropdown's code or option, or
+    // an amount typed into a free-text box (0053). The words typed are kept.
+    const read = readWebsiteDebt(rawDebt, debtFormat)
+    debt = read.kind === 'dropdown' ? { min: read.min, max: read.max } : read.kind === 'typed' ? { min: read.amount, max: read.amount } : { min: null, max: null }
+    if (read.kind === 'typed' || read.kind === 'unrecognised') debtText = read.text
+    // Key and form only, never the answer: it is the lead's financial position.
+    if (read.kind === 'absent') {
+      const sent = fieldMap.debt.filter((key) => key in payload)
+      console.warn(
+        sent.length
+          ? `[webhooks/leads] website debt blank key=${sent.join(',')} form_id=${formForLog}`
+          : `[webhooks/leads] website debt not sent keys=${fieldMap.debt.join(',')} form_id=${formForLog}`,
+      )
+    } else if (read.kind === 'unrecognised') {
+      console.warn(`[webhooks/leads] website debt unrecognised key=${keyOf(payload, fieldMap.debt)} form_id=${formForLog}`)
+    }
+  } else if (debtFormat === 'free_text') {
     const parsed = parseLooseDebt(rawDebt)
     if (parsed.kind === 'parsed') {
       debt = { min: parsed.min, max: parsed.max }
@@ -532,6 +646,20 @@ export function mapLead(
 
   const callTime = pick(payload, fieldMap.callTime)
 
+  const rawEntity = pick(payload, fieldMap.entityType)
+  const entityType = mapEntityType(rawEntity)
+  if (source === 'website') {
+    // A form that does not ask is not a fault (the results-page form has no
+    // business type question): noted, not warned. An answer we cannot read is.
+    if (rawEntity === null) {
+      console.info(`[webhooks/leads] website business type not asked keys=${fieldMap.entityType.join(',')} form_id=${formForLog}`)
+    } else if (entityType === null) {
+      console.warn(
+        `[webhooks/leads] website business type unrecognised value key=${keyOf(payload, fieldMap.entityType)} form_id=${formForLog}`,
+      )
+    }
+  }
+
   return {
     ok: true,
     lead: {
@@ -540,10 +668,11 @@ export function mapLead(
       phone,
       debtMin: debt.min,
       debtMax: debt.max,
+      debtText,
       state,
       metaStateRaw,
       metaStateOptions,
-      entityType: mapEntityType(pick(payload, fieldMap.entityType)),
+      entityType,
       message: message ?? null,
       preferredCallTime: callTime ?? null,
       source,
@@ -557,6 +686,7 @@ export function mapLead(
       metaAdName: options.ad?.adName ?? null,
       metaAccountId: options.ad?.accountId ?? null,
       metaFieldKeys: options.fieldKeys?.length ? options.fieldKeys : null,
+      pageUrl: options.pageUrl ?? null,
     },
   }
 }

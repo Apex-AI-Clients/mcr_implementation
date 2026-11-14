@@ -66,6 +66,42 @@ export function formatDebtRange(
   return `${money(min)} ${EN_DASH} ${money(max)}`
 }
 
+/** The hint beside a debt the lead typed (0053). */
+export const DEBT_AS_TYPED = 'as typed'
+
+export interface DebtDisplay {
+  /** What to show: the typed amount as currency, the typed text, or the range. */
+  text: string
+  /** The lead typed it: shown with the DEBT_AS_TYPED hint. */
+  typed: boolean
+  /** Nothing is known: shown dimmed, or as "Not given". */
+  empty: boolean
+}
+
+/**
+ * The debt as staff see it, everywhere it appears (0053).
+ *
+ *  - Typed by the lead and read as one amount: that amount in full,
+ *    "$200,000", even in the table, never a bracket and never rounded.
+ *  - Typed and not an amount ("about two hundred grand"): the text exactly as
+ *    sent.
+ *  - Otherwise (a dropdown, or entered by staff): the range, as before.
+ *
+ * Typed values carry `typed`, for the "as typed" hint beside them.
+ */
+export function describeDebt(
+  debt: { debtMin: number | null; debtMax: number | null; debtText?: string | null },
+  style: 'short' | 'full' = 'short',
+): DebtDisplay {
+  const typedText = debt.debtText?.trim()
+  if (typedText) {
+    const exact = debt.debtMin !== null && debt.debtMin === debt.debtMax
+    return { text: exact ? full(debt.debtMin as number) : typedText, typed: true, empty: false }
+  }
+  const empty = debt.debtMin === null && debt.debtMax === null
+  return { text: formatDebtRange(debt.debtMin, debt.debtMax, style), typed: false, empty }
+}
+
 /**
  * A debt range as a select value, e.g. "100000:124999", "150000:" (open-ended)
  * or ":" (not given).
@@ -588,6 +624,9 @@ const CSV_COLUMNS = [
   // be filtered or sorted in a spreadsheet, which is the point of the export.
   'Debt min',
   'Debt max',
+  // What the lead typed, exactly as sent (0053); empty for a dropdown range.
+  // A typed amount is also in Debt min and Debt max, equal, so it filters.
+  'Debt as typed',
   'Entity type',
   'State',
   'Message',
@@ -682,6 +721,7 @@ export function leadsToCsv(
       formatPhone(lead.phone),
       lead.debtMin === null ? '' : String(lead.debtMin),
       lead.debtMax === null ? '' : String(lead.debtMax),
+      lead.debtText ?? '',
       formatEntityType(lead) ?? '',
       lead.state ?? '',
       // Collapsed, for the same reason the notes are: a newline the visitor

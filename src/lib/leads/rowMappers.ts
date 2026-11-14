@@ -34,6 +34,8 @@ export function toLead(row: LeadRow): Lead {
     phone: row.phone,
     debtMin: row.debt_min,
     debtMax: row.debt_max,
+    // Absent until 0053 is applied.
+    debtText: row.debt_text ?? null,
     state: row.state as AuState | null,
     metaStateRaw: row.meta_state_raw,
     metaStateOptions: row.meta_state_options as AuState[] | null,
@@ -99,6 +101,8 @@ export function toLeadSubmission(row: LeadSubmissionRow): LeadSubmission {
     phone: row.phone,
     debtMin: row.debt_min,
     debtMax: row.debt_max,
+    // Absent until 0053 is applied.
+    debtText: row.debt_text ?? null,
     state: row.state as AuState | null,
     metaStateRaw: row.meta_state_raw,
     metaStateOptions: row.meta_state_options as AuState[] | null,

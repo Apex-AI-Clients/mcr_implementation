@@ -34,7 +34,8 @@ import { clientFileLabel, reenquiryMarkerLabel, showsReenquiryMarker } from '@/l
 import {
   describeUncertainState,
   formatAge,
-  formatDebtRange,
+  DEBT_AS_TYPED,
+  describeDebt,
   formatEntityType,
   formatFullDate,
   formatPhone,
@@ -326,13 +327,13 @@ function ClientFilesAction({ lead, files }: { lead: Lead; files: ConvertedClient
 function KeyFacts({ lead, activities }: { lead: Lead; activities: LeadActivity[] }) {
   const uncertainState = describeUncertainState(lead)
   const entityType = formatEntityType(lead)
-  const hasDebt = lead.debtMin !== null || lead.debtMax !== null
+  const debt = describeDebt(lead, 'full')
   const nextStepSetAt = activities.find((activity) => activity.type === 'next_step')?.createdAt
 
   return (
     <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <FactTile label="Debt" empty={!hasDebt} large>
-        {hasDebt ? formatDebtRange(lead.debtMin, lead.debtMax, 'full') : 'Not given'}
+      <FactTile label="Debt" empty={debt.empty} hint={debt.typed ? DEBT_AS_TYPED : undefined} large>
+        {debt.empty ? 'Not given' : debt.text}
       </FactTile>
       <FactTile
         label="State"

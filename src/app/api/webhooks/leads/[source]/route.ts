@@ -5,7 +5,11 @@ import {
   facebookFieldKeys,
   flattenFacebookFields,
   isHoneypotTripped,
+  websiteFieldKeys,
+  websiteFormId,
+  websitePageUrl,
 } from '@/lib/leads/ingest'
+import { DEBT_FIELD_FORMAT } from '@/lib/leads/ingestConfig'
 import { storeIngestedLead, logIntake } from '@/lib/leads/ingestStore'
 import { resolveAdAttribution } from '@/lib/leads/metaAds'
 import { fetchLead } from '@/lib/leads/metaGraph'
@@ -198,7 +202,23 @@ async function handleDirect(
   source: LeadSource,
 ): Promise<NextResponse> {
   const externalId = typeof body.external_id === 'string' ? body.external_id : null
-  const mapped = mapLead(body, source, externalId)
+  // Website (0053): the form and page it came from, and its key names (never
+  // values), stored with the enquiry. A form_id we know also says how its
+  // debt box is read (DEBT_FIELD_FORMAT); any other is read as every form is.
+  const formId = source === 'website' ? websiteFormId(body) : null
+  const mapped = mapLead(
+    body,
+    source,
+    externalId,
+    source === 'website'
+      ? {
+          formId,
+          formKey: formId && formId in DEBT_FIELD_FORMAT ? formId : undefined,
+          pageUrl: websitePageUrl(body),
+          fieldKeys: websiteFieldKeys(body),
+        }
+      : {},
+  )
 
   if (!mapped.ok) {
     await logIntake({ source, externalId, outcome: 'rejected', error: mapped.error, rawBody: body })

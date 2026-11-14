@@ -1401,6 +1401,36 @@ export type Database = {
           },
         ]
       }
+      lead_deletions: {
+        Row: {
+          deleted_at: string
+          deleted_by: string
+          external_id: string | null
+          id: string
+          lead_id: string
+          source: string | null
+          stage: string | null
+        }
+        Insert: {
+          deleted_at?: string
+          deleted_by: string
+          external_id?: string | null
+          id?: string
+          lead_id: string
+          source?: string | null
+          stage?: string | null
+        }
+        Update: {
+          deleted_at?: string
+          deleted_by?: string
+          external_id?: string | null
+          id?: string
+          lead_id?: string
+          source?: string | null
+          stage?: string | null
+        }
+        Relationships: []
+      }
       lead_intake_log: {
         Row: {
           created_at: string
@@ -1437,6 +1467,7 @@ export type Database = {
           converted_client_id: string | null
           debt_max: number | null
           debt_min: number | null
+          debt_text: string | null
           email: string
           entity_type: string | null
           external_id: string | null
@@ -1452,6 +1483,7 @@ export type Database = {
           meta_field_keys: string[] | null
           meta_form_id: string | null
           meta_page_id: string | null
+          page_url: string | null
           meta_state_options: string[] | null
           meta_state_raw: string | null
           name: string
@@ -1466,6 +1498,7 @@ export type Database = {
           converted_client_id?: string | null
           debt_max?: number | null
           debt_min?: number | null
+          debt_text?: string | null
           email: string
           entity_type?: string | null
           external_id?: string | null
@@ -1481,6 +1514,7 @@ export type Database = {
           meta_field_keys?: string[] | null
           meta_form_id?: string | null
           meta_page_id?: string | null
+          page_url?: string | null
           meta_state_options?: string[] | null
           meta_state_raw?: string | null
           name: string
@@ -1495,6 +1529,7 @@ export type Database = {
           converted_client_id?: string | null
           debt_max?: number | null
           debt_min?: number | null
+          debt_text?: string | null
           email?: string
           entity_type?: string | null
           external_id?: string | null
@@ -1510,6 +1545,7 @@ export type Database = {
           meta_field_keys?: string[] | null
           meta_form_id?: string | null
           meta_page_id?: string | null
+          page_url?: string | null
           meta_state_options?: string[] | null
           meta_state_raw?: string | null
           name?: string
@@ -1576,6 +1612,7 @@ export type Database = {
           created_at: string
           debt_max: number | null
           debt_min: number | null
+          debt_text: string | null
           email: string
           enquiry_count: number
           entity_type: string | null
@@ -1615,6 +1652,7 @@ export type Database = {
           created_at?: string
           debt_max?: number | null
           debt_min?: number | null
+          debt_text?: string | null
           email: string
           enquiry_count?: number
           entity_type?: string | null
@@ -1654,6 +1692,7 @@ export type Database = {
           created_at?: string
           debt_max?: number | null
           debt_min?: number | null
+          debt_text?: string | null
           email?: string
           enquiry_count?: number
           entity_type?: string | null

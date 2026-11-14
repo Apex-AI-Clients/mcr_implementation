@@ -38,6 +38,8 @@ const LEAD: IngestedLead = {
   metaAdName: 'Test ad',
   metaAccountId: 'act_1',
   metaFieldKeys: ['full_name', 'email', 'phone_number'],
+  debtText: null,
+  pageUrl: null,
 }
 
 const rpc = vi.fn()
@@ -56,6 +58,8 @@ describe('toSubmissionPayload', () => {
       phone: '0400000001',
       debt_min: 100_000,
       debt_max: 124_999,
+      debt_text: null,
+      page_url: null,
       state: null,
       meta_state_raw: 'NSW, VIC, ACT, TAS',
       meta_state_options: ['NSW', 'VIC', 'ACT', 'TAS'],
@@ -83,6 +87,29 @@ describe('toSubmissionPayload', () => {
     expect(payload).toHaveProperty('debt_min', null)
     expect(payload).toHaveProperty('debt_max', null)
     expect(payload).toHaveProperty('message', null)
+  })
+})
+
+describe('toSubmissionPayload — website (0053)', () => {
+  it('sends the typed debt and the page with the enquiry', () => {
+    const payload = toSubmissionPayload({
+      ...LEAD,
+      source: 'website',
+      debtMin: 200_000,
+      debtMax: 200_000,
+      debtText: '200,000',
+      pageUrl: 'https://example.test/results',
+      metaFormId: 'website_results',
+      metaFieldKeys: ['name', 'email', 'debt_code'],
+    })
+    expect(payload).toMatchObject({
+      debt_min: 200_000,
+      debt_max: 200_000,
+      debt_text: '200,000',
+      page_url: 'https://example.test/results',
+      meta_form_id: 'website_results',
+      meta_field_keys: ['name', 'email', 'debt_code'],
+    })
   })
 })
 

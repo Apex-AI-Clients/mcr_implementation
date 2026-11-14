@@ -42,7 +42,8 @@ import type {
  *
  * The output has no form fields: answers are page content, so the PDF is
  * flat and prints as typed. Signatures are left for the hand, and so is any
- * field the map marks `handwritten`, whatever the data says.
+ * field the map marks `handwritten`, whatever the data says. The dates beside
+ * the signatures are printed when given (FormField.signatureDate, signedDate).
  *
  * Text that doesn't fit is shrunk; if it still doesn't fit it is cut and a
  * warning names the question, so staff can attach an annexure.
@@ -350,17 +351,48 @@ function drawTableRows(pen: Pen, t: FormTable, rows: TableRow[], totals: TableRo
   }
 }
 
-function drawTableHeader(pen: Pen, t: FormTable, pageNo: number, pageCount: number, data: FormData, formPageTotal: number) {
+/** "...and dated" on a table page: the form's signature date, at the header's own size (Nov 2026). */
+function drawTableDated(pen: Pen, t: FormTable, data: FormData) {
+  const date = data.signedDates?.[t.id] ?? data.signedDate
+  if (!date) return
+  const d = t.header.dated
+  drawDate(pen, { s1: d.s1, s2: d.s2, baseline: d.baseline - 2, slashWidth: d.slashWidth, size: 8.5 }, date, { key: `signedDate:${t.id}` })
+}
+
+/**
+ * A table page's number in the appendix, as ASIC prints it at its foot
+ * ("Part A Appendix: Example Tables p2 of 5"): the cover is 1, then each
+ * table page in order. Pure; checked against the templates' own labels.
+ */
+export function appendixNumber(map: FormMap, page: number): { page: number; of: number } | null {
+  if (!map.appendixCoverPage) return null
+  const pages = [map.appendixCoverPage, ...new Set(map.tables.map((t) => t.page))]
+  const at = pages.indexOf(page)
+  return at < 0 ? null : { page: at + 1, of: pages.length }
+}
+
+/**
+ * A table page's numbers (Nov 2026): "This is the annexure of Page/s _ of _"
+ * at the top and "Page _ of _" at the foot both carry the page's appendix
+ * number, the same on every copy of a page whose rows run over.
+ */
+function drawTablePageNumbers(pen: Pen, t: FormTable, map: FormMap) {
+  const n = appendixNumber(map, t.page)
+  if (!n) return
+  const spot = (s: { x0: number; x1: number; baseline: number }, text: string, size: number) =>
+    drawText(pen, text, s.x0, s.baseline, s.x1 - s.x0, { size, align: 'center' })
+  spot(t.header.pageFrom, String(n.page), 8.5)
+  spot(t.header.pageOf, String(n.of), 8.5)
+  spot(t.footer.page, String(n.page), 14)
+  spot(t.footer.of, String(n.of), 14)
+}
+
+function drawTableHeader(pen: Pen, t: FormTable, data: FormData, map: FormMap) {
   const h = t.header
-  const spot = (s: { x0: number; x1: number; baseline: number }, text: string, size: number, align: 'left' | 'center' = 'center') =>
-    drawText(pen, text, s.x0, s.baseline, s.x1 - s.x0, { size, align })
-  spot(h.pageFrom, String(t.formPage), 8.5)
-  spot(h.pageOf, String(formPageTotal), 8.5)
+  drawTablePageNumbers(pen, t, map)
   // Just above the dotted line, so the dots don't run through the name.
   if (data.signedBy) drawText(pen, data.signedBy, h.signedBy.x0 + 4, h.signedBy.baseline - 2, h.signedBy.x1 - h.signedBy.x0 - 8, { size: 8.5 })
-  // "...and dated" stays blank: dated by hand beside the signature.
-  spot(t.footer.page, String(pageNo), 14)
-  spot(t.footer.of, String(pageCount), 14)
+  drawTableDated(pen, t, data)
 }
 
 /* ---------------- fill ---------------- */
@@ -446,8 +478,14 @@ export async function fillForm(
         out.addPage(pg)
         pageSources.push(g.page)
         const pen: Pen = { page: pg, font, ink, warnings }
-        if (!g.rows.some((r) => r.length > 0)) continue // "all": a blank table stays as printed
-        drawTableHeader(pen, g.tables[0], k + 1, chunks, data, map.formPageTotal)
+        // "all": a blank table stays as printed, but for its page numbers and
+        // its date: the page is numbered and signed with the rest.
+        if (!g.rows.some((r) => r.length > 0)) {
+          drawTablePageNumbers(pen, g.tables[0], map)
+          drawTableDated(pen, g.tables[0], data)
+          continue
+        }
+        drawTableHeader(pen, g.tables[0], data, map)
         g.tables.forEach((t, i) => {
           const per = t.rows.length
           const slice = g.rows[i].slice(k * per, (k + 1) * per)

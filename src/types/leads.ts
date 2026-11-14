@@ -62,6 +62,13 @@ export interface Lead {
   debtMin: number | null
   debtMax: number | null
   /**
+   * The debt exactly as the lead typed it (a free-text box, migration 0053).
+   * When it reads as one amount, debtMin = debtMax = that amount; when it does
+   * not, both are null and this is all there is. Null for a dropdown answer or
+   * a debt staff entered. Shown in place of the range, marked "as typed".
+   */
+  debtText?: string | null
+  /**
    * Null when the capture form's state select was left on its default — it
    * posts the literal string "state", which must never be stored. Manual entry
    * still requires one.
@@ -174,6 +181,8 @@ export interface LeadSubmission {
   phone: string
   debtMin: number | null
   debtMax: number | null
+  /** The debt as typed on this enquiry (0053). See Lead.debtText. */
+  debtText?: string | null
   state: AuState | null
   metaStateRaw: string | null
   metaStateOptions: AuState[] | null

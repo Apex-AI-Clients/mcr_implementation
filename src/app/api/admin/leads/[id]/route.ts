@@ -119,7 +119,9 @@ export async function PATCH(req: NextRequest, { params }: Props) {
 
     const { data: existing, error: readError } = await supabase
       .from('leads')
-      .select('id, stage, debt_min, debt_max')
+      // All columns: debt_text (0053) is read only when the migration has
+      // added it, so this works before and after it.
+      .select('*')
       .eq('id', id)
       .maybeSingle()
     if (readError) throw readError
@@ -136,6 +138,10 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     if (patch.company !== undefined) update.company = patch.company
     if (patch.debtMin !== undefined) update.debt_min = patch.debtMin
     if (patch.debtMax !== undefined) update.debt_max = patch.debtMax
+    // Staff have entered the debt: what shows is theirs from now on, not the
+    // words the lead typed (0053).
+    const typed = (existing as { debt_text?: string | null }).debt_text
+    if ((patch.debtMin !== undefined || patch.debtMax !== undefined) && typed) update.debt_text = null
     if (patch.entityType !== undefined) update.entity_type = patch.entityType
     if (patch.entityTypeLabel !== undefined) {
       update.entity_type_label = patch.entityTypeLabel?.trim() || null

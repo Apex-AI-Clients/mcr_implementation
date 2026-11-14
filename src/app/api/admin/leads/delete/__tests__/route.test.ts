@@ -31,12 +31,21 @@ function mockDb({
   deleted,
   archiveError = null,
   enquiryFiles = [],
+  existing,
+  recordError = null,
 }: {
   deleted: { id: string; converted_client_id: string | null }[]
   archiveError?: { message: string } | null
   /** Enquiries converted into files (0052), read before the delete. */
   enquiryFiles?: { lead_id: string; converted_client_id: string }[]
+  /** The leads as read before the delete, for lead_deletions (0053). Default: the deleted ones. */
+  existing?: { id: string; source: string; external_id: string | null; stage: string }[]
+  recordError?: { code?: string; message: string } | null
 }) {
+  const recorded = vi.fn<(rows: Record<string, unknown>[]) => void>()
+  const unrecorded = vi.fn<(ids: string[]) => void>()
+  const leadDelete = vi.fn()
+  const before = existing ?? deleted.map((lead) => ({ id: lead.id, source: 'website', external_id: `ext-${lead.id.slice(0, 4)}`, stage: 'lead' }))
   const clientUpdate = vi.fn<(row: Record<string, unknown>) => unknown>()
   const archivedIds = vi.fn<(ids: string[]) => void>()
   const onlyActive = vi.fn<(column: string, value: null) => void>()
@@ -59,8 +68,22 @@ function mockDb({
   }))
   const tables: Record<string, unknown> = {
     leads: {
+      select: () => ({ in: () => Promise.resolve({ data: before, error: null }) }),
+      delete: () => {
+        leadDelete()
+        return { in: () => ({ select: () => Promise.resolve({ data: deleted, error: null }) }) }
+      },
+    },
+    lead_deletions: {
+      insert: (rows: Record<string, unknown>[]) => {
+        recorded(rows)
+        return Promise.resolve({ error: recordError })
+      },
       delete: () => ({
-        in: () => ({ select: () => Promise.resolve({ data: deleted, error: null }) }),
+        in: (_column: string, ids: string[]) => {
+          unrecorded(ids)
+          return Promise.resolve({ error: null })
+        },
       }),
     },
     clients: { update: clientUpdate },
@@ -73,7 +96,7 @@ function mockDb({
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => tables[table],
   } as never)
-  return { clientUpdate, archivedIds, onlyActive }
+  return { clientUpdate, archivedIds, onlyActive, recorded, unrecorded, leadDelete }
 }
 
 beforeEach(() => {
@@ -145,6 +168,47 @@ describe('POST /api/admin/leads/delete', () => {
     })
     await POST(request([A, B]))
     expect(archivedIds).not.toHaveBeenCalled()
+  })
+
+  it('records who deleted which lead and when, before deleting: id, source, external id and stage only (0053)', async () => {
+    const { recorded, leadDelete, unrecorded } = mockDb({ deleted: [{ id: A, converted_client_id: null }] })
+    await POST(request([A]))
+    expect(recorded).toHaveBeenCalledTimes(1)
+    const rows = recorded.mock.calls[0][0]
+    expect(rows).toEqual([{ lead_id: A, source: 'website', external_id: 'ext-1111', stage: 'lead', deleted_by: 'Test' }])
+    // No name, email, phone or answer goes in the log.
+    expect(Object.keys(rows[0]).sort()).toEqual(['deleted_by', 'external_id', 'lead_id', 'source', 'stage'])
+    expect(recorded.mock.invocationCallOrder[0]).toBeLessThan(leadDelete.mock.invocationCallOrder[0])
+    expect(unrecorded).not.toHaveBeenCalled()
+  })
+
+  it('deletes nothing when the record cannot be written', async () => {
+    const { leadDelete } = mockDb({ deleted: [{ id: A, converted_client_id: null }], recordError: { message: 'boom' } })
+    const response = await POST(request([A]))
+    expect(response.status).toBe(500)
+    expect(leadDelete).not.toHaveBeenCalled()
+  })
+
+  it('still deletes before migration 0053 adds the log table', async () => {
+    const { leadDelete } = mockDb({
+      deleted: [{ id: A, converted_client_id: null }],
+      recordError: { code: '42P01', message: 'relation "public.lead_deletions" does not exist' },
+    })
+    const response = await POST(request([A]))
+    expect(response.status).toBe(200)
+    expect(leadDelete).toHaveBeenCalled()
+  })
+
+  it('takes the record back out for a lead somebody else deleted first', async () => {
+    const { unrecorded } = mockDb({
+      deleted: [{ id: A, converted_client_id: null }],
+      existing: [
+        { id: A, source: 'website', external_id: null, stage: 'lead' },
+        { id: B, source: 'facebook', external_id: null, stage: 'lead' },
+      ],
+    })
+    await POST(request([A, B]))
+    expect(unrecorded).toHaveBeenCalledWith([B])
   })
 
   it('still reports the leads deleted when archiving fails', async () => {

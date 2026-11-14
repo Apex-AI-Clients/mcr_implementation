@@ -70,6 +70,8 @@ const COLUMNS: ColumnSpec[] = [
   // can sort and filter on them.
   { header: 'Debt min', width: 11, numeric: true, value: (lead) => lead.debtMin },
   { header: 'Debt max', width: 11, numeric: true, value: (lead) => lead.debtMax },
+  // Exactly as the lead typed it (0053); empty for a dropdown range.
+  { header: 'Debt as typed', width: 16, value: (lead) => lead.debtText ?? null },
   {
     header: 'Entity type',
     width: 12,

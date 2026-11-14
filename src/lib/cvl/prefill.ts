@@ -3,6 +3,7 @@ import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
 import { formatExtractDate } from '@/lib/asic/dates'
 import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
+import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
 import { splitAddress } from './address'
 import type { BalanceSheetFigure, CvlContext } from './context'
 import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
@@ -53,6 +54,14 @@ export interface Prefill {
   tables: Record<string, PrefillTableRow[]>
   /** The name on every appendix table header ("signed by …"). */
   signedBy: Prefilled | null
+  /** The appendix tables' "...and dated", per table page (by its first table id): the signature date. */
+  signedDates: Record<string, Prefilled>
+  /**
+   * Part A: the client file's trust name, for A3's "Name of Trust" — put in
+   * only when staff answer Yes to "Is the Company a trustee of a Trust?", and
+   * taken out again on No (Nov 2026). Never filled on its own.
+   */
+  trustName?: Prefilled | null
   /** Beside a box that could not be filled: what would fill it. */
   notes: Record<string, string>
   /** For the whole form: blank settings, things to check. */
@@ -141,7 +150,13 @@ function putCompany(out: Prefill, ctx: CvlContext, nameKeyOnForm: string, acnKey
  * registration date, to check. `asText`: the box is plain text on the form
  * (B10), so the date goes in as DD/MM/YYYY.
  */
-function putRegistration(out: Prefill, ctx: CvlContext, key: string, asText = false) {
+/**
+ * The registration date, as an ISO date like every date answer. B10 is a text
+ * box printed as a date (format 'date'): it was given "DD/MM/YYYY" here, which
+ * the screen's date input cannot show, so B10 looked empty while the PDF
+ * printed the date (Nov 2026). The engine writes ISO as DD/MM/YYYY itself.
+ */
+function putRegistration(out: Prefill, ctx: CvlContext, key: string) {
   const date = ctx.company?.registrationDate
   if (!date) {
     out.notes[key] = ctx.asicExtract
@@ -150,8 +165,7 @@ function putRegistration(out: Prefill, ctx: CvlContext, key: string, asText = fa
     return
   }
   const source = companySource(ctx, 'The company’s registration date.', 'organisation')
-  const value = asText ? date.split('-').reverse().join('/') : date
-  out.fields[key] = { value, source: { ...source, rule: 'Trading may have started after registration: check with the director.' } }
+  out.fields[key] = { value: date, source: { ...source, rule: 'Trading may have started after registration: check with the director.' } }
 }
 
 function director(ctx: CvlContext, subject: Subject) {
@@ -277,6 +291,15 @@ function candidates509(ctx: CvlContext): Candidate[] {
 }
 
 function prefill509(ctx: CvlContext, out: Prefill) {
+  // Row 6, "Creditors (unsecured) amount claimed", both columns: Part A's
+  // Table A7 "Amount owing", added up as saved (Nov 2026).
+  if (ctx.a7Total !== null && ctx.a7Total !== undefined) {
+    const source: AmountSource = {
+      from: ['Form 507 Part A, Table A7: the "Amount owing" column added up, as saved.', 'Change it here if the amount claimed differs.'],
+    }
+    put(out, 'r6_val', ctx.a7Total, source)
+    put(out, 'r6', ctx.a7Total, source)
+  }
   // Lodgement details: always the CVL settings' "Form 509 lodgement details"
   // (as on the Form 509 MCR lodges with, until changed there).
   const lodge = ctx.settings.lodgement
@@ -327,6 +350,8 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
   }
 
   putCompany(out, ctx, 'company_name', 'company_acn')
+  const trust = ctx.company?.trustName?.trim()
+  if (trust) out.trustName = { value: trust, source: { from: ['The trust name on the client file.', 'Put in when A3 is answered Yes.'] } }
   // Page 7, Form 507A: the same company.
   putCompany(out, ctx, 'f507a_company_name', 'f507a_company_acn')
   putAddress(out, ctx, 'a3_registered', ctx.company?.registeredOffice ?? null, 'Registered office.', 'addresses')
@@ -341,6 +366,9 @@ function prefillPartA(ctx: CvlContext, out: Prefill) {
     const source = companySource(ctx, 'The first director listed.', 'directors')
     put(out, 'a9_name', d.name, source)
     put(out, 'a9_position', 'Director', source)
+    // Form 507A (page 7) is signed by the same director (Nov 2026).
+    put(out, 'f507a_name', d.name, source)
+    put(out, 'f507a_capacity', 'Director', source)
     // The appendix tables' "signed by" name is left blank: the client signs
     // and names themselves there by hand.
   }
@@ -360,23 +388,109 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
     put(out, 'b1_name', d.name, source)
     put(out, 'b1_role', 'Director', source)
     put(out, 'b31_name', d.name, source)
+    // B5's Manager 1 is this director (Nov 2026); Manager 2 is typed by staff.
+    put(out, 'b5_m1_name', d.name, source)
+    put(out, 'b5_m1_role', 'Director', source)
+    put(out, 'b5_m1_duties', 'Day to day operation', { from: ['Manager 1 is the director.', 'Change it if their duties differ.'] })
     // The appendix tables' "signed by" name (B2, B3, B21, B28) is left blank:
     // the director signs and names themselves there by hand.
     if (!d.appointedOn) out.notes.b1_role = ctx.asicExtract ? 'The kept ASIC extract has no appointment date for this director.' : 'Upload the ASIC extract again to fill the appointment date.'
   }
-  putRegistration(out, ctx, 'b10_date', true)
-  // Phone, email, the accountant (B24) and the rest are typed by staff:
-  // nothing is pre-filled from the client file beyond the ASIC extract (6 Nov 2026).
+  // B10 comes from Form 509's summary date, like the signature dates (see
+  // putSignatureDates), not from the registration date (Nov 2026).
+
+  // B1's and B5 Manager 1's phone and email: the company's own, as typed at
+  // conversion or intake (Nov 2026). The accountant (B24) and the rest are
+  // typed by staff.
+  const contact = (what: string): AmountSource => ({ from: [`The company ${what} on the client file (Company details).`, 'Change it if the director has their own.'] })
+  for (const key of ['b1_phone', 'b5_m1_phone']) put(out, key, ctx.company?.phone ?? null, contact('phone'))
+  for (const key of ['b1_email', 'b5_m1_email']) put(out, key, ctx.company?.email ?? null, contact('email'))
 }
 
 /* ---------------- entry ---------------- */
 
 export function prefillForm(code: FormCode, subject: Subject, ctx: CvlContext): Prefill {
-  const out: Prefill = { fields: {}, tables: {}, signedBy: null, notes: {}, warnings: [], candidates: [] }
+  const out: Prefill = { fields: {}, tables: {}, signedBy: null, signedDates: {}, notes: {}, warnings: [], candidates: [] }
   if (code === '509') prefill509(ctx, out)
   else if (code === '507a') prefillPartA(ctx, out)
   else prefillPartB(ctx, subject, out)
+  putSignatureDates(code, ctx, out)
+  putDefaultYes(code, out)
   return out
+}
+
+/**
+ * Yes/No questions answered Yes unless staff say otherwise (Nov 2026). Every
+ * other Yes/No starts at No. A pre-filled answer, so it also reaches a form
+ * saved before this, where the answer was never changed by hand.
+ */
+export const DEFAULT_YES: Partial<Record<FormCode, string[]>> = {
+  '507a': ['a2', 'a8'],
+  '507b': ['b8', 'b9', 'b14', 'b15', 'b27', 'b30', 'b30_permission'],
+}
+
+/**
+ * B30, "Did someone help you to complete this Report?": MCR Partners did
+ * (Nov 2026). Their details, as given for the form; each can be changed.
+ */
+export const MCR_HELPER: Record<string, string> = {
+  b30_name: 'MCR Partners Pty Ltd',
+  b30_street: 'PO Box 2100',
+  b30_suburb: 'Gladstone Park',
+  b30_state: 'VIC',
+  b30_postcode: '3043',
+  b30_phone: '03 8672 7979',
+  b30_email: 'assist@mcrpartners.com.au',
+}
+
+function putDefaultYes(code: FormCode, out: Prefill) {
+  for (const key of DEFAULT_YES[code] ?? []) {
+    out.fields[key] ??= { value: 'yes', source: { from: ['Answered Yes to start with.', 'Change it to No if that is the answer.'] } }
+  }
+  if (code === '507b') {
+    const source = { from: ['MCR Partners helped complete this Report (B30).', 'Change it if someone else did.'] }
+    for (const [key, value] of Object.entries(MCR_HELPER)) out.fields[key] ??= { value, source }
+  }
+}
+
+/**
+ * Every date beside a signature (Nov 2026): Form 509's "Date signed", A9,
+ * A10, Form 507A's "Date signed", B31 and the tables' "...and dated" start
+ * from Form 509's "Date to which summary is made up" as saved — never from
+ * 509's own "Date signed", whatever it was changed to. Each can be changed on
+ * its form; one never changed follows a later change to the summary date.
+ * Blank, with a note, until Form 509 is saved with that date.
+ */
+/** Other dates filled from Form 509's summary date, like the signature dates (Nov 2026). */
+const SAME_DATE_KEYS: Partial<Record<FormCode, string[]>> = {
+  '507a': ['f507a_report_date'],
+  '507b': ['b10_date'],
+}
+
+const OWN_SOURCE: Record<string, AmountSource> = {
+  b10_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the company started trading on another day.'] },
+  f507a_report_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the report is dated another day.'] },
+}
+
+function putSignatureDates(code: FormCode, ctx: CvlContext, out: Prefill) {
+  const date = ctx.summaryDate ?? null
+  const source: AmountSource = {
+    from: ['Form 509: Date to which summary is made up.', 'Change it here if this form is signed on another day.'],
+  }
+  const note = code === '509'
+    ? 'Fills from "Date to which summary is made up" above.'
+    : 'Fills from Form 509\'s "Date to which summary is made up" once Form 509 is saved with it.'
+  // Part B's B10, "Date the Company started trading", and Form 507A's "Date
+  // of Report under s475(1)": the same date (Nov 2026).
+  const keys = [...signatureDateKeys(code), ...(SAME_DATE_KEYS[code] ?? [])]
+  for (const key of keys) {
+    if (key.startsWith(`${TABLE_DATED_KEY}:`)) {
+      if (date) out.signedDates[key.slice(TABLE_DATED_KEY.length + 1)] = { value: date, source }
+      continue
+    }
+    if (date) put(out, key, date, OWN_SOURCE[key] ?? source)
+    else out.notes[key] = note
+  }
 }
 
 /** The forms a case needs, by subject: one Part B per director unless the setting says one per company. */

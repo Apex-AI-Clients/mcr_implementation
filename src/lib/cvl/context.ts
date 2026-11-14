@@ -32,6 +32,9 @@ export interface CvlContext {
   client: { name: string; email: string; phone: string | null }
   company: {
     companyName: string | null
+    /** The company's own phone and email, as typed at conversion or intake (company_details). */
+    phone: string | null
+    email: string | null
     entityType: string | null
     acn: string | null
     abn: string | null
@@ -53,6 +56,14 @@ export interface CvlContext {
   /** The creditor rows saved with the SBR prediction, when there is one. */
   sbrCreditors: CreditorRow[]
   settings: CvlSettings
+  /**
+   * Form 509's "Date to which summary is made up", as saved (Nov 2026): every
+   * signature date on the case starts from it. Not read here — it is in the
+   * case's drafts, which the callers have (drafts.ts savedSummaryDate).
+   */
+  summaryDate?: string | null
+  /** Part A's Table A7 "Amount owing", added up as saved (drafts.ts savedA7Total): Form 509's row 6. */
+  a7Total?: number | null
 }
 
 /** Liabilities and assets the CVL forms read from the latest balance sheet. */
@@ -106,6 +117,8 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
     company: c
       ? {
           companyName: c.company_name,
+          phone: c.phone_number?.trim() || null,
+          email: c.email_address?.trim() || null,
           entityType: c.entity_type,
           acn: c.acn_number,
           abn: c.abn_number,

@@ -925,3 +925,39 @@ Approved by Gabby, 4 Nov 2026. Code: `src/lib/scan/`, `askClaudeImage()` in
   are prompted to ask for it.
 - To undo: unset `OPENROUTER_API_KEY` (scans are then not read), or stop
   calling `readOrQueueScan` in `src/lib/printed/store.ts`.
+
+---
+
+## Website debt typed or picked, website form/page, lead deletion log (migration 0053)
+
+Added 2026-11-14. Code: `src/lib/leads/ingest.ts` (`readWebsiteDebt`),
+`src/app/api/webhooks/leads/[source]/route.ts`, `src/lib/leads/format.ts`
+(`describeDebt`), `src/lib/leads/formHealth.ts` (`getWebsiteFormHealth`),
+`src/app/api/admin/leads/delete/route.ts`,
+`supabase/migrations/0053_website_debt_text_and_lead_deletions.sql`.
+
+Why: a lead from the website's results-page form typed "200,000" in its debt
+box. The webhook read every website debt as a dropdown code, matched nothing,
+and stored no debt, with no warning.
+
+- Every website form's debt is read the same way: a dropdown code or option
+  first (a range, shown as before), then a typed amount ("200,000",
+  "$200,000", "200k", "80000", "1.2m"). A typed amount is stored as an exact
+  figure (min = max), so the debt filter, sorting and search include it, and
+  the words are kept in `debt_text`. It is shown in full everywhere ("$200,000",
+  never "$200k" or a bracket) with an "as typed" hint, and exported in a
+  "Debt as typed" column.
+- Typed text that is not one amount ("about two hundred grand") is shown
+  exactly as sent, matches no debt filter, and is logged as a warning (key and
+  form only, never the text). It is no longer appended to the message.
+- The one overlap: a bare 1–5 or -1 is a dropdown code. On a form that posts
+  `form_id=website_results` it is never read as one.
+- Staff editing the debt (table or Edit dialog) replaces the typed words.
+- Business type: not sent is logged as "not asked" (no warning; the results
+  form does not ask); a value that cannot be read is a warning.
+- Each website enquiry stores its key names (`meta_field_keys`, names only),
+  its `form_id` (in `meta_form_id`) and its `page_url` (no query string), once
+  the forms post them. The lead record's form warnings now cover website forms.
+- `lead_deletions`: lead id, source, external id, stage, who and when, written
+  before a lead is deleted. No name, email, phone or answer.
+- Nothing is backfilled: existing website leads keep their stored values.

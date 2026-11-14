@@ -401,6 +401,7 @@ export function LeadsStoreProvider({
         phone: input.phone.trim(),
         debtMin: input.debtMin,
         debtMax: input.debtMax,
+        debtText: null,
         ...stateColumns(input.states),
         entityType: input.entityType ?? null,
         message: input.message?.trim() || null,

@@ -41,6 +41,7 @@ beforeEach(() => {
       const chain = {
         select: () => chain,
         eq: () => chain,
+        in: () => chain,
         is: () => chain,
         maybeSingle: () => Promise.resolve(result),
         then: (resolve: (r: typeof result) => unknown) => resolve(result),
@@ -63,8 +64,9 @@ describe('CVL form page', () => {
     expect(page.props.subject).toBe('director:2')
     expect(page.props.saved?.at).toBe('2026-11-02T00:00:00Z')
     expect(page.props.subjects.map((s) => s.label)).toEqual(['Jordan Sample', 'Casey Example'])
-    // The client, its case, and the drafts: each read once.
-    expect(queried.sort()).toEqual(['clients', 'cvl_cases', 'cvl_form_answers'])
+    // The client, its case, this form's drafts, and Form 509's saved summary
+    // date (every signature date starts from it, Nov 2026): each read once.
+    expect(queried.sort()).toEqual(['clients', 'cvl_cases', 'cvl_form_answers', 'cvl_form_answers'])
   })
 
   it('opens the first director, with their draft, when none (or one the file has not got) is asked for', async () => {

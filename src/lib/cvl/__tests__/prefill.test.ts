@@ -194,6 +194,8 @@ describe('Part A', () => {
     expect(p.tables).toEqual({})
     expect(p.fields.a3_trustee).toBeUndefined()
     expect(p.fields.a3_trust_name).toBeUndefined()
+    // Held back, for when A3 is answered Yes on screen (Nov 2026).
+    expect(p.trustName?.value).toBe('Example Family Trust')
     // The client file's creditors are still worked out (Form 509's "amounts to place" list uses them).
     expect(creditorRows(context()).length).toBeGreaterThan(0)
   })
@@ -201,13 +203,16 @@ describe('Part A', () => {
   it('fills the declaration name from the first director (ASIC extract), never the tables\u2019 "signed by"', () => {
     const p = prefillForm('507a', 'company', context())
     expect(value(p, 'a9_name')).toBe('Jordan Sample')
+    // Form 507A: the same director, as Director (Nov 2026).
+    expect(value(p, 'f507a_name')).toBe('Jordan Sample')
+    expect(value(p, 'f507a_capacity')).toBe('Director')
     // The client signs and names themselves on the appendix tables by hand.
     expect(p.signedBy).toBeNull()
   })
 })
 
 describe('Part B', () => {
-  it('fills each director’s own Part B from the ASIC extract, and no phone or email from the client file', () => {
+  it('fills each director’s own Part B from the ASIC extract, and no phone or email when the file has none', () => {
     const one = prefillForm('507b', 'director:1', context())
     expect(value(one, 'b1_name')).toBe('Jordan Sample')
     expect(one.fields.b1_phone).toBeUndefined()
@@ -219,9 +224,13 @@ describe('Part B', () => {
     expect(two.notes.b1_role).toBe('The kept ASIC extract has no appointment date for this director.')
   })
 
-  it('writes B10 as DD/MM/YYYY (a plain text box), and leaves B24 (the accountant) to be typed', () => {
-    const p = prefillForm('507b', 'director:1', context())
-    expect(value(p, 'b10_date')).toBe('12/06/2014')
+  it('fills B10 from Form 509\u2019s saved summary date, not the registration date, and leaves B24 (the accountant) to be typed', () => {
+    const p = prefillForm('507b', 'director:1', { ...context(), summaryDate: '2026-11-14' })
+    expect(value(p, 'b10_date')).toBe('2026-11-14')
+    // Blank, with a note, until Form 509 is saved with that date.
+    const none = prefillForm('507b', 'director:1', context())
+    expect(none.fields.b10_date).toBeUndefined()
+    expect(none.notes.b10_date).toContain('once Form 509 is saved')
     expect(p.fields.b24_name).toBeUndefined()
     expect(p.fields.b24_phone).toBeUndefined()
     expect(p.notes.b24_name).toBeUndefined()

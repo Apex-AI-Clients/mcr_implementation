@@ -150,6 +150,25 @@ describe('Lead record — key facts and contact', () => {
     expect(within(facts()).getByText('None set')).toBeTruthy()
   })
 
+  it('shows a typed debt as the amount sent, marked as typed, never a range (0053)', () => {
+    renderRecord(makeLead({ debtMin: 200_000, debtMax: 200_000, debtText: '200,000' }))
+    expect(within(facts()).getByText('$200,000')).toBeTruthy()
+    expect(within(facts()).getByText('as typed')).toBeTruthy()
+  })
+
+  it('shows typed debt that is not an amount exactly as sent (0053)', () => {
+    renderRecord(makeLead({ debtMin: null, debtMax: null, debtText: 'about two hundred grand' }))
+    expect(within(facts()).getByText('about two hundred grand')).toBeTruthy()
+    expect(within(facts()).getByText('as typed')).toBeTruthy()
+    expect(within(facts()).queryAllByText('Not given')).toHaveLength(0)
+  })
+
+  it('shows a dropdown debt as its range, with no "as typed"', () => {
+    renderRecord(makeLead({ debtMin: 100_000, debtMax: 124_999, debtText: null }))
+    expect(within(facts()).getByText('$100,000 – $124,999')).toBeTruthy()
+    expect(within(facts()).queryByText('as typed')).toBeNull()
+  })
+
   it('warns on a trust', () => {
     renderRecord(makeLead({ entityType: 'trust' }))
     expect(screen.getByText('A trust cannot take the SBR path.')).toBeTruthy()
