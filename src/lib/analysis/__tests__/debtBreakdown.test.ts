@@ -22,6 +22,16 @@ function makeRow(
 }
 
 describe('computeDebtBreakdown — principal', () => {
+  it('counts PAYG withholding (STP reported) as tax lodged, so the ATO balance is explained', () => {
+    const rows: EnrichedRow[] = [
+      makeRow({ rowIndex: 0, lodgementType: 'PAYGWithholding', debit: 6984, balance: 7984, processedDate: new Date(2026, 4, 12) }),
+      makeRow({ rowIndex: 1, lodgementType: 'Original', debit: 1000, balance: 1000, processedDate: new Date(2026, 1, 1) }),
+    ]
+    const result = computeDebtBreakdown(rows)
+    expect(result.principalDebits).toBe(7984)
+    expect(result.unexplainedDifference).toBe(0)
+  })
+
   it('sums Original + ClientAmended debits into principalDebits', () => {
     const rows: EnrichedRow[] = [
       makeRow({ rowIndex: 0, lodgementType: 'Original', debit: 1000 }),

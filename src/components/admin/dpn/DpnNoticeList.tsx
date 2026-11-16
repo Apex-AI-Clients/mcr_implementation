@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { DpnManualForm } from '@/components/admin/dpn/DpnManualForm'
 import { daysUntil } from '@/lib/dpn/checks'
-import { describeManualReason, noticeTypeLabel } from '@/lib/dpn/stored'
+import { describeManualReason, noticeTypeLabel, tableLayoutNote } from '@/lib/dpn/stored'
+import { describeDaysLeft } from '@/lib/dpn/summary'
 import { formatCents, type DpnNoticeView } from '@/lib/dpn/view'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { formatDate } from '@/lib/utils'
@@ -119,12 +120,22 @@ function NoticeCard({
             {noticeTypeLabel(notice) ?? 'Type not given'}
             {notice.issuedOn && <span className="font-normal text-foreground/60"> · issued {formatDate(notice.issuedOn)}</span>}
           </p>
-          {deadline && days !== null && (
-            <p>
-              Act by {formatDate(deadline)}{' '}
-              <span className={days <= 7 ? 'font-semibold text-destructive' : 'text-foreground/60'}>
-                ({days > 1 ? `${days} days left` : days === 1 ? '1 day left' : days === 0 ? 'today' : 'deadline passed'})
-              </span>
+          {deadline && days !== null &&
+            (days < 0 ? (
+              <p data-testid="dpn-deadline-passed" className="font-semibold text-destructive">
+                {describeDaysLeft(days, deadline)}
+              </p>
+            ) : (
+              <p>
+                Act by {formatDate(deadline)}{' '}
+                <span className={days <= 7 ? 'font-semibold text-destructive' : 'text-foreground/60'}>
+                  ({describeDaysLeft(days, deadline)})
+                </span>
+              </p>
+            ))}
+          {tableLayoutNote(notice) && (
+            <p data-testid="dpn-three-column" className="text-foreground/60">
+              {tableLayoutNote(notice)}
             </p>
           )}
           {notice.totals && (

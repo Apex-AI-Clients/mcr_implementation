@@ -23,6 +23,7 @@ import {
 import { DebtCompositionPanel, withDates } from '@/components/admin/lodgement/DebtCompositionPanel'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
+import { dpnEstimateWorkings } from '@/lib/analysis/dpnWorkings'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 interface Props {
@@ -102,7 +103,7 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
     lines.push(csvRow('Unpaid', formatCurrencyExport(notices.unpaid)))
     lines.push(csvRow(removableLabel(notices.deadline), formatCurrencyExport(notices.removable)))
     lines.push(csvRow(STAYS_LABEL, formatCurrencyExport(notices.staysWithDirector)))
-    lines.push(csvRow('Deadline', formatDay(notices.deadline), describeDaysLeft(notices.daysLeft)))
+    lines.push(csvRow('Deadline', formatDay(notices.deadline), describeDaysLeft(notices.daysLeft, notices.deadline)))
     lines.push(csvRow('Type', 'Unpaid', 'Removed if acted on by the deadline', STAYS_LABEL, 'Deadline'))
     for (const t of notices.byType) {
       lines.push(
@@ -121,9 +122,18 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
     const dpn = analysis.dpnRisk
     lines.push(csvRow(notices ? 'ESTIMATE FROM THE ATO ACCOUNT (secondary)' : 'DIRECTOR PENALTY NOTICES'))
     if (!notices) lines.push(csvRow('Source', ESTIMATE_LABEL))
-    lines.push(csvRow('Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
+    if (dpn.window) {
+      lines.push(csvRow('Window starts (balance last nil or in credit)', dpn.window.start ? formatIsoExport(dpn.window.start) : 'Never nil in this export'))
+      lines.push(csvRow('Balance last $1,000 or less (for information)', dpn.window.startUnder1000 ? formatIsoExport(dpn.window.startUnder1000) : '—'))
+    }
+    lines.push(csvRow(dpn.window ? 'Debt lodged >90 days late in the window' : 'Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
     lines.push(csvRow('Reduced by later amendments (same period only)', formatCurrencyExport(dpn.totalReducedByAmendments)))
+    if (dpn.window) {
+      lines.push(csvRow('Payments in the window', formatCurrencyExport(dpn.window.payments)))
+      lines.push(csvRow('Late-lodged debt paid (payments to oldest debts first)', formatCurrencyExport(dpn.totalPaidByPayments ?? 0)))
+    }
     lines.push(csvRow('Estimated still owing', formatCurrencyExport(dpn.totalNetAtRisk)))
+    for (const line of dpnEstimateWorkings(dpn) ?? []) lines.push(csvRow('Workings', line))
     lines.push(
       csvRow(
         'Period covered',
@@ -500,30 +510,59 @@ function SummaryPanel({
                 dpn &&
                 dpn.totalGrossLate > 0 && (
                   <>
-                    {' '}No director penalty notice is uploaded. Estimated from the ATO account:{' '}
+                    {' '}No director penalty notice is uploaded. Estimated from the ATO account
+                    {dpn.window ? (dpn.window.start ? ` (since the balance was last nil, ${formatDay(dpn.window.start)})` : ' (the balance was never nil in this export)') : ''}:{' '}
                     <SourcedAmount
                       value={dpn.totalGrossLate}
                       format={money}
                       source={{
-                        from: ['Gross debt lodged more than 90 days late (an estimate)', `${dpn.contributingDebits.length} original activity statement rows lodged more than 90 days past their due date, in the ATO account CSV.`],
+                        from: ['Gross debt lodged more than 90 days late (an estimate)', `${dpn.contributingDebits.length} activity statement rows lodged more than 90 days past their due date, in the ATO account CSV.`],
                         link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' },
                       }}
                     />{' '}
-                    was lodged more than 90 days past due, reduced by{' '}
-                    <SourcedAmount
-                      value={dpn.totalReducedByAmendments}
-                      format={money}
-                      source={{ from: ['Reduced by later amendments', 'Credits from amended activity statements for the same periods, in the ATO account CSV.'], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
-                    />{' '}
-                    of later amendments for the same periods — leaving an estimated{' '}
-                    <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                      <SourcedAmount
-                        value={dpn.totalNetAtRisk}
-                        format={money}
-                        source={{ from: ['Estimated still owing on the late lodgements'], calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} = $${fmt(dpn.totalNetAtRisk)}` }}
-                      />
-                    </span>{' '}
-                    still owing on those lodgements.
+                    was lodged more than 90 days past due
+                    {dpn.window && (
+                      <>
+                        {' '}and{' '}
+                        <SourcedAmount
+                          value={dpn.window.payments}
+                          format={money}
+                          source={{ from: ['Payments since then', `${dpn.window.paymentsCount} payments in the ATO account CSV (allocation rows not counted twice).`], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
+                        />{' '}
+                        was paid since. If the ATO applied payments to the oldest debts first, an estimated{' '}
+                        <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : dpn.totalNetAtRisk > 0 ? 'text-warning font-semibold' : 'text-success font-semibold'}>
+                          <SourcedAmount
+                            value={dpn.totalNetAtRisk}
+                            format={money}
+                            source={{
+                              from: ['Estimated still owing on the late lodgements'],
+                              calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} amended − $${fmt(dpn.totalPaidByPayments ?? 0)} paid = $${fmt(dpn.totalNetAtRisk)}`,
+                              rule: dpnEstimateWorkings(dpn)?.join(' ') ?? null,
+                            }}
+                          />
+                        </span>{' '}
+                        is still owing on those lodgements.
+                      </>
+                    )}
+                    {!dpn.window && (
+                      <>
+                        , reduced by{' '}
+                        <SourcedAmount
+                          value={dpn.totalReducedByAmendments}
+                          format={money}
+                          source={{ from: ['Reduced by later amendments', 'Credits from amended activity statements for the same periods, in the ATO account CSV.'], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
+                        />{' '}
+                        of later amendments for the same periods — leaving an estimated{' '}
+                        <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
+                          <SourcedAmount
+                            value={dpn.totalNetAtRisk}
+                            format={money}
+                            source={{ from: ['Estimated still owing on the late lodgements'], calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} = $${fmt(dpn.totalNetAtRisk)}` }}
+                          />
+                        </span>{' '}
+                        still owing on those lodgements.
+                      </>
+                    )}
                   </>
                 )
               )}

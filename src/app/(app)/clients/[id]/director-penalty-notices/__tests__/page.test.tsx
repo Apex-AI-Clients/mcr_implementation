@@ -36,6 +36,7 @@ function noticeRow(overrides: Partial<NoticeRow>): NoticeRow {
     status: 'read',
     manual_reason: null,
     review_reasons: [],
+    table_layout: 'five_column',
     reference: '1234567890123',
     issued_on: '2026-09-30',
     notice_type: 'paygw',

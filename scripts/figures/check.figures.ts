@@ -124,7 +124,7 @@ it('compares the lodgement, ATO debt and DPN figures with the verified figures',
       const figures = lodgementFigures(lodgement)
       out(`  lodgement: ${Object.entries(figures).map(([k, v]) => `${k} ${v}`).join(' | ')}`)
       if (other) {
-        out(`  lodgement if ${OTHER_SCOPE}: lateLodgements ${other.summary.numberOfLateLodgements} | cumulativeDaysLate ${other.summary.cumulativeDaysLate} | dpnGrossOver90 ${other.dpnRisk.totalGrossLate}`)
+        out(`  lodgement if ${OTHER_SCOPE}: lateLodgements ${other.summary.numberOfLateLodgements} | cumulativeDaysLate ${other.summary.cumulativeDaysLate} | dpnGrossOver90 ${other.dpnRisk.window?.grossLateAllHistory ?? other.dpnRisk.totalGrossLate}`)
       }
       if (expectedLodgement) differences.push(...compareLodgement(expectedLodgement, figures))
       else out('  lodgement: not verified yet (add a "lodgement" key to the expected file)')

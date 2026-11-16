@@ -258,7 +258,7 @@ function NoticesTable({ notices }: { notices: SummaryNotice[] }) {
                       <span
                         className={`ml-1.5 text-xs ${isUrgent(n.daysLeft) ? 'font-semibold text-destructive' : 'text-foreground/50'}`}
                       >
-                        {describeDaysLeft(n.daysLeft)}
+                        {describeDaysLeft(n.daysLeft, n.deadline)}
                       </span>
                     )}
                   </td>

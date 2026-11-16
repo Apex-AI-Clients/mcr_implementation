@@ -83,6 +83,7 @@ function counted(r: EnrichedRow): { key: CompositionKey; debit: number; credit: 
   switch (r.lodgementType) {
     case 'Original':
     case 'ClientAmended':
+    case 'PAYGWithholding':
       return { key: 'principal', debit, credit }
     case 'GIC':
       return { key: 'interest', debit, credit }

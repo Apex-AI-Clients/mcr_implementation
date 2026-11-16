@@ -41,6 +41,7 @@ const NOTICE: StoredNotice = {
   directorName: 'MR JANE Q SAMPLE',
   rows: [{ periodFrom: '2025-01-01', periodTo: '2025-03-31', column2: 1_000_00, column3: 900_00, column4: 800_00, column5: 100_00 }],
   totals: { column2: 1_000_00, column3: 900_00, column4: 800_00, column5: 100_00 },
+  tableLayout: 'five_column',
   enteredBy: null,
   enteredAt: null,
 }
@@ -61,6 +62,22 @@ describe('DpnNoticeList (summary page)', () => {
     const daysLeft = screen.getByText('(4 days left)')
     expect(daysLeft.className).toContain('text-destructive')
     expect(screen.getByText('$900.00')).toBeTruthy()
+  })
+
+  it('says a passed deadline plainly, by its date, not as days left', () => {
+    render(<DpnNoticeList clientId="client-1" notices={[view({ deadline: '2026-10-22' })]} todayIso="2026-11-16" />)
+    expect(screen.getByTestId('dpn-deadline-passed').textContent).toBe('21-day deadline passed on 22 Oct 2026')
+    expect(screen.queryByText(/days left/)).toBeNull()
+  })
+
+  it('says when a notice had no Column 4/5 split', () => {
+    render(<DpnNoticeList clientId="client-1" notices={[view({ notice: { ...NOTICE, tableLayout: 'three_column' } })]} todayIso="2026-10-17" />)
+    expect(screen.getByTestId('dpn-three-column').textContent).toMatch(/no Column 4\/5 split/)
+  })
+
+  it('says nothing about the layout for a five-column notice', () => {
+    render(<DpnNoticeList clientId="client-1" notices={[view()]} todayIso="2026-10-17" />)
+    expect(screen.queryByTestId('dpn-three-column')).toBeNull()
   })
 
   it('marks a manual entry as entered manually, by whom', () => {

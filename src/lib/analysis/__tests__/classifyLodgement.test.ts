@@ -11,6 +11,8 @@ describe('classifyLodgement', () => {
     ["'Client initiated amended Activity Statement for the period ending 30 Jun 23", 'ClientAmended'],
     ['ATO initiated amended Activity Statement for the period ending 30 Jun 24', 'ATOAmended'],
     ['ato initiated amended activity statement', 'ATOAmended'],
+    ["' PAYG Withholding (STP Reported) for period ending 31 Dec 25", 'PAYGWithholding'], // MBM, 16 Nov 2026
+    ['PAYG Withholding (STP Reported) for period ending 30 Jun 26', 'PAYGWithholding'],
     ['- GST', 'SubLine'],
     ['- PAYG Withholding', 'SubLine'],
     ['- PAYG Instalments', 'SubLine'],

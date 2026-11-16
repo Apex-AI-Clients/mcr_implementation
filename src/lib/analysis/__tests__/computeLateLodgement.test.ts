@@ -237,17 +237,18 @@ describe('computeLateLodgement — integration with sample fixture CSV', () => {
     expect(result.summary.numberOfLateLodgements).toBe(4)
     expect(result.summary.cumulativeDaysLate).toBe(465 + 77 + 17 + 462)
 
-    // DPN estimate: same-period netting (18 Oct 2026).
-    //   gross   = sum of debits among late Original/ClientAmended rows
-    //   reduced = each period's net downward amendments, that period only
-    //   net     = gross - reduced (cash Payments are NOT counted)
-    // Late debits: ClientAmended 30 Jun 23 ($2000) + ClientAmended 30 Sep 18 ($1100) = $3100
-    // Late credits in fixture: none (no credit-only ClientAmended >90 days)
-    // The 10 Jun 2023 $3500 is a Payment row → ignored.
-    expect(result.dpnRisk.contributingDebits).toHaveLength(2)
-    expect(result.dpnRisk.totalGrossLate).toBe(3100)
+    // DPN estimate (16 Nov 2026): since the balance was last nil or in credit.
+    //   The 10 Jun 2023 payment leaves the balance $2,500 CR: the window starts there.
+    //   Before it: ClientAmended 30 Sep 18 ($1,100, late) — treated as paid.
+    //   In it: ClientAmended 30 Jun 23 ($2,000, 465 days late), paid by the $2,500 credit held.
+    expect(result.dpnRisk.window?.start).toBe('2023-06-10')
+    expect(result.dpnRisk.window?.startingCredit).toBe(2500)
+    expect(result.dpnRisk.window?.grossLateAllHistory).toBe(3100)
+    expect(result.dpnRisk.contributingDebits).toHaveLength(1)
+    expect(result.dpnRisk.totalGrossLate).toBe(2000)
     expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(3100)
+    expect(result.dpnRisk.totalPaidByPayments).toBe(2000)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(0)
 
     // Debt breakdown (new field names)
     // principalDebits = $1234.56 + $987 + $2000 + $500 + $750 + $1100 = $6571.56
@@ -290,25 +291,28 @@ describe('computeLateLodgement — integration with the company fixture CSV', ()
     expect(result.summary.numberOfLateLodgements).toBe(6)
     expect(result.summary.cumulativeDaysLate).toBe(1275)
 
-    // DPN estimate (18 Oct 2026): same-period netting.
-    //   Late debit:   Row 0 Original 171d $7,250 → the only contributing debit
-    //   Late credits: Row 3 ClientAmended 462d credit $3,615 and
-    //                 Row 10 ClientAmended 465d credit $2,895 are for OTHER
-    //                 periods, so they reduce nothing here. (The old pooled
-    //                 method took $6,510 off this debit.)
-    //   Cash payments $150,000 + $121,550 are ignored — the ATO applies
-    //   payments to the oldest debt first and we can't prove they hit the
-    //   DPN-qualifying row, so the conservative position is not to credit them.
+    // DPN estimate (16 Nov 2026): the balance is never nil, so the window is the
+    // whole export (it opens owing nothing: the first balance is the first row).
+    //   Late debit:   Row 0 Original 171d $7,250 (due 27 Aug 2018), the only one.
+    //   Late credits: Rows 3 and 10 (ClientAmended credits) are for OTHER
+    //                 periods, so they reduce nothing here.
+    //   Payments: the $150,000 of 1 Jun 2023 goes to the oldest debt first,
+    //   and the 30 Jun 18 statement is the oldest: it is paid.
+    expect(result.dpnRisk.window?.start).toBeNull()
+    expect(result.dpnRisk.window?.openingDebt).toBe(0)
+    expect(result.dpnRisk.window?.payments).toBe(271550)
     expect(result.dpnRisk.contributingDebits).toHaveLength(1)
     expect(result.dpnRisk.totalGrossLate).toBe(7250)
     expect(result.dpnRisk.totalReducedByAmendments).toBe(0)
-    expect(result.dpnRisk.totalNetAtRisk).toBe(7250)
+    expect(result.dpnRisk.totalPaidByPayments).toBe(7250)
+    expect(result.dpnRisk.totalNetAtRisk).toBe(0)
 
     const debit = result.dpnRisk.contributingDebits[0]
     expect(debit.debit).toBe(7250)
     expect(debit.daysLate).toBe(171)
     expect(debit.reducedByAmendments).toBe(0)
-    expect(debit.netAtRisk).toBe(7250)
+    expect(debit.paidByPayments).toBe(7250)
+    expect(debit.netAtRisk).toBe(0)
 
     // Period spans full CSV range
     expect(result.dpnRisk.periodStart).not.toBeNull()

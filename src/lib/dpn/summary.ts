@@ -265,12 +265,20 @@ export function typeLabel(type: DpnType): string {
   return DPN_TYPE_LABEL[type]
 }
 
-/** "4 days left", "1 day left", "Due today", "Passed 2 days ago". */
-export function describeDaysLeft(days: number): string {
+/**
+ * "4 days left", "1 day left", "Due today", or, once it has passed, "21-day
+ * deadline passed on 22 Oct 2026" — never a count of days for a passed one.
+ */
+export function describeDaysLeft(days: number, deadline: string): string {
   if (days > 1) return `${days} days left`
   if (days === 1) return '1 day left'
   if (days === 0) return 'Due today'
-  return days === -1 ? 'Passed 1 day ago' : `Passed ${-days} days ago`
+  return `21-day deadline passed on ${formatIsoDate(deadline)}`
+}
+
+/** "Deadline 22 Oct 2026 · 4 days left", or "21-day deadline passed on 22 Oct 2026". */
+export function describeDeadline(days: number, deadline: string): string {
+  return days < 0 ? describeDaysLeft(days, deadline) : `Deadline ${formatIsoDate(deadline)} · ${describeDaysLeft(days, deadline)}`
 }
 
 /** At or inside a week, or passed: shown in red. */

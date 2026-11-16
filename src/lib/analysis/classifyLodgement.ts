@@ -21,6 +21,9 @@ export function classifyLodgement(description: string): LodgementType {
   if (s.startsWith('client initiated amended activity statement')) return 'ClientAmended'
   if (s.startsWith('ato initiated amended activity statement')) return 'ATOAmended'
   if (s.startsWith('tax office audit amended activity statement')) return 'ATOAudit'
+  // "PAYG Withholding (STP Reported) for period ending…": withholding reported through Single Touch
+  // Payroll. A tax debt like a lodgement, but not an activity statement (never a late lodgement).
+  if (s.startsWith('payg withholding (stp reported)')) return 'PAYGWithholding'
   if (s.startsWith('- ')) return 'SubLine'
   if (s.includes('general interest charge')) return 'GIC'
   // "EFT refund for GST for the period…", "Refund": money paid out to the company.

@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { aud, printedLinesSource, type AmountSource } from '@/lib/sources'
 import { DPN_TYPE_LABEL } from '@/lib/dpn/types'
-import { describeDaysLeft, formatIsoDate } from '@/lib/dpn/summary'
+import { describeDeadline, formatIsoDate } from '@/lib/dpn/summary'
 import { REPORTED_LATE_DAYS, type PotentialByType, type ReportedItem } from '@/lib/cvl/directorRisk'
 import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
@@ -167,8 +167,7 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
                         {d.types.map((t) => DPN_TYPE_LABEL[t]).join(', ')}
                         {d.deadline && (
                           <span className={`block ${d.daysLeft !== null && d.daysLeft <= 7 ? 'text-destructive' : 'text-foreground/40'}`}>
-                            Deadline {formatIsoDate(d.deadline)}
-                            {d.daysLeft !== null ? ` · ${describeDaysLeft(d.daysLeft)}` : ''}
+                            {d.daysLeft !== null ? describeDeadline(d.daysLeft, d.deadline) : `Deadline ${formatIsoDate(d.deadline)}`}
                           </span>
                         )}
                       </td>

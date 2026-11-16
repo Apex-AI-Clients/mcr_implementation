@@ -30,6 +30,13 @@ export interface DpnAmounts {
   column5: number
 }
 
+/**
+ * The notice's table: Columns 1–5 (every notice until Nov 2026), or Columns
+ * 1–3 only, with no Column 4/5 split — the remission paragraph then covers
+ * the whole table, so Column 4 is read as Column 3 and Column 5 as 0.
+ */
+export type DpnTableLayout = 'five_column' | 'three_column'
+
 export interface DpnRow extends DpnAmounts {
   /** ISO date (YYYY-MM-DD), the period's first day. */
   periodFrom: string
@@ -52,6 +59,8 @@ export interface DirectorPenaltyNotice {
   rows: DpnRow[]
   /** Sums of the rows. The notice prints no total row. */
   totals: DpnAmounts
+  /** Whether the notice printed Columns 4 and 5, or only 1–3. */
+  tableLayout: DpnTableLayout
 }
 
 /** Why a notice has to be entered by hand. */

@@ -77,7 +77,7 @@ export function buildDpnCsv(summary: DpnSummary, meta: DpnExportMeta): string {
         n.reference,
         formatIsoDate(n.issuedOn),
         formatIsoDate(n.deadline),
-        describeDaysLeft(n.daysLeft),
+        describeDaysLeft(n.daysLeft, n.deadline),
         ...amounts(n.totals),
         n.source === 'manual' ? 'Entered manually' : 'Read automatically',
         n.issues.join(' '),

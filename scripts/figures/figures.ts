@@ -135,7 +135,13 @@ export function lodgementFigures(r: LodgementAnalysisResult): LodgementFigures {
     unparsedDateRows: r.unparsedDateRows,
     lateLodgements: r.summary.numberOfLateLodgements,
     cumulativeDaysLate: r.summary.cumulativeDaysLate,
-    dpnGrossOver90: r.dpnRisk.totalGrossLate,
+    // Gross debt lodged > 90 days late over the whole export (as verified before 16 Nov 2026).
+    dpnGrossOver90: r.dpnRisk.window?.grossLateAllHistory ?? r.dpnRisk.totalGrossLate,
+    // The DPN estimate since the balance was last nil (computeDpnRisk, 16 Nov 2026).
+    dpnWindowStart: r.dpnRisk.window?.start ?? null,
+    dpnLateInWindow: r.dpnRisk.totalGrossLate,
+    dpnPaymentsInWindow: r.dpnRisk.window?.payments ?? null,
+    dpnEstimatedOwing: r.dpnRisk.totalNetAtRisk,
     payments: db.paymentsCount,
     paymentsTotal: db.paymentsReceived,
     firstPayment: db.firstPaymentDate,

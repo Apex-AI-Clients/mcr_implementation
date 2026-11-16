@@ -21,6 +21,7 @@ function notice(over: Partial<StoredNotice> = {}): StoredNotice {
     directorName: 'Jane Sample',
     rows: [],
     totals: null,
+    tableLayout: 'five_column',
     enteredBy: null,
     enteredAt: null,
     ...over,

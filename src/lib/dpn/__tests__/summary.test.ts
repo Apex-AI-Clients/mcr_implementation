@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { amountHeadings, columnHeading, columnLabels, describeDaysLeft, summariseNotices } from '../summary'
+import { amountHeadings, columnHeading, columnLabels, describeDaysLeft, describeDeadline, summariseNotices } from '../summary'
 import { buildDpnCsv } from '../exportCsv'
 import { buildDpnPdf, pdfSafe } from '../exportPdf'
 import { readPdfPageLines } from '@/lib/pdf/pageLines'
@@ -48,6 +48,7 @@ function view(options: {
     acn: '000000019',
     directorName: options.director ?? 'MR JANE Q SAMPLE',
     rows: options.rows ?? [Q1(1_000_00, 600_00)],
+    tableLayout: 'five_column',
     totals: null,
     enteredBy: null,
     enteredAt: null,
@@ -174,10 +175,15 @@ describe('labels', () => {
     [4, '4 days left'],
     [1, '1 day left'],
     [0, 'Due today'],
-    [-1, 'Passed 1 day ago'],
-    [-3, 'Passed 3 days ago'],
+    [-1, '21-day deadline passed on 22 Oct 2026'],
+    [-3, '21-day deadline passed on 22 Oct 2026'],
   ])('says %i days as "%s"', (days, text) => {
-    expect(describeDaysLeft(days)).toBe(text)
+    expect(describeDaysLeft(days, '2026-10-22')).toBe(text)
+  })
+
+  it('names a passed deadline by its date, never as days left', () => {
+    expect(describeDeadline(-25, '2026-10-22')).toBe('21-day deadline passed on 22 Oct 2026')
+    expect(describeDeadline(4, '2026-10-22')).toBe('Deadline 22 Oct 2026 · 4 days left')
   })
 })
 

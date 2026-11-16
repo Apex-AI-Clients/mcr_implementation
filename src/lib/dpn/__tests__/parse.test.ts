@@ -5,6 +5,8 @@ import {
   PAGE3_ROWS,
   PAGE4_ROWS,
   SYNTHETIC,
+  THREE_COLUMN_ROWS,
+  THREE_COLUMN_TOTALS,
   noticeLines,
 } from './fixtures/notice'
 import type { PdfLine } from '@/lib/pdf/pageLines'
@@ -118,6 +120,46 @@ describe('parseDirectorPenaltyNotice — manual entry', () => {
   it('names the missing fields', () => {
     const result = parseDirectorPenaltyNotice(noticeLines({ withoutTo: true }))
     expect(result).toMatchObject({ kind: 'needs_manual', reason: 'missing_fields', missing: ['directorName'] })
+  })
+})
+
+describe('parseDirectorPenaltyNotice — a value wrapped over two lines', () => {
+  it('reads the company name from the lines above and below its label', () => {
+    // No page-3 statement either: the name comes from page 1 alone.
+    const notice = parsed(noticeLines({ companyWraps: true, withoutStatedCompany: true }))
+    expect(notice.companyName).toBe(SYNTHETIC.longCompany)
+    expect(notice.acn).toBe(SYNTHETIC.acn)
+    expect(notice.type).toBe('paygw')
+  })
+
+  it('falls back to the page-3 statement when page 1 gives no name', () => {
+    const lines = noticeLines({ companyWraps: true })
+    // Remove the wrapped value lines from page 1, leaving the label alone.
+    lines[0] = lines[0].filter((line) => !/^(EXAMPLE TRADING & SERVICES PTY|LTD)$/.test(line.text))
+    expect(parsed(lines).companyName).toBe(SYNTHETIC.longCompany)
+  })
+
+  it('still reads a name printed on one line', () => {
+    expect(parsed(noticeLines({ withoutStatedCompany: true })).companyName).toBe(SYNTHETIC.company)
+  })
+})
+
+describe('parseDirectorPenaltyNotice — three-column table (no Column 4/5 split)', () => {
+  it('reads Columns 2 and 3 on both pages, with Column 4 = Column 3 and Column 5 = 0', () => {
+    const notice = parsed(noticeLines({ threeColumn: true }))
+    expect(notice.tableLayout).toBe('three_column')
+    expect(notice.rows).toHaveLength(THREE_COLUMN_ROWS.page3.length + THREE_COLUMN_ROWS.page4.length)
+    expect(notice.rows[2]).toEqual({ periodFrom: '2023-07-01', periodTo: '2023-09-30', column2: 2_000_000, column3: 1_800_000, column4: 1_800_000, column5: 0 })
+    expect(notice.totals).toEqual(THREE_COLUMN_TOTALS)
+  })
+
+  it('marks the usual table five_column', () => {
+    expect(parsed().tableLayout).toBe('five_column')
+  })
+
+  it('does not trust a three-column table without the paragraph that remits the whole table', () => {
+    const result = parseDirectorPenaltyNotice(noticeLines({ threeColumn: true, remitsWholeTable: false }))
+    expect(result).toMatchObject({ kind: 'needs_manual', reason: 'table_unreadable' })
   })
 })
 

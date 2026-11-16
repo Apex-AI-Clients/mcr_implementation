@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readDirectorPenaltyNotice } from '../extractText'
-import { EXPECTED_TOTALS, PAGE3_ROWS, PAGE4_ROWS, SYNTHETIC, buildNoticePdf } from './fixtures/notice'
+import { EXPECTED_TOTALS, PAGE3_ROWS, PAGE4_ROWS, SYNTHETIC, THREE_COLUMN_TOTALS, buildNoticePdf } from './fixtures/notice'
 
 /**
  * PDF -> positioned cells -> parse, end to end, on a SYNTHETIC notice drawn
@@ -26,6 +26,15 @@ afterEach(() => {
 })
 
 describe('readDirectorPenaltyNotice', () => {
+  it('reads a wrapped company name and a three-column table from a real PDF', async () => {
+    const result = await readDirectorPenaltyNotice(await buildNoticePdf({ companyWraps: true, withoutStatedCompany: true, threeColumn: true }))
+    expect(result.kind).toBe('parsed')
+    if (result.kind !== 'parsed') return
+    expect(result.notice.companyName).toBe(SYNTHETIC.longCompany)
+    expect(result.notice.tableLayout).toBe('three_column')
+    expect(result.notice.totals).toEqual(THREE_COLUMN_TOTALS)
+  })
+
   it('reads a synthetic notice drawn as a real PDF', async () => {
     const result = await readDirectorPenaltyNotice(await buildNoticePdf())
     expect(result.kind).toBe('parsed')

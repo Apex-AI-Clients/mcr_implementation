@@ -8,6 +8,8 @@ import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import type { AmountSource, SourceLink } from '@/lib/sources'
 import type { DpnRiskBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
+import { dpnEstimateWorkings } from '@/lib/analysis/dpnWorkings'
+import { describeDeadline } from '@/lib/dpn/summary'
 
 const AUD = new Intl.NumberFormat('en-AU', {
   style: 'currency',
@@ -62,12 +64,7 @@ export function formatDay(iso: string): string {
   })
 }
 
-export function describeDaysLeft(days: number): string {
-  if (days > 1) return `${days} days left`
-  if (days === 1) return '1 day left'
-  if (days === 0) return 'due today'
-  return `passed ${-days} day${days === -1 ? '' : 's'} ago`
-}
+export { describeDaysLeft, describeDeadline } from '@/lib/dpn/summary'
 
 /** Seven days or fewer, or passed. */
 export const isUrgentDeadline = (days: number) => days <= 7
@@ -111,22 +108,31 @@ function MetricTile({ label, value, source, colorClass, bgClass }: TileProps) {
 }
 
 /**
- * The estimate from the ATO account (computeDpnRisk): debt lodged more than
- * 90 days late, less later amendments for the SAME period. Payments are not
- * counted, and nothing here is called paid.
+ * The estimate from the ATO account (computeDpnRisk): since the balance was
+ * last nil, debt lodged more than 90 days late, less later amendments for the
+ * SAME period and the payments made since, applied to the oldest debts first.
+ * An estimate stored before 16 Nov 2026 (no window) shows as it was worked out.
  */
 function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
   const [expanded, setExpanded] = useState(false)
   const hasDebits = dpnRisk.contributingDebits.length > 0
+  const w = dpnRisk.window
+  const workings = dpnEstimateWorkings(dpnRisk)
+  const paid = dpnRisk.totalPaidByPayments ?? 0
+  const sinceText = w ? (w.start ? `since the balance was last nil or in credit (${formatDay(w.start)})` : 'over the whole export (the balance was never nil)') : null
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
+      <div className={cn('grid gap-3', w ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
         <MetricTile
-          label="Gross debt lodged >90 days late"
+          label={w ? 'Lodged >90 days late since balance was nil' : 'Gross debt lodged >90 days late'}
           value={dpnRisk.totalGrossLate}
           source={{
-            from: ['Gross debt lodged more than 90 days late (an estimate, not the ATO’s notice)', `${dpnRisk.contributingDebits.length} original activity statement rows lodged more than 90 days past their due date, as printed in the ATO account CSV.`],
+            from: [
+              'Gross debt lodged more than 90 days late (an estimate, not the ATO’s notice)',
+              `${dpnRisk.contributingDebits.length} activity statement rows lodged more than 90 days past their due date${sinceText ? `, ${sinceText}` : ''}, as printed in the ATO account CSV.`,
+            ],
             calculation: dpnRisk.contributingDebits.length ? `${dpnRisk.contributingDebits.map((r) => formatAud(r.debit)).join(' + ')} = ${formatAud(dpnRisk.totalGrossLate)}` : null,
+            rule: w ? 'Everything before the last nil or credit balance was paid.' : null,
             link: ROWS_LINK,
           }}
           colorClass="text-foreground/80"
@@ -143,23 +149,51 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
           colorClass="text-foreground/80"
           bgClass="bg-surface/50 border-border/40"
         />
+        {w && (
+          <MetricTile
+            label="Paid, oldest debts first"
+            value={paid}
+            source={{
+              from: [
+                'Late-lodged debt reached by payments (an estimate)',
+                `${w.paymentsCount} payments totalling ${formatAud(w.payments)} ${sinceText}${w.startingCredit > 0 ? `, plus the ${formatAud(w.startingCredit)} credit held then` : ''}. ${formatAud(w.otherTaxDebtsPaid)} of it went to other tax debts that fell due earlier.`,
+              ],
+              rule: 'Payments in date order, applied to the tax debts already on the account in due-date order (the ATO’s usual oldest-first practice). Interest and penalties are not counted as debts here.',
+              link: ROWS_LINK,
+            }}
+            colorClass="text-foreground/80"
+            bgClass="bg-surface/50 border-border/40"
+          />
+        )}
         <MetricTile
           label="Estimated still owing"
           value={dpnRisk.totalNetAtRisk}
           source={{
             from: ['Estimated still owing on the late lodgements'],
-            calculation: `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} = ${formatAud(dpnRisk.totalNetAtRisk)}`,
-            rule: 'Payments are not counted: the ATO decides which debt each payment goes to, and the account does not say.',
+            calculation: w
+              ? `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} − ${formatAud(paid)} = ${formatAud(dpnRisk.totalNetAtRisk)}`
+              : `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} = ${formatAud(dpnRisk.totalNetAtRisk)}`,
+            rule: w
+              ? 'An estimate: assumes the ATO applied payments to the oldest debts first.'
+              : 'Payments are not counted: the ATO decides which debt each payment goes to, and the account does not say.',
             link: ROWS_LINK,
           }}
           colorClass={netColorClass(dpnRisk.totalNetAtRisk)}
           bgClass={`border ${netBgClass(dpnRisk.totalNetAtRisk)}`}
         />
       </div>
-      <p className="text-xs text-foreground/45">
-        An amendment reduces only the debt for its own period. Payments are not counted: the ATO decides which debt
-        each payment goes to, and the account does not say.
-      </p>
+      {workings ? (
+        <div data-testid="dpn-workings" className="space-y-1 rounded-lg border border-border/40 bg-surface/50 px-4 py-3 text-xs text-foreground/70">
+          {workings.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-foreground/45">
+          An amendment reduces only the debt for its own period. Payments are not counted: the ATO decides which debt
+          each payment goes to, and the account does not say.
+        </p>
+      )}
 
       {hasDebits && (
         <div>
@@ -183,6 +217,7 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
                     <th className="pb-2 pr-4 font-medium text-right">Days Late</th>
                     <th className="pb-2 pr-4 font-medium text-right">Gross</th>
                     <th className="pb-2 pr-4 font-medium text-right">Reduced by later amendments</th>
+                    {w && <th className="pb-2 pr-4 font-medium text-right">Paid, oldest first</th>}
                     <th className="pb-2 font-medium text-right">Estimated still owing</th>
                   </tr>
                 </thead>
@@ -227,6 +262,22 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
                           '—'
                         )}
                       </td>
+                      {w && (
+                        <td className="py-1.5 pr-4 text-right text-foreground/70">
+                          {(r.paidByPayments ?? 0) > 0 ? (
+                            <SourcedAmount
+                              value={r.paidByPayments ?? 0}
+                              format={formatAud}
+                              source={{
+                                from: [`Paid on the period ending ${formatIso(r.periodEnding)} (an estimate)`, 'Payments since the balance was last nil, applied to the oldest tax debts first.'],
+                                link: ROWS_LINK,
+                              }}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      )}
                       <td
                         className={cn('py-1.5 text-right font-semibold', {
                           'text-destructive': r.netAtRisk > 0,
@@ -238,7 +289,9 @@ function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
                           format={formatAud}
                           source={{
                             from: [`Estimated still owing for the period ending ${formatIso(r.periodEnding)}`],
-                            calculation: `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} = ${formatAud(r.netAtRisk)}`,
+                            calculation: w
+                              ? `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} − ${formatAud(r.paidByPayments ?? 0)} = ${formatAud(r.netAtRisk)}`
+                              : `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} = ${formatAud(r.netAtRisk)}`,
                             link: ROWS_LINK,
                           }}
                         />
@@ -294,7 +347,7 @@ function NoticesBody({ notices, dpnPage }: { notices: DpnNoticeFigures; dpnPage?
         )}
       >
         <span className={urgent ? 'font-semibold text-destructive' : 'text-foreground/70'}>
-          Deadline {formatDay(notices.deadline)} · {describeDaysLeft(notices.daysLeft)}
+          {describeDeadline(notices.daysLeft, notices.deadline)}
         </span>
         <span className="text-foreground/45">
           {notices.notices} current notice{notices.notices === 1 ? '' : 's'}, latest issued {formatDay(notices.issuedOn)}

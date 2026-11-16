@@ -3,7 +3,7 @@ import { formatAcn } from '@/lib/asic/fill'
 import type { Database, Json } from '@/types/database'
 import { checkDirectorPenaltyNotice, dpnDeadline, type ClientFileForDpn, type DpnCheck } from './checks'
 import { sumRows } from './parse'
-import { DPN_TYPE_LABEL, type DpnAmounts, type DpnManualReason, type DpnParseResult, type DpnRow, type DpnType } from './types'
+import { DPN_TYPE_LABEL, type DpnAmounts, type DpnManualReason, type DpnParseResult, type DpnRow, type DpnTableLayout, type DpnType } from './types'
 
 /**
  * Notices as stored (director_penalty_notices, migration 0030): the row a
@@ -11,8 +11,11 @@ import { DPN_TYPE_LABEL, type DpnAmounts, type DpnManualReason, type DpnParseRes
  * on a notice. Pure, so safe in components and tests.
  */
 
-/** Bump when the parser changes what it reads, so stored notices can be re-read. */
-export const DPN_PARSER_VERSION = 1
+/**
+ * Bump when the parser changes what it reads, so stored notices can be re-read.
+ * 2 (16 Nov 2026): values wrapped over two lines; three-column tables (0056).
+ */
+export const DPN_PARSER_VERSION = 2
 
 type NoticeTable = Database['public']['Tables']['director_penalty_notices']
 export type NoticeRow = NoticeTable['Row']
@@ -40,6 +43,8 @@ export interface StoredNotice {
   directorName: string | null
   rows: DpnRow[]
   totals: DpnAmounts | null
+  /** 'three_column': the notice printed no Column 4/5 split (migration 0056). */
+  tableLayout: DpnTableLayout
   enteredBy: string | null
   enteredAt: string | null
 }
@@ -116,6 +121,7 @@ export function fieldColumns(notice: Partial<{
   acn: string
   directorName: string
   rows: DpnRow[]
+  tableLayout: DpnTableLayout
 }>) {
   const rows = notice.rows ?? []
   const totals = rows.length > 0 ? sumRows(rows) : null
@@ -131,6 +137,7 @@ export function fieldColumns(notice: Partial<{
     total_column3: totals?.column3 ?? null,
     total_column4: totals?.column4 ?? null,
     total_column5: totals?.column5 ?? null,
+    table_layout: notice.tableLayout ?? 'five_column',
   }
 }
 
@@ -156,6 +163,8 @@ export function toStoredNotice(row: NoticeRow): StoredNotice {
     acn: row.acn,
     directorName: row.director_name,
     rows: rows.success ? rows.data : [],
+    // Before 0056 every notice was five-column.
+    tableLayout: row.table_layout === 'three_column' ? 'three_column' : 'five_column',
     totals: hasTotals
       ? {
           column2: Number(row.total_column2),
@@ -241,6 +250,13 @@ export function noticeIssues(notice: StoredNotice, file: ClientFileForDpn): stri
 /** "PAYG withholding", or null before the type is known. */
 export function noticeTypeLabel(notice: Pick<StoredNotice, 'type'>): string | null {
   return notice.type ? DPN_TYPE_LABEL[notice.type] : null
+}
+
+/** What the notice card says about a three-column notice; null for the usual five columns. */
+export function tableLayoutNote(notice: Pick<StoredNotice, 'tableLayout'>): string | null {
+  return notice.tableLayout === 'three_column'
+    ? 'This notice has no Column 4/5 split: its table has three columns, and it says every amount is removed if the company pays, or an SBR practitioner, administrator or liquidator is appointed, within 21 days. All of the unpaid amount is shown as removable; none stays with the director.'
+    : null
 }
 
 export function noticeDeadline(notice: Pick<StoredNotice, 'issuedOn'>): string | null {

@@ -26,6 +26,7 @@ function asRow(fields: ReturnType<typeof noticeFieldsFromParse>, overrides: Part
     reference: null,
     review_reasons: [],
     rows: [],
+    table_layout: 'five_column',
     total_column2: null,
     total_column3: null,
     total_column4: null,

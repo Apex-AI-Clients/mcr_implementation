@@ -74,6 +74,12 @@ const ESTIMATE: DpnRiskBreakdown = {
 }
 
 describe('DPN panel', () => {
+  it('shows a passed deadline as passed, on its date', () => {
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, deadline: '2026-10-22', daysLeft: -25 }} clientId="client-1" />)
+    expect(screen.getByTestId('dpn-deadline').textContent).toMatch(/21-day deadline passed on 22 Oct 2026/)
+    expect(screen.getByTestId('dpn-deadline').textContent).not.toMatch(/days left|ago/)
+  })
+
   it("shows the notices' figures when notices are on file, with the estimate closed below", async () => {
     render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={NOTICES} clientId="client-1" />)
     expect(screen.getByTestId('dpn-source').textContent).toBe(NOTICES_LABEL)

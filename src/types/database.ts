@@ -898,6 +898,7 @@ export type Database = {
           rows: Json
           source: string
           status: string
+          table_layout: string
           total_column2: number | null
           total_column3: number | null
           total_column4: number | null
@@ -923,6 +924,7 @@ export type Database = {
           rows?: Json
           source: string
           status: string
+          table_layout?: string
           total_column2?: number | null
           total_column3?: number | null
           total_column4?: number | null
@@ -948,6 +950,7 @@ export type Database = {
           rows?: Json
           source?: string
           status?: string
+          table_layout?: string
           total_column2?: number | null
           total_column3?: number | null
           total_column4?: number | null

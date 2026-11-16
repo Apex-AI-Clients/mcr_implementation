@@ -38,7 +38,17 @@ export function dpnPromptSection(dpnRisk: DpnRiskBreakdown, notices: DpnNoticeFi
       `  - Unpaid: $${formatNum(notices.unpaid)}`,
       `  - Removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by ${formatDay(notices.deadline)}: $${formatNum(notices.removable)}`,
       `  - Stays with the director unless paid: $${formatNum(notices.staysWithDirector)}`,
-      `  - Deadline: ${formatDay(notices.deadline)} (${notices.daysLeft >= 0 ? `${notices.daysLeft} days left` : `passed ${-notices.daysLeft} days ago`})`,
+      `  - Deadline: ${formatDay(notices.deadline)} (${notices.daysLeft >= 0 ? `${notices.daysLeft} days left` : `the 21-day deadline passed on ${formatDay(notices.deadline)}`})`,
+    ].join('\n')
+  }
+  const w = dpnRisk.window
+  if (dpnRisk.method === 'payments_oldest_first' && w) {
+    return [
+      `- Director penalty notices: none uploaded. Estimate from the ATO account (not the ATO's figures), ${w.start ? `since the balance was last nil or in credit (${formatDay(w.start)}); everything before then was paid` : 'over the whole export (the balance was never nil in it)'}:`,
+      `  - Debt from lodgements filed more than 90 days late in that time: $${formatNum(dpnRisk.totalGrossLate)}`,
+      `  - Reduced by later amendments for the same periods: $${formatNum(dpnRisk.totalReducedByAmendments)}`,
+      `  - Payments in that time: $${formatNum(w.payments)}`,
+      `  - Estimated still owing on those late lodgements if the ATO applied payments to the oldest debts first: $${formatNum(dpnRisk.totalNetAtRisk)}`,
     ].join('\n')
   }
   return [

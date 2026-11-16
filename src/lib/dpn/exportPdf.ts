@@ -227,7 +227,7 @@ export async function buildDpnPdf(summary: DpnSummary, meta: DpnExportMeta): Pro
       director: n.directorName,
       issued: formatIsoDate(n.issuedOn),
       deadline: formatIsoDate(n.deadline),
-      days: describeDaysLeft(n.daysLeft),
+      days: describeDaysLeft(n.daysLeft, n.deadline),
       column2: money(n.totals, 'column2'),
       column3: money(n.totals, 'column3'),
       column4: money(n.totals, 'column4'),

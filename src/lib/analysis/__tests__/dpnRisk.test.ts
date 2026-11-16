@@ -29,19 +29,23 @@ function buildRow(opts: {
   description?: string
   /** The period ending, yyyy-mm-dd: credits only reduce debits of the same period. */
   period?: string
+  /** The due (effective) date, yyyy-mm-dd: payments go to the oldest due first. Default: none (the processed date is used). */
+  effective?: string
+  /** The ATO's printed running balance (negative = in credit). */
+  balance?: number
 }): EnrichedRow {
   const daysLate = opts.daysLate ?? 0
   return {
     rowIndex: _rowIdx++,
     processedDate: opts.processedDate ? new Date(opts.processedDate) : null,
-    effectiveDate: null,
+    effectiveDate: opts.effective ? new Date(opts.effective) : null,
     rawProcessed: opts.processedDate ?? '',
     rawEffective: '',
     // The ATO's wording by type: the late-lodgement rule (RBA ICA) reads the description.
     description: opts.description ?? DESCRIPTION[opts.type] ?? '',
     debit: opts.debit ?? null,
     credit: opts.credit ?? null,
-    balance: null,
+    balance: opts.balance ?? null,
     periodEnding: opts.period ? new Date(`${opts.period}T00:00:00`) : null,
     lodgementType: opts.type,
     lateLodgementDays: daysLate,
@@ -54,10 +58,24 @@ describe('computeDpnRisk — empty input', () => {
   it('returns zero totals, empty debits, null periods', () => {
     expect(computeDpnRisk([])).toEqual({
       thresholdDays: 90,
+      method: 'payments_oldest_first',
       contributingDebits: [],
       totalGrossLate: 0,
       totalReducedByAmendments: 0,
+      totalPaidByPayments: 0,
       totalNetAtRisk: 0,
+      window: {
+        start: null,
+        startBalance: null,
+        startUnder1000: null,
+        startingCredit: 0,
+        openingDebt: 0,
+        payments: 0,
+        paymentsCount: 0,
+        otherTaxDebts: 0,
+        otherTaxDebtsPaid: 0,
+        grossLateAllHistory: 0,
+      },
       periodStart: null,
       periodEnd: null,
     })
@@ -109,28 +127,30 @@ describe('computeDpnRisk — single late debit, no subsequent payments', () => {
   })
 })
 
-// 6. Cash Payments are NOT counted toward DPN relief (could have gone to older debt)
-describe('computeDpnRisk — cash Payments do not reduce DPN net', () => {
-  it('a Payment row after the late debit is ignored — only late-credit ClientAmended rows offset', () => {
+// 6. Payments since the window opened pay the late debt (16 Nov 2026: practitioner's method).
+describe('computeDpnRisk — payments reduce the estimate', () => {
+  it('a payment after the late debit pays it', () => {
     const r6 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 5000, type: 'ClientAmended' }),
       buildRow({ processedDate: '2020-06-01', credit: 10000, type: 'Payment' }),
     ])
     expect(r6.totalGrossLate).toBe(5000)
     expect(r6.totalReducedByAmendments).toBe(0)
-    expect(r6.totalNetAtRisk).toBe(5000)
+    expect(r6.totalPaidByPayments).toBe(5000)
+    expect(r6.totalNetAtRisk).toBe(0)
+    expect(r6.window?.payments).toBe(10000)
   })
 })
 
-// 7. Payment BEFORE the lodgement also doesn't count (same rationale)
-describe('computeDpnRisk — payment date is irrelevant; payments never count', () => {
-  it('payment on an earlier date does not reduce net', () => {
+// 7. A payment before the debt is held as a credit and applied when the debt arrives.
+describe('computeDpnRisk — a surplus payment waits for the next debt', () => {
+  it('payment on an earlier date pays the later debt', () => {
     const r7 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', credit: 10000, type: 'Payment' }),
       buildRow({ processedDate: '2020-06-01', daysLate: 200, debit: 5000, type: 'ClientAmended' }),
     ])
     expect(r7.totalReducedByAmendments).toBe(0)
-    expect(r7.totalNetAtRisk).toBe(5000)
+    expect(r7.totalNetAtRisk).toBe(0)
   })
 })
 
@@ -175,18 +195,126 @@ describe('computeDpnRisk — GIC remission excluded', () => {
   })
 })
 
-// 11. Multiple late debits — cash payments don't count; pool excludes Payment rows.
-describe('computeDpnRisk — cash payments never reduce DPN', () => {
-  it('Payment rows are ignored regardless of when they processed', () => {
+// 11. Payments in date order, to the debts already on the account, oldest due first.
+describe('computeDpnRisk — payments, oldest debt first', () => {
+  it('a payment reaches only the debts on the account when it is made; the rest waits', () => {
     const r11 = computeDpnRisk([
       buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 3000, type: 'ClientAmended' }),
-      buildRow({ processedDate: '2021-01-01', daysLate: 200, debit: 2000, type: 'ClientAmended' }),
       buildRow({ processedDate: '2020-06-01', credit: 1500, type: 'Payment' }),
+      buildRow({ processedDate: '2021-01-01', daysLate: 200, debit: 2000, type: 'ClientAmended' }),
       buildRow({ processedDate: '2021-06-01', credit: 2000, type: 'Payment' }),
     ])
     expect(r11.totalGrossLate).toBe(5000)
-    expect(r11.totalReducedByAmendments).toBe(0)
-    expect(r11.totalNetAtRisk).toBe(5000)
+    // 1,500 then 1,500 of the 2,000 to the first debt; 500 to the second.
+    expect(r11.contributingDebits.map((d) => d.paidByPayments)).toEqual([3000, 500])
+    expect(r11.totalNetAtRisk).toBe(1500)
+  })
+
+  it('an on-time debt due earlier takes the payment before a late debt due later', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2021-01-10', effective: '2021-01-01', debit: 4000, type: 'Original', period: '2020-12-31' }),
+      buildRow({ processedDate: '2022-01-10', effective: '2021-04-01', daysLate: 284, debit: 3000, type: 'Original', period: '2021-03-31' }),
+      buildRow({ processedDate: '2022-02-01', credit: 5000, type: 'Payment' }),
+    ])
+    expect(r.totalGrossLate).toBe(3000)
+    expect(r.totalPaidByPayments).toBe(1000)
+    expect(r.totalNetAtRisk).toBe(2000)
+    expect(r.window?.otherTaxDebtsPaid).toBe(4000)
+  })
+
+  it('a late debt due earlier is paid before an on-time debt due later, whatever order they were lodged', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2021-07-10', effective: '2021-07-01', debit: 4000, type: 'Original', period: '2021-06-30' }),
+      buildRow({ processedDate: '2022-01-10', effective: '2021-04-01', daysLate: 284, debit: 3000, type: 'Original', period: '2021-03-31' }),
+      buildRow({ processedDate: '2022-02-01', credit: 5000, type: 'Payment' }),
+    ])
+    expect(r.totalNetAtRisk).toBe(0)
+    expect(r.window?.otherTaxDebtsPaid).toBe(2000)
+  })
+
+  it('interest and penalties are not debts the payments go to', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 3000, type: 'Original' }),
+      buildRow({ processedDate: '2020-02-01', debit: 900, type: 'GIC', description: 'General interest charge' }),
+      buildRow({ processedDate: '2020-03-01', credit: 3000, type: 'Payment' }),
+    ])
+    expect(r.totalNetAtRisk).toBe(0)
+  })
+
+  it('a payment allocation row is not a second payment', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2020-01-01', daysLate: 200, debit: 3000, type: 'Original' }),
+      buildRow({ processedDate: '2020-03-01', credit: 1000, type: 'Payment' }),
+      buildRow({ processedDate: '2020-03-01', credit: 1000, type: 'PaymentAllocation' }),
+    ])
+    expect(r.window?.payments).toBe(1000)
+    expect(r.totalNetAtRisk).toBe(2000)
+  })
+
+  it('PAYG withholding (STP reported) is a tax debt the payments go to, never a late lodgement', () => {
+    const r = computeDpnRisk([
+      buildRow({ processedDate: '2021-01-10', effective: '2021-01-01', debit: 2000, type: 'PAYGWithholding', daysLate: 0, description: 'PAYG Withholding (STP Reported) for period ending 31 Dec 20' }),
+      buildRow({ processedDate: '2022-01-10', effective: '2021-04-01', daysLate: 284, debit: 3000, type: 'Original', period: '2021-03-31' }),
+      buildRow({ processedDate: '2022-02-01', credit: 3000, type: 'Payment' }),
+    ])
+    expect(r.contributingDebits).toHaveLength(1)
+    expect(r.totalNetAtRisk).toBe(2000)
+    expect(r.window?.otherTaxDebtsPaid).toBe(2000)
+  })
+})
+
+// The window: since the ATO balance was last nil or in credit.
+describe('computeDpnRisk — window since the balance was last nil', () => {
+  it('treats late debt before the last nil balance as paid, and counts only payments after it', () => {
+    // Newest first, as the ATO lists them.
+    const rows = [
+      buildRow({ processedDate: '2022-03-01', credit: 500, type: 'Payment', balance: 3500 }),
+      buildRow({ processedDate: '2022-01-10', daysLate: 284, debit: 4000, type: 'Original', balance: 4000 }),
+      buildRow({ processedDate: '2021-06-01', credit: 7000, type: 'Payment', balance: 0 }),
+      buildRow({ processedDate: '2021-01-10', daysLate: 200, debit: 7000, type: 'Original', balance: 7000 }),
+    ]
+    const r = computeDpnRisk(rows)
+    expect(r.window?.start).toBe('2021-06-01')
+    expect(r.window?.startBalance).toBe(0)
+    expect(r.window?.payments).toBe(500)
+    expect(r.window?.grossLateAllHistory).toBe(11000)
+    expect(r.totalGrossLate).toBe(4000)
+    expect(r.totalNetAtRisk).toBe(3500)
+  })
+
+  it('applies a credit held at the start like a payment, and reports the last date at or under $1,000', () => {
+    const rows = [
+      buildRow({ processedDate: '2022-01-10', daysLate: 284, debit: 4000, type: 'Original', balance: 3000 }),
+      buildRow({ processedDate: '2021-09-01', debit: 1500, type: 'GIC', description: 'General interest charge', balance: -1000 + 1500 }),
+      buildRow({ processedDate: '2021-06-01', credit: 1000, type: 'GovernmentCredit', balance: -1000 }),
+    ]
+    const r = computeDpnRisk(rows)
+    expect(r.window?.start).toBe('2021-06-01')
+    expect(r.window?.startingCredit).toBe(1000)
+    expect(r.window?.startUnder1000).toBe('2021-09-01')
+    expect(r.totalNetAtRisk).toBe(3000)
+  })
+
+  it('with no nil balance, the export opens owing its first balance, the oldest debt', () => {
+    const rows = [
+      buildRow({ processedDate: '2022-03-01', credit: 3000, type: 'Payment', balance: 6000 }),
+      buildRow({ processedDate: '2022-01-10', daysLate: 284, debit: 4000, type: 'Original', balance: 9000 }),
+      buildRow({ processedDate: '2021-06-01', debit: 5000, type: 'GIC', description: 'General interest charge', balance: 5000 }),
+    ]
+    const r = computeDpnRisk(rows)
+    expect(r.window?.start).toBeNull()
+    // The first printed balance (5,000 on 1 Jun 2021) less the interest charged that day: nothing owed before.
+    expect(r.window?.openingDebt).toBe(0)
+    expect(r.totalNetAtRisk).toBe(1000)
+
+    const owing = computeDpnRisk([
+      buildRow({ processedDate: '2022-03-01', credit: 3000, type: 'Payment', balance: 9000 }),
+      buildRow({ processedDate: '2022-01-10', daysLate: 284, debit: 4000, type: 'Original', balance: 12000 }),
+      buildRow({ processedDate: '2021-06-01', debit: 5000, type: 'GIC', description: 'General interest charge', balance: 8000 }),
+    ])
+    expect(owing.window?.openingDebt).toBe(3000)
+    // The 3,000 payment clears the 3,000 owed when the export opens; the late debt is untouched.
+    expect(owing.totalNetAtRisk).toBe(4000)
   })
 })
 

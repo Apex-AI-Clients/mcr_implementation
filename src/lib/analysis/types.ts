@@ -26,6 +26,8 @@ export type LodgementType =
   | 'GICSummary'
   /** "Tax Office audit amended Activity Statement…": debt the ATO raised on audit, not lodged by the client. */
   | 'ATOAudit'
+  /** "PAYG Withholding (STP Reported) for period ending…": withholding reported through payroll. Tax lodged, not an activity statement. */
+  | 'PAYGWithholding'
   | 'FTLPenalty'
   | 'GeneralPenalty'
   | 'CreditTransfer'
@@ -83,7 +85,32 @@ export interface DpnContributingDebit {
   debit: number                  // gross amount that landed on the ATO ledger
   /** The same period's net downward amendments applied to this debit, capped at it. Never a payment. */
   reducedByAmendments: number
-  netAtRisk: number              // max(debit - reducedByAmendments, 0)
+  /** Paid by payments applied oldest debt first (absent on estimates stored before 16 Nov 2026). */
+  paidByPayments?: number
+  netAtRisk: number              // max(debit - reducedByAmendments - paidByPayments, 0)
+}
+
+/** The window the estimate works over (computeDpnRisk): since the ATO balance was last nil or in credit. */
+export interface DpnEstimateWindow {
+  /** The day the balance was last nil or in credit (yyyy-mm-dd); null when it never was in the export. */
+  start: string | null
+  /** The balance printed then (≤ 0; negative = in credit). */
+  startBalance: number | null
+  /** For information: the last day the balance was $1,000 or less. */
+  startUnder1000: string | null
+  /** A credit held at the start, applied like a payment. */
+  startingCredit: number
+  /** With no nil balance: what the export opens owing, treated as the oldest debt. */
+  openingDebt: number
+  /** Payments in the window (allocation rows not counted twice). */
+  payments: number
+  paymentsCount: number
+  /** The tax debts in the window not lodged > 90 days late (after amendments), the opening debt included. */
+  otherTaxDebts: number
+  /** How much of the payments (and starting credit) went to those other debts. */
+  otherTaxDebtsPaid: number
+  /** For information: gross late debt over the whole export, before the window too. */
+  grossLateAllHistory: number
 }
 
 export interface DpnRiskBreakdown {
@@ -94,6 +121,11 @@ export interface DpnRiskBreakdown {
   totalGrossLate: number
   /** Sum of `reducedByAmendments` across all contributingDebits. */
   totalReducedByAmendments: number
+  /** Sum of `paidByPayments` (absent on estimates stored before 16 Nov 2026, which ignored payments). */
+  totalPaidByPayments?: number
+  /** Present from 16 Nov 2026: payments since the balance was last nil, oldest debt first. */
+  method?: 'payments_oldest_first'
+  window?: DpnEstimateWindow
   /** Sum of `netAtRisk` across all contributingDebits. */
   totalNetAtRisk: number
   /** Earliest processedDate across ALL CSV rows (display only). */

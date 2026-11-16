@@ -28,88 +28,154 @@ import type {
  */
 
 /**
- * DPN (Director Penalty Notice) estimate — SAME-PERIOD netting.
+ * DPN (Director Penalty Notice) estimate — payments since the balance was last
+ * nil, applied to the oldest debts first.
  *
  * Only an estimate, for a client with no director penalty notice on file:
  * when notices are uploaded, their own figures are shown instead
- * (src/lib/dpn/summary.ts). Rewritten 18 Oct 2026: the earlier method pooled
- * the credits of every late lodgement and applied them oldest-debit-first
- * across ALL periods, and called the result "paid since lodged". On a real
- * account with no payments at all it showed the whole late debt as "paid".
+ * (src/lib/dpn/summary.ts). Rewritten 16 Nov 2026 to the practitioner's method
+ * (MBM Landscaping, email to Gabby): until then payments were ignored and the
+ * gross late debt of the WHOLE history was shown as still owing.
  *
  * METHOD:
- *   1. Late debits: the rows the late-lodgement setting counts (config.ts —
- *      under the RBA ICA rule every "Activity Statement" row, Tax Office
- *      audit amendments included), filed more than 90 days late, with a
- *      debit. Gross = their sum.
- *   2. Per period (matched on period ending), the relief is the period's NET
- *      downward amendment: the credits of its statement rows (Original,
- *      ClientAmended, and the other counted rows that are not penalties),
- *      less the debits of those rows that are not counted as late debits (an
- *      amendment that went up and then back down nets to nothing). Never
- *      below $0. A penalty remission is not an amendment: it relieves nothing.
- *   3. That relief reduces only that period's late debits, in date order.
- *      A credit never reduces another period's debit. A row with no period
- *      ending gets no relief.
+ *   1. Window. The last row (in date order) whose printed ATO balance was nil
+ *      or in credit (≤ $0): everything before it was paid. The window is the
+ *      rows after it. A credit held then is money on the account and is
+ *      applied like a payment. When the balance is never nil in the export,
+ *      the window is the whole export and the balance it opens with is the
+ *      oldest debt. The last date at or under $1,000 is reported for information.
+ *   2. Late debits: in the window, the rows the late-lodgement setting counts
+ *      (config.ts), filed more than 90 days late, with a debit. Gross = their
+ *      sum.
+ *   3. Amendments (unchanged rule): per period, the credits of its statement
+ *      rows reduce that period's own debits — those not filed > 90 days late
+ *      first (an amendment that went up and back down nets to nothing), then
+ *      the late ones in date order. A credit never reduces another period's
+ *      debit; a penalty remission relieves nothing.
+ *   4. Payments: every payment in the window (allocation rows not counted
+ *      twice), in date order, goes to the tax debts already on the account
+ *      in due-date order (effective date), the ATO's usual oldest-first
+ *      practice; what is left over waits for the next debt. Tax debts are the
+ *      activity statement rows, ATO audit amendments and PAYG withholding
+ *      (STP reported) — not interest or penalties.
+ *   5. Estimated still owing: the late debt neither amended away nor reached
+ *      by a payment.
  *
- * EXCLUSIONS: payments (we can't know which debt the ATO applied them to),
- * GIC, penalties, government credits, transfers, ATO audit amendments.
- *
- * Nothing here is a payment: the reduction is "reduced by later amendments".
+ * Other credits (government credits, transfers, credit statements of other
+ * periods) are not applied: the estimate leans towards "still owing".
  */
 export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
-  // The statement rows a period's relief is worked out from: never a penalty or its remission.
   const isPenalty = (r: EnrichedRow) => r.lodgementType === 'FTLPenalty' || r.lodgementType === 'GeneralPenalty'
-  const lodgements = rows.filter(
-    (r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended' || (isCountedLodgement(r, scope) && !isPenalty(r)),
-  )
   const periodOf = (r: EnrichedRow) => (r.periodEnding ? calendarDay(r.periodEnding) : null)
+  const isLateDebit = (r: EnrichedRow) => r.lateLodgementDays > 90 && (r.debit ?? 0) > 0 && isCountedLodgement(r, scope)
 
-  const lateDebitRows = rows
-    .filter((r) => r.lateLodgementDays > 90 && (r.debit ?? 0) > 0 && isCountedLodgement(r, scope))
-    .slice()
-    .sort((a, b) => {
-      const ta = a.processedDate ? (a.processedDate as Date).getTime() : 0
-      const tb = b.processedDate ? (b.processedDate as Date).getTime() : 0
-      if (ta !== tb) return ta - tb
-      return a.rowIndex - b.rowIndex
-    })
-  const late = new Set(lateDebitRows)
+  // 1. The window: rows after the last nil-or-credit balance, in date order.
+  const chron = chronological(rows)
+  const lastAtOrBelow = (limit: number) => {
+    for (let i = chron.length - 1; i >= 0; i--) {
+      const balance = chron[i].balance
+      if (balance !== null && balance <= limit + 0.005) return i
+    }
+    return -1
+  }
+  const anchor = lastAtOrBelow(0)
+  const anchorUnder1000 = lastAtOrBelow(1000)
+  const window = chron.slice(anchor + 1)
+  const position = new Map(window.map((r, i) => [r, i]))
+  const startingCredit = anchor >= 0 ? round2(Math.max(0, -(chron[anchor].balance ?? 0))) : 0
+  const openingDebt = anchor >= 0 ? 0 : Math.max(0, openingBalanceOf(rows))
 
-  // Each period's net downward amendment.
-  const relief = new Map<string, number>()
+  // 2–3. Late debits, and each period's amendment credits applied to its own debits.
+  const lodgements = new Set(
+    window.filter(
+      (r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended' || (isCountedLodgement(r, scope) && !isPenalty(r)),
+    ),
+  )
   const credits = new Map<string, number>()
-  const otherDebits = new Map<string, number>()
   for (const r of lodgements) {
     const period = periodOf(r)
-    if (!period) continue
-    credits.set(period, (credits.get(period) ?? 0) + (r.credit ?? 0))
-    if (!late.has(r)) otherDebits.set(period, (otherDebits.get(period) ?? 0) + (r.debit ?? 0))
+    if (period) credits.set(period, (credits.get(period) ?? 0) + (r.credit ?? 0))
   }
-  for (const [period, credit] of credits) relief.set(period, Math.max(0, credit - (otherDebits.get(period) ?? 0)))
+  const taxDebits = new Set(
+    window.filter(
+      (r) =>
+        (r.debit ?? 0) > 0 &&
+        (isLateDebit(r) || lodgements.has(r) || r.lodgementType === 'PAYGWithholding' || r.lodgementType === 'ATOAudit'),
+    ),
+  )
+  const reduced = new Map<EnrichedRow, number>()
+  // The period's other debits take its credits first, then its late debits, each in date order.
+  for (const late of [false, true]) {
+    for (const r of window) {
+      if (!taxDebits.has(r) || !lodgements.has(r) || isLateDebit(r) !== late) continue
+      const period = periodOf(r)
+      if (!period) continue
+      const available = credits.get(period) ?? 0
+      const applied = Math.min(available, r.debit ?? 0)
+      credits.set(period, available - applied)
+      reduced.set(r, applied)
+    }
+  }
 
-  const contributingDebits: DpnContributingDebit[] = lateDebitRows.map((row) => {
-    const debit = row.debit ?? 0
-    const period = periodOf(row)
-    const available = period ? (relief.get(period) ?? 0) : 0
-    const applied = Math.min(available, debit)
-    if (period) relief.set(period, available - applied)
-    return {
-      rowIndex: row.rowIndex,
-      processedDate: row.processedDate?.toISOString() ?? '',
-      effectiveDate: row.effectiveDate?.toISOString() ?? '',
-      periodEnding: row.periodEnding?.toISOString() ?? null,
-      description: row.description,
-      daysLate: row.lateLodgementDays,
-      debit,
-      reducedByAmendments: round2(applied),
-      netAtRisk: round2(Math.max(debit - applied, 0)),
+  // 4. Payments, oldest debt first; a surplus waits for the next debt.
+  interface Debt { row: EnrichedRow | null; due: number; order: number; left: number }
+  const dueOf = (r: EnrichedRow) => (r.effectiveDate ?? r.processedDate)?.getTime() ?? 0
+  const open: Debt[] = []
+  const paid = new Map<EnrichedRow, number>()
+  if (openingDebt > 0) open.push({ row: null, due: -Infinity, order: -1, left: round2(openingDebt) })
+  let carry = startingCredit
+  let payments = 0
+  let paymentsCount = 0
+  const applyCarry = () => {
+    for (const d of open.filter((x) => x.left > 0).sort((a, b) => a.due - b.due || a.order - b.order)) {
+      if (carry <= 0) break
+      const applied = Math.min(carry, d.left)
+      d.left = round2(d.left - applied)
+      carry = round2(carry - applied)
+      if (d.row) paid.set(d.row, round2((paid.get(d.row) ?? 0) + applied))
+    }
+  }
+  window.forEach((r, order) => {
+    if (taxDebits.has(r)) {
+      open.push({ row: r, due: dueOf(r), order, left: round2((r.debit ?? 0) - (reduced.get(r) ?? 0)) })
+      applyCarry()
+    } else if (r.lodgementType === 'Payment' && (r.credit ?? 0) > 0) {
+      payments += r.credit ?? 0
+      paymentsCount++
+      carry = round2(carry + (r.credit ?? 0))
+      applyCarry()
     }
   })
 
-  const totalGrossLate = round2(contributingDebits.reduce((s, r) => s + r.debit, 0))
-  const totalReducedByAmendments = round2(contributingDebits.reduce((s, r) => s + r.reducedByAmendments, 0))
-  const totalNetAtRisk = round2(contributingDebits.reduce((s, r) => s + r.netAtRisk, 0))
+  // 5. The late debits, as reported (in the order the ATO processed them).
+  const contributingDebits: DpnContributingDebit[] = window
+    .filter(isLateDebit)
+    .sort((a, b) => position.get(a)! - position.get(b)!)
+    .map((row) => {
+      const debit = row.debit ?? 0
+      const amended = reduced.get(row) ?? 0
+      const byPayments = paid.get(row) ?? 0
+      return {
+        rowIndex: row.rowIndex,
+        processedDate: row.processedDate?.toISOString() ?? '',
+        effectiveDate: row.effectiveDate?.toISOString() ?? '',
+        periodEnding: row.periodEnding?.toISOString() ?? null,
+        description: row.description,
+        daysLate: row.lateLodgementDays,
+        debit,
+        reducedByAmendments: round2(amended),
+        paidByPayments: round2(byPayments),
+        netAtRisk: round2(Math.max(debit - amended - byPayments, 0)),
+      }
+    })
+
+  const total = (f: (d: DpnContributingDebit) => number) => round2(contributingDebits.reduce((s, r) => s + f(r), 0))
+  const totalGrossLate = total((r) => r.debit)
+  const totalReducedByAmendments = total((r) => r.reducedByAmendments)
+  const totalPaidByPayments = total((r) => r.paidByPayments ?? 0)
+  const totalNetAtRisk = total((r) => r.netAtRisk)
+  let otherTaxDebts = openingDebt
+  for (const r of taxDebits) if (!isLateDebit(r)) otherTaxDebts += (r.debit ?? 0) - (reduced.get(r) ?? 0)
 
   // periodStart/periodEnd reflect the full range of all processedDates in the CSV
   const allProcessedTimes = rows
@@ -124,15 +190,53 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
       ? new Date(allProcessedTimes[allProcessedTimes.length - 1]).toISOString()
       : null
 
+  const dayAt = (i: number) => {
+    const d = i >= 0 ? chron[i].processedDate : null
+    return d ? calendarDay(d) : null
+  }
   return {
     thresholdDays: 90,
+    method: 'payments_oldest_first',
     contributingDebits,
     totalGrossLate,
     totalReducedByAmendments,
+    totalPaidByPayments,
     totalNetAtRisk,
+    window: {
+      start: dayAt(anchor),
+      startBalance: anchor >= 0 ? chron[anchor].balance : null,
+      startUnder1000: dayAt(anchorUnder1000),
+      startingCredit,
+      openingDebt: round2(openingDebt),
+      payments: round2(payments),
+      paymentsCount,
+      otherTaxDebts: round2(otherTaxDebts),
+      otherTaxDebtsPaid: round2(payments + startingCredit - carry - totalPaidByPayments),
+      grossLateAllHistory: round2(rows.filter(isLateDebit).reduce((s, r) => s + (r.debit ?? 0), 0)),
+    },
     periodStart,
     periodEnd,
   }
+}
+
+/**
+ * The rows in date order, oldest first. The ATO lists newest first; within a
+ * day the file order is kept (reversed), so the allocation rows printed
+ * under a payment come before it and the window starts after them.
+ */
+function chronological(rows: EnrichedRow[]): EnrichedRow[] {
+  const dated = rows.filter((r) => r.processedDate)
+  const first = dated[0]?.processedDate?.getTime() ?? 0
+  const last = dated[dated.length - 1]?.processedDate?.getTime() ?? 0
+  const base = first < last ? [...rows] : [...rows].reverse()
+  // A stable sort by processed date: a file not in date order is still read in date order.
+  // A row without a date keeps its place (it takes the date of the row before it).
+  let previous = -Infinity
+  const keyed = base.map((row, i) => {
+    previous = row.processedDate?.getTime() ?? previous
+    return { row, time: previous, i }
+  })
+  return keyed.sort((a, b) => a.time - b.time || a.i - b.i).map((k) => k.row)
 }
 
 /**
@@ -140,7 +244,7 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
  * amounts) and ATOAmended rows (ATO-initiated corrections already reflected in
  * the overall balance).
  *
- * Principal: Original + ClientAmended debits/credits
+ * Principal: Original + ClientAmended + PAYGWithholding (STP reported) debits/credits
  * Interest:  GIC debits/credits (includes remissions as credits)
  * Penalties: FTLPenalty + GeneralPenalty debits/credits
  * Audit:     ATOAudit debits/credits ("Tax Office audit amended…": debt the
@@ -176,6 +280,7 @@ export function computeDebtBreakdown(rows: EnrichedRow[]): DebtBreakdown {
     switch (row.lodgementType) {
       case 'Original':
       case 'ClientAmended':
+      case 'PAYGWithholding':
         principalDebits += row.debit ?? 0
         principalCredits += row.credit ?? 0
         break
@@ -276,6 +381,7 @@ function compositionEffect(row: EnrichedRow): number {
   switch (row.lodgementType) {
     case 'Original':
     case 'ClientAmended':
+    case 'PAYGWithholding':
     case 'GIC':
     case 'FTLPenalty':
     case 'GeneralPenalty':

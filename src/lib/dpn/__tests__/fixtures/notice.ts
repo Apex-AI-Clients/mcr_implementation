@@ -13,6 +13,11 @@ import type { PdfLine } from '@/lib/pdf/pageLines'
  *  - page 3's "TO:" line with the home address under it;
  *  - the table on pages 3–4, its header repeated at the top of page 4, and
  *    right-aligned figures whose left edge moves with their width.
+ *
+ * Two variants seen in Nov 2026 (options below): a company name wrapped over
+ * two lines with its label alone on a line between them, and the PAYG
+ * withholding notice with a three-column table whose page-4 header has no
+ * "Column N" line and whose remission paragraph covers the whole table.
  */
 
 export const SYNTHETIC = {
@@ -20,6 +25,8 @@ export const SYNTHETIC = {
   street: '1 EXAMPLE STREET',
   suburb: 'SAMPLETON NSW 2000',
   company: 'EXAMPLE TRADING PTY LTD',
+  /** A name long enough to wrap: "EXAMPLE TRADING & SERVICES PTY" / "LTD". */
+  longCompany: 'EXAMPLE TRADING & SERVICES PTY LTD',
   /** A valid ACN check digit. */
   acn: '000000019',
   reference: '1234567890123',
@@ -73,6 +80,38 @@ function tableRow([period, ...figures]: Row): CellSpec[] {
   return [{ x: 60, text: period }, ...figures.map((text, i) => ({ right: FIGURE_RIGHT[i], text }))]
 }
 
+/** The three-column table (PAYGW, template 73075.500008-02-2025): period, amount withheld, unpaid. */
+export type Row3 = [period: string, column2: string, column3: string]
+export const COLUMN3_X = [60, 250, 395]
+const FIGURE3_RIGHT = [340, 485]
+
+export const THREE_COLUMN_ROWS: { page3: Row3[]; page4: Row3[] } = {
+  page3: [
+    ['01 JUL 2026 to 31 JUL 2026', '5,000.00', '5,000.00'],
+    ['01 JUN 2026 to 30 JUN 2026', '7,250.50', '7,250.50'],
+  ],
+  page4: [['01 JUL 2023 to 30 SEP 2023', '20,000.00', '18,000.00']],
+}
+/** Their totals in cents: Column 4 = Column 3, Column 5 = 0. */
+export const THREE_COLUMN_TOTALS = {
+  column2: 500_000 + 725_050 + 2_000_000,
+  column3: 500_000 + 725_050 + 1_800_000,
+  column4: 500_000 + 725_050 + 1_800_000,
+  column5: 0,
+}
+
+function headings3(): CellSpec[][] {
+  return [
+    [{ x: 60, text: 'Particular withholding period' }, { x: 250, text: 'Amount withheld' }, { x: 395, text: 'Amount the Commissioner' }],
+    [{ x: 395, text: 'thinks is the unpaid amount' }],
+    [{ x: 395, text: "of the company's liability" }],
+  ]
+}
+
+function tableRow3([period, ...figures]: Row3): CellSpec[] {
+  return [{ x: 60, text: period }, ...figures.map((text, i) => ({ right: FIGURE3_RIGHT[i], text }))]
+}
+
 export interface NoticeOptions {
   /** What "This notice is for" says. */
   noticeFor?: string
@@ -82,6 +121,13 @@ export interface NoticeOptions {
   page4Rows?: Row[]
   /** Drop the "TO:" line (and its address). */
   withoutTo?: boolean
+  /** Print the company name over two lines, its label alone between them. */
+  companyWraps?: boolean
+  /** Leave out page 3's "a director of <company>, ACN …" line. */
+  withoutStatedCompany?: boolean
+  /** The three-column PAYGW table; with `remitsWholeTable: false`, the paragraph for it is missing. */
+  threeColumn?: boolean
+  remitsWholeTable?: boolean
 }
 
 /** The notice's pages, as cell specs. */
@@ -92,7 +138,20 @@ export function noticePages(options: NoticeOptions = {}): CellSpec[][][] {
     page3Rows = PAGE3_ROWS,
     page4Rows = PAGE4_ROWS,
     withoutTo = false,
+    companyWraps = false,
+    withoutStatedCompany = false,
+    threeColumn = false,
+    remitsWholeTable = true,
   } = options
+  const company = companyWraps ? SYNTHETIC.longCompany : SYNTHETIC.company
+  const companyLines: CellSpec[][] = companyWraps
+    ? [
+        [{ x: 190, text: 'EXAMPLE TRADING & SERVICES PTY' }],
+        [{ x: 60, text: 'For this company' }],
+        [{ x: 190, text: 'LTD' }],
+        [{ x: 436, text: 'Biller code:' }, { x: 479, text: '75556' }],
+      ]
+    : [[{ x: 60, text: 'For this company' }, { x: 190, text: SYNTHETIC.company }, { x: 436, text: 'Biller code:' }, { x: 479, text: '75556' }]]
 
   const page1: CellSpec[][] = [
     [{ x: 57, text: SYNTHETIC.director }, { x: 387, text: 'Our reference:' }, { x: 462, text: SYNTHETIC.reference }],
@@ -103,7 +162,8 @@ export function noticePages(options: NoticeOptions = {}): CellSpec[][][] {
     [{ x: 57, text: 'You have been issued with a director penalty notice' }],
     [{ x: 57, text: 'Dear Sir/Madam,' }],
     [{ x: 60, text: 'This notice is for' }, { x: 190, text: noticeFor }],
-    [{ x: 60, text: 'For this company' }, { x: 190, text: SYNTHETIC.company }, { x: 436, text: 'Biller code:' }, { x: 479, text: '75556' }],
+    [{ x: 430, text: '®' }],
+    ...companyLines,
     [{ x: 60, text: 'With this ACN' }, { x: 190, text: SYNTHETIC.acn }, { x: 436, text: 'Ref:' }, { x: 453, text: '999999999999999999' }],
     [{ x: 57, text: 'Within 21 days after the issue date of the notice, you need to:' }],
   ]
@@ -121,18 +181,32 @@ export function noticePages(options: NoticeOptions = {}): CellSpec[][][] {
           [{ x: 57, text: SYNTHETIC.street }],
           [{ x: 57, text: SYNTHETIC.suburb }],
         ]),
-    [{ x: 57, text: `a director of ${SYNTHETIC.company}, ACN ${SYNTHETIC.acn}` }],
-    ...tableHeader(),
-    ...page3Rows.map(tableRow),
+    ...(withoutStatedCompany ? [] : [[{ x: 57, text: `a director of ${company}, ACN ${SYNTHETIC.acn} (the company), failed to` }]]),
+    ...(threeColumn
+      ? [COLUMN3_X.map((x, i) => ({ x, text: `Column ${i + 1}` })), ...headings3(), ...THREE_COLUMN_ROWS.page3.map(tableRow3)]
+      : [...tableHeader(), ...page3Rows.map(tableRow)]),
     [{ x: 285, text: 'Page 3 of 4' }],
   ]
-  const page4: CellSpec[][] = [
-    ...tableHeader(),
-    ...page4Rows.map(tableRow),
-    [{ x: 57, text: 'The penalty in respect of each unpaid amount of the company\'s liability as detailed in Column 4 of the' }],
-    [{ x: 57, text: 'above table will be remitted if' }, { x: 190, text: 'within 21 days after the date of this notice' }],
-    [{ x: 285, text: 'Page 4 of 4' }],
-  ]
+  const page4: CellSpec[][] = threeColumn
+    ? [
+        // The repeated header has no "Column N" line on this notice.
+        ...headings3(),
+        ...THREE_COLUMN_ROWS.page4.map(tableRow3),
+        ...(remitsWholeTable
+          ? [
+              [{ x: 57, text: "The penalty in respect of each unpaid amount of the company's liability as detailed in the above table" }],
+              [{ x: 57, text: 'will be remitted if within 21 days after the date of this notice:' }],
+            ]
+          : [[{ x: 57, text: 'Some other paragraph.' }]]),
+        [{ x: 285, text: 'Page 4 of 4' }],
+      ]
+    : [
+        ...tableHeader(),
+        ...page4Rows.map(tableRow),
+        [{ x: 57, text: 'The penalty in respect of each unpaid amount of the company\'s liability as detailed in Column 4 of the' }],
+        [{ x: 57, text: 'above table will be remitted if' }, { x: 190, text: 'within 21 days after the date of this notice' }],
+        [{ x: 285, text: 'Page 4 of 4' }],
+      ]
   return [page1, page2, page3, page4]
 }
 
