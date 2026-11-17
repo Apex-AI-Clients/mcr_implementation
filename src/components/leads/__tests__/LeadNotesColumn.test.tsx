@@ -105,7 +105,8 @@ describe('the notes tooltip', () => {
 describe('copying a note', () => {
   it('has a copy button on each note in the tooltip', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
+    // Defined, not assigned: an earlier test file's user-event may have installed a getter-only clipboard.
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     table({ 'lead-1': NOTES })
     fireEvent.mouseEnter(screen.getAllByLabelText('2 notes')[0].parentElement!)
     const buttons = within(screen.getByRole('tooltip')).getAllByRole('button', { name: 'Copy note' })
@@ -173,7 +174,8 @@ describe('the name and email columns', () => {
 
   it('shows the full email on hover, with a button that copies it', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.assign(navigator, { clipboard: { writeText } })
+    // Defined, not assigned: an earlier test file's user-event may have installed a getter-only clipboard.
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     rowWith(LEAD)
     const email = within(screen.getAllByRole('row')[1]).getByText('test.person@example.test')
     fireEvent.mouseEnter(email.parentElement!)
