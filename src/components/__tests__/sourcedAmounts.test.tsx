@@ -149,6 +149,8 @@ describe('every amount has a source', () => {
           byType: [{ type: 'paygw', label: 'PAYG withholding', unpaid: 52_300, removable: 30_100, staysWithDirector: 22_200, deadline: '2026-10-21' }],
           notices: 1,
           items: [],
+          heldBack: false,
+          badges: ['Notice adds up', 'Matches the ATO account'],
         }}
         paymentRows={rows}
       />,

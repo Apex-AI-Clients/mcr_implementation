@@ -53,6 +53,9 @@ function noticeRow(overrides: Partial<NoticeRow>): NoticeRow {
     entered_at: null,
     created_at: '2026-10-01T00:00:00Z',
     updated_at: '2026-10-01T00:00:00Z',
+    proof_status: null,
+    proof_check: null,
+    proof_checked_at: null,
     ...overrides,
   }
 }

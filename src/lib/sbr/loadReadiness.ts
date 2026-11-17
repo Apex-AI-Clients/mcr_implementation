@@ -9,6 +9,7 @@ import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { computeReadiness, type Readiness } from './readiness'
+import { loadNoticeAccount } from '@/lib/dpn/noticeAccount'
 
 /**
  * Server-only. Everything computeReadiness needs, read for one client.
@@ -100,6 +101,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     client: client ?? { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
     file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
     todayIso: sydneyToday(),
+    account: await loadNoticeAccount(supabase, clientId).catch(() => null),
   })
 
   return computeReadiness({

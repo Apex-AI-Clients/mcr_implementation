@@ -83,6 +83,8 @@ interface Props {
   basePath?: string
   /** The base name for downloads (the source file's name). */
   fileName?: string
+  /** The ATO account's proof badge ("Matches the ATO's own balance: ..."). */
+  accountBadge?: string | null
 }
 
 /**
@@ -91,7 +93,7 @@ interface Props {
  * account only as a closed, secondary item. Without, the estimate, labelled
  * as one. The payments received card below is real payments only.
  */
-export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId, basePath, fileName = 'ATO account' }: Props) {
+export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId, basePath, fileName = 'ATO account', accountBadge = null }: Props) {
   const dpnPage = clientId ? `${basePath ?? `/clients/${clientId}`}/director-penalty-notices` : undefined
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
@@ -250,7 +252,7 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
   return (
     <div className="space-y-4">
       {/* Gabby, 16 Nov 2026: the notices' Unpaid and the account's late lodgements side by side, the late list, each notice. */}
-      <DirectorPenaltySection dpnRisk={dpnRisk} notices={notices} dpnPage={dpnPage} fileName={fileName} />
+      <DirectorPenaltySection dpnRisk={dpnRisk} notices={notices} dpnPage={dpnPage} fileName={fileName} accountBadge={accountBadge} />
 
       {/* Payments received — compact summary card */}
       {cashPayments.length > 0 && (() => {

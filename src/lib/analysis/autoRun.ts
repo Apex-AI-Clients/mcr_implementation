@@ -8,6 +8,7 @@ import { ATO_ACCOUNT_CATEGORIES } from './atoAccountKind'
 import { analyseAndStoreAtoAccount, clientNamesFor } from './atoAccount/store'
 import { atoAccountText } from '@/lib/ica/upload'
 import { verifyAndStoreDocument } from '@/lib/ica/verifyStore'
+import { proveAndStoreNotices } from '@/lib/dpn/proofStore'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
@@ -326,6 +327,13 @@ export async function runAutoAnalysis(params: {
           if (outcome.ok && outcome.status === 'verified') summary.icaVerified++
           if (!outcome.ok) summary.notes.push(`ATO balance check: ${outcome.error}`)
         }
+      }
+
+      // 6. Director penalty notices proven again (dpn/proof.ts): after a notice is read, or an ATO
+      // account checked (its Column 2 is checked against the verified account). Alerts once.
+      if (work.dpn.length > 0 || work.icaVerify.length > 0) {
+        const proven = await proveAndStoreNotices(supabase, clientId)
+        if (proven.unverified > 0) summary.notes.push(`${proven.unverified} director penalty notice(s) not proven`)
       }
     }
 

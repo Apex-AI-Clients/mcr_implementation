@@ -26,6 +26,13 @@ export interface DpnNoticeFigures {
   notices: number
   /** Each current notice, with its rows as printed (Columns 2–5, in dollars), newest first. */
   items: DpnNoticeItem[]
+  /**
+   * A current notice is not proven (proof.ts): its totals, and so "Unpaid", are held back
+   * ("Being prepared"); its rows are shown as printed.
+   */
+  heldBack: boolean
+  /** The badges every current notice has ("Notice adds up", "Matches the ATO account"). */
+  badges: string[]
 }
 
 export interface DpnNoticeItem {
@@ -41,6 +48,14 @@ export interface DpnNoticeItem {
   headings: Record<'column2' | 'column3' | 'column4' | 'column5', string>
   rows: { periodFrom: string; periodTo: string; column2: number; column3: number; column4: number; column5: number }[]
   totals: { column2: number; column3: number; column4: number; column5: number }
+  /** Its proof (proof.ts): unverified when it does not add up, or a period differs from the verified ATO account. */
+  proof: {
+    status: 'verified' | 'unverified'
+    badges: string[]
+    note: string | null
+    rowsNotAddingUp: { periodFrom: string; periodTo: string }[]
+    mismatches: { periodFrom: string; periodTo: string; notice: number; account: number; accountRows: string[] }[]
+  }
 }
 
 const dollars = (cents: number) => Math.round(cents) / 100
@@ -85,6 +100,15 @@ export function dpnNoticeFigures(summary: DpnSummary): DpnNoticeFigures | null {
         column5: dollars(r.column5),
       })),
       totals: { column2: dollars(n.totals.column2), column3: dollars(n.totals.column3), column4: dollars(n.totals.column4), column5: dollars(n.totals.column5) },
+      proof: {
+        status: n.proof?.status ?? 'unverified',
+        badges: n.proof?.badges ?? [],
+        note: n.proof?.note ?? null,
+        rowsNotAddingUp: n.proof?.rowsNotAddingUp.map((r) => ({ periodFrom: r.periodFrom, periodTo: r.periodTo })) ?? [],
+        mismatches: (n.proof?.account?.mismatches ?? []).map((m) => ({ ...m, notice: dollars(m.notice), account: dollars(m.account) })),
+      },
     })),
+    heldBack: current.some((n) => n.proof?.status !== 'verified'),
+    badges: ['Notice adds up', 'Matches the ATO account'].filter((b) => current.every((n) => n.proof?.badges.includes(b))),
   }
 }

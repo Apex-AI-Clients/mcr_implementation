@@ -4,6 +4,7 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { buildDpnPanel, sydneyToday } from './view'
 import { summariseNotices } from './summary'
 import { dpnNoticeFigures, type DpnNoticeFigures } from './noticeFigures'
+import { loadNoticeAccount } from './noticeAccount'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -30,6 +31,7 @@ export async function loadDpnNoticeFigures(supabase: ServerClient, clientId: str
     client: { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
     file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
     todayIso,
+    account: await loadNoticeAccount(supabase, clientId).catch(() => null),
   })
   return dpnNoticeFigures(summariseNotices(panel.notices, todayIso))
 }

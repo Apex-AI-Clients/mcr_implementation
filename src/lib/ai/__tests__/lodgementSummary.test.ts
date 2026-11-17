@@ -147,6 +147,8 @@ describe('DPN figures in the prompt', () => {
     byType: [],
     notices: 2,
     items: [],
+    heldBack: false,
+    badges: ['Notice adds up', 'Matches the ATO account'],
   }
 
   it("uses the notices' own figures when notices are on file, not the estimate", () => {

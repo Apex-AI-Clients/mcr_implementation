@@ -3,6 +3,7 @@ import { sumRows } from './parse'
 import type { NoticeSource } from './stored'
 import { DPN_TYPE_LABEL, type DpnAmounts, type DpnRow, type DpnType } from './types'
 import type { DpnNoticeView } from './view'
+import type { NoticeProof } from './proof'
 
 /**
  * A client's director penalty notices, summarised for the DPN page and its
@@ -43,6 +44,8 @@ export interface SummaryNotice {
   rows: DpnRow[]
   totals: DpnAmounts
   standing: Standing
+  /** Its own arithmetic and the verified ATO account (proof.ts). */
+  proof: NoticeProof | null
 }
 
 export interface WaitingNotice {
@@ -125,6 +128,7 @@ export function summariseNotices(views: readonly DpnNoticeView[], todayIso: stri
       issues: view.issues,
       rows: n.rows,
       totals: n.totals ?? sumRows(n.rows),
+      proof: view.proof ?? null,
     })
   }
 

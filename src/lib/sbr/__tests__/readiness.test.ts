@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { computeReadiness, type ReadinessInput } from '../readiness'
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
+import { proveNotice } from '@/lib/dpn/proof'
 
 /** The readiness checklist's rules. Synthetic data only. */
 
@@ -34,6 +35,7 @@ const view = (n: StoredNotice | null, issues: string[] = []): DpnNoticeView => (
   notice: n,
   issues,
   deadline: '2026-10-21',
+  proof: n ? proveNotice(n, null) : null,
 })
 
 function input(over: {

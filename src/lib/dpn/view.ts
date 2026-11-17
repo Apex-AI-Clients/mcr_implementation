@@ -1,5 +1,6 @@
 import type { ClientFileForDpn } from './checks'
 import { noticeDeadline, noticeIssues, toStoredNotice, type NoticeRow, type StoredNotice } from './stored'
+import { proveNotice, type NoticeAccount, type NoticeProof } from './proof'
 
 /**
  * What the client page's Director Penalty Notices card shows, worked out on
@@ -16,6 +17,8 @@ export interface DpnNoticeView {
   issues: string[]
   /** ISO date: issue date + 21 days. */
   deadline: string | null
+  /** Its own arithmetic, and the verified ATO account (proof.ts). Null until the file has been read. */
+  proof: NoticeProof | null
 }
 
 export interface DpnPanelData {
@@ -38,6 +41,8 @@ export function buildDpnPanel(input: {
   }
   file: ClientFileForDpn
   todayIso: string
+  /** The verified ATO account to check each notice's Column 2 against (noticeAccount.ts); null or absent: none. */
+  account?: NoticeAccount | null
 }): DpnPanelData {
   const byDocument = new Map(input.noticeRows.map((row) => [row.document_id, toStoredNotice(row)]))
   return {
@@ -49,6 +54,7 @@ export function buildDpnPanel(input: {
         notice,
         issues: notice ? noticeIssues(notice, input.file) : [],
         deadline: notice ? noticeDeadline(notice) : null,
+        proof: notice ? proveNotice(notice, input.account ?? null) : null,
       }
     }),
     noneIssued:

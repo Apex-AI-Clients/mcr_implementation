@@ -898,6 +898,9 @@ export type Database = {
       }
       director_penalty_notices: {
         Row: {
+          proof_check: Json | null
+          proof_checked_at: string | null
+          proof_status: string | null
           acn: string | null
           client_id: string
           company_name: string | null
@@ -924,6 +927,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          proof_check?: Json | null
+          proof_checked_at?: string | null
+          proof_status?: string | null
           acn?: string | null
           client_id: string
           company_name?: string | null
@@ -950,6 +956,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          proof_check?: Json | null
+          proof_checked_at?: string | null
+          proof_status?: string | null
           acn?: string | null
           client_id?: string
           company_name?: string | null
@@ -1389,6 +1398,7 @@ export type Database = {
       }
       ica_alerts: {
         Row: {
+          document_kind: string
           account_kind: string | null
           client_id: string
           created_at: string
@@ -1401,6 +1411,7 @@ export type Database = {
           windows: Json
         }
         Insert: {
+          document_kind?: string
           account_kind?: string | null
           client_id: string
           created_at?: string
@@ -1413,6 +1424,7 @@ export type Database = {
           windows?: Json
         }
         Update: {
+          document_kind?: string
           account_kind?: string | null
           client_id?: string
           created_at?: string

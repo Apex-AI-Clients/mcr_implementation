@@ -9,6 +9,7 @@ import type { DpnNoticeView } from '../view'
 import type { StoredNotice } from '../stored'
 import type { DpnRow, DpnType } from '../types'
 import { SYNTHETIC } from './fixtures/notice'
+import { proveNotice } from '@/lib/dpn/proof'
 
 /**
  * The DPN summary rules and its exports. Synthetic names and figures only.
@@ -59,6 +60,7 @@ function view(options: {
     notice: options.read === false ? null : notice,
     issues: options.issues ?? [],
     deadline: options.read === false ? null : dpnDeadline(issuedOn),
+    proof: options.read === false ? null : proveNotice(notice, null),
   }
 }
 

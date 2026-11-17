@@ -51,6 +51,8 @@ const NOTICES: DpnNoticeFigures = {
   ],
   notices: 2,
   items: [],
+  heldBack: false,
+  badges: ['Notice adds up', 'Matches the ATO account'],
 }
 
 const ESTIMATE: DpnRiskBreakdown = {
@@ -113,6 +115,7 @@ const NOTICE_ITEM: DpnNoticeFigures['items'][number] = {
   headings: { column2: 'Amount withheld', column3: 'Unpaid', column4: 'Removed by 21 Oct 2026', column5: 'Stays with the director unless paid' },
   rows: [{ periodFrom: '2024-07-01', periodTo: '2024-09-30', column2: 30_000, column3: 30_000, column4: 29_000, column5: 1_000 }],
   totals: { column2: 30_000, column3: 30_000, column4: 29_000, column5: 1_000 },
+  proof: { status: 'verified', badges: ['Notice adds up', 'Matches the ATO account'], note: null, rowsNotAddingUp: [], mismatches: [] },
 }
 
 describe('DPN panel (Gabby, 16 Nov 2026)', () => {

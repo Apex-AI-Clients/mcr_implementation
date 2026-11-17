@@ -7,6 +7,7 @@ vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn() 
 vi.mock('@/lib/printed/store', () => ({ READER_VERSION: 'v1', readAndStore: vi.fn() }))
 // The balance check (ica/verifyStore.ts) talks to storage, OpenRouter and Resend: not run here.
 vi.mock('@/lib/ica/verifyStore', () => ({ verifyAndStoreDocument: vi.fn(async () => ({ ok: true, status: 'verified' })) }))
+vi.mock('@/lib/dpn/proofStore', () => ({ proveAndStoreNotices: vi.fn(async () => ({ checked: 0, unverified: 0 })) }))
 
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '../lodgementStore'

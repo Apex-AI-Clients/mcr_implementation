@@ -34,6 +34,7 @@ import { toCvlCase } from '@/lib/cvl/cases'
 import { clientBase, membershipOf, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
 import { Archive, ArrowLeft, Building, Gavel, Landmark, Pencil } from 'lucide-react'
+import { loadNoticeAccount } from '@/lib/dpn/noticeAccount'
 
 interface ClientDetailViewProps {
   id: string
@@ -191,6 +192,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     client,
     file: { acn: companyDetails?.acnNumber ?? null, directors: companyDetails?.directors ?? [] },
     todayIso: sydneyToday(),
+    account: await loadNoticeAccount(supabase, id).catch(() => null),
   })
 
   // Document status, naming the required categories that have no file yet.

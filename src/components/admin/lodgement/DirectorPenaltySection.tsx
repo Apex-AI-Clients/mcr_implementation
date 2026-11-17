@@ -6,7 +6,7 @@ import { ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
-import { CopyButton } from '@/components/admin/ica/IcaParts'
+import { CopyButton, VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import type { DpnRiskBreakdown } from '@/lib/analysis/types'
 import { lateSinceNil, lateStatements, type LateStatementRow } from '@/lib/analysis/lateList'
 import type { DpnNoticeFigures, DpnNoticeItem } from '@/lib/dpn/noticeFigures'
@@ -59,7 +59,23 @@ function Card({ source, label, children, tone }: { source: string; label: string
   )
 }
 
-export function DirectorPenaltySection({ dpnRisk, notices, dpnPage, fileName }: { dpnRisk: DpnRiskBreakdown; notices: DpnNoticeFigures | null; dpnPage?: string; fileName: string }) {
+/** What stands in for a figure that is not proven yet (Gabby, 17 Nov 2026). */
+const BEING_PREPARED = 'Being prepared'
+
+export function DirectorPenaltySection({
+  dpnRisk,
+  notices,
+  dpnPage,
+  fileName,
+  accountBadge,
+}: {
+  dpnRisk: DpnRiskBreakdown
+  notices: DpnNoticeFigures | null
+  dpnPage?: string
+  fileName: string
+  /** The ATO account's proof ("Matches the ATO's own balance: ..."). */
+  accountBadge?: string | null
+}) {
   const [showLate, setShowLate] = useState(false)
   const late = lateStatements(dpnRisk.contributingDebits)
   const since = lateSinceNil(dpnRisk)
@@ -71,7 +87,12 @@ export function DirectorPenaltySection({ dpnRisk, notices, dpnPage, fileName }: 
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Card tone="notice" source="From the ATO's director penalty notices" label="Unpaid">
-          {notices ? (
+          {notices && notices.heldBack ? (
+            <>
+              <p className="mt-0.5 text-lg font-medium text-foreground/60">{BEING_PREPARED}</p>
+              <p className="mt-0.5 text-xs text-foreground/55">A notice is not proven yet: its rows are listed below as printed.</p>
+            </>
+          ) : notices ? (
             <>
               <p className="mt-0.5 text-2xl font-bold tabular-nums text-warning">
                 <SourcedAmount
@@ -91,6 +112,11 @@ export function DirectorPenaltySection({ dpnRisk, notices, dpnPage, fileName }: 
                 Column 3 of the current notices{notices.byType.length ? ' · ' : ''}
                 {notices.byType.map((t) => `${t.label} ${aud(t.unpaid)}`).join(' · ')}
               </p>
+              {notices.badges.length > 0 && (
+                <div className="mt-2">
+                  <VerifiedBadge text={notices.badges.join(' · ')} />
+                </div>
+              )}
             </>
           ) : (
             <p className="mt-1 text-sm text-foreground/70">No director penalty notice uploaded</p>
@@ -116,6 +142,11 @@ export function DirectorPenaltySection({ dpnRisk, notices, dpnPage, fileName }: 
             {since.since ? `Since ${day(since.since)}` : 'Whole export (the balance was never nil)'} · GST {aud(since.gst)} · PAYG withholding {aud(since.paygw)}
             {since.other ? ` · other ${aud(since.other)}` : ''} (each counted on its own)
           </p>
+          {accountBadge && (
+            <div className="mt-2">
+              <VerifiedBadge text={accountBadge} />
+            </div>
+          )}
         </Card>
       </div>
 
@@ -216,9 +247,12 @@ function NoticeRow({ notice: n, fileName }: { notice: DpnNoticeItem; fileName: s
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>
-          <span className="font-semibold">{n.label} notice</span>
-          <span className="text-foreground/60"> · issued {day(n.issuedOn)} · {n.rows.length} periods</span>
+        <span className="flex flex-wrap items-center gap-2">
+          <span>
+            <span className="font-semibold">{n.label} notice</span>
+            <span className="text-foreground/60"> · issued {day(n.issuedOn)} · {n.rows.length} periods</span>
+          </span>
+          {n.proof.badges.length > 0 && <VerifiedBadge text={n.proof.badges.join(' · ')} />}
         </span>
         <span
           className={cn(
@@ -229,6 +263,8 @@ function NoticeRow({ notice: n, fileName }: { notice: DpnNoticeItem; fileName: s
           {passed ? `Deadline passed ${day(n.deadline)}` : `Deadline ${day(n.deadline)} · ${n.daysLeft} day${n.daysLeft === 1 ? '' : 's'} left`}
         </span>
       </div>
+      {n.proof.note && <p className="mt-1.5 text-xs text-foreground/60">{n.proof.note}.</p>}
+      {n.proof.status !== 'verified' && <NoticeProblems notice={n} />}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <button type="button" onClick={() => setOpen((v) => !v)} className="no-print flex items-center gap-1 text-xs font-medium text-accent">
           {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -271,16 +307,47 @@ function NoticeRow({ notice: n, fileName }: { notice: DpnNoticeItem; fileName: s
             ))}
             <tr className="font-semibold">
               <td className="py-1.5 pr-3">Total</td>
-              {COLUMNS.map((c) => (
-                <td key={c} className="py-1.5 pr-3 text-right tabular-nums">
-                  {aud(n.totals[c])}
+              {n.proof.status === 'verified' ? (
+                COLUMNS.map((c) => (
+                  <td key={c} className="py-1.5 pr-3 text-right tabular-nums">
+                    {aud(n.totals[c])}
+                  </td>
+                ))
+              ) : (
+                <td colSpan={COLUMNS.length} className="py-1.5 pr-3 text-right font-normal text-foreground/60">
+                  {BEING_PREPARED}
                 </td>
-              ))}
+              )}
               <td className="no-print" />
             </tr>
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+/** Why a notice is not proven: rows whose Column 3 is not 4 + 5, and periods whose Column 2 differs from the ATO account (in its words). */
+function NoticeProblems({ notice: n }: { notice: DpnNoticeItem }) {
+  return (
+    <div data-testid="dpn-notice-problems" className="mt-2 space-y-1 rounded-md border border-border bg-surface/60 px-3 py-2 text-xs text-foreground/70">
+      {n.proof.rowsNotAddingUp.map((r) => (
+        <p key={`add-${r.periodFrom}`}>
+          {day(r.periodFrom)} – {day(r.periodTo)}: Column 3 is not Column 4 + Column 5 on the notice as read.
+        </p>
+      ))}
+      {n.proof.mismatches.map((m) => (
+        <div key={`mm-${m.periodFrom}`} data-source-rows>
+          <p>
+            {day(m.periodFrom)} – {day(m.periodTo)}: the notice&apos;s Column 2 is {aud(m.notice)}; the ATO account shows {aud(m.account)}:
+          </p>
+          <ul className="ml-4 list-disc text-foreground/55">
+            {m.accountRows.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }

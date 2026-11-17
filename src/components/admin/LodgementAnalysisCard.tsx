@@ -95,7 +95,14 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
   // Director penalty notices (Gabby, 16 Nov 2026), as on the page: the notices' Unpaid and the account's
   // late lodgements since the balance was last nil (verified accounts only), the late list, each notice.
   lines.push(csvRow('DIRECTOR PENALTY NOTICES'))
-  lines.push(csvRow(NOTICES_LABEL, 'Unpaid', notices ? formatCurrencyExport(notices.unpaid) : 'No director penalty notice uploaded'))
+  lines.push(
+    csvRow(
+      NOTICES_LABEL,
+      'Unpaid',
+      !notices ? 'No director penalty notice uploaded' : notices.heldBack ? 'Being prepared' : formatCurrencyExport(notices.unpaid),
+      notices && !notices.heldBack ? notices.badges.join(' · ') : '',
+    ),
+  )
   const verifiedAccount = !!analysis.verification?.verified
   if (analysis.dpnRisk && verifiedAccount) {
     const since = lateSinceNil(analysis.dpnRisk)
@@ -144,7 +151,16 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
       for (const r of n.rows) {
         lines.push(csvRow(formatIsoExport(r.periodFrom), formatIsoExport(r.periodTo), formatCurrencyExport(r.column2), formatCurrencyExport(r.column3), formatCurrencyExport(r.column4), formatCurrencyExport(r.column5)))
       }
-      lines.push(csvRow('Total', '', formatCurrencyExport(n.totals.column2), formatCurrencyExport(n.totals.column3), formatCurrencyExport(n.totals.column4), formatCurrencyExport(n.totals.column5)))
+      if (n.proof.status === 'verified') {
+        lines.push(csvRow('Total', '', formatCurrencyExport(n.totals.column2), formatCurrencyExport(n.totals.column3), formatCurrencyExport(n.totals.column4), formatCurrencyExport(n.totals.column5)))
+        if (n.proof.badges.length) lines.push(csvRow(n.proof.badges.join(' · ')))
+        if (n.proof.note) lines.push(csvRow(n.proof.note))
+      } else {
+        lines.push(csvRow('Total', '', 'Being prepared'))
+        for (const m of n.proof.mismatches) {
+          lines.push(csvRow(`${formatIsoExport(m.periodFrom)} to ${formatIsoExport(m.periodTo)}`, 'Column 2 differs from the ATO account', formatCurrencyExport(m.notice), formatCurrencyExport(m.account), ...m.accountRows))
+        }
+      }
       lines.push('')
     }
   }
@@ -810,6 +826,7 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
                 clientId={clientId}
                 basePath={basePath}
                 fileName={fileBase}
+                accountBadge={verification?.badge ?? null}
               />
             </div>
           )}
