@@ -117,7 +117,7 @@ export const loadLeadsDashboard = cache(async (range: RangeKey): Promise<LeadsDa
 // ── SBR ─────────────────────────────────────────────────────────────────────
 
 const ATO_COLUMNS =
-  'id, client_id, document_id, account_kind, account_label, balance, balance_date, analysed_at, needs_review, reviewed_at, entity_matches, unparsed_date_rows, rows'
+  'id, client_id, document_id, account_kind, account_label, balance, balance_date, analysed_at, needs_review, reviewed_at, entity_matches, unparsed_date_rows, rows, ica_status, ica_balance, ica_balance_date'
 
 /** Each active file's ATO accounts, as its ATO accounts panel shows them. */
 const loadAtoAccounts = cache(async (): Promise<DashAtoAccount[]> => {

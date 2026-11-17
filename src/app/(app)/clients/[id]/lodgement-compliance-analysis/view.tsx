@@ -8,8 +8,7 @@ import type { LodgementAnalysisPayload } from '@/lib/analysis/types'
 import { reanalyseStoredRows } from '@/lib/analysis/computeLateLodgement'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
-import { reconciliationGap } from '@/lib/analysis/debtReconciliation'
-import { NEEDS_REVIEW_THRESHOLD } from '@/lib/analysis/atoAccount'
+import { icaViewOf } from '@/lib/ica/view'
 import { loadFactorsSourceNote } from '@/lib/analysis/atoAccount/store'
 import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clients/workspace'
 
@@ -45,7 +44,7 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
   // analysis recognises it by its content, not its filename, and says so if
   // none of them is one.
   const hasActivityStatementCsv = (rawDocs ?? []).some(
-    (d) => d.doc_category === 'integrated_client_account' && d.original_filename.toLowerCase().endsWith('.csv'),
+    (d) => d.doc_category === 'integrated_client_account' && /\.(csv|xlsx)$/i.test(d.original_filename),
   )
 
   // The saved totals are whatever the code computed on the day; re-run today's
@@ -85,14 +84,17 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
         // Today's parser over the saved cells; the saved count when the rows cannot be read.
         unparsedDateRows: current?.unparsedDateRows ?? rawAnalysis.unparsed_date_rows ?? 0,
         analysedAt: rawAnalysis.analysed_at,
+        // Checked against the ATO's own balance (migration 0058): only a verified file's figures are shown.
+        verification: icaViewOf({
+          rows: rawAnalysis.rows,
+          label: rawAnalysis.statement_label,
+          ica_status: rawAnalysis.ica_status,
+          ica_forced: rawAnalysis.ica_forced,
+          ica_check: rawAnalysis.ica_check,
+        }),
       }
     : null
 
-  // Activity statement only: a warning, never a lock (the SBR factors come from here).
-  // Not for a file whose dates could not be read: the card says so instead of showing figures.
-  const gap =
-    initialAnalysis?.debtBreakdown && initialAnalysis.unparsedDateRows === 0 ? reconciliationGap(initialAnalysis.debtBreakdown) : null
-  const largeGap = gap !== null && Math.abs(gap) > NEEDS_REVIEW_THRESHOLD ? gap : null
   // With two activity statement accounts (001 and 002), which one this is.
   const factorsSource = await loadFactorsSourceNote(supabase, id, rawAnalysis?.statement_label ?? null)
 
@@ -100,6 +102,8 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
   // client's document status ("Missing: …") belongs on the client page.
   const statusBadge = initialAnalysis && initialAnalysis.unparsedDateRows > 0
     ? { label: 'Failed: dates unreadable', variant: 'destructive' as const }
+    : initialAnalysis && !initialAnalysis.verification?.verified
+    ? { label: 'Totals being prepared', variant: 'muted' as const }
     : rawAnalysis
     ? {
         label: `Analysed ${new Date(rawAnalysis.analysed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
@@ -133,15 +137,6 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
 
       {factorsSource && (
         <p className="mb-3 rounded-lg border border-border bg-surface/50 px-4 py-2 text-xs text-foreground/70">{factorsSource}</p>
-      )}
-
-      {largeGap !== null && (
-        <div role="alert" className="mb-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-xs text-warning">
-          The rows account for a different balance from the ATO&rsquo;s:{' '}
-          {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(Math.abs(largeGap))} unexplained (over
-          $1,000). Check &ldquo;Other adjustments / unexplained difference&rdquo; in the debt composition before relying on these
-          figures.
-        </div>
       )}
 
       <LodgementAnalysisCard

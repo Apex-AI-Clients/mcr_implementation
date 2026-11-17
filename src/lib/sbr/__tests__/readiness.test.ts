@@ -55,7 +55,7 @@ function input(over: {
     },
     lodgement: {
       csvCount: 1,
-      analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z' },
+      analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', icaStatus: 'verified' },
       outOfDate: false,
       noExportFound: false,
       ...over.lodgement,
@@ -143,7 +143,7 @@ describe('ATO activity statement', () => {
       status: 'failed',
       detail: "We couldn't read the dates on 630 rows of this file — was it edited in Excel? Upload the original ATO download.",
     })
-    const ok = statusOf(computeReadiness(input({ lodgement: { analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', unparsedDateRows: 0 } } })), 'lodgement')
+    const ok = statusOf(computeReadiness(input({ lodgement: { analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', unparsedDateRows: 0, icaStatus: 'verified' } } })), 'lodgement')
     expect(ok.status).toBe('ready')
   })
 
@@ -162,6 +162,15 @@ describe('ATO activity statement', () => {
       status: 'processing',
       canRunNow: false,
     })
+  })
+
+  it('waits, saying "Totals being prepared", while the export is not verified against the ATO balance', () => {
+    for (const icaStatus of ['unverified', null, undefined]) {
+      const held = statusOf(computeReadiness(input({ lodgement: { analysis: { id: 'la-1', analysedAt: '2026-10-17T00:00:00Z', unparsedDateRows: 0, icaStatus } } })), 'lodgement')
+      expect(held.status).toBe('not_started')
+      expect(held.detail).toBe('Totals being prepared.')
+      expect(held.canRunNow).toBe(false)
+    }
   })
 
   it('is ready once analysed, with no summary under the heading', () => {

@@ -13,11 +13,11 @@ describe('AtoAccountsPanel — dates that could not be read', () => {
         clientId="c1"
         overview={{
           accounts: [
-            { id: 'a', documentId: 'd', kind: 'activity_statement', label: 'Activity statement 001', balance: 10_000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
-            { id: 'b', documentId: 'e', kind: 'income_tax', label: 'Income tax 001', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 34 },
+            { id: 'a', documentId: 'd', kind: 'activity_statement', label: 'Activity statement 001', balance: 10_000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0, icaStatus: 'verified' },
+            { id: 'b', documentId: 'e', kind: 'income_tax', label: 'Income tax 001', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 34, icaStatus: 'verified' },
           ],
           totalDebt: null,
-          unreadable: [{ label: 'Income tax 001', rows: 34 }],
+          unreadable: [{ label: 'Income tax 001', rows: 34 }], heldBack: [],
         }}
       />,
     )

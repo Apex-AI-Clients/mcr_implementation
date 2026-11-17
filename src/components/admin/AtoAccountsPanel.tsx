@@ -7,6 +7,7 @@ import type { AtoAccountsOverview } from '@/lib/analysis/atoAccount/store'
 import type { AtoAccountKind } from '@/lib/analysis/atoAccountKind'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
+import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -51,6 +52,9 @@ export function AtoAccountsPanel({
         <h2 className="text-sm font-semibold text-foreground">ATO accounts</h2>
         {overview.unreadable.length > 0 && (
           <p className="text-sm text-destructive">Total ATO debt not available: dates unreadable</p>
+        )}
+        {overview.unreadable.length === 0 && (overview.heldBack?.length ?? 0) > 0 && (
+          <p className="text-sm text-foreground/60">Total ATO debt: {TOTALS_HELD_BACK.toLowerCase()}</p>
         )}
         {overview.totalDebt !== null && (
           <p className="text-sm text-foreground/70">
@@ -123,6 +127,10 @@ export function AtoAccountsPanel({
                   <span className="block font-medium text-foreground">
                     {a.unparsedDateRows > 0 ? (
                       <span className="text-destructive">Not read</span>
+                    ) : a.icaStatus === 'held_back' ? (
+                      <span className="font-normal text-foreground/60">{TOTALS_HELD_BACK}</span>
+                    ) : a.icaStatus === 'empty' ? (
+                      <span className="font-normal text-foreground/60">No transactions in this export</span>
                     ) : a.balance === null ? (
                       'No balance'
                     ) : (
@@ -130,7 +138,7 @@ export function AtoAccountsPanel({
                         value={a.balance}
                         text={drCr(a.balance)}
                         source={{
-                          from: [`${a.label}: balance owing`, `The ATO's own running balance on the newest row of its CSV${a.balanceDate ? `, ${longDate(a.balanceDate)}` : ''}.`],
+                          from: [`${a.label}: balance owing`, `The ATO's own running balance${a.balanceDate ? ` at ${longDate(a.balanceDate)}` : ''}; every row of the file matches it (verified).`],
                           link: {
                             kind: 'href',
                             href: a.kind === 'activity_statement' ? `${basePath}/lodgement-compliance-analysis` : `${basePath}/ato-accounts/${a.id}`,

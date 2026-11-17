@@ -7,6 +7,7 @@ import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
 import { splitAddress } from './address'
 import type { BalanceSheetFigure, CvlContext } from './context'
 import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
+import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
 /**
  * What each CVL entry screen starts with, and where every value comes from
@@ -192,6 +193,17 @@ const FINANCE = /\b(chattel|hire purchase|finance|unexpired interest|hp loan|equ
 export function creditorRows(ctx: CvlContext): PrefillTableRow[] {
   const rows: PrefillTableRow[] = []
   for (const a of ctx.atoAccounts.accounts) {
+    // Not verified against the ATO's own balance yet: listed with no amount, never left out quietly.
+    if (a.icaStatus === 'held_back' && a.unparsedDateRows === 0) {
+      rows.push({
+        row: { name: 'Australian Taxation Office', security_details: a.label, amount: null },
+        source: {
+          from: [`${a.label}: ${TOTALS_HELD_BACK.toLowerCase()} (its balance is checked against the ATO's own before it is filled in).`],
+          link: { kind: 'pdf', documentId: a.documentId, page: null, label: 'Open the ATO account file' },
+        },
+      })
+      continue
+    }
     if (a.balance === null || a.balance <= 0) continue
     rows.push({
       row: { name: 'Australian Taxation Office', security_details: a.label, amount: round(a.balance) },
@@ -203,7 +215,7 @@ export function creditorRows(ctx: CvlContext): PrefillTableRow[] {
   }
   // The ATO's own accounts stand in for the balance sheet's ATO lines when there are any. An account
   // on file whose dates could not be read is never quietly replaced by the balance sheet's figure.
-  const atoOnFile = rows.length > 0 || ctx.atoAccounts.unreadable.length > 0
+  const atoOnFile = rows.length > 0 || ctx.atoAccounts.unreadable.length > 0 || (ctx.atoAccounts.heldBack?.length ?? 0) > 0
   const lineMeanings: [Meaning, { related?: boolean }][] = [
     ...(atoOnFile ? [] : ([['ato_debt', {}]] as [Meaning, { related?: boolean }][])),
     ['trade_suppliers', {}],
@@ -271,7 +283,9 @@ function candidates509(ctx: CvlContext): Candidate[] {
   }
 
   const sg = ctx.atoAccounts.accounts.filter((a) => a.kind === 'super_guarantee' && a.balance !== null && a.balance > 0)
-  if (sg.length) {
+  // A total from accounts not all verified would be understated: left for staff while any is held back.
+  const anyHeld = (ctx.atoAccounts.heldBack?.length ?? 0) > 0
+  if (sg.length && !anyHeld) {
     const amount = sg.reduce((s, a) => s + a.balance!, 0)
     add('super_payable', amount, {
       from: ['Superannuation guarantee owing, from the ATO account CSV:', ...sg.map((a) => `${a.label}: ${aud(a.balance!)}`)],
@@ -280,7 +294,7 @@ function candidates509(ctx: CvlContext): Candidate[] {
   }
 
   const unsecured = creditorRows(ctx).filter((r) => !r.row.secured && !/super/i.test(String(r.row.security_details ?? '')))
-  if (unsecured.length) {
+  if (unsecured.length && !anyHeld) {
     const amount = unsecured.reduce((s, r) => s + Number(r.row.amount), 0)
     add('unsecured_creditors', amount, {
       from: ['Unsecured creditors on the file (the rows of table A7 not marked secured):', ...unsecured.map((r) => `${r.row.name}: ${aud(Number(r.row.amount))}`)],

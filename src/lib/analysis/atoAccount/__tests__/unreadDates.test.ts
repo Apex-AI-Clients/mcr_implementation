@@ -31,6 +31,13 @@ function mockDb() {
 
 function row(over: Partial<AtoAccountAnalysisRow>): AtoAccountAnalysisRow {
   return {
+    // Verified against the ATO's own balance (migration 0058): its balance is the verified one.
+    ica_status: 'verified',
+    ica_balance: over.balance ?? 0,
+    ica_balance_date: over.balance_date ?? null,
+    ica_check: null,
+    ica_forced: null,
+    ica_checked_at: null,
     id: 'a',
     document_id: 'd',
     client_id: 'c',

@@ -42,7 +42,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle(),
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label, unparsed_date_rows')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label, unparsed_date_rows, ica_status')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
@@ -90,7 +90,10 @@ export default async function OutcomePredictionPage({ params }: Props) {
   const bsColumn = financials.balanceSheet?.column ?? null
 
   // The same creditor debt and payment gap the predict route uses (creditorDebt.ts).
-  const icaRows = (ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null
+  // Only an account verified against the ATO's own balance gives the ATO debt and the payment gap
+  // (migration 0058); held back, the prediction waits (readiness, and the predict route refuses).
+  const icaVerified = lodgement.data?.ica_status === 'verified'
+  const icaRows = icaVerified ? ((ica.rows ?? lodgement.data?.rows ?? null) as unknown as IcaRow[] | null) : null
   const debt = creditorDebt({
     icaRows,
     mappedAto: financials.atoDebt ? { amount: financials.atoDebt.amount, lines: financials.atoDebt.lines.map((l) => l.label) } : null,
@@ -152,7 +155,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // The same count the prediction route makes (analysis/config.ts).
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
-    daysSinceLastPayment: lodgement.data && unparsed === 0 ? daysSinceLastPayment(icaRows) : null,
+    daysSinceLastPayment: lodgement.data && unparsed === 0 && icaVerified ? daysSinceLastPayment(icaRows) : null,
     // The account's whole history, so "no payments" shows what was searched.
     icaHistory: (() => {
       const { first, last } = icaDateRange(icaRows)

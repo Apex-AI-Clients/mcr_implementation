@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseServerClient, getSupabaseAuthClient } from '@/lib/supabase/server'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
+import { icaViewOf } from '@/lib/ica/view'
 
 /**
  * POST — analyse the client's activity statement export now, with its AI
@@ -47,7 +48,8 @@ export async function POST(_req: NextRequest, { params }: Params) {
       )
     }
 
-    const outcome = await analyseAndStoreLodgement(supabase, id, file, { aiSummary: true })
+    // Checked against the ATO's own balance before anything is explained (ica/verifyStore.ts).
+    const outcome = await analyseAndStoreLodgement(supabase, id, file, { aiSummary: true, verify: true })
     if (!outcome.ok) {
       return NextResponse.json({ error: outcome.error }, { status: 500 })
     }
@@ -74,6 +76,13 @@ export async function POST(_req: NextRequest, { params }: Params) {
       // Above 0 the card shows why instead of figures.
       unparsedDateRows: result.unparsedDateRows,
       analysedAt: row.analysed_at,
+      verification: icaViewOf({
+        rows: row.rows,
+        label: row.statement_label,
+        ica_status: row.ica_status,
+        ica_forced: row.ica_forced,
+        ica_check: row.ica_check,
+      }),
     })
   } catch (err) {
     console.error('[POST /api/admin/clients/[id]/analyse-lodgements]', err)

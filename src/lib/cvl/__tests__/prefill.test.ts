@@ -211,6 +211,20 @@ describe('Part A', () => {
   })
 })
 
+describe('ATO accounts not verified against the ATO balance', () => {
+  it('lists the account with no amount, uses no balance-sheet figure instead, and fills no total from the accounts', () => {
+    const ctx = context()
+    const held = { ...ctx.atoAccounts.accounts[0], balance: null, balanceDate: null, icaStatus: 'held_back' as const }
+    ctx.atoAccounts = { ...ctx.atoAccounts, accounts: [held, ...ctx.atoAccounts.accounts.slice(1)], totalDebt: null, heldBack: [held.label] }
+    const rows = creditorRows(ctx)
+    expect(rows.find((r) => r.row.security_details === held.label)?.row.amount).toBeNull()
+    expect(rows.some((r) => /balance sheet/i.test(String(r.source.from)) && /ATO|tax/i.test(String(r.row.name)) && r.row.name !== 'Australian Taxation Office')).toBe(false)
+    const p = prefillForm('509', 'company', ctx)
+    expect(p.candidates?.find((c) => c.key === 'unsecured_creditors')).toBeUndefined()
+    expect(p.candidates?.find((c) => c.key === 'super_payable')).toBeUndefined()
+  })
+})
+
 describe('Part B', () => {
   it('fills each director’s own Part B from the ASIC extract, and no phone or email when the file has none', () => {
     const one = prefillForm('507b', 'director:1', context())
@@ -257,15 +271,15 @@ describe('creditors when an ATO account cannot be read', () => {
   it('never puts the balance sheet ATO figure in place of an ATO account whose dates could not be read', () => {
     const ctx = context()
     ctx.atoAccounts = {
-      accounts: [{ id: 'a1', documentId: 'doc-ica', kind: 'activity_statement', label: 'Activity statement 001', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 630 }],
+      accounts: [{ id: 'a1', documentId: 'doc-ica', kind: 'activity_statement', label: 'Activity statement 001', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 630, icaStatus: 'verified' }],
       totalDebt: null,
-      unreadable: [{ label: 'Activity statement 001', rows: 630 }],
+      unreadable: [{ label: 'Activity statement 001', rows: 630 }], heldBack: [],
     }
     const ato = creditorRows(ctx).filter((r) => r.row.name === 'Australian Taxation Office' || /BAS Payable/.test(JSON.stringify(r.source)))
     expect(ato).toEqual([])
     // With no ATO account on file at all, the balance sheet's line is used, as before.
     const none = context()
-    none.atoAccounts = { accounts: [], totalDebt: null, unreadable: [] }
+    none.atoAccounts = { accounts: [], totalDebt: null, unreadable: [], heldBack: [] }
     expect(creditorRows(none).some((r) => /BAS Payable/.test(JSON.stringify(r.source)))).toBe(true)
   })
 })

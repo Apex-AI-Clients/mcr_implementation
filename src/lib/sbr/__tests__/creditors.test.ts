@@ -115,5 +115,10 @@ describe('a row per other ATO account (behind a setting)', () => {
     ])
     expect(rows.every((r) => r.label.length <= CREDITOR_LABEL_MAX)).toBe(true)
   })
+
+  it('lists an account not verified against the ATO balance with no amount, never leaving it out', () => {
+    const rows = atoAccountCreditorRows([{ kind: 'income_tax', label: 'Income tax 001', balance: null, balanceDate: null, icaStatus: 'held_back' }], null)
+    expect(rows).toEqual([{ label: 'ATO: Income tax 001 (totals being prepared)', amount: null }])
+  })
 })
 

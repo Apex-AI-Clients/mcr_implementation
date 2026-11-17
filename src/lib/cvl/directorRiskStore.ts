@@ -74,11 +74,18 @@ export async function loadDirectorRisk(
     .map((r) => r.summary as SuperGuaranteeSummary | null)
     .filter((s): s is SuperGuaranteeSummary => !!s && Array.isArray(s.quarters))
 
-  const failed = (p: ReturnType<typeof sgcExposure>, unreadableRows: number) =>
-    unreadableRows > 0 ? { ...p, onTime: 0, late: 0, items: [], unreadableRows } : p
+  // Not verified against the ATO's own balance (migration 0058): no amounts from it.
+  const asHeld = !!lodgement && asUnread === 0 && (lodgement as { ica_status?: string | null }).ica_status !== 'verified'
+  const sgHeld = sgUnread === 0 && (sgRows ?? []).some((r) => !['verified', 'empty'].includes((r as { ica_status?: string | null }).ica_status ?? ''))
+  const failed = (p: ReturnType<typeof sgcExposure>, unreadableRows: number, heldBack = false) =>
+    unreadableRows > 0
+      ? { ...p, onTime: 0, late: 0, items: [], unreadableRows }
+      : heldBack
+        ? { ...p, onTime: 0, late: 0, items: [], heldBack: true }
+        : p
   const potential = [
-    ...activityStatementExposure(rows).map((p) => failed(p, asUnread)),
-    failed(sgUnread > 0 ? sgcExposure([]) : sgcExposure(sgSummaries), sgUnread),
+    ...activityStatementExposure(asHeld ? [] : rows).map((p) => failed(p, asUnread, asHeld)),
+    failed(sgUnread > 0 || sgHeld ? sgcExposure([]) : sgcExposure(sgSummaries), sgUnread, sgHeld),
   ]
 
   const unreadable = [...atoAccounts.unreadable]
@@ -92,7 +99,7 @@ export async function loadDirectorRisk(
     activityStatement: lodgement ? { label: lodgement.statement_label, analysedAt: lodgement.analysed_at } : null,
     sgAccounts: (sgRows ?? []).map((r) => r.account_label),
     loans: directorLoanHistory((meaning) => resolveMeaning(comparison.comparison, mapping, meaning)),
-    totalAtoDebt: unreadable.length > 0 ? null : atoAccounts.totalDebt,
+    totalAtoDebt: unreadable.length > 0 || asHeld ? null : atoAccounts.totalDebt,
     accounts: atoAccounts.accounts.map((a) => ({ label: a.label, balance: a.balance, balanceDate: a.balanceDate, unparsedDateRows: a.unparsedDateRows })),
     unreadable,
   }

@@ -29,6 +29,9 @@ function db(row: Record<string, unknown> | null) {
 
 const ROW = {
   id: 'an-1',
+  // Verified against the ATO's own balance (migration 0058), and the earlier engine reaches it exactly.
+  ica_status: 'verified',
+  unexplained_difference: 0,
   account_kind: 'income_tax',
   balance: 20100,
   balance_date: '2026-10-01',
@@ -72,6 +75,13 @@ describe('ensureAtoAccountSummary', () => {
     expect(await ensureAtoAccountSummary(db(stored).supabase, 'c1', 'an-1')).toMatchObject({ kind: 'generated', text: 'Kept.' })
     enabled.mockReturnValue(false)
     expect(await ensureAtoAccountSummary(db(ROW).supabase, 'c1', 'an-1')).toEqual({ kind: 'not_needed' })
+    expect(generate).not.toHaveBeenCalled()
+  })
+
+  it('writes none for a file not verified against the ATO balance, or whose earlier figures do not reach it', async () => {
+    for (const row of [{ ...ROW, ica_status: 'unverified' }, { ...ROW, ica_status: null }, { ...ROW, unexplained_difference: 1250 }]) {
+      expect(await ensureAtoAccountSummary(db(row).supabase, 'c1', 'an-1')).toEqual({ kind: 'not_needed' })
+    }
     expect(generate).not.toHaveBeenCalled()
   })
 

@@ -61,7 +61,7 @@ const post = (body: unknown) => new NextRequest('http://localhost/x', { method: 
 const BASE = { paymentPlanType: 'upfront', directorLoanAtAppointment: false, practitionerFeeRate: 0.125 }
 
 let upsert: ReturnType<typeof vi.fn>
-const LODGEMENT = { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [] as unknown[], analysed_at: '2026-10-01', unparsed_date_rows: 0 }
+const LODGEMENT = { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [] as unknown[], analysed_at: '2026-10-01', unparsed_date_rows: 0, ica_status: 'verified' }
 let lodgementRow: typeof LODGEMENT
 
 beforeEach(() => {

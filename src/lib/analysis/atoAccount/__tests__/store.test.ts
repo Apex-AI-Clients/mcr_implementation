@@ -74,6 +74,13 @@ describe('storing an analysis', () => {
 
 function row(over: Partial<AtoAccountAnalysisRow>): AtoAccountAnalysisRow {
   return {
+    // Verified against the ATO's own balance (migration 0058): its balance is the verified one.
+    ica_status: 'verified',
+    ica_balance: 'balance' in over ? (over.balance ?? null) : 0,
+    ica_balance_date: over.balance_date ?? null,
+    ica_check: null,
+    ica_forced: null,
+    ica_checked_at: null,
     id: 'a',
     document_id: 'd',
     client_id: 'c',
@@ -116,7 +123,25 @@ describe('the ATO accounts panel', () => {
       ['sg', 50_000, 0],
     ])
     expect(overview.totalDebt).toBe(78_600)
-    expect(overview.accounts.find((a) => a.id === 'sg')?.needsReview).toBe(true)
+    // Verified against the ATO's own balance: nothing unexplained, so nothing to review.
+    expect(overview.accounts.find((a) => a.id === 'sg')?.needsReview).toBe(false)
+  })
+
+  it('shows no balance for an account not verified against the ATO balance, and holds the total back', () => {
+    const overview = atoAccountsOverview([
+      row({ id: 'as', account_label: 'Activity statement 001', balance: 10_000 }),
+      row({ id: 'it', account_kind: 'income_tax', account_label: 'Income tax 001', balance: 2_000, ica_status: 'unverified' }),
+      row({ id: 'sg', account_kind: 'super_guarantee', account_label: 'Superannuation guarantee 005', balance: null, ica_status: 'empty' }),
+    ])
+    expect(overview.accounts.map((a) => [a.id, a.balance, a.icaStatus])).toEqual([
+      ['as', 10_000, 'verified'],
+      ['it', null, 'held_back'],
+      ['sg', null, 'empty'],
+    ])
+    expect(overview.heldBack).toEqual(['Income tax 001'])
+    expect(overview.totalDebt).toBeNull()
+    // An export with no rows holds nothing back.
+    expect(atoAccountsOverview([row({ id: 'as', balance: 10_000 }), row({ id: 'sg', account_kind: 'super_guarantee', account_label: 'SG 005', balance: null, ica_status: 'empty' })]).totalDebt).toBe(10_000)
   })
 
   it('has no total without a balance', () => {
