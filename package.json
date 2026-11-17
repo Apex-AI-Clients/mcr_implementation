@@ -28,7 +28,9 @@
     "forms:snapshot": "vitest run --config vitest.forms.config.ts snapshot",
     "forms:samples": "vitest run --config vitest.forms.config.ts samples",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "ica:check": "node scripts/ica/run.mjs scripts/ica/check.ts",
+    "ica:rerun": "node scripts/ica/run.mjs scripts/ica/rerun.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
@@ -70,6 +72,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
+    "jiti": "^2.6.1",
     "jsdom": "^29.0.2",
     "pixelmatch": "^8.0.0",
     "pngjs": "^7.0.0",

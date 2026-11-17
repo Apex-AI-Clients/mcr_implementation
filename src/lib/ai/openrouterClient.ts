@@ -5,7 +5,10 @@
  * by a model from a PDF's text: the financial statements are read by code
  * (src/lib/printed). The one exception (Gabby-approved, 4 Nov 2026, CLAUDE.md
  * rule 12): the page IMAGE of a SCANNED statement page, for the second,
- * independent reading of a scan (askClaudeImage, src/lib/scan). Nothing else.
+ * independent reading of a scan (askClaudeImage, src/lib/scan); and
+ * (approved verbally by Gabby, 16 Nov 2026) the anonymised rows of an ATO
+ * account window no known rule matches (purpose 'ica', src/lib/ica/propose.ts),
+ * used only when the ATO's own balance then matches to the cent. Nothing else.
  *
  * Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.
  *
@@ -33,8 +36,9 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 export const DEFAULT_SUMMARY_MODEL = 'anthropic/claude-sonnet-5.5'
 export const DEFAULT_LABEL_MODEL = 'anthropic/claude-haiku-5.5'
 export const DEFAULT_SCAN_MODEL = 'anthropic/claude-sonnet-5.5'
+export const DEFAULT_ICA_MODEL = 'anthropic/claude-sonnet-5.5'
 
-export type ClaudePurpose = 'summary' | 'labels' | 'scan'
+export type ClaudePurpose = 'summary' | 'labels' | 'scan' | 'ica'
 
 /**
  * OpenRouter provider preferences sent with every request
@@ -58,14 +62,26 @@ export function aiSummariesEnabled(): boolean {
   return process.env.AI_SUMMARIES_ENABLED === 'true' && !!process.env.OPENROUTER_API_KEY
 }
 
+/**
+ * Claude's proposals for ATO account windows no known rule matches
+ * (src/lib/ica/propose.ts): anonymised rows only, used only when the ATO's
+ * balance then matches to the cent. Approved verbally by Gabby, 16 Nov 2026.
+ * On whenever the key is set (not tied to the summaries flag); the kill
+ * switch ICA_AI_PROPOSALS=off turns it off.
+ */
+export function icaProposalsEnabled(): boolean {
+  return !!process.env.OPENROUTER_API_KEY && process.env.ICA_AI_PROPOSALS?.trim().toLowerCase() !== 'off'
+}
+
 /** The model for a purpose: env OPENROUTER_SUMMARY_MODEL / OPENROUTER_LABEL_MODEL, else the default. Claude only. */
 export function claudeModel(purpose: ClaudePurpose): string {
   const env = {
     summary: process.env.OPENROUTER_SUMMARY_MODEL,
     labels: process.env.OPENROUTER_LABEL_MODEL,
     scan: process.env.OPENROUTER_SCAN_MODEL,
+    ica: process.env.OPENROUTER_ICA_MODEL,
   }[purpose]
-  const fallback = { summary: DEFAULT_SUMMARY_MODEL, labels: DEFAULT_LABEL_MODEL, scan: DEFAULT_SCAN_MODEL }[purpose]
+  const fallback = { summary: DEFAULT_SUMMARY_MODEL, labels: DEFAULT_LABEL_MODEL, scan: DEFAULT_SCAN_MODEL, ica: DEFAULT_ICA_MODEL }[purpose]
   const model = env?.trim() || fallback
   if (!model.startsWith('anthropic/')) throw new AiUnavailableError(`Only Claude models may be used: "${model}" is not one.`)
   return model
@@ -110,7 +126,9 @@ function client(timeoutMs: number): OpenAI {
 
 /** One prompt to Claude via OpenRouter, Anthropic only, no data retained. Throws when off or unsafe. */
 export async function askClaude({ purpose, prompt, maxTokens, label, timeoutMs = 60_000 }: AskOptions): Promise<ClaudeAnswer> {
-  if (!aiSummariesEnabled()) throw new AiUnavailableError('AI features are off (AI_SUMMARIES_ENABLED or OPENROUTER_API_KEY).')
+  if (purpose === 'ica') {
+    if (!icaProposalsEnabled()) throw new AiUnavailableError('ATO account proposals are off (ICA_AI_PROPOSALS=off, or OPENROUTER_API_KEY missing).')
+  } else if (!aiSummariesEnabled()) throw new AiUnavailableError('AI features are off (AI_SUMMARIES_ENABLED or OPENROUTER_API_KEY).')
   const model = claudeModel(purpose)
   const response = await client(timeoutMs).chat.completions.create({
     model,

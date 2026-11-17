@@ -155,3 +155,29 @@ Rules:
 - Leave out the page footer, page numbers, the accountant's notes and signatures.
 - Output the JSON object only: no markdown, no code fence, no commentary.
 `.trim()
+
+/**
+ * A window of an ATO account export that no known rule matches to the ATO's
+ * own running balance (src/lib/ica/propose.ts). Claude proposes which rows
+ * count; the proposal is used ONLY if the ATO's balance then matches to the
+ * cent. The rows are anonymised: no client, ABN, TFN or file name; long
+ * digit strings in descriptions masked. Approved verbally by Gabby, 16 Nov
+ * 2026 (CLAUDE.md rule 12).
+ */
+export const ICA_WINDOW_PROMPT = `
+You are reading rows from an Australian Taxation Office (ATO) account statement. Each row has a processed date, an effective date, a description, a debit (adds to the amount owed), a credit (reduces it) and sometimes the ATO's running balance after the row ("DR" = owed to the ATO, "CR" = in credit).
+
+The ATO prints some amounts twice: a total row and rows that break it down (a payment and its allocations; a "General interest charge" total over the interest rows it sums; an activity statement row and its "- GST" / "- PAYG Withholding" sub-lines). Counting both counts the money twice. Other rows are separate amounts and all count.
+
+The rows below are between two printed balances that the counted rows must connect exactly:
+- balance before these rows: {before}
+- balance after these rows must be: {after}
+- within the rows, every printed balance should follow from the counted rows before it, as far as the ATO's printing order allows.
+
+ROWS (id, processed, effective, description, debit, credit, balance):
+{rows}
+
+Decide which rows count so the balance changes by exactly {needed}. Answer with ONE JSON object and nothing else:
+{"count": [ids of rows that count], "skip": [ids of rows that do not count], "explanation": "one or two sentences: which rows are totals of which, and why"}
+Every id must be in exactly one list. Do not invent rows or amounts. Output the JSON object only: no markdown, no code fence.
+`.trim()
