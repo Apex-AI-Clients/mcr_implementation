@@ -122,6 +122,13 @@ describe('financial statements', () => {
     expect(r.canPredict).toBe(true)
   })
 
+  it('waits, without Run now, while the year the prediction uses is held (an uncertain scan reading)', () => {
+    const r = computeReadiness(input({ financials: { heldReasons: ['1 scanned figure the two readings disagree on: choose each'] } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', canRunNow: false })
+    expect(statusOf(r, 'financials').detail).toBe('Being prepared: 1 scanned figure the two readings disagree on: choose each.')
+    expect(r.canPredict).toBe(false)
+  })
+
   it('is Needs review, pointing at the comparison page, until staff confirm the key figures', () => {
     const r = computeReadiness(input({ financials: { mappingConfirmed: false } }))
     expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', href: '/clients/c1/financials-comparison' })

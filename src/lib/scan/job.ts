@@ -6,6 +6,7 @@ import { parseScanAnswer, type ScanPageAnswer } from './claudeReader'
 import { tesseractTitles } from './ocr'
 import type { PrintedRead } from '@/lib/printed/types'
 import { readScannedPdf, type KeptReading, type PageReading, type ScanReader } from './readScanned'
+import { sendDeveloperAlert } from '@/lib/email/resend'
 export { closeDeadScanJobs, latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
@@ -151,6 +152,8 @@ export async function runScanJob(
     if (!result) throw new Error('No scanned pages were found after all.')
     await keepReadings(supabase, { jobId: job.id, clientId, documentId }, result.readings)
     await keepRead(supabase, { clientId, documentId, readerVersion }, result.read)
+    // Figures the two readings disagree on (or one reader only read): the year waits, the developer is told once.
+    await alertUncertainReading(supabase, clientId, documentId, result.read)
     await supabase
       .from('scan_read_jobs')
       .update({
@@ -207,4 +210,52 @@ async function keepRead(supabase: ServerClient, ids: { clientId: string; documen
     read_at: new Date().toISOString(),
   })
   if (error) throw new Error(`Could not keep the read: ${error.message}`)
+}
+
+/**
+ * Once per document while it is unresolved (ica_alerts, document_kind 'statement', migration 0059):
+ * a scan reading left figures for staff to choose (the readings differ, or one reader only). Ids,
+ * pages and counts only; no figure, label or file name. Never throws.
+ */
+async function alertUncertainReading(supabase: ServerClient, clientId: string, documentId: string, read: PrintedRead): Promise<void> {
+  try {
+    const byPage = new Map<number, { disagree: number; single: number }>()
+    for (const row of read.statements.flatMap((s) => s.rows)) {
+      for (const cell of row.scan?.cells ?? []) {
+        if (cell.status !== 'disagree' && cell.status !== 'single') continue
+        const e = byPage.get(row.page) ?? { disagree: 0, single: 0 }
+        e[cell.status]++
+        byPage.set(row.page, e)
+      }
+    }
+    if (byPage.size === 0) return
+    const { data: open } = await supabase.from('ica_alerts').select('id').eq('document_id', documentId).eq('document_kind', 'statement').is('resolved_at', null).limit(1)
+    if (open?.length) return
+    const windows = [...byPage].map(([page, c]) => ({ from: `page ${page}`, to: `page ${page}`, rows: c.disagree + c.single, reason: c.disagree ? 'readings_differ' : 'one_reading_only' }))
+    const reasons = [`${[...byPage.values()].reduce((n, c) => n + c.disagree + c.single, 0)} scanned figure(s) need a staff choice`]
+    const { data: row, error } = await supabase
+      .from('ica_alerts')
+      .insert({ client_id: clientId, document_id: documentId, document_kind: 'statement', windows: windows as never, hold_reasons: reasons })
+      .select('id')
+      .single()
+    if (error) return // Before migration 0059: no alert kind to store.
+    const app = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    const text = [
+      'A scanned financial statement is not proven: its two readings differ (or one reader only read it). That year is held back ("Being prepared").',
+      '',
+      `Client id: ${clientId}`,
+      `Document id: ${documentId}`,
+      ...windows.map((w) => `${w.from}: ${w.rows} figure(s), ${w.reason.replace(/_/g, ' ')}`),
+      '',
+      `${app}/clients/${clientId}/financials-comparison`,
+    ].join('\n')
+    try {
+      await sendDeveloperAlert({ subject: `Scanned statement not proven — client ${clientId.slice(0, 8)}`, text })
+      if (row) await supabase.from('ica_alerts').update({ emailed_at: new Date().toISOString() }).eq('id', row.id)
+    } catch (err) {
+      if (row) await supabase.from('ica_alerts').update({ email_error: (err instanceof Error ? err.message : 'unknown').slice(0, 500) }).eq('id', row.id)
+    }
+  } catch {
+    // The alert never stops the reading.
+  }
 }

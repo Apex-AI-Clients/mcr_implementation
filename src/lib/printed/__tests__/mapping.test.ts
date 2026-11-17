@@ -206,6 +206,18 @@ describe('the confirmed mapping', () => {
     expect(predictionFinancials(c, []).loanReceivable).toBeNull()
     expect(creditorDebt({ icaRows: null, mappedAto: null }).amount).toBeNull()
   })
+
+  it('gives the prediction nothing from a held year (a scanned figure the two readings disagree on): "Being prepared"', () => {
+    const c = comparison()
+    const bs = c.tables.find((t) => t.kind === 'balance_sheet')!
+    const cash = bs.rows.find((row) => row.label === 'Cash')!
+    const last = c.columns.length - 1
+    cash.cells[last] = { ...cash.cells[last], scan: { status: 'disagree', claude: 100, ocr: 108, key: 'k', documentId: 'fy25', page: 1, band: null, column: 0 } }
+    const f = predictionFinancials(c, [{ meaning: 'loan_receivable', lines: ['Loan - Related Parties'] }] as never)
+    expect(f.loanReceivable).toBeNull()
+    expect(f.atoDebt).toBeNull()
+    expect(f.notIdentified.loanReceivable?.message).toMatch(/^Being prepared: /)
+  })
 })
 
 describe('pickerRows', () => {

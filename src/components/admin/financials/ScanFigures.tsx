@@ -5,14 +5,16 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileText, Loader2, ScanLine } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { parseAmount } from '@/lib/printed/amounts'
-import { formatPrinted } from '@/lib/printed/csv'
-import type { ComparisonCell } from '@/lib/printed/compare'
+import { columnTitle, formatPrinted } from '@/lib/printed/csv'
+import type { ComparisonCell, ComparisonColumn, ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
+import { comparisonProof } from '@/lib/printed/proof'
 import type { PrintedAmount } from '@/lib/printed/types'
 
 /**
- * Figures read from a scanned page by Claude (src/lib/scan): the crop of the
- * printed line, the figure as read, and a typed correction. The crop is made
- * on our server from the PDF in our storage, on request, and never kept.
+ * Figures read from a scanned page (src/lib/scan): the crop of the printed
+ * line, both readings (Claude, Tesseract) and the choice where they differ,
+ * and each year's proof. The crop is made on our server from the PDF in our
+ * storage, on request, and never kept.
  */
 
 type ScanInfo = NonNullable<ComparisonCell['scan']>
@@ -33,23 +35,25 @@ export function ScanCrop({ clientId, scan }: { clientId: string; scan: ScanInfo 
   )
 }
 
-/** The figure as Claude read it from the scan, and a way to correct it (typed in; who and when are kept). */
+/**
+ * Both readings of a scanned figure (Claude, Tesseract) and the choice where they differ (or one is missing):
+ * either reading's figure, or the figure typed in (who and when are kept). Only both readings agreeing, or
+ * a staff choice, proves a scanned figure (printed/proof.ts).
+ */
 export function ScanCorrection({ clientId, scan }: { clientId: string; scan: ScanInfo }) {
   const router = useRouter()
   const [typed, setTyped] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function saveCorrection() {
-    const parsed = parseAmount(typed.trim())
-    if (!parsed || parsed.kind !== 'amount') return setError('Type the figure as printed, e.g. 1,234, (1,234) or -.')
+  async function save(source: 'tesseract' | 'claude' | 'typed', value: number | null) {
     setSaving(true)
     setError(null)
     try {
       const res = await fetch(`/api/admin/clients/${clientId}/scan-choices`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ documentId: scan.documentId, rowKey: scan.key, column: scan.column, source: 'typed', value: parsed.value }),
+        body: JSON.stringify({ documentId: scan.documentId, rowKey: scan.key, column: scan.column, source, value }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to save')
       setTyped('')
@@ -61,30 +65,118 @@ export function ScanCorrection({ clientId, scan }: { clientId: string; scan: Sca
     }
   }
 
+  function saveTyped() {
+    const parsed = parseAmount(typed.trim())
+    if (!parsed || parsed.kind !== 'amount') return setError('Type the figure as printed, e.g. 1,234, (1,234) or -.')
+    void save('typed', parsed.value)
+  }
+
+  const reading = (name: string, source: 'tesseract' | 'claude', v: PrintedAmount | undefined) => (
+    <div className="flex items-center justify-between gap-2 rounded border border-border/50 px-2 py-1">
+      <span className="text-foreground/60">{name}</span>
+      <span className="font-semibold tabular-nums text-foreground">{show(v)}</span>
+      {scan.status !== 'agree' && v !== undefined && typeof v !== 'string' && (
+        <Button size="sm" variant="ghost" loading={saving} disabled={saving} onClick={() => save(source, v)}>
+          Use this
+        </Button>
+      )}
+    </div>
+  )
+
   return (
-    <div className="space-y-1.5 text-xs">
-      {scan.status === 'chosen' ? (
+    <div className="space-y-1.5 text-xs" data-testid="scan-chooser">
+      {scan.status === 'agree' && <p className="text-success">Both readings agree.</p>}
+      {scan.status === 'disagree' && <p className="text-warning">The two readings differ (or one of them missed the line): choose the figure.</p>}
+      {scan.status === 'single' && <p className="text-warning">Read by one reader only: check it against the printed line and choose.</p>}
+      {scan.status === 'read' && <p className="text-warning">Read by Claude only, before the second reading: refresh the file to read it again.</p>}
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {reading('Claude', 'claude', scan.claude)}
+        {reading('Tesseract (our server)', 'tesseract', scan.ocr)}
+      </div>
+      {scan.status === 'chosen' && (
         <p className="text-foreground/70">
-          Corrected by {scan.chosenBy}
-          {scan.chosenAt ? ` on ${new Date(scan.chosenAt).toLocaleDateString('en-AU')}` : ''} (read from the scan as {show(scan.claude)}).
+          Chosen by {scan.chosenBy}
+          {scan.chosenAt ? ` on ${new Date(scan.chosenAt).toLocaleDateString('en-AU')}` : ''}.
         </p>
-      ) : (
-        <p className="text-foreground/70">Read from the scan as {show(scan.claude)}. If the printed line shows something else, type the figure.</p>
       )}
       <div className="flex flex-wrap items-center gap-1.5">
         <input
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
-          placeholder="Correct figure"
+          placeholder="Or type the figure"
           aria-label="The figure as printed"
           className="w-36 rounded border border-border/60 bg-input-bg px-2 py-1 tabular-nums text-foreground"
         />
-        <Button size="sm" variant="ghost" loading={saving} disabled={saving || typed.trim() === ''} onClick={saveCorrection}>
-          Save correction
+        <Button size="sm" variant="ghost" loading={saving} disabled={saving || typed.trim() === ''} onClick={saveTyped}>
+          Save
         </Button>
         {error && <span className="text-destructive">{error}</span>}
       </div>
     </div>
+  )
+}
+
+/** Every scanned figure not proven yet (readings differ, one reading only, or Claude alone), with its crop and the choice. */
+export function ScanChecksPanel({ clientId, comparison }: { clientId: string; comparison: PrintedComparison }) {
+  const items: { row: ComparisonRow; column: ComparisonColumn; scan: ScanInfo }[] = []
+  for (const table of comparison.tables) {
+    for (const row of table.rows) {
+      row.cells.forEach((cell, i) => {
+        if (cell.scan && (cell.scan.status === 'disagree' || cell.scan.status === 'single')) items.push({ row, column: comparison.columns[i], scan: cell.scan })
+      })
+    }
+  }
+  if (items.length === 0) return null
+  return (
+    <section data-testid="scan-checks" className="no-print rounded-lg border border-warning/40 bg-warning/5 p-3">
+      <h2 className="text-sm font-semibold text-foreground">
+        {items.length} scanned figure{items.length === 1 ? '' : 's'} to check
+      </h2>
+      <p className="mt-0.5 text-xs text-foreground/60">
+        The two readings of the scan differ, or only one reader read the line. Look at the printed line and choose the figure, or type it. That
+        year&apos;s figures are &ldquo;Being prepared&rdquo; until each is chosen.
+      </p>
+      <ul className="mt-3 space-y-3">
+        {items.map(({ row, column, scan }) => (
+          <li key={`${scan.key}#${scan.column}#${column.key}`} className="space-y-1.5 rounded border border-border/60 bg-card p-2">
+            <p className="text-xs font-medium text-foreground">
+              {row.label || '(no label)'} · {columnTitle(column).title} · page {scan.page}
+            </p>
+            <ScanCrop clientId={clientId} scan={scan} />
+            <ScanCorrection clientId={clientId} scan={scan} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Each year's proof (printed/proof.ts): the badge, the accountant's error noted, or "Being prepared" and why. */
+export function YearProofStrip({ comparison }: { comparison: PrintedComparison }) {
+  const proofs = comparisonProof(comparison)
+  if (proofs.length === 0) return null
+  return (
+    <ul data-testid="year-proofs" className="flex flex-wrap gap-2 text-xs">
+      {proofs.map((p) => {
+        const title = columnTitle(comparison.columns[p.index]).title
+        return (
+          <li
+            key={p.column}
+            className={`rounded-lg border px-2.5 py-1.5 ${
+              p.status === 'proven' ? 'border-success/35 bg-success/10 text-success' : p.status === 'held' ? 'border-border bg-surface/60 text-foreground/70' : 'border-warning/40 bg-warning/5 text-foreground/80'
+            }`}
+            title={[...p.reasons, ...p.notes].join('\n') || undefined}
+          >
+            <span className="font-semibold">{title}</span>
+            {p.status === 'proven' && <> · ✓ {p.badge}</>}
+            {p.status === 'held' && <> · Being prepared: {p.reasons.join('; ')}</>}
+            {p.status === 'printed_error' && (
+              <> · As printed: {p.notes.length} printed total{p.notes.length === 1 ? ' does' : 's do'} not add up (listed at the bottom)</>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

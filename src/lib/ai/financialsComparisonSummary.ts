@@ -19,14 +19,16 @@ import { columnTitle } from '@/lib/printed/csv'
 import { resolveMeaning, type MappingEntry, type ResolvedMeaning } from '@/lib/printed/mapping'
 import { KEY_FIGURES, MEANING } from '@/lib/printed/meanings'
 import { printedExportsLocked } from '@/lib/printed/review'
+import { comparisonProof } from '@/lib/printed/proof'
 import type { PrintedComparison } from '@/lib/printed/compare'
 import type { FiguresChecked } from '@/lib/financials/hardChecks'
 
-export type SummaryBlock = 'ai_off' | 'needs_review' | 'too_few_years' | 'no_confirmed_figures'
+export type SummaryBlock = 'ai_off' | 'needs_review' | 'being_prepared' | 'too_few_years' | 'no_confirmed_figures'
 
 export const SUMMARY_BLOCK_MESSAGE: Record<SummaryBlock, string> = {
   ai_off: 'The AI summary is off.',
   needs_review: 'The summary is written once the figures that do not add up have been checked.',
+  being_prepared: 'The summary is written once every year is proven (scanned figures both readings agree on, or chosen).',
   too_few_years: 'The summary is written once two years are on file.',
   no_confirmed_figures: 'The summary is written from the confirmed key figures: confirm them first.',
 }
@@ -59,6 +61,8 @@ export function comparisonSummaryPrompt(comparison: PrintedComparison, mapping: 
 export function summaryBlock(input: { comparison: PrintedComparison; mapping: MappingEntry[]; builtAt: string | null; checked: FiguresChecked | null }): SummaryBlock | null {
   if (!aiSummariesEnabled()) return 'ai_off'
   if (printedExportsLocked(input.comparison, input.builtAt, input.checked)) return 'needs_review'
+  // Written only from proven figures (printed/proof.ts): no year may be held back.
+  if (comparisonProof(input.comparison).some((p) => p.status === 'held')) return 'being_prepared'
   if (input.comparison.annualYears < 2) return 'too_few_years'
   if (confirmedFigures(input.comparison, input.mapping).length === 0) return 'no_confirmed_figures'
   return null

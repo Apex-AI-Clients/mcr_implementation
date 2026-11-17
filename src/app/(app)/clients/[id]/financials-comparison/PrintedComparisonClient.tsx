@@ -10,7 +10,7 @@ import { NeedsReviewBanner } from '@/components/admin/financials/NeedsReviewBann
 import { PrintedComparisonTable, type SelectedFigure } from '@/components/admin/financials/PrintedComparisonTable'
 import { HeadlineTiles } from '@/components/admin/financials/HeadlineTiles'
 import { ComparisonSummaryCard } from '@/components/admin/financials/ComparisonSummaryCard'
-import { ScanCorrection, ScanCrop, ScanProgress } from '@/components/admin/financials/ScanFigures'
+import { ScanChecksPanel, ScanCorrection, ScanCrop, ScanProgress, YearProofStrip } from '@/components/admin/financials/ScanFigures'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import { exportsLocked, reviewLine, type FiguresChecked } from '@/lib/financials/hardChecks'
@@ -122,6 +122,8 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
       </div>
 
       <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
+      <YearProofStrip comparison={comparison} />
+      <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
 
 
@@ -202,7 +204,7 @@ function SourcePanel({ clientId, figure, onClose }: { clientId: string; figure: 
           <p className="font-mono text-[11px] text-foreground/60">&ldquo;{source.text}&rdquo;</p>
           {cell.scan && (
             <div className="space-y-1.5 pt-1">
-              <p className="text-foreground/70">From a scanned PDF, read by Claude from the page image:</p>
+              <p className="text-foreground/70">From a scanned PDF, read twice (Claude from the page image, Tesseract on our server):</p>
               <ScanCrop clientId={clientId} scan={cell.scan} />
               <ScanCorrection clientId={clientId} scan={cell.scan} />
             </div>

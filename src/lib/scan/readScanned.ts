@@ -1,8 +1,10 @@
 import { OTHER_TITLE, readStatements } from '@/lib/printed/readStatements'
-import type { PrintedRead, PrintedRow, ScanPageInfo } from '@/lib/printed/types'
+import type { PrintedRead, ScanPageInfo } from '@/lib/printed/types'
 import { answerToLines, continuationContext, parseScanAnswer, ScanAnswerError, type BandedLine, type ScanPageAnswer } from './claudeReader'
-import { extractPageImage, openPdf, UnsupportedScanImageError, type PageImage } from './pageImages'
+import { extractPageImage, openPdf, pageImageInfo, UnsupportedScanImageError, type PageImage } from './pageImages'
 import { ocrTitle, type TitleReader } from './ocr'
+import { ocrToLines, type BandedLine as OcrBandedLine } from './ocrLines'
+import { reconcileReads } from './reconcile'
 import { scannedPages } from './detect'
 
 export { scannedPages }
@@ -22,10 +24,14 @@ export { scannedPages }
  *   3  each statement page, in order: transcribed from the full page image,
  *      every line with the section headings it sits under; a page that
  *      continues a statement is told which sections were still open
- *   4  the transcriptions go through the same as-printed reader as a digital
- *      PDF (periods, sections, every printed total checked to add up), and
- *      are accepted as read: a total that does not add up is flagged as for
- *      any statement
+ *   4  Tesseract, on our server, reads every figure of the same statement
+ *      pages: the second, independent reading (restored 18 Nov 2026)
+ *   5  both readings go through the same as-printed reader as a digital PDF
+ *      (periods, sections, every printed total checked to add up), and are
+ *      compared figure by figure (reconcile.ts): Claude's reading is the frame
+ *      (it names every line's sections); a figure both print the same is
+ *      agreed, any other is for staff to choose. A scanned figure is proven
+ *      only when both agree and its totals add up (printed/proof.ts)
  *
  * A page Claude has already transcribed (same file, model and prompt,
  * `reuse`) is not sent again: re-reading a scan after a reader fix
@@ -150,6 +156,7 @@ export async function readScannedPdf(
   // 2: which scanned pages are statements, from their titles read on our server.
   let previousStatement = false
   let done = 0
+  const titleOf = new Map<number, string | null>()
   for (const page of scanned) {
     await onProgress?.({ stage: 'selecting', done: done++, total: scanned.length })
     const info = pages[page - 1]
@@ -168,6 +175,7 @@ export async function readScannedPdf(
     if (title || continues) {
       Object.assign(info, { role: 'statement', note: title ?? 'Continued from the page before' })
       images.set(page, image)
+      titleOf.set(page, title ?? null)
       previousStatement = true
     } else {
       Object.assign(info, { role: 'skipped', note: lines.length ? `Not a statement page ("${lines.slice(0, 2).join(' / ').slice(0, 80)}")` : 'No title could be read (a rotated or blank page)' })
@@ -212,15 +220,35 @@ export async function readScannedPdf(
     linesByPage.set(page, answerToLines(answer))
   }
 
-  // 4: the same reader as a digital PDF; each scanned line keeps its reading and its place on the page.
-  const read = readStatements(textPages.map((lines, i) => (scannedSet.has(i + 1) ? (linesByPage.get(i + 1) ?? []) : lines)))
-  markScanned(read, scannedSet, linesByPage)
+  // 4: Tesseract's own reading of the same statement pages, on our server.
+  const ocrLinesByPage = new Map<number, OcrBandedLine[]>()
+  const ocrMissing = new Set<number>()
+  for (const page of linesByPage.keys()) {
+    try {
+      const words = await titles.readLines(images.get(page)!)
+      ocrLinesByPage.set(page, withTitle(ocrToLines(words, images.get(page)!, pageImageInfo(doc, page - 1)), titleOf.get(page) ?? null))
+    } catch {
+      ocrMissing.add(page)
+    }
+  }
+
+  // 5: both readings through the same reader as a digital PDF, then compared figure by figure.
+  const readWith = (byPage: Map<number, OcrBandedLine[] | BandedLine[]>) =>
+    readStatements(textPages.map((lines, i) => (scannedSet.has(i + 1) ? (byPage.get(i + 1) ?? []) : lines)))
+  const read = reconcileReads({
+    claude: readWith(linesByPage),
+    ocr: ocrLinesByPage.size ? readWith(ocrLinesByPage) : null,
+    scannedPages: scannedSet,
+    ocrMissing,
+    claudeLines: linesByPage,
+    ocrLines: ocrLinesByPage,
+  })
   const capped = reader !== null && unread.length > 0 && transcribed >= pagesAllowed
   const anyScanned = read.statements.some((s) => s.pages.some((p) => scannedSet.has(p)))
   read.scan = {
     state: unread.length && !anyScanned ? 'failed' : 'done',
     pages,
-    singleReading: false,
+    singleReading: linesByPage.size > 0 && [...linesByPage.keys()].every((p) => ocrMissing.has(p)),
     model,
     message: unread.length
       ? `${unread.length} scanned statement page(s) could not be read yet${!reader ? ' (the reading is switched off)' : capped ? ' (the daily limit was reached)' : failure ? ` (${failure})` : ''}. Use Refresh to try again.`
@@ -229,26 +257,16 @@ export async function readScannedPdf(
   return { read, pages, readings, transcribed, unread, model }
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-
-/** Each line read from a scanned page: its reading (accepted), the key a staff correction is kept under, and its band for the crop. */
-function markScanned(read: PrintedRead, scanned: Set<number>, linesByPage: Map<number, BandedLine[]>) {
-  const seen = new Map<string, number>()
-  for (const st of read.statements) {
-    st.rows = st.rows.map((row): PrintedRow => {
-      if (!scanned.has(row.page) || row.style === 'heading') return row
-      const base = `${st.kind}|${row.page}|${row.path.map(norm).join('>')}|${norm(row.label)}`
-      const n = seen.get(base) ?? 0
-      seen.set(base, n + 1)
-      const line = linesByPage.get(row.page)?.find((l) => l.text === row.text)
-      return {
-        ...row,
-        scan: {
-          key: `${base}|${n}`,
-          band: line && line.band[1] > 0 ? line.band : null,
-          cells: row.amounts.map((a) => ({ status: 'read' as const, claude: a })),
-        },
-      }
-    })
+/** The statement's title on the page: the full OCR may lose the title the first pass read; put it back, first. */
+function withTitle(lines: OcrBandedLine[], title: string | null): OcrBandedLine[] {
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    const found = ocrTitle(lines[i].cells[0]?.text ?? '')
+    if (found) {
+      const out = [...lines]
+      out[i] = { ...lines[i], text: found, cells: [{ ...lines[i].cells[0], text: found }] }
+      return out
+    }
   }
+  if (!title) return lines
+  return [{ text: title, cells: [{ x: 57, right: 57 + title.length * 5, text: title }], band: [0, 0] }, ...lines]
 }

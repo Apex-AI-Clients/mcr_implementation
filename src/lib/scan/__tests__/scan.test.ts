@@ -38,7 +38,7 @@ const cover: SyntheticPage = { text: ['Example Family Trust', 'Financial Stateme
 const notes: SyntheticPage = { title: 'Notes to the Financial Statements', text: ['1. Summary of significant accounting policies'] }
 const doc = (read: NonNullable<Awaited<ReturnType<typeof readScannedPdf>>>['read']) => [{ documentId: 'fy23', filename: 'fy23.pdf', uploadedAt: '', read }]
 
-describe('scanned statements, read by Claude', () => {
+describe('scanned statements, read twice (Claude, and Tesseract on our server)', () => {
   it('finds the scanned pages, page by page: a text-layer page is never sent anywhere', async () => {
     const pdf = await scannedPdf([cover, profitAndLoss()], { textPages: new Map([[0, ['Example Family Trust', 'Financial Statements for the year ended 30 June 2023']]]) })
     const { scanned } = await scannedPages(pdf)
@@ -59,19 +59,31 @@ describe('scanned statements, read by Claude', () => {
     expect(res.transcribed).toBe(1)
   })
 
-  it('accepts every figure as read: no second reading, no figures to choose, every printed total adds up', async () => {
+  it('both readings agree on every figure of a clean page: nothing to choose, every printed total adds up', async () => {
     const pdf = await scannedPdf([profitAndLoss()])
     const { reader } = fakeClaude({ 1: profitAndLossAnswer() })
     const res = (await readScannedPdf(pdf, { titles, reader, pagesAllowed: 60 }))!
     const st = res.read.statements[0]
     const rows = st.rows.filter((r) => r.scan)
     expect(rows.map((r) => r.label)).toEqual(['Sales', 'Interest Income', 'Total Income', 'Rent', 'Wages', 'Total Expenses', 'Net Profit'])
-    expect(rows.flatMap((r) => r.scan!.cells.map((c) => c.status)).every((s) => s === 'read')).toBe(true)
+    expect(rows.flatMap((r) => r.scan!.cells.map((c) => c.status)).every((s) => s === 'agree')).toBe(true)
+    expect(rows.find((r) => r.label === 'Sales')!.scan!.cells[0]).toMatchObject({ claude: 152400, ocr: 152400 })
     expect(st.rows.find((r) => r.label === 'Rent')!.path).toEqual(['Expenses'])
     expect(rows.find((r) => r.label === 'Interest Income')!.amounts).toEqual([600, null])
     expect(verifyStatements(res.read.statements).filter((c) => c.status === 'mismatch' || c.status === 'wrong_column')).toEqual([])
     expect(buildPrintedComparison(doc(res.read)).failures).toEqual([])
     expect(res.read.scan!.message).toBeNull()
+  })
+
+  it('a figure Claude reads differently from the page is a disagreement for staff to choose; the rest agree', async () => {
+    const pdf = await scannedPdf([profitAndLoss()])
+    const { reader } = fakeClaude({ 1: profitAndLossAnswer({ change: { label: 'Rent', column: 0, to: '9,999' } }) })
+    const res = (await readScannedPdf(pdf, { titles, reader, pagesAllowed: 60 }))!
+    const rent = res.read.statements[0].rows.find((r) => r.label === 'Rent')!
+    expect(rent.scan!.cells[0]).toMatchObject({ status: 'disagree', claude: 9999 })
+    expect(rent.scan!.cells[0].ocr).not.toBe(9999)
+    const others = res.read.statements[0].rows.filter((r) => r.scan && r.label !== 'Rent' && r.label !== 'Total Expenses' && r.label !== 'Net Profit')
+    expect(others.flatMap((r) => r.scan!.cells.map((c) => c.status)).every((s) => s === 'agree')).toBe(true)
   })
 
   it('flags a printed total that does not add up, as for any statement', async () => {

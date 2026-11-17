@@ -69,6 +69,11 @@ export interface ReadinessInput {
     unreviewedFailures: number
     /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
     mappingConfirmed: boolean
+    /**
+     * The year the prediction's figures come from (the latest balance sheet) is not proven:
+     * an uncertain scan reading (printed/proof.ts). Its reasons; absent or empty: proven.
+     */
+    heldReasons?: string[]
   }
   lodgement: {
     /** CSVs uploaded under the integrated client account. */
@@ -148,6 +153,10 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       'Confirm the key figures (revenue, net profit, net assets, ATO debt, loan accounts) on the comparison page.',
       href,
     )
+  }
+  // An uncertain scan reading of the year the prediction uses: it waits (Gabby, 18 Nov 2026). No "Run now": staff choose the figures.
+  if ((f.heldReasons ?? []).length > 0) {
+    return { ...item(input, 'financials', 'needs_review', `Being prepared: ${f.heldReasons!.join('; ')}.`, href), canRunNow: false }
   }
   // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
   const note =

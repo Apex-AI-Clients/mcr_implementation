@@ -2,6 +2,7 @@ import type { CellSource, ComparisonColumn, ComparisonRow, PrintedComparison } f
 import { KEY_FIGURES, MEANINGS, type Meaning } from './meanings'
 import { suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
+import { comparisonProof, heldMessage } from './proof'
 
 /**
  * A client's confirmed mapping (migration 0034) applied to the as-printed
@@ -220,7 +221,7 @@ function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], ind
 }
 
 /** Columns the balance sheet prints anything in, oldest first: the years a loan can be read for. */
-function balanceSheetColumns(comparison: PrintedComparison): number[] {
+export function balanceSheetColumns(comparison: PrintedComparison): number[] {
   const bsTable = comparison.tables.find((t) => t.kind === 'balance_sheet')
   if (!bsTable) return []
   return [...comparison.columns.keys()].filter((i) => bsTable.rows.some((r) => r.cells[i].printed))
@@ -253,6 +254,22 @@ export function predictionFinancials(comparison: PrintedComparison, mapping: Map
   // The latest column the balance sheet prints anything in.
   const index = balanceSheetColumns(comparison).pop()
   const column = index === undefined ? null : comparison.columns[index]
+  // Only a proven year is used (proof.ts): an uncertain scan reading waits, "Being prepared".
+  if (column && index !== undefined && comparisonProof(comparison)[index]?.status === 'held') {
+    const message = heldMessage(balanceSheetLabel(column).replace(/^Current period to/, 'current period to'))
+    return {
+      confirmed: mappingConfirmed(mapping),
+      balanceSheet: { column, label: columnSourceLabel(column) },
+      loanReceivable: null,
+      loanPayable: null,
+      notIdentified: { loanReceivable: { message, candidates: [] }, atoDebt: { message, candidates: [] } },
+      atoDebt: null,
+      creditCards: null,
+      cashLoans: null,
+      bankOverdraft: null,
+      tradeSuppliers: null,
+    }
+  }
   const printedNil = (meaning: Meaning) => index !== undefined && printedNilAt(comparison, mapping, meaning, index)
   const figure = (meaning: Meaning, { absolute = false, noneIsZero = false } = {}): MappedFigure | null => {
     if (!column || index === undefined) return null

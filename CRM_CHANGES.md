@@ -1020,3 +1020,24 @@ Code: `src/lib/ica/verifyStore.ts`, `src/lib/ica/view.ts`, `src/components/admin
   more than 90 days late; now $307,280). No other client's figure changed (`npm run figures:check`).
 - **Re-run existing files** after applying 0058: `npm run ica:rerun` (dry run, read only), then
   `ICA_RERUN_APPLY=yes npm run ica:rerun` (stores each check, alerts for any unverified file, clears stored AI summaries).
+
+## Only proven figures: notices, financial statements, prediction, summaries (migration 0059) — GABBY-APPROVED 18 Nov 2026
+
+Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before deploying this branch.
+
+- **Director penalty notices** (`src/lib/dpn/proof.ts`, `proofStore.ts`, automatic run step 6): a notice's figures are
+  used only when Column 3 = 4 + 5 on every row, the totals equal the rows, its fields read, and each period's Column 2
+  equals the verified ATO account for that period and tax type. Periods outside the ATO export are not a mismatch
+  ("Matches the ATO account for N of M periods; …"). Otherwise: rows as printed, "Totals being prepared", alert
+  (`ica_alerts.document_kind = 'dpn'`).
+- **Financial statements** (`src/lib/printed/proof.ts`): a scanned statement page is read twice, by Claude (page
+  image, rule 12a) and by Tesseract on our server (`src/lib/scan/ocrLines.ts`, `reconcile.ts`), and the two compared
+  figure by figure. A year is **proven** when every figure both readings agree on (or staff chose) and every printed
+  total adds up: badge "Every total on the statements adds up". A figure they disagree on, or only one read, goes to
+  staff to choose ("N scanned figures to check" on the comparison page) and its year is **held**: lines shown as
+  printed, "Being prepared" for the prediction and summaries, an alert (`document_kind = 'statement'`; ids, pages and
+  counts only). A text-layer PDF whose own printed totals do not add up is shown as printed with a note naming the
+  line and never blocks the prediction. Figures read by Claude alone before this change show "Being prepared" until
+  the file is refreshed.
+- **Prediction and readiness**: inputs show the proof they come from; a held year or unproven notice waits.
+- **AI summaries**: written only from proven figures.
