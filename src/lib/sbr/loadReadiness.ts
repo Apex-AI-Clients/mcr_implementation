@@ -42,7 +42,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       .order('uploaded_at', { ascending: false }),
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, analysed_at, unparsed_date_rows')
+      .select('id, document_id, analysed_at, unparsed_date_rows, ica_status')
       .eq('client_id', clientId)
       .order('analysed_at', { ascending: false }),
     supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
@@ -79,7 +79,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
   const csvs = all.filter(
     (d) =>
       d.doc_category === DOCUMENT_CATEGORIES.INTEGRATED_CLIENT_ACCOUNT &&
-      (d.file_type === 'text/csv' || d.original_filename.toLowerCase().endsWith('.csv')),
+      (d.file_type === 'text/csv' || /\.(csv|xlsx)$/i.test(d.original_filename)),
   )
   const latest = analyses?.[0] ?? null
   let lodgementOutOfDate = false
@@ -118,7 +118,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     },
     lodgement: {
       csvCount: csvs.length,
-      analysis: latest ? { id: latest.id, analysedAt: latest.analysed_at, unparsedDateRows: latest.unparsed_date_rows } : null,
+      analysis: latest ? { id: latest.id, analysedAt: latest.analysed_at, unparsedDateRows: latest.unparsed_date_rows, icaStatus: latest.ica_status } : null,
       outOfDate: lodgementOutOfDate,
       noExportFound,
     },

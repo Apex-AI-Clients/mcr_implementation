@@ -7,6 +7,8 @@ const askClaude = vi.fn()
 vi.mock('../openrouterClient', () => ({ askClaude: (...args: unknown[]) => askClaude(...args) }))
 
 // Import AFTER mock registration
+// Fresh modules, bound to THIS file's mocks (a single worker would otherwise keep another test file's).
+vi.resetModules()
 const { generateAtoAccountSummary, incomeTaxSummaryPrompt, superGuaranteeSummaryPrompt } = await import('../atoAccountSummary')
 
 const MODEL = 'anthropic/claude-sonnet-5.5'

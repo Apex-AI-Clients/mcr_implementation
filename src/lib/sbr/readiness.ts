@@ -1,6 +1,7 @@
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import { noticeTypeLabel } from '@/lib/dpn/stored'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
+import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
 /**
  * Whether a client is ready for an SBR outcome prediction: three items, each
@@ -73,7 +74,12 @@ export interface ReadinessInput {
     /** CSVs uploaded under the integrated client account. */
     csvCount: number
     /** unparsedDateRows above 0: the export's dates could not be read, and the analysis failed (migration 0048). */
-    analysis: { id: string; analysedAt: string; unparsedDateRows?: number } | null
+    /**
+     * icaStatus: checked against the ATO's own balance (migration 0058). Anything but 'verified' (or
+     * absent, before the check existed) holds the prediction: its ATO debt and days since the last
+     * payment come from the account's amounts.
+     */
+    analysis: { id: string; analysedAt: string; unparsedDateRows?: number; icaStatus?: string | null } | null
     /** An activity statement export not yet analysed. */
     outOfDate: boolean
     /** CSVs are uploaded, but none of them is an activity statement export. */
@@ -175,6 +181,11 @@ function lodgementItem(input: ReadinessInput): ReadinessItem {
   // Dates that could not be read (a file re-saved in Excel): failed, and the prediction refuses it.
   const unparsed = l.analysis.unparsedDateRows ?? 0
   if (unparsed > 0) return item(input, 'lodgement', 'failed', unparsedDatesMessage(unparsed), href)
+  // Not verified against the ATO's own balance yet: its amounts are held back (the developer is alerted).
+  if (l.analysis.icaStatus !== 'verified') {
+    // No "Run now": running again cannot settle it (the developer has been alerted).
+    return { ...item(input, 'lodgement', input.jobRunning ? 'processing' : 'not_started', `${TOTALS_HELD_BACK}.`, href), canRunNow: false }
+  }
   // No summary under the heading: the figures are on the lodgement analysis.
   return item(input, 'lodgement', 'ready', null, href)
 }

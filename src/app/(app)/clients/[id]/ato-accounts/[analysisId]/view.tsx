@@ -10,6 +10,8 @@ import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clien
 import { Card } from '@/components/ui/Card'
 import { storedUnparsedDateRows } from '@/lib/analysis/atoAccount/store'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
+import { icaViewOf } from '@/lib/ica/view'
+import { HeldBackAccount } from '@/components/admin/ica/IcaParts'
 
 /**
  * An income tax or superannuation guarantee account's summary, from its
@@ -65,7 +67,29 @@ export async function AtoAccountView({ id, analysisId, workspace }: ClientPageVi
       </div>
     )
   }
+  // Checked against the ATO's own balance (migration 0058): only a verified file's figures are shown.
+  const verification = icaViewOf({ rows: row.rows, label: row.account_label, ica_status: row.ica_status, ica_forced: row.ica_forced, ica_check: row.ica_check })
+  if (!verification.verified) {
+    return (
+      <div id="ato-account-export-root" className="mx-auto max-w-4xl p-6">
+        <Link
+          href={base}
+          className="no-print mb-6 inline-flex items-center gap-1.5 text-xs text-foreground/40 transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to {client.name}
+        </Link>
+        <h1 className="mb-4 text-xl font-semibold text-foreground">{row.account_label}</h1>
+        <Card>
+          <HeldBackAccount view={verification} fileName={`${client.name}_${row.account_label}_as_printed`.replace(/[^\w.-]+/g, '_')} />
+          {filename && <p className="mt-3 text-xs text-foreground/30">Source: {filename}</p>}
+        </Card>
+      </div>
+    )
+  }
+
   const payload = {
+    verification,
     id: row.id,
     clientId: row.client_id,
     kind: row.account_kind,

@@ -8,6 +8,8 @@ import { SG_EVENT_LABEL, type SuperGuaranteeSummary } from './superGuarantee'
  * from the stored row.
  */
 export type AtoAccountPayload = {
+  /** The file checked against the ATO's own balance (src/lib/ica/view.ts); the page shows a report only for a verified file. */
+  verification?: import('@/lib/ica/view').IcaView | null
   id: string
   clientId: string
   label: string
@@ -52,11 +54,18 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
   lines.push(row(p.label, clientName))
   lines.push(row('Entity on the export', p.entityName, p.entityMatches === false ? "Does not match the client's company or trust name" : ''))
   lines.push(row('Balance owing', balance(p.balance), p.balanceDate ? `at ${p.balanceDate}` : ''))
-  lines.push(row('Unexplained difference', money(p.unexplained)))
-  if (p.reviewedAt) lines.push(row('Reviewed', p.reviewedBy, p.reviewedAt))
+  // Verified against the ATO's own balance (src/lib/ica): the badge; nothing is unexplained.
+  const v = p.verification?.verified ? p.verification : null
+  if (v?.badge) lines.push(row(v.badge))
+  else {
+    lines.push(row('Unexplained difference', money(p.unexplained)))
+    if (p.reviewedAt) lines.push(row('Reviewed', p.reviewedBy, p.reviewedAt))
+  }
   lines.push('')
 
-  if (p.kind === 'income_tax') {
+  // The earlier engine's summary goes beside a verified composition only when it reaches the same balance exactly.
+  const showSummary = !v || p.unexplained === 0
+  if (showSummary && p.kind === 'income_tax') {
     const s = p.summary
     lines.push(row('ASSESSMENTS'))
     lines.push(row('Period from', 'Period to', 'Assessed on', 'Payment due', 'Amount', 'Unpaid', 'Status'))
@@ -70,7 +79,7 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
     lines.push(row('GIC remitted or amended', money(s.gic.remitted)))
     lines.push(row('GIC net', money(s.gic.net)))
     lines.push(row('Note', s.note))
-  } else {
+  } else if (showSummary && p.kind === 'super_guarantee') {
     const s = p.summary
     lines.push(row('QUARTERS'))
     lines.push(row('Quarter from', 'Quarter to', 'SG shortfall', 'Nominal interest', 'Administration fee', 'Total', 'Latest', 'Every event (newest first)'))
@@ -101,6 +110,17 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
 
   lines.push('')
   lines.push(row('DEBT COMPOSITION'))
+  if (v?.composition) {
+    // As the ATO's own balance proved it: every line in the ATO's words.
+    const c = v.composition
+    const debt = new Set(['tax', 'interest', 'penalties'])
+    lines.push(row('Balance brought forward', money(c.opening)))
+    for (const l of c.lines.filter((x) => debt.has(x.section))) lines.push(row(l.label, money(l.net), `${l.rows} rows`, l.search.join(' | ')))
+    lines.push(row('= ATO debt', money(c.atoDebt)))
+    for (const l of c.lines.filter((x) => !debt.has(x.section))) lines.push(row(l.label, money(l.net), `${l.rows} rows`, l.search.join(' | ')))
+    lines.push(row(`= The ATO's balance${v.balanceDate ? ` at ${v.balanceDate}` : ''}`, money(c.total)))
+    return lines.join('\n') + '\n'
+  }
   for (const l of p.composition.lines) lines.push(row(l.label, money(l.amount), l.explanation))
   if (p.composition.uncounted.length > 0) {
     lines.push('')

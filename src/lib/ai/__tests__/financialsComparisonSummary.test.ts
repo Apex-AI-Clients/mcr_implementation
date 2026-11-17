@@ -17,6 +17,9 @@ vi.mock('../openrouterClient', () => ({
   askClaude: (...args: unknown[]) => askClaude(...args),
   aiSummariesEnabled: () => enabled(),
 }))
+// Fresh modules: checkedSummary.ts, shared with the other summary tests, must bind to THIS file's mock
+// (in a single worker it would otherwise keep the first test file's).
+vi.resetModules()
 const { comparisonSummaryPrompt, generateComparisonSummary, summaryBlock, summaryWithoutFigures } = await import('../financialsComparisonSummary')
 
 const fy = (y: number): PrintedColumn => ({ header: String(y), periodStart: `${y - 1}-07-01`, periodEnd: `${y}-06-30`, kind: 'annual', financialYear: y })

@@ -6,6 +6,8 @@ import { findLiveComparisonJob, type ExtractError } from '@/lib/financials/jobLi
 import { READER_VERSION, readAndStore, type FinancialDocumentRow } from '@/lib/printed/store'
 import { ATO_ACCOUNT_CATEGORIES } from './atoAccountKind'
 import { analyseAndStoreAtoAccount, clientNamesFor } from './atoAccount/store'
+import { atoAccountText } from '@/lib/ica/upload'
+import { verifyAndStoreDocument } from '@/lib/ica/verifyStore'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
@@ -46,6 +48,12 @@ export interface AnalysisSnapshot {
   /** ATO account CSVs (any of the three slots), and those with an analysis (migration 0038). */
   atoAccountDocumentIds?: string[]
   atoAnalysedDocumentIds?: ReadonlySet<string>
+  /**
+   * ATO account files to check against the ATO's own balance (migration 0058,
+   * src/lib/ica/verifyStore.ts): never checked, analysed again since, or
+   * another ATO file (an RBA ICA spreadsheet, say) uploaded since.
+   */
+  icaUncheckedDocumentIds?: string[]
 }
 
 export interface AnalysisWork {
@@ -59,6 +67,8 @@ export interface AnalysisWork {
   compare: boolean
   /** ATO account CSVs to analyse (atoAccount/store.ts): never analysed. */
   atoAccounts: string[]
+  /** ATO account files to check against the ATO's balance (ica/verifyStore.ts). */
+  icaVerify: string[]
 }
 
 /** What this run has already tried, so a step that fails is not retried in a loop. */
@@ -68,10 +78,11 @@ export interface Attempted {
   lodgement: boolean
   compare: boolean
   atoAccounts: Set<string>
+  icaVerify: Set<string>
 }
 
 export function newAttempted(): Attempted {
-  return { dpn: new Set(), extract: new Set(), lodgement: false, compare: false, atoAccounts: new Set() }
+  return { dpn: new Set(), extract: new Set(), lodgement: false, compare: false, atoAccounts: new Set(), icaVerify: new Set() }
 }
 
 /** What is out of date, leaving out anything this run already tried. Pure. */
@@ -102,11 +113,16 @@ export function decideWork(s: AnalysisSnapshot, attempted: Attempted = newAttemp
     (id) => !analysedAccounts.has(id) && !(attempted.atoAccounts?.has(id) ?? false),
   )
 
-  return { dpn, lodgement, extract, compare, atoAccounts }
+  // Checked after the analyses above have run (the next pass sees them).
+  const icaVerify = lodgement || atoAccounts.length > 0 ? [] : (s.icaUncheckedDocumentIds ?? []).filter((id) => !(attempted.icaVerify?.has(id) ?? false))
+
+  return { dpn, lodgement, extract, compare, atoAccounts, icaVerify }
 }
 
 export function hasWork(work: AnalysisWork): boolean {
-  return work.dpn.length > 0 || work.lodgement || work.extract.length > 0 || work.compare || (work.atoAccounts?.length ?? 0) > 0
+  return (
+    work.dpn.length > 0 || work.lodgement || work.extract.length > 0 || work.compare || (work.atoAccounts?.length ?? 0) > 0 || (work.icaVerify?.length ?? 0) > 0
+  )
 }
 
 /** The snapshot, read from the database (and the activity statement found by content). */
@@ -117,13 +133,13 @@ async function loadSnapshot(
   const [{ data: docs }, { data: notices }, { data: analyses }, { data: reads }, { data: accountAnalyses }] = await Promise.all([
     supabase
       .from('documents')
-      .select('id, doc_category, fs_override_at, file_type, original_filename')
+      .select('id, doc_category, fs_override_at, file_type, original_filename, uploaded_at')
       .eq('client_id', clientId),
     supabase.from('director_penalty_notices').select('document_id').eq('client_id', clientId),
-    supabase.from('lodgement_analyses').select('document_id').eq('client_id', clientId),
+    supabase.from('lodgement_analyses').select('document_id, analysed_at, ica_checked_at').eq('client_id', clientId),
     // Before migration 0033 there is no table: every PDF reads as unread, and is read (but not kept).
     supabase.from('printed_reads').select('document_id, reader_version, read_at').eq('client_id', clientId),
-    supabase.from('ato_account_analyses').select('document_id').eq('client_id', clientId),
+    supabase.from('ato_account_analyses').select('document_id, analysed_at, ica_checked_at').eq('client_id', clientId),
   ])
 
   const all = docs ?? []
@@ -148,12 +164,33 @@ async function loadSnapshot(
         .filter(
           (d) =>
             (ATO_ACCOUNT_CATEGORIES as readonly string[]).includes(d.doc_category) &&
-            (d.file_type === 'text/csv' || (d.original_filename ?? '').toLowerCase().endsWith('.csv')),
+            /\.(csv|xlsx)$/i.test(d.original_filename ?? '') || d.file_type === 'text/csv',
         )
         .map((d) => d.id),
       atoAnalysedDocumentIds: new Set((accountAnalyses ?? []).map((a) => a.document_id)),
+      icaUncheckedDocumentIds: icaUnchecked(all, [...(analyses ?? []), ...(accountAnalyses ?? [])]),
     },
   }
+}
+
+/**
+ * ATO account documents whose check against the ATO's balance is missing or
+ * out of date: never checked, analysed again since, or another ATO account
+ * file uploaded since (an RBA ICA spreadsheet is the second answer key). Pure.
+ */
+export function icaUnchecked(
+  docs: readonly { id: string; doc_category: string; uploaded_at?: string | null }[],
+  analyses: readonly { document_id: string; analysed_at: string | null; ica_checked_at?: string | null }[],
+): string[] {
+  const atoDocs = docs.filter((d) => (ATO_ACCOUNT_CATEGORIES as readonly string[]).includes(d.doc_category))
+  const newestUpload = atoDocs.reduce((m, d) => (d.uploaded_at && d.uploaded_at > m ? d.uploaded_at : m), '')
+  const out = new Set<string>()
+  for (const a of analyses) {
+    if (!atoDocs.some((d) => d.id === a.document_id)) continue
+    const checked = a.ica_checked_at ?? null
+    if (!checked || (a.analysed_at && a.analysed_at > checked) || (newestUpload && newestUpload > checked)) out.add(a.document_id)
+  }
+  return [...out]
 }
 
 // ─── Running it ───────────────────────────────────────────────────────────────
@@ -170,6 +207,9 @@ export interface AutoRunSummary {
   compared: boolean
   /** ATO account CSVs analysed (atoAccount/store.ts). */
   atoAccountsAnalysed: number
+  /** ATO account files checked against the ATO's balance, and how many verified. */
+  icaChecked: number
+  icaVerified: number
   errors: ExtractError[]
   notes: string[]
 }
@@ -193,6 +233,8 @@ export async function runAutoAnalysis(params: {
     extracted: 0,
     compared: false,
     atoAccountsAnalysed: 0,
+    icaChecked: 0,
+    icaVerified: 0,
     errors: [],
     notes: [],
   }
@@ -209,7 +251,7 @@ export async function runAutoAnalysis(params: {
       const work = decideWork(snapshot, attempted)
       if (!hasWork(work)) break
       console.log(
-        `[auto-run] job=${jobId} pass=${pass + 1} dpn=${work.dpn.length} lodgement=${work.lodgement} extract=${work.extract.length} compare=${work.compare} atoAccounts=${work.atoAccounts.length}`,
+        `[auto-run] job=${jobId} pass=${pass + 1} dpn=${work.dpn.length} lodgement=${work.lodgement} extract=${work.extract.length} compare=${work.compare} atoAccounts=${work.atoAccounts.length} icaVerify=${work.icaVerify.length}`,
       )
 
       // 1. Director penalty notices: in memory, no AI, about a second each.
@@ -261,9 +303,28 @@ export async function runAutoAnalysis(params: {
             summary.notes.push('An ATO account CSV could not be read from storage.')
             continue
           }
-          const outcome = await analyseAndStoreAtoAccount(supabase, clientId, doc.id, await blob.text(), names)
+          // A spreadsheet (.xlsx) is read as the ATO's CSV (ica/upload.ts); a CSV as it is.
+          const text = await atoAccountText(new Uint8Array(await blob.arrayBuffer()))
+          if (text === null) {
+            summary.notes.push('An ATO account file could not be read.')
+            continue
+          }
+          const outcome = await analyseAndStoreAtoAccount(supabase, clientId, doc.id, text, names)
           if (outcome.ok) summary.atoAccountsAnalysed++
           else summary.notes.push(`ATO account: ${outcome.error}`)
+        }
+      }
+
+      // 5. Each ATO account file checked against the ATO's own balance (ica/verifyStore.ts):
+      // only a verified file's figures are shown or used. May ask Claude about a window
+      // no known rule matches (anonymised rows; used only if the balance then matches).
+      if (work.icaVerify.length > 0) {
+        for (const id of work.icaVerify) {
+          attempted.icaVerify.add(id)
+          const outcome = await verifyAndStoreDocument(supabase, clientId, id)
+          summary.icaChecked++
+          if (outcome.ok && outcome.status === 'verified') summary.icaVerified++
+          if (!outcome.ok) summary.notes.push(`ATO balance check: ${outcome.error}`)
         }
       }
     }
@@ -281,7 +342,7 @@ export async function runAutoAnalysis(params: {
       })
       .eq('id', jobId)
     console.log(
-      `[auto-run] DONE job=${jobId} dpn=${summary.dpnRead} lodgement=${summary.lodgementAnalysed} extracted=${summary.extracted} compared=${summary.compared} atoAccounts=${summary.atoAccountsAnalysed} errors=${summary.errors.length}`,
+      `[auto-run] DONE job=${jobId} dpn=${summary.dpnRead} lodgement=${summary.lodgementAnalysed} extracted=${summary.extracted} compared=${summary.compared} atoAccounts=${summary.atoAccountsAnalysed} icaChecked=${summary.icaChecked} icaVerified=${summary.icaVerified} errors=${summary.errors.length}`,
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -52,6 +52,11 @@ export interface PotentialByType {
    * no items), and the panel says why instead.
    */
   unreadableRows?: number
+  /**
+   * The account it comes from is not verified against the ATO's own balance yet
+   * (src/lib/ica): no amounts, and the panel says "Totals being prepared".
+   */
+  heldBack?: boolean
 }
 
 export interface LoanYear {

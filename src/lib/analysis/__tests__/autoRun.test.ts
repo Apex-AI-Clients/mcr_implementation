@@ -5,6 +5,8 @@ vi.mock('@/lib/dpn/store', () => ({ readAndStoreNotice: vi.fn() }))
 vi.mock('../lodgementStore', () => ({ analyseAndStoreLodgement: vi.fn(), findActivityStatementCsv: vi.fn() }))
 vi.mock('@/lib/financials/jobLiveness', () => ({ findLiveComparisonJob: vi.fn() }))
 vi.mock('@/lib/printed/store', () => ({ READER_VERSION: 'v1', readAndStore: vi.fn() }))
+// The balance check (ica/verifyStore.ts) talks to storage, OpenRouter and Resend: not run here.
+vi.mock('@/lib/ica/verifyStore', () => ({ verifyAndStoreDocument: vi.fn(async () => ({ ok: true, status: 'verified' })) }))
 
 import { readAndStoreNotice } from '@/lib/dpn/store'
 import { analyseAndStoreLodgement, findActivityStatementCsv } from '../lodgementStore'
@@ -13,6 +15,7 @@ import { readAndStore } from '@/lib/printed/store'
 import {
   categoryTriggersAnalysis,
   decideWork,
+  icaUnchecked,
   newAttempted,
   runAutoAnalysis,
   scheduleClientAnalysis,
@@ -41,7 +44,7 @@ function snapshot(over: Partial<AnalysisSnapshot> = {}): AnalysisSnapshot {
 
 describe('decideWork', () => {
   it('has nothing to do for an empty file', () => {
-    expect(decideWork(snapshot())).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [] })
+    expect(decideWork(snapshot())).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [], icaVerify: [] })
   })
 
   it('reads notices not yet read, and analyses an export not yet analysed', () => {
@@ -103,7 +106,7 @@ describe('decideWork', () => {
       }),
       attempted,
     )
-    expect(work).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [] })
+    expect(work).toEqual({ dpn: [], lodgement: false, extract: [], compare: false, atoAccounts: [], icaVerify: [] })
   })
 })
 
@@ -298,7 +301,31 @@ describe('ATO account CSVs (migration 0038)', () => {
 
   it('leaves the lodgement decision exactly as it was', () => {
     const s = snapshot({ activityStatementDocumentId: 'csv-1', atoAccountDocumentIds: ['csv-1'] })
-    expect(decideWork(s)).toEqual({ dpn: [], lodgement: true, extract: [], compare: false, atoAccounts: ['csv-1'] })
+    expect(decideWork(s)).toEqual({ dpn: [], lodgement: true, extract: [], compare: false, atoAccounts: ['csv-1'], icaVerify: [] })
+  })
+
+  it('checks each ATO account file against the ATO balance only after its analyses have run', () => {
+    const waiting = snapshot({ activityStatementDocumentId: 'csv-1', atoAccountDocumentIds: ['csv-1'], icaUncheckedDocumentIds: ['csv-1'] })
+    expect(decideWork(waiting).icaVerify).toEqual([])
+    const ready = snapshot({ atoAccountDocumentIds: ['csv-1'], atoAnalysedDocumentIds: new Set(['csv-1']), icaUncheckedDocumentIds: ['csv-1'] })
+    expect(decideWork(ready).icaVerify).toEqual(['csv-1'])
+    const attempted = newAttempted()
+    attempted.icaVerify.add('csv-1')
+    expect(decideWork(ready, attempted).icaVerify).toEqual([])
+  })
+
+  it('re-checks a file never checked, analysed again since, or when another ATO file (a spreadsheet) arrives later', () => {
+    const docs = [
+      { id: 'a', doc_category: 'integrated_client_account', uploaded_at: '2026-11-01T00:00:00Z' },
+      { id: 'b', doc_category: 'ato_income_tax_account', uploaded_at: '2026-11-01T00:00:00Z' },
+      { id: 'c', doc_category: 'director_penalty_notices', uploaded_at: '2026-11-20T00:00:00Z' },
+    ]
+    const checked = { analysed_at: '2026-11-02T00:00:00Z', ica_checked_at: '2026-11-03T00:00:00Z' }
+    expect(icaUnchecked(docs, [{ document_id: 'a', ...checked }, { document_id: 'b', ...checked }])).toEqual([])
+    expect(icaUnchecked(docs, [{ document_id: 'a', analysed_at: '2026-11-02T00:00:00Z', ica_checked_at: null }])).toEqual(['a'])
+    expect(icaUnchecked(docs, [{ document_id: 'a', analysed_at: '2026-11-04T00:00:00Z', ica_checked_at: '2026-11-03T00:00:00Z' }])).toEqual(['a'])
+    const withSheet = [...docs, { id: 'x', doc_category: 'integrated_client_account', uploaded_at: '2026-11-05T00:00:00Z' }]
+    expect(icaUnchecked(withSheet, [{ document_id: 'a', ...checked }])).toEqual(['a'])
   })
 
   it('runs on an upload to either new slot', () => {

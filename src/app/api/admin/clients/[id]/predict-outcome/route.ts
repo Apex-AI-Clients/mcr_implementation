@@ -81,6 +81,7 @@ import {
   readDirectorLoanOverride,
   type DirectorLoanOverride,
 } from '@/lib/sbr/inputPrecedence'
+import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -227,7 +228,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { data: lodgement } = await supabase
       .from('lodgement_analyses')
       .select(
-        'id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, unparsed_date_rows',
+        'id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, unparsed_date_rows, ica_status',
       )
       .eq('client_id', clientId)
       .order('analysed_at', { ascending: false })
@@ -264,6 +265,14 @@ export async function POST(req: NextRequest, { params }: Params) {
           blocker: 'lodgement_analyses',
           actionUrl: `/clients/${clientId}/lodgement-compliance-analysis`,
           message: unparsedDatesMessage(unparsed),
+        })
+      } else if (lodgement.ica_status !== 'verified') {
+        // Not verified against the ATO's own balance: its ATO debt and payments are held back.
+        missing.push({
+          field: 'daysSinceLastPayment',
+          blocker: 'lodgement_analyses',
+          actionUrl: `/clients/${clientId}/lodgement-compliance-analysis`,
+          message: `${TOTALS_HELD_BACK}.`,
         })
       }
     }

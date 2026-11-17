@@ -41,7 +41,7 @@ export async function listAtoAccountFiles(supabase: ServerClient, clientId: stri
     .eq('client_id', clientId)
     .in('doc_category', ATO_ACCOUNT_CATEGORIES as string[])
   return (data ?? [])
-    .filter((d) => d.file_path && (d.file_type === 'text/csv' || d.original_filename.toLowerCase().endsWith('.csv')))
+    .filter((d) => d.file_path && (d.file_type === 'text/csv' || /\.(csv|xlsx)$/i.test(d.original_filename)))
     .map((d) => ({ id: d.id, file_path: d.file_path }))
 }
 
@@ -166,6 +166,11 @@ export interface AtoAccountSummaryRow {
    * is left out of the total.
    */
   unparsedDateRows: number
+  /**
+   * Not verified against the ATO's own balance yet (migration 0058, src/lib/ica): no balance is
+   * shown ("Totals being prepared") and the total is held back. 'empty': the export has no rows.
+   */
+  icaStatus: 'verified' | 'held_back' | 'empty'
 }
 
 /**
@@ -188,6 +193,8 @@ export interface AtoAccountsOverview {
   totalDebt: number | null
   /** Accounts whose dates could not be read: shown as failed, never as figures. */
   unreadable: { label: string; rows: number }[]
+  /** Accounts not verified against the ATO's own balance yet: no balance, and no total while any is held back. */
+  heldBack: string[]
 }
 
 /**
@@ -224,6 +231,25 @@ export function atoAccountsOverview(rows: readonly AtoAccountAnalysisRow[]): Ato
           entityMatches: shown.entity_matches,
           olderFiles: files.length - 1,
           unparsedDateRows: failed.reduce((n, f) => n + storedUnparsedDateRows(f), 0),
+          icaStatus: 'held_back' as const,
+        }
+      }
+      // Only a balance verified against the ATO's own running balance is shown (src/lib/ica).
+      const icaStatus = newest.ica_status === 'verified' ? 'verified' : newest.ica_status === 'empty' ? 'empty' : 'held_back'
+      if (icaStatus !== 'verified') {
+        return {
+          id: newest.id,
+          documentId: newest.document_id,
+          kind: newest.account_kind as AtoAccountKind,
+          label: newest.account_label,
+          balance: null,
+          balanceDate: null,
+          needsReview: false,
+          reviewedAt: newest.reviewed_at,
+          entityMatches: newest.entity_matches,
+          olderFiles: files.length - 1,
+          unparsedDateRows: 0,
+          icaStatus: icaStatus as 'held_back' | 'empty',
         }
       }
       return {
@@ -231,21 +257,26 @@ export function atoAccountsOverview(rows: readonly AtoAccountAnalysisRow[]): Ato
         documentId: newest.document_id,
         kind: newest.account_kind as AtoAccountKind,
         label: newest.account_label,
-        balance: newest.balance === null ? null : Number(newest.balance),
-        balanceDate: newest.balance_date,
-        needsReview: newest.needs_review,
+        balance: newest.ica_balance === null ? null : Number(newest.ica_balance),
+        balanceDate: newest.ica_balance_date,
+        // Verified: nothing unexplained to review.
+        needsReview: false,
         reviewedAt: newest.reviewed_at,
         entityMatches: newest.entity_matches,
         olderFiles: files.length - 1,
         unparsedDateRows: 0,
+        icaStatus: 'verified' as const,
       }
     })
     .sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label, 'en', { numeric: true }))
   const unreadable = accounts.filter((a) => a.unparsedDateRows > 0).map((a) => ({ label: a.label, rows: a.unparsedDateRows }))
+  const heldBack = accounts.filter((a) => a.icaStatus === 'held_back' && a.unparsedDateRows === 0).map((a) => a.label)
   const withBalance = accounts.filter((a) => a.balance !== null)
   const totalDebt =
-    withBalance.length && unreadable.length === 0 ? Math.round(withBalance.reduce((s, a) => s + a.balance!, 0) * 100) / 100 : null
-  return { accounts, totalDebt, unreadable }
+    withBalance.length && unreadable.length === 0 && heldBack.length === 0
+      ? Math.round(withBalance.reduce((s, a) => s + a.balance!, 0) * 100) / 100
+      : null
+  return { accounts, totalDebt, unreadable, heldBack }
 }
 
 export async function loadAtoAccounts(supabase: ServerClient, clientId: string): Promise<AtoAccountsOverview> {
@@ -323,6 +354,9 @@ export async function ensureAtoAccountSummary(supabase: ServerClient, clientId: 
   if (row.account_kind !== 'income_tax' && row.account_kind !== 'super_guarantee') return { kind: 'not_needed' }
   // Dates that could not be read: no figures to explain.
   if (storedUnparsedDateRows(row) > 0) return { kind: 'not_needed' }
+  // Only a file verified against the ATO's own balance is explained (migration 0058), and only from a
+  // summary that reaches that same balance exactly (the earlier engine's figures).
+  if (row.ica_status !== 'verified' || Number(row.unexplained_difference ?? 0) !== 0) return { kind: 'not_needed' }
   if (row.needs_review && !row.reviewed_at) return { kind: 'locked' }
   if (row.ai_summary && row.ai_summary_generated_at && isClaudeSummary(row.ai_summary_model)) {
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }

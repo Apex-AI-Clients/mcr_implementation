@@ -6,7 +6,7 @@ vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 vi.mock('@/lib/auth/staff', () => ({ requireStaffUser: vi.fn() }))
 vi.mock('@/lib/storage/upload', () => ({
   getStoredObjectInfo: vi.fn(async () => ({ size: 1000, contentType: 'application/pdf' })),
-  readStoredText: vi.fn(async () => null),
+  readStoredBytes: vi.fn(async () => null),
   removeFromStorage: vi.fn(),
 }))
 vi.mock('@/lib/clients/status', () => ({ recomputeClientStatus: vi.fn() }))
@@ -28,7 +28,10 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { clearNoneIssued, readAndStoreNotice } from '@/lib/dpn/store'
 import { scheduleClientAnalysis } from '@/lib/analysis/autoRun'
-import { getStoredObjectInfo, readStoredText } from '@/lib/storage/upload'
+import { getStoredObjectInfo, readStoredBytes } from '@/lib/storage/upload'
+
+// The route reads the stored file's bytes (a CSV, or an RBA ICA spreadsheet read as one).
+const bytes = (text: string) => new TextEncoder().encode(text)
 import { POST } from '../route'
 
 /**
@@ -103,7 +106,7 @@ ${HEADER}
   })
 
   it('moves an income tax account out of the activity statement slot, with a note', async () => {
-    vi.mocked(readStoredText).mockResolvedValueOnce(csvFor('Income tax 001'))
+    vi.mocked(readStoredBytes).mockResolvedValueOnce(bytes(csvFor('Income tax 001')))
     const response = await POST(request('integrated_client_account'))
     expect(response.status).toBe(201)
     expect(await response.json()).toMatchObject({ docCategory: 'ato_income_tax_account' })
@@ -117,20 +120,20 @@ ${HEADER}
   })
 
   it('moves an activity statement into its slot, and analyses it', async () => {
-    vi.mocked(readStoredText).mockResolvedValueOnce(csvFor('Activity statement 002'))
+    vi.mocked(readStoredBytes).mockResolvedValueOnce(bytes(csvFor('Activity statement 002')))
     await POST(request('ato_super_guarantee_account'))
     expect(inserted()).toMatchObject({ doc_category: 'integrated_client_account', ato_account_kind: 'activity_statement' })
     expect(scheduleClientAnalysis).toHaveBeenCalled()
   })
 
   it('keeps a file in the right slot without a note', async () => {
-    vi.mocked(readStoredText).mockResolvedValueOnce(csvFor('Superannuation guarantee employer 005'))
+    vi.mocked(readStoredBytes).mockResolvedValueOnce(bytes(csvFor('Superannuation guarantee employer 005')))
     await POST(request('ato_super_guarantee_account'))
     expect(inserted()).toMatchObject({ doc_category: 'ato_super_guarantee_account', category_note: null })
   })
 
   it('keeps an unrecognised account where it was put, saying so', async () => {
-    vi.mocked(readStoredText).mockResolvedValueOnce(csvFor('Fringe benefits tax 001'))
+    vi.mocked(readStoredBytes).mockResolvedValueOnce(bytes(csvFor('Fringe benefits tax 001')))
     await POST(request('ato_income_tax_account'))
     expect(inserted()).toMatchObject({
       doc_category: 'ato_income_tax_account',
@@ -140,7 +143,7 @@ ${HEADER}
   })
 
   it('records an unreadable file where it was put, as before', async () => {
-    vi.mocked(readStoredText).mockResolvedValueOnce(null)
+    vi.mocked(readStoredBytes).mockResolvedValueOnce(null)
     await POST(request('integrated_client_account'))
     expect(inserted()).toMatchObject({ doc_category: 'integrated_client_account' })
     expect(inserted()).not.toHaveProperty('ato_account_kind')

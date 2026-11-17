@@ -7,6 +7,7 @@ import { buildExportCsv } from '@/components/admin/LodgementAnalysisCard'
 import { computeDebtBreakdown } from '@/lib/analysis/computeLateLodgement'
 import type { DpnRiskBreakdown, EnrichedRow, LodgementAnalysisPayload, LodgementType } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
+import { icaViewOf } from '@/lib/ica/view'
 
 /** The lodgement report's DPN panel, debt composition and CSV. Synthetic figures only. */
 
@@ -178,18 +179,27 @@ describe('CSV export', () => {
       warnings: [],
       unparsedDateRows: 0,
       analysedAt: '2026-03-02T00:00:00.000Z',
+      // Verified against the ATO's own balance (src/lib/ica/view.ts).
+      verification: icaViewOf({ rows, label: 'Activity statement 001', ica_status: 'verified' }),
     }
   }
 
-  it('has the composition, the rows by line and the rows not counted', () => {
+  it('has the badge, the verified composition in the ATO words and the rows by line, never an unexplained line', () => {
     const csv = buildExportCsv(payload())
+    expect(csv).toContain("Matches the ATO's own balance: $10,000.00 DR")
     expect(csv).toContain('DEBT COMPOSITION')
     expect(csv).toContain('ATO ROWS BY LINE')
-    expect(csv).toContain('ROWS NOT COUNTED')
-    expect(csv).toContain('Tax lodged (after amendments),"$10,000.00"')
+    expect(csv).toContain('GST lodged,"$10,000.00"')
+    expect(csv).not.toMatch(/unexplained/i)
     expect(csv).toContain(ESTIMATE_LABEL)
     expect(csv).toContain('Reduced by later amendments (same period only)')
     expect(csv).not.toMatch(/Paid since/i)
+  })
+
+  it('exports no composition for a file not verified against the ATO balance', () => {
+    const csv = buildExportCsv({ ...payload(), verification: null })
+    expect(csv).not.toContain('DEBT COMPOSITION')
+    expect(csv).not.toMatch(/unexplained/i)
   })
 
   it("leads with the notices' figures when notices are on file", () => {

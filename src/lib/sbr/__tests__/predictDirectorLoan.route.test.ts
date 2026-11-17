@@ -83,7 +83,7 @@ beforeEach(() => {
         table === 'clients'
           ? { id: 'client-1', name: 'Example Client', company_details: null }
           : table === 'lodgement_analyses'
-            ? { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [], analysed_at: '2026-10-01' }
+            ? { id: 'la-1', document_id: 'doc-1', number_of_late_lodgements: 2, cumulative_days_late: 40, rows: [], analysed_at: '2026-10-01', ica_status: 'verified' }
             : null,
     })
     chain.upsert = upsert

@@ -24,11 +24,11 @@ describe('loadDirectorRisk', () => {
   it('reads the newest super guarantee account summaries by id, and copes with a file with nothing on it', async () => {
     const overview: AtoAccountsOverview = {
       accounts: [
-        { id: 'sg-new', documentId: 'd1', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: 400, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 1, unparsedDateRows: 0 },
-        { id: 'as-1', documentId: 'd2', kind: 'activity_statement', label: 'Activity statement 001', balance: 1000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0 },
+        { id: 'sg-new', documentId: 'd1', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: 400, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 1, unparsedDateRows: 0, icaStatus: 'verified' },
+        { id: 'as-1', documentId: 'd2', kind: 'activity_statement', label: 'Activity statement 001', balance: 1000, balanceDate: '2026-09-30', needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 0, icaStatus: 'verified' },
       ],
       totalDebt: 1400,
-      unreadable: [],
+      unreadable: [], heldBack: [],
     }
     const { client, sgIn } = mockDb(null, [{ account_label: 'Superannuation guarantee 551', summary: { quarters: [] } }])
     const risk = await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: overview })
@@ -47,13 +47,15 @@ describe('loadDirectorRisk', () => {
 
   it('does not ask for super guarantee accounts when there are none', async () => {
     const { client, sgIn } = mockDb(null, [])
-    await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: { accounts: [], totalDebt: null, unreadable: [] } })
+    await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: { accounts: [], totalDebt: null, unreadable: [], heldBack: [] } })
     expect(sgIn).not.toHaveBeenCalled()
   })
 })
 
 describe('loadDirectorRisk — ATO accounts whose dates could not be read', () => {
   const stored = (processed: string | null) => ({
+    // Verified against the ATO's own balance (migration 0058); held back otherwise.
+    ica_status: 'verified',
     statement_label: 'Activity statement 001',
     analysed_at: '2026-10-01T00:00:00Z',
     rows: [
@@ -62,7 +64,7 @@ describe('loadDirectorRisk — ATO accounts whose dates could not be read', () =
   })
 
   it('gives no PAYG withholding, GST or total when the activity statement dates cannot be read', async () => {
-    const overview: AtoAccountsOverview = { accounts: [], totalDebt: 8200, unreadable: [] }
+    const overview: AtoAccountsOverview = { accounts: [], totalDebt: 8200, unreadable: [], heldBack: [] }
     const { client } = mockDb(stored(null), [])
     const risk = await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: overview })
     expect(risk.potential.filter((p) => p.type !== 'sgc').map((p) => [p.type, p.onTime, p.late, p.items.length, p.unreadableRows])).toEqual([
@@ -75,7 +77,7 @@ describe('loadDirectorRisk — ATO accounts whose dates could not be read', () =
 
   it('reads them once the stored cells are readable (saved before the date fix)', async () => {
     const { client } = mockDb(stored('20-Oct-26'), [])
-    const risk = await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: { accounts: [], totalDebt: 8200, unreadable: [] } })
+    const risk = await loadDirectorRisk(client, 'cl_1', { dpn: DPN, atoAccounts: { accounts: [], totalDebt: 8200, unreadable: [], heldBack: [] } })
     expect(risk.unreadable).toEqual([])
     expect(risk.totalAtoDebt).toBe(8200)
     expect(risk.potential.every((p) => !p.unreadableRows)).toBe(true)
@@ -83,9 +85,9 @@ describe('loadDirectorRisk — ATO accounts whose dates could not be read', () =
 
   it('gives no SGC figure when a super guarantee account cannot be read', async () => {
     const overview: AtoAccountsOverview = {
-      accounts: [{ id: 'sg', documentId: 'd', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 5 }],
+      accounts: [{ id: 'sg', documentId: 'd', kind: 'super_guarantee', label: 'Superannuation guarantee 551', balance: null, balanceDate: null, needsReview: false, reviewedAt: null, entityMatches: true, olderFiles: 0, unparsedDateRows: 5, icaStatus: 'verified' }],
       totalDebt: null,
-      unreadable: [{ label: 'Superannuation guarantee 551', rows: 5 }],
+      unreadable: [{ label: 'Superannuation guarantee 551', rows: 5 }], heldBack: [],
     }
     const quarters = [{ total: 1000, events: [] }]
     const { client } = mockDb(null, [{ account_label: 'Superannuation guarantee 551', summary: { quarters }, rows: [], unparsed_date_rows: 5 }])

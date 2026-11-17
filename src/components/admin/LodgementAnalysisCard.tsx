@@ -6,7 +6,6 @@ import { Activity, ChevronDown, ChevronUp, Download, Info, X } from 'lucide-reac
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
-import { debtComposition } from '@/lib/analysis/debtComposition'
 import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate, unparsedDatesMessage } from '@/lib/analysis/config'
 import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -20,7 +19,7 @@ import {
   noticesSource,
   removableLabel,
 } from '@/components/admin/lodgement/DpnRiskPanel'
-import { DebtCompositionPanel, withDates } from '@/components/admin/lodgement/DebtCompositionPanel'
+import { HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { dpnEstimateWorkings } from '@/lib/analysis/dpnWorkings'
@@ -145,35 +144,29 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
     lines.push('')
   }
 
-  // Debt composition: each line, its sentence, the rows behind it, and the rows not counted.
-  if (analysis.debtBreakdown) {
-    const composition = debtComposition(withDates(analysis.rows), analysis.debtBreakdown)
+  // The badge, and the debt composition as the ATO's own balance proved it (src/lib/ica): each line
+  // in the ATO's words, then the rows behind it as printed.
+  const v = analysis.verification
+  if (v?.verified && v.composition && v.badge) {
+    lines.push(csvRow(v.badge))
+    lines.push('')
+    const byId = new Map(v.asPrinted.map((r) => [r.id, r]))
     lines.push(csvRow('DEBT COMPOSITION'))
-    lines.push(csvRow('Line', 'Amount', 'Explanation'))
-    for (const line of composition.lines) {
-      lines.push(csvRow(line.label, formatSignedExport(line.amount), line.explanation))
-    }
+    lines.push(csvRow('Line', 'Amount', 'Rows', 'Search your spreadsheet for'))
+    lines.push(csvRow('Balance brought forward', formatSignedExport(v.composition.opening)))
+    const debt = new Set(['tax', 'interest', 'penalties'])
+    for (const l of v.composition.lines.filter((x) => debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
+    lines.push(csvRow('= ATO debt', formatSignedExport(v.composition.atoDebt)))
+    for (const l of v.composition.lines.filter((x) => !debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
+    lines.push(csvRow(`= The ATO's balance${v.balanceDate ? ` at ${v.balanceDate}` : ''}`, formatSignedExport(v.composition.total)))
     lines.push('')
     lines.push(csvRow('ATO ROWS BY LINE'))
-    lines.push(csvRow('Line', 'Processed date', 'Description', 'Debit (DR)', 'Credit (CR)'))
-    for (const line of composition.lines) {
-      for (const r of line.rows) {
-        lines.push(
-          csvRow(
-            line.label,
-            r.processedDate ? formatIsoExport(r.processedDate) : '',
-            `'${r.description}`,
-            formatCurrencyExport(r.debit),
-            formatCurrencyExport(r.credit),
-          ),
-        )
+    lines.push(csvRow('Line', 'Processed date', 'Effective date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance'))
+    for (const l of v.composition.lines) {
+      for (const id of l.rowIds) {
+        const r = byId.get(id)
+        if (r) lines.push(csvRow(l.label, r.processed, r.effective, `'${r.description}`, r.debit, r.credit, r.balance))
       }
-    }
-    lines.push('')
-    lines.push(csvRow('ROWS NOT COUNTED'))
-    lines.push(csvRow('Rows', 'Count', 'Debits', 'Credits', 'Why'))
-    for (const g of composition.uncounted) {
-      lines.push(csvRow(g.label, g.count, formatCurrencyExport(g.debits), formatCurrencyExport(g.credits), g.reason))
     }
     lines.push('')
   }
@@ -671,7 +664,8 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
   // summary: write it now that someone is looking. Only when there is
   // something late to explain, as when staff run it themselves.
   useEffect(() => {
-    if (!initialAnalysis || initialAnalysis.aiSummary || initialAnalysis.unparsedDateRows > 0) return
+    // Only a file verified against the ATO's own balance is explained.
+    if (!initialAnalysis || initialAnalysis.aiSummary || initialAnalysis.unparsedDateRows > 0 || !initialAnalysis.verification?.verified) return
     const late =
       initialAnalysis.summary.numberOfLateLodgements > 0 || (initialAnalysis.dpnRisk?.totalGrossLate ?? 0) > 0
     if (!late) return
@@ -711,6 +705,11 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
 
   // Dates that could not be read: the analysis failed, and no figure from it is shown.
   const failed = (analysis?.unparsedDateRows ?? 0) > 0
+  // Not verified against the ATO's own balance (or not checked yet): late lodgements (dates only)
+  // and the rows as printed; no calculated figure, no export, no summary (src/lib/ica/view.ts).
+  const verification = analysis?.verification ?? null
+  const verified = !!verification?.verified
+  const fileBase = analysis ? analysis.sourceFilename.replace(/\.(csv|xlsx)$/i, '') : 'ATO account'
   const countSeverity = analysis ? getSeverity(analysis.summary.numberOfLateLodgements) : 'ok'
   const daysSeverity = analysis ? getDaysSeverity(analysis.summary.cumulativeDaysLate) : 'ok'
   // The lodgements the count includes, under the late-lodgement setting (config.ts)…
@@ -735,7 +734,14 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
             </Button>
           </div>
         )}
-        {analysis && !failed && (
+        {analysis && !failed && !verified && (
+          <div className="no-print flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={runAnalysis} loading={loading}>
+              Re-analyse
+            </Button>
+          </div>
+        )}
+        {analysis && !failed && verified && (
           <div className="no-print flex items-center gap-2">
             <ExportPdfButton
               targetId="lodgement-export-root"
@@ -818,12 +824,25 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
             />
           </div>
 
-          {showSummary && (
+          {verified && verification?.badge && (
+            <div>
+              <VerifiedBadge text={verification.badge} />
+              {verification.spreadsheet && (
+                <span className="ml-2 inline-flex items-center rounded-full border border-success/35 bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                  Matches Tom&apos;s spreadsheet: {verification.spreadsheet.lateLodgements} late lodgements, {verification.spreadsheet.cumulativeDaysLate} days
+                </span>
+              )}
+            </div>
+          )}
+
+          {!verified && verification && <HeldBackAccount view={verification} fileName={`${fileBase} — as printed`} />}
+
+          {verified && showSummary && (
             <SummaryModal analysis={analysis} notices={dpnNotices} dpnPage={`${basePath}/director-penalty-notices`} onClose={() => setShowSummary(false)} />
           )}
 
           {/* DPN Risk */}
-          {analysis.dpnRisk && (
+          {verified && analysis.dpnRisk && (
             <div className="border-t border-border/40 pt-4">
               <DpnRiskPanel
                 dpnRisk={analysis.dpnRisk}
@@ -835,10 +854,10 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
             </div>
           )}
 
-          {/* Debt Composition */}
-          {analysis.debtBreakdown && (
+          {/* Debt composition: the verified reading, every line in the ATO's words */}
+          {verified && verification && (
             <div className="border-t border-border/40 pt-4">
-              <DebtCompositionPanel debtBreakdown={analysis.debtBreakdown} rows={analysis.rows} />
+              <VerifiedComposition view={verification} fileName={fileBase} />
             </div>
           )}
 

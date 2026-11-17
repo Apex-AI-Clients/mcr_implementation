@@ -76,17 +76,20 @@ const longDay = (iso: string) => {
  * (a credit is not a creditor). Staff edit or remove them like any row.
  */
 export function atoAccountCreditorRows(
-  accounts: readonly { kind: string; label: string; balance: number | null; balanceDate: string | null }[],
+  accounts: readonly { kind: string; label: string; balance: number | null; balanceDate: string | null; icaStatus?: string }[],
   factorsAccount: string | null,
 ): CreditorRow[] {
   const same = (a: string, b: string | null) => !!b && a.trim().toLowerCase() === b.trim().toLowerCase()
   return accounts
-    .filter((a) => typeof a.balance === 'number' && a.balance > 0)
     .filter((a) => !(a.kind === 'activity_statement' && same(a.label, factorsAccount)))
-    .map((a) => ({
-      label: `ATO: ${a.label}${a.balanceDate ? `, at ${longDay(a.balanceDate)}` : ''}`.slice(0, CREDITOR_LABEL_MAX),
-      amount: Math.round(a.balance! * 100) / 100,
-    }))
+    .flatMap((a): CreditorRow[] =>
+      // Not verified against the ATO's own balance yet: listed with no amount, never left out quietly.
+      a.icaStatus === 'held_back'
+        ? [{ label: `ATO: ${a.label} (totals being prepared)`.slice(0, CREDITOR_LABEL_MAX), amount: null }]
+        : typeof a.balance === 'number' && a.balance > 0
+          ? [{ label: `ATO: ${a.label}${a.balanceDate ? `, at ${longDay(a.balanceDate)}` : ''}`.slice(0, CREDITOR_LABEL_MAX), amount: Math.round(a.balance * 100) / 100 }]
+          : [],
+    )
 }
 
 export function defaultCreditorRows(): CreditorRow[] {

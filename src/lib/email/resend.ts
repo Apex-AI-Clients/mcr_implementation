@@ -1,6 +1,8 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Created on first use: a module that only imports this (for the developer alert) must load without a key.
+let client: Resend | null = null
+const resendClient = () => (client ??= new Resend(process.env.RESEND_API_KEY))
 
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'noreply@mcrpartners.com.au'
 
@@ -19,7 +21,7 @@ export async function sendInviteEmail({
   customMessage,
   attachments,
 }: SendInviteEmailParams) {
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await resendClient().emails.send({
     from: `MCR Partners <${FROM_EMAIL}>`,
     to,
     subject: 'MCR Partners Preassessment Invitation',
@@ -168,7 +170,7 @@ export async function sendReuploadEmail({
 }: SendReuploadEmailParams) {
   const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await resendClient().emails.send({
     from: `MCR Partners <${FROM_EMAIL}>`,
     to,
     subject: 'MCR Partners — File Reupload Required',
@@ -327,4 +329,18 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+/**
+ * A plain-text alert to the developer (ALERT_EMAIL). The caller passes no
+ * client data: ids, dates, counts and an admin link only (Resend keeps a copy
+ * of what it sends). Throws when ALERT_EMAIL or the key is missing, or Resend fails.
+ */
+export async function sendDeveloperAlert({ subject, text }: { subject: string; text: string }) {
+  const to = process.env.ALERT_EMAIL?.trim()
+  if (!to) throw new Error('ALERT_EMAIL is not set')
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not set')
+  const { data, error } = await resendClient().emails.send({ from: `MCR Portal alerts <${FROM_EMAIL}>`, to, subject, text })
+  if (error) throw new Error(error.message)
+  return data
 }

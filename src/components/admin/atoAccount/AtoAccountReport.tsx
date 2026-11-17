@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { drCr } from '@/components/admin/AtoAccountsPanel'
 import { AccountCompositionPanel } from './AccountCompositionPanel'
+import { VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import { AiSummaryCallout } from '@/components/admin/lodgement/AiSummaryCallout'
 import { atoAccountCsv, exportLock, type AtoAccountPayload } from '@/lib/analysis/atoAccount/exportCsv'
 import { unpaidPhrase, type IncomeTaxSummary } from '@/lib/analysis/atoAccount/incomeTax'
@@ -313,7 +314,13 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
   const router = useRouter()
   const [reviewing, setReviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const lock = exportLock(payload)
+  // Verified against the ATO's own balance (src/lib/ica): nothing is unexplained, so nothing to review or lock.
+  const verification = payload.verification ?? null
+  const verified = !!verification?.verified
+  const lock = verified ? null : exportLock(payload)
+  // The account's own summary comes from the earlier account engine: shown beside a verified composition
+  // only when that engine reaches the same ATO balance exactly.
+  const showSummary = !verified || payload.unexplained === 0
   const fileName = `${clientName}_${payload.label}`.replace(/[^\w.-]+/g, '_')
   const [ai, setAi] = useState({ text: payload.aiSummary ?? null, at: payload.aiSummaryGeneratedAt ?? null })
 
@@ -384,6 +391,8 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
         </p>
       )}
 
+      {verified && verification?.badge && <VerifiedBadge text={verification.badge} />}
+
       {lock ? (
         <Card className="border-warning/30 bg-warning/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -405,7 +414,7 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
           </div>
         </Card>
       ) : (
-        payload.reviewedAt && (
+        !verified && payload.reviewedAt && (
           <p className="flex items-center gap-1.5 text-xs text-foreground/50">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
             Unexplained difference reviewed by {payload.reviewedBy ?? 'staff'} on {longDate(payload.reviewedAt)}.
@@ -431,7 +440,7 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
           }
           sub={payload.balanceDate ? `ATO balance at ${longDate(payload.balanceDate)}` : undefined}
         />
-        <Stat
+        {!verified && <Stat
           label="Unexplained difference"
           value={
             <SourcedAmount
@@ -445,24 +454,32 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
             />
           }
           sub="The ATO balance less what the rows account for"
-        />
+        />}
       </div>
 
+      {showSummary && (
+        <>
+          <Card>
+            {payload.kind === 'income_tax' ? (
+              <IncomeTaxSection summary={payload.summary} account={payload.label} />
+            ) : (
+              <SuperGuaranteeSection summary={payload.summary} account={payload.label} />
+            )}
+          </Card>
+
+          <p className="flex items-start gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-xs text-foreground/70">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
+            {payload.summary.note}
+          </p>
+        </>
+      )}
+
       <Card>
-        {payload.kind === 'income_tax' ? (
-          <IncomeTaxSection summary={payload.summary} account={payload.label} />
+        {verified && verification ? (
+          <VerifiedComposition view={verification} fileName={fileName} />
         ) : (
-          <SuperGuaranteeSection summary={payload.summary} account={payload.label} />
+          <AccountCompositionPanel composition={payload.composition} account={payload.label} />
         )}
-      </Card>
-
-      <p className="flex items-start gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-xs text-foreground/70">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
-        {payload.summary.note}
-      </p>
-
-      <Card>
-        <AccountCompositionPanel composition={payload.composition} account={payload.label} />
       </Card>
 
       <p className="text-xs text-foreground/40">

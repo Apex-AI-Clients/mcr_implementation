@@ -8,6 +8,7 @@ import { describeDeadline, formatIsoDate } from '@/lib/dpn/summary'
 import { REPORTED_LATE_DAYS, type PotentialByType, type ReportedItem } from '@/lib/cvl/directorRisk'
 import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
+import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
 interface DirectorRiskPanelProps {
   clientId: string
@@ -60,7 +61,7 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
   const hrefFor = (p: PotentialByType) => (p.type === 'sgc' ? null : risk.activityStatement ? asHref : null)
 
   // An account whose dates could not be read gives no figure: no total either.
-  const potentialUnread = risk.potential.some((p) => (p.unreadableRows ?? 0) > 0)
+  const potentialUnread = risk.potential.some((p) => (p.unreadableRows ?? 0) > 0 || p.heldBack)
   const lateTotal = risk.potential.reduce((s, p) => s + p.late, 0)
   const staysTotal = risk.issued.reduce((s, d) => s + d.stays, 0)
   const debtSource: AmountSource = {
@@ -116,9 +117,9 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
       {/* The three numbers that matter most */}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[
-          ['Total ATO debt', risk.totalAtoDebt, debtSource, risk.unreadable.length ? 'Not available: dates unreadable' : 'All ATO accounts on file'],
+          ['Total ATO debt', risk.totalAtoDebt, debtSource, risk.unreadable.length ? 'Not available: dates unreadable' : risk.totalAtoDebt === null && risk.accounts.length ? TOTALS_HELD_BACK : 'All ATO accounts on file'],
           ['Stays with the director (issued notices)', risk.issued.length ? staysTotal : null, staysSource, risk.issued.length ? 'Not removed by liquidation' : 'No notices on file'],
-          ['Reported late or never', potentialUnread ? null : lateTotal, lateSource, potentialUnread ? 'Not available: dates unreadable' : 'Could not be removed by liquidation'],
+          ['Reported late or never', potentialUnread ? null : lateTotal, lateSource, risk.potential.some((p) => (p.unreadableRows ?? 0) > 0) ? 'Not available: dates unreadable' : potentialUnread ? TOTALS_HELD_BACK : 'Could not be removed by liquidation'],
         ].map(([label, value, source, hint]) => (
           <div key={label as string} className="rounded-lg border border-border bg-surface/40 p-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-foreground/40">{label as string}</p>
@@ -211,6 +212,15 @@ export function DirectorRiskPanel({ clientId, risk }: DirectorRiskPanelProps) {
                       </td>
                       <td className="py-2 pr-3 text-right text-destructive">Not read</td>
                       <td className="py-2 text-right text-destructive">Not read</td>
+                    </tr>
+                  )
+                }
+                if (p.heldBack) {
+                  return (
+                    <tr key={p.type} className="border-b border-white/5 last:border-0">
+                      <td className="py-2 pr-3 font-medium text-foreground/80">{DPN_TYPE_LABEL[p.type]}</td>
+                      <td className="py-2 pr-3 text-right text-foreground/60">{TOTALS_HELD_BACK}</td>
+                      <td className="py-2 text-right text-foreground/60">{TOTALS_HELD_BACK}</td>
                     </tr>
                   )
                 }

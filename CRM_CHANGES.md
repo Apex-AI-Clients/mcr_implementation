@@ -961,3 +961,62 @@ and stored no debt, with no warning.
 - `lead_deletions`: lead id, source, external id, stage, who and when, written
   before a lead is deleted. No name, email, phone or answer.
 - Nothing is backfilled: existing website leads keep their stored values.
+
+---
+
+## ATO account (ICA) engine: the ATO's running balance is the answer key (migration 0057) — GABBY-APPROVED
+
+Started 17 Nov 2026 (Stage 1: engine, answer keys, `ica:check`, Claude window proposals).
+Code: `src/lib/ica/`, `scripts/ica/check.ts`, `scripts/figures/icaCheck.figures.ts`,
+`supabase/migrations/0057_ica_learned_patterns.sql`. CLAUDE.md rule 12(b).
+
+- Every ATO account file (the ATO's CSV, or an RBA ICA spreadsheet .xlsx: columns A–F
+  from row 9, entity on row 3) is read exactly as printed. Each repeating structure
+  (statement + "- GST"/"- PAYG Withholding" sub-lines; payment + allocations; refund +
+  details; "General interest charge" summary + its rows) is read the way the ATO's own
+  running balance proves: between consecutive printed balances the counted rows must
+  equal the change, to the cent. A day that does not match tries the other readings,
+  then learned patterns, then neighbouring days (up to 7). The whole file must end on
+  the ATO's balance. There is no "Other adjustments / unexplained difference" line.
+- A row goes into a named line (GST lodged, PAYG withholding lodged, interest,
+  penalties, payments, credits, refunds) only when its description is known ATO wording;
+  anything else is its own line under its exact ATO description.
+- **Anonymised ATO account rows for unmatched windows may be sent to Claude via OpenRouter
+  (Anthropic only, no training, no logging). Approved verbally by Gabby on 16 Nov 2026
+  ('do what you need to do to fix it').** Only the window's rows (dates, description,
+  debit, credit, balance); no client name, ABN, TFN, account label or file name; long digit
+  runs masked. Claude's answer is used only if the ATO's balance then matches to the cent;
+  the patterns it teaches (masked wording only) are kept in `ica_learned_patterns` and
+  applied next time only where they make the balance match. Nothing is logged but the
+  generation id, provider, model and token counts.
+- Kill switch: `ICA_AI_PROPOSALS=off` (windows then stay unverified and are reported).
+- `npm run ica:check -- <file.csv|.xlsx> [--sheet <rba.xlsx>]` prints the reconciliation day
+  by day, the lines, late lodgements and any window that does not match, before Gabby sees a
+  report. `npm run figures:check` runs every answer key (gitignored).
+
+### Stage 2 — verified-only figures on every upload (migration 0058)
+
+Code: `src/lib/ica/verifyStore.ts`, `src/lib/ica/view.ts`, `src/components/admin/ica/IcaParts.tsx`,
+`scripts/ica/rerun.ts`, `supabase/migrations/0058_ica_verification.sql`.
+
+- **On every upload** (the automatic run, `autoRun.ts` step 5) each ATO account file is checked against the
+  ATO's own balance: learned patterns, then Claude for any window no rule matches, then the RBA ICA
+  spreadsheet's H3/H4 when one for the same account is on file. The result is stored on the file's analyses
+  (`ica_status`, `ica_balance`, `ica_check`, `ica_forced`). A file is re-checked when it is analysed again or
+  another ATO file (a spreadsheet, say) is uploaded later.
+- **Verified**: the badge "Matches the ATO's own balance: $X at <date>" (page, CSV, PDF), the composition in the
+  ATO's words (each line opens on its rows, with Copy and "Download these rows (Excel)"), and "Matches Tom's
+  spreadsheet: N late lodgements, D days" when a spreadsheet is on file.
+- **Anything else** (not verified, or not checked yet): no calculated figure anywhere — not on the pages, the
+  exports, the ATO accounts panel and its total, the dashboard, CVL, or the prediction (its ATO debt and days
+  since the last payment are held; readiness says "Totals being prepared."). The rows are shown exactly as
+  printed ("ATO account, as printed") with Copy and an Excel download, and "Totals being prepared". Late
+  lodgements (dates only, the RBA rule) are still shown. AI summaries are written only for verified files.
+- **Alert**: a row in `ica_alerts` and an email to `ALERT_EMAIL` (Resend) with the client id, document id and each
+  window's dates and row count. No client name, file name or row content.
+- **Spreadsheets**: the three ATO slots take "CSV or Excel"; an RBA ICA spreadsheet is read as the ATO's CSV (columns
+  A–F from row 9), so every analysis reads it exactly as a CSV.
+- **DPN estimate**: a statement row printed with no amount takes the net of its sub-lines (Yan-Trow showed $0 lodged
+  more than 90 days late; now $307,280). No other client's figure changed (`npm run figures:check`).
+- **Re-run existing files** after applying 0058: `npm run ica:rerun` (dry run, read only), then
+  `ICA_RERUN_APPLY=yes npm run ica:rerun` (stores each check, alerts for any unverified file, clears stored AI summaries).

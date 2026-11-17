@@ -92,6 +92,12 @@ export type Database = {
       }
       ato_account_analyses: {
         Row: {
+          ica_balance: number | null
+          ica_balance_date: string | null
+          ica_check: Json | null
+          ica_checked_at: string | null
+          ica_forced: Json | null
+          ica_status: string | null
           account_kind: string
           account_label: string
           ai_summary: string | null
@@ -116,6 +122,12 @@ export type Database = {
           warnings: Json
         }
         Insert: {
+          ica_balance?: number | null
+          ica_balance_date?: string | null
+          ica_check?: Json | null
+          ica_checked_at?: string | null
+          ica_forced?: Json | null
+          ica_status?: string | null
           account_kind: string
           account_label: string
           ai_summary?: string | null
@@ -140,6 +152,12 @@ export type Database = {
           warnings?: Json
         }
         Update: {
+          ica_balance?: number | null
+          ica_balance_date?: string | null
+          ica_check?: Json | null
+          ica_checked_at?: string | null
+          ica_forced?: Json | null
+          ica_status?: string | null
           account_kind?: string
           account_label?: string
           ai_summary?: string | null
@@ -1369,6 +1387,84 @@ export type Database = {
           },
         ]
       }
+      ica_alerts: {
+        Row: {
+          account_kind: string | null
+          client_id: string
+          created_at: string
+          document_id: string | null
+          email_error: string | null
+          emailed_at: string | null
+          hold_reasons: string[]
+          id: string
+          resolved_at: string | null
+          windows: Json
+        }
+        Insert: {
+          account_kind?: string | null
+          client_id: string
+          created_at?: string
+          document_id?: string | null
+          email_error?: string | null
+          emailed_at?: string | null
+          hold_reasons?: string[]
+          id?: string
+          resolved_at?: string | null
+          windows?: Json
+        }
+        Update: {
+          account_kind?: string | null
+          client_id?: string
+          created_at?: string
+          document_id?: string | null
+          email_error?: string | null
+          emailed_at?: string | null
+          hold_reasons?: string[]
+          id?: string
+          resolved_at?: string | null
+          windows?: Json
+        }
+        Relationships: []
+      }
+      ica_learned_patterns: {
+        Row: {
+          counts: boolean
+          disabled_at: string | null
+          disabled_by: string | null
+          explanation: string
+          generation_id: string | null
+          id: string
+          learned_at: string
+          model: string | null
+          printed: string
+          wording: string
+        }
+        Insert: {
+          counts: boolean
+          disabled_at?: string | null
+          disabled_by?: string | null
+          explanation?: string
+          generation_id?: string | null
+          id?: string
+          learned_at?: string
+          model?: string | null
+          printed: string
+          wording: string
+        }
+        Update: {
+          counts?: boolean
+          disabled_at?: string | null
+          disabled_by?: string | null
+          explanation?: string
+          generation_id?: string | null
+          id?: string
+          learned_at?: string
+          model?: string | null
+          printed?: string
+          wording?: string
+        }
+        Relationships: []
+      }
       lead_activities: {
         Row: {
           author: string
@@ -1751,6 +1847,12 @@ export type Database = {
       }
       lodgement_analyses: {
         Row: {
+          ica_balance: number | null
+          ica_balance_date: string | null
+          ica_check: Json | null
+          ica_checked_at: string | null
+          ica_forced: Json | null
+          ica_status: string | null
           ai_summary: string | null
           ai_summary_generated_at: string | null
           ai_summary_model: string | null
@@ -1771,6 +1873,12 @@ export type Database = {
           warnings: Json
         }
         Insert: {
+          ica_balance?: number | null
+          ica_balance_date?: string | null
+          ica_check?: Json | null
+          ica_checked_at?: string | null
+          ica_forced?: Json | null
+          ica_status?: string | null
           ai_summary?: string | null
           ai_summary_generated_at?: string | null
           ai_summary_model?: string | null
@@ -1791,6 +1899,12 @@ export type Database = {
           warnings?: Json
         }
         Update: {
+          ica_balance?: number | null
+          ica_balance_date?: string | null
+          ica_check?: Json | null
+          ica_checked_at?: string | null
+          ica_forced?: Json | null
+          ica_status?: string | null
           ai_summary?: string | null
           ai_summary_generated_at?: string | null
           ai_summary_model?: string | null

@@ -81,6 +81,8 @@ export interface DpnContributingDebit {
   effectiveDate: string          // ISO
   periodEnding: string | null    // ISO — display only
   description: string
+  /** The statement's tax line this row is ("GST", "PAYG Withholding"): each counted on its own. Absent for a statement with no sub-lines. */
+  taxLine?: string
   daysLate: number
   debit: number                  // gross amount that landed on the ATO ledger
   /** The same period's net downward amendments applied to this debit, capped at it. Never a payment. */
@@ -221,4 +223,9 @@ export interface LodgementAnalysisPayload {
   /** Above 0: the dates could not be read and the figures are not shown (LodgementAnalysisResult). */
   unparsedDateRows: number
   analysedAt: string
+  /**
+   * The file checked against the ATO's own balance (src/lib/ica/view.ts, migration 0058).
+   * Not verified (or not checked yet): no calculated figure is shown, only the rows as printed.
+   */
+  verification?: import('@/lib/ica/view').IcaView | null
 }
