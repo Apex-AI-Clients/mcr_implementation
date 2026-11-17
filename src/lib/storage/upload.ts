@@ -41,6 +41,13 @@ export async function readStoredText(supabase: SupabaseClient, filePath: string)
   return data.text()
 }
 
+/** A stored file's bytes, or null. */
+export async function readStoredBytes(supabase: SupabaseClient, filePath: string): Promise<Uint8Array | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(filePath)
+  if (error || !data) return null
+  return new Uint8Array(await data.arrayBuffer())
+}
+
 export async function removeFromStorage(supabase: SupabaseClient, filePath: string) {
   await supabase.storage.from(BUCKET).remove([filePath])
 }

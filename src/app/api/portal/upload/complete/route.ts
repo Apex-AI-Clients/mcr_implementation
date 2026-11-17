@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
-import { getStoredObjectInfo, readStoredText, removeFromStorage } from '@/lib/storage/upload'
+import { getStoredObjectInfo, readStoredBytes, removeFromStorage } from '@/lib/storage/upload'
+import { atoAccountText } from '@/lib/ica/upload'
 import { checkUploadRequest } from '@/lib/storage/rules'
 import { recomputeClientStatus } from '@/lib/clients/status'
 import { DPN_CATEGORY, clearNoneIssued, readAndStoreNotice } from '@/lib/dpn/store'
@@ -66,7 +67,9 @@ export async function POST(req: NextRequest) {
     let atoFields = {}
     if (isAtoAccountCategory(category)) {
       // Unreadable: kept where it was put, as before.
-      const text = await readStoredText(supabase, filePath).catch(() => null)
+      // The ATO's CSV, or an RBA ICA spreadsheet read as that CSV (ica/upload.ts).
+      const bytes = await readStoredBytes(supabase, filePath).catch(() => null)
+      const text = bytes ? await atoAccountText(bytes) : null
       if (text !== null) {
         const header = readAtoAccountHeader(text)
         const filed = fileAtoAccount(category, header.kind)

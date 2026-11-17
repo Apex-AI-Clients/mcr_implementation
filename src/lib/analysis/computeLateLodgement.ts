@@ -64,7 +64,11 @@ import type {
  * Other credits (government credits, transfers, credit statements of other
  * periods) are not applied: the estimate leans towards "still owing".
  */
-export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
+export function computeDpnRisk(printedRows: EnrichedRow[], scope: LateLodgementScope = LATE_LODGEMENT_SCOPE): DpnRiskBreakdown {
+  // Each tax line on its own (Gabby, 17 Nov 2026: the ATO issues separate GST and PAYGW notices): a
+  // statement's "- GST" and "- PAYG Withholding" sub-lines are its amounts, so a GST credit never
+  // offsets PAYG. A statement printed without sub-lines keeps its own amount.
+  const rows = byTaxLine(printedRows)
   const isPenalty = (r: EnrichedRow) => r.lodgementType === 'FTLPenalty' || r.lodgementType === 'GeneralPenalty'
   const periodOf = (r: EnrichedRow) => (r.periodEnding ? calendarDay(r.periodEnding) : null)
   const isLateDebit = (r: EnrichedRow) => r.lateLodgementDays > 90 && (r.debit ?? 0) > 0 && isCountedLodgement(r, scope)
@@ -91,9 +95,15 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
       (r) => r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended' || (isCountedLodgement(r, scope) && !isPenalty(r)),
     ),
   )
+  // Amendment credits reduce the same period's debits OF THE SAME TAX LINE only.
+  const lineOf = (r: EnrichedRow) => (r as TaxLineRow).taxLine ?? ''
+  const periodKey = (r: EnrichedRow) => {
+    const period = periodOf(r)
+    return period ? `${period}|${lineOf(r)}` : null
+  }
   const credits = new Map<string, number>()
   for (const r of lodgements) {
-    const period = periodOf(r)
+    const period = periodKey(r)
     if (period) credits.set(period, (credits.get(period) ?? 0) + (r.credit ?? 0))
   }
   const taxDebits = new Set(
@@ -108,7 +118,7 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
   for (const late of [false, true]) {
     for (const r of window) {
       if (!taxDebits.has(r) || !lodgements.has(r) || isLateDebit(r) !== late) continue
-      const period = periodOf(r)
+      const period = periodKey(r)
       if (!period) continue
       const available = credits.get(period) ?? 0
       const applied = Math.min(available, r.debit ?? 0)
@@ -161,6 +171,7 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
         effectiveDate: row.effectiveDate?.toISOString() ?? '',
         periodEnding: row.periodEnding?.toISOString() ?? null,
         description: row.description,
+        taxLine: (row as TaxLineRow).taxLine,
         daysLate: row.lateLodgementDays,
         debit,
         reducedByAmendments: round2(amended),
@@ -217,6 +228,49 @@ export function computeDpnRisk(rows: EnrichedRow[], scope: LateLodgementScope = 
     periodStart,
     periodEnd,
   }
+}
+
+/** A row of the DPN estimate: a statement's tax line ("GST", "PAYG Withholding"), when it has sub-lines. */
+type TaxLineRow = EnrichedRow & { taxLine?: string }
+
+/**
+ * The statements by tax line, for the DPN estimate's arithmetic only (the
+ * stored rows stay exactly as printed). Each "- GST" / "- PAYG Withholding"
+ * sub-line printed under a statement row (same processed date) becomes a row
+ * of that statement — its dates, period, kind and days late — with the
+ * sub-line's own amount, its own position (rowIndex) and the tax line named in
+ * its description. The statement row itself then carries only what its
+ * sub-lines do not account for, usually nothing (its balance stays). A
+ * statement row with no sub-lines is left as it is.
+ */
+export function byTaxLine(rows: EnrichedRow[]): EnrichedRow[] {
+  const isStatement = (r: EnrichedRow) =>
+    r.lodgementType === 'Original' || r.lodgementType === 'ClientAmended' || r.lodgementType === 'ATOAmended' || r.lodgementType === 'ATOAudit'
+  const out: EnrichedRow[] = []
+  for (let i = 0; i < rows.length; i++) {
+    const head = rows[i]
+    if (!isStatement(head)) {
+      out.push(head)
+      continue
+    }
+    const subs: EnrichedRow[] = []
+    for (let j = i + 1; j < rows.length && rows[j].lodgementType === 'SubLine' && rows[j].rawProcessed.trim() === head.rawProcessed.trim(); j++) subs.push(rows[j])
+    if (subs.length === 0) {
+      out.push(head)
+      continue
+    }
+    // Sub-lines that do not add up to an amount printed on the statement row: the rest stays on the
+    // statement row (as the ICA engine reads it, src/lib/ica/compose.ts); nothing is lost or doubled.
+    const cents = (r: EnrichedRow) => Math.round(((r.debit ?? 0) - (r.credit ?? 0)) * 100)
+    const rest = (head.debit ?? head.credit ?? 0) === 0 ? 0 : cents(head) - subs.reduce((t, r) => t + cents(r), 0)
+    out.push({ ...head, debit: rest > 0 ? rest / 100 : null, credit: rest < 0 ? -rest / 100 : null })
+    for (const sub of subs) {
+      const taxLine = sub.description.replace(/^'/, '').replace(/^-\s*/, '').trim()
+      out.push({ ...head, rowIndex: sub.rowIndex, description: `${head.description} — ${taxLine}`, debit: sub.debit, credit: sub.credit, balance: null, taxLine } as TaxLineRow)
+    }
+    i += subs.length
+  }
+  return out
 }
 
 /**

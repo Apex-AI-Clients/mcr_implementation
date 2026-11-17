@@ -49,6 +49,8 @@ export function displayCategory(category: DocCategory): DocCategory {
 // MIME type constants
 const MIME_PDF = 'application/pdf'
 const MIME_CSV = 'text/csv'
+/** An Excel workbook: the RBA ICA spreadsheet of an ATO account (columns A–F from row 9). */
+const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 /**
  * Returns the start year of the current Australian Financial Year.
@@ -122,9 +124,9 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   integrated_client_account: {
     label: 'ATO activity statement',
     description:
-      'The activity statement account transactions from the ATO portal, from 01/07/2017 until now, as CSV. One file per account (e.g. 001 and 002). Income tax and superannuation guarantee accounts have their own slots; a file put in the wrong one is moved automatically.',
-    acceptedFormats: [MIME_CSV],
-    formatLabel: 'CSV only',
+      'The activity statement account transactions from the ATO portal, from 01/07/2017 until now, as CSV or Excel (an RBA ICA spreadsheet). One file per account (e.g. 001 and 002). Income tax and superannuation guarantee accounts have their own slots; a file put in the wrong one is moved automatically.',
+    acceptedFormats: [MIME_CSV, MIME_XLSX],
+    formatLabel: 'CSV or Excel',
     isOptional: false,
     multipleFiles: true,
     externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',
@@ -132,9 +134,9 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   ato_income_tax_account: {
     label: 'ATO income tax account',
     description:
-      'The income tax account transactions from the ATO portal, as CSV (if the company has one). A file put in the wrong slot is moved automatically.',
-    acceptedFormats: [MIME_CSV],
-    formatLabel: 'CSV only',
+      'The income tax account transactions from the ATO portal, as CSV or Excel (if the company has one). A file put in the wrong slot is moved automatically.',
+    acceptedFormats: [MIME_CSV, MIME_XLSX],
+    formatLabel: 'CSV or Excel',
     isOptional: true,
     multipleFiles: true,
     externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',
@@ -142,9 +144,9 @@ export const CATEGORY_META: Record<DocCategory, CategoryMeta> = {
   ato_super_guarantee_account: {
     label: 'ATO superannuation guarantee account',
     description:
-      'The superannuation guarantee employer account transactions from the ATO portal, as CSV (if the company has one). A file put in the wrong slot is moved automatically.',
-    acceptedFormats: [MIME_CSV],
-    formatLabel: 'CSV only',
+      'The superannuation guarantee employer account transactions from the ATO portal, as CSV or Excel (if the company has one). A file put in the wrong slot is moved automatically.',
+    acceptedFormats: [MIME_CSV, MIME_XLSX],
+    formatLabel: 'CSV or Excel',
     isOptional: true,
     multipleFiles: true,
     externalLink: 'https://onlineservices.ato.gov.au/business/BusinessLogin.html',

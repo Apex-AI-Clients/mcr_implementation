@@ -5,6 +5,8 @@ import { computeLateLodgement, reanalyseStoredRows } from './computeLateLodgemen
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 import { generateLodgementAiSummary, isClaudeSummary } from '@/lib/ai/lodgementSummary'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
+import { ATO_UPLOAD_EXTENSIONS, atoAccountText } from '@/lib/ica/upload'
+import { verifyAndStoreDocument } from '@/lib/ica/verifyStore'
 import type { Database } from '@/types/database'
 
 /**
@@ -30,7 +32,7 @@ export interface ActivityStatementFile {
 const MAX_CSVS_CHECKED = 10
 
 /**
- * The newest activity statement export among the client's integrated client
+ * The newest activity statement export (CSV, or RBA ICA spreadsheet) among the client's integrated client
  * account files, recognised by its content (label and header), not its
  * filename — a renamed export is still found, and an income tax or super
  * account export is not mistaken for one.
@@ -48,12 +50,13 @@ export async function findActivityStatementCsv(
     .limit(MAX_CSVS_CHECKED)
 
   for (const doc of docs ?? []) {
-    const isCsv = doc.file_type === 'text/csv' || doc.original_filename.toLowerCase().endsWith('.csv')
-    if (!isCsv || !doc.file_path) continue
+    // The ATO's CSV, or an RBA ICA spreadsheet (.xlsx) read as that CSV (ica/upload.ts).
+    const readable = doc.file_type === 'text/csv' || ATO_UPLOAD_EXTENSIONS.test(doc.original_filename)
+    if (!readable || !doc.file_path) continue
     const { data: blob, error } = await supabase.storage.from('documents').download(doc.file_path)
     if (error || !blob) continue
-    const text = await blob.text()
-    if (isActivityStatementCsv(text)) {
+    const text = await atoAccountText(new Uint8Array(await blob.arrayBuffer()))
+    if (text !== null && isActivityStatementCsv(text)) {
       return { doc: { id: doc.id, file_path: doc.file_path, original_filename: doc.original_filename }, text }
     }
   }
@@ -72,14 +75,17 @@ function needsSummary(result: ReturnType<typeof computeLateLodgement>): boolean 
 
 /**
  * Analyse the export and store the result against its document. With
- * `aiSummary`, a summary is generated too (best effort); without, the stored
- * summary is cleared, because it described the figures before this run.
+ * `verify`, the file is then checked against the ATO's own balance
+ * (ica/verifyStore.ts; automatic runs check it in their own step). With
+ * `aiSummary`, a summary is written too (best effort) — only for a VERIFIED
+ * file; otherwise the stored summary is cleared, because it described the
+ * figures before this run.
  */
 export async function analyseAndStoreLodgement(
   supabase: ServerClient,
   clientId: string,
   file: ActivityStatementFile,
-  options: { aiSummary: boolean },
+  options: { aiSummary: boolean; verify?: boolean },
 ): Promise<AnalyseOutcome> {
   let parsed
   let result
@@ -90,26 +96,8 @@ export async function analyseAndStoreLodgement(
     return { ok: false, error: err instanceof Error ? err.message : 'The CSV could not be read.' }
   }
 
-  let aiText: string | null = null
-  let aiModel: string | null = null
-  if (options.aiSummary && aiSummariesEnabled() && needsSummary(result)) {
-    try {
-      const ai = await generateLodgementAiSummary({
-        dpnRisk: result.dpnRisk,
-        debtBreakdown: result.debtBreakdown,
-        summary: result.summary,
-        // The ATO's own notices, when on file, instead of the estimate.
-        notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
-      })
-      aiText = ai.text
-      aiModel = ai.model
-    } catch (err) {
-      console.error('[lodgement] AI summary failed', err instanceof Error ? err.name : 'unknown')
-    }
-  }
-
   const now = new Date().toISOString()
-  const { data: row, error } = await supabase
+  const { data: stored, error } = await supabase
     .from('lodgement_analyses')
     .upsert(
       {
@@ -127,9 +115,9 @@ export async function analyseAndStoreLodgement(
         warnings: result.warnings as unknown as Record<string, unknown>[],
         dpn_risk: result.dpnRisk as unknown as Record<string, unknown>,
         debt_breakdown: result.debtBreakdown as unknown as Record<string, unknown>,
-        ai_summary: aiText,
-        ai_summary_generated_at: aiText ? now : null,
-        ai_summary_model: aiModel,
+        ai_summary: null,
+        ai_summary_generated_at: null,
+        ai_summary_model: null,
         analysed_at: now,
       },
       { onConflict: 'document_id' },
@@ -137,11 +125,44 @@ export async function analyseAndStoreLodgement(
     .select()
     .single()
 
-  if (error || !row) {
+  if (error || !stored) {
     console.error('[lodgement] upsert failed', error?.code)
     return { ok: false, error: 'Failed to persist analysis.' }
   }
-  return { ok: true, row, result }
+
+  // Checked against the ATO's own balance: only a verified file's figures are explained.
+  let verified = false
+  if (options.verify) {
+    const check = await verifyAndStoreDocument(supabase, clientId, file.doc.id)
+    verified = check.ok && check.status === 'verified'
+  }
+
+  let aiText: string | null = null
+  let aiModel: string | null = null
+  if (options.aiSummary && verified && aiSummariesEnabled() && needsSummary(result)) {
+    try {
+      const ai = await generateLodgementAiSummary({
+        dpnRisk: result.dpnRisk,
+        debtBreakdown: result.debtBreakdown,
+        summary: result.summary,
+        // The ATO's own notices, when on file, instead of the estimate.
+        notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
+      })
+      aiText = ai.text
+      aiModel = ai.model
+    } catch (err) {
+      console.error('[lodgement] AI summary failed', err instanceof Error ? err.name : 'unknown')
+    }
+  }
+
+  if (aiText) {
+    await supabase
+      .from('lodgement_analyses')
+      .update({ ai_summary: aiText, ai_summary_generated_at: new Date().toISOString(), ai_summary_model: aiModel })
+      .eq('id', stored.id)
+  }
+  const { data: row } = await supabase.from('lodgement_analyses').select('*').eq('id', stored.id).single()
+  return { ok: true, row: row ?? stored, result }
 }
 
 export type SummaryOutcome =
@@ -158,12 +179,14 @@ export type SummaryOutcome =
 export async function ensureLodgementSummary(supabase: ServerClient, clientId: string): Promise<SummaryOutcome> {
   const { data: row } = await supabase
     .from('lodgement_analyses')
-    .select('id, ai_summary, ai_summary_generated_at, ai_summary_model, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late')
+    .select('id, ai_summary, ai_summary_generated_at, ai_summary_model, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late, ica_status')
     .eq('client_id', clientId)
     .order('analysed_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (!row) return { kind: 'none' }
+  // Only a file verified against the ATO's own balance is explained (migration 0058).
+  if (row.ica_status !== 'verified') return { kind: 'not_needed' }
   // A summary written before the switch to Claude did not pass the figure check: not shown, written again.
   if (row.ai_summary && row.ai_summary_generated_at && isClaudeSummary(row.ai_summary_model)) {
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }

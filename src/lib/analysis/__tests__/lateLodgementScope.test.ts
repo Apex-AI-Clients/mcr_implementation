@@ -59,8 +59,8 @@ describe('late-lodgement scope', () => {
       [
         row('27 May 2026', '25 May 2022', 'Tax Office audit amended Activity Statement for the period ending 31 Mar 22', '$1,800.00', '', '$1,800.00 DR'),
         row('10 Apr 2021', '25 Dec 2019', 'ATO initiated amended ACTIVITY STATEMENT for the period ending 30 Sep 19', '', '$10.00', '$1,790.00 DR'),
-        // A sub-line never carries the phrase.
-        row('10 Apr 2021', '25 Dec 2019', '- GST', '$8,150.00'),
+        // A sub-line never carries the phrase (it splits the statement above it).
+        row('10 Apr 2021', '25 Dec 2019', '- GST', '', '$10.00'),
         // Nor does interest.
         row('10 Apr 2021', '25 Dec 2019', 'General interest charge calculated from 01 Mar 21 to 31 Mar 21', '$5.00'),
         // Lodged early: negative, so 0.
