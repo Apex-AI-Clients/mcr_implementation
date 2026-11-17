@@ -215,8 +215,13 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
   // about them (a different ACN, say): that is shown there, not here.
   const read = d.notices.filter((v) => v.notice && v.notice.status !== 'needs_manual')
   if (read.length > 0) {
+    // A notice is used only when proven (dpn/proof.ts): one that is not holds the prediction.
+    if (read.some((v) => v.proof && v.proof.status !== 'verified')) {
+      return { ...item(input, 'dpn', input.jobRunning ? 'processing' : 'not_started', `${TOTALS_HELD_BACK}.`, href), canRunNow: false }
+    }
     const types = [...new Set(read.map((v) => noticeTypeLabel(v.notice!) ?? 'notice'))].join(' and ')
-    return item(input, 'dpn', 'ready', `${read.length} notice${read.length === 1 ? '' : 's'} read (${types}).`, href)
+    const badges = ['Notice adds up', 'Matches the ATO account'].filter((b) => read.every((v) => v.proof?.badges.includes(b)))
+    return item(input, 'dpn', 'ready', `${read.length} notice${read.length === 1 ? '' : 's'} read (${types})${badges.length ? `: ${badges.join(' · ')}` : ''}.`, href)
   }
   if (d.notices.some((v) => !v.notice)) {
     return input.jobRunning

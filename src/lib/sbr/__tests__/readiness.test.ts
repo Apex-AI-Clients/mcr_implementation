@@ -20,7 +20,8 @@ function notice(over: Partial<StoredNotice> = {}): StoredNotice {
     companyName: 'EXAMPLE TRADING PTY LTD',
     acn: '000000019',
     directorName: 'Jane Sample',
-    rows: [],
+    // One period that adds up (Column 3 = 4 + 5), so the notice is proven (dpn/proof.ts).
+    rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 1_000_00, column3: 1_000_00, column4: 800_00, column5: 200_00 }],
     totals: null,
     tableLayout: 'five_column',
     enteredBy: null,
@@ -181,6 +182,16 @@ describe('ATO activity statement', () => {
 })
 
 describe('director penalty notices and the DPN factor', () => {
+  it('waits, "Totals being prepared.", while a read notice is not proven; names the badges once it is', () => {
+    const bad = notice({ rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 100, column3: 100, column4: 50, column5: 49 }] })
+    const held = statusOf(computeReadiness(input({ dpn: { notices: [view(bad)], noneIssued: null } })), 'dpn')
+    expect(held).toMatchObject({ status: 'not_started', detail: 'Totals being prepared.', canRunNow: false })
+    const good = notice({ rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 100, column3: 100, column4: 50, column5: 50 }] })
+    const ready = statusOf(computeReadiness(input({ dpn: { notices: [view(good)], noneIssued: null } })), 'dpn')
+    expect(ready.status).toBe('ready')
+    expect(ready.detail).toMatch(/: Notice adds up\.$/)
+  })
+
   it('is ready, with No, when staff ticked "none issued"', () => {
     const r = computeReadiness(input({ dpn: { notices: [], noneIssued: { by: 'Sam', at: '2026-10-10T00:00:00Z' } } }))
     expect(statusOf(r, 'dpn').status).toBe('ready')
@@ -207,7 +218,7 @@ describe('director penalty notices and the DPN factor', () => {
     const r = computeReadiness(
       input({ dpn: { notices: [view(notice()), view(notice({ documentId: 'dpn-2', status: 'needs_manual' }))] } }),
     )
-    expect(statusOf(r, 'dpn')).toMatchObject({ status: 'ready', detail: '1 notice read (PAYG withholding).' })
+    expect(statusOf(r, 'dpn')).toMatchObject({ status: 'ready', detail: '1 notice read (PAYG withholding): Notice adds up.' })
     expect(r.dpn).toBe(true)
   })
 

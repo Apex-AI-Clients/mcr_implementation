@@ -40,6 +40,7 @@ import type { ComparableCase, SbrPrediction, SbrPredictionInput } from '@/lib/sb
 import type { DirectorLoanInput, DirectorLoanYear } from '@/lib/sbr/directorLoan'
 import { SourceButton, SourcedAmount } from '@/components/ui/SourcedAmount'
 import { calculated, enteredByStaff, printedLinesSource, type AmountSource } from '@/lib/sources'
+import { VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import {
   directorLoanLabel,
   changedNote,
@@ -60,6 +61,8 @@ import {
 } from '@/lib/sbr/creditors'
 
 interface InitialAuto {
+  /** The proof each input comes from: the ATO account's and the notices' badges (null when none). */
+  proofs?: { atoAccount: string | null; notices: string | null }
   cumulativeDaysLate: number | null
   numberOfLateLodgements: number | null
   daysSinceLastPayment: number | null
@@ -970,6 +973,20 @@ function InputPanel(props: InputPanelProps) {
           <p className="mb-3 text-xs text-foreground/40">
             Sourced from existing analysis tables.
           </p>
+          {(auto.proofs?.atoAccount || auto.proofs?.notices) && (
+            <div data-testid="prediction-input-proofs" className="mb-3 space-y-1.5 text-xs text-foreground/60">
+              {auto.proofs?.atoAccount && (
+                <p>
+                  Late lodgements, days since the last payment and the ATO debt: <VerifiedBadge text={auto.proofs.atoAccount} />
+                </p>
+              )}
+              {auto.proofs?.notices && (
+                <p>
+                  Director penalty notices: <VerifiedBadge text={auto.proofs.notices} />
+                </p>
+              )}
+            </div>
+          )}
           <dl className="space-y-3 text-xs">
             <ReadOnlyField
               label="Cumulative days late"
