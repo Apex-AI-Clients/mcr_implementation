@@ -8,6 +8,9 @@ const askClaude = vi.fn()
 vi.mock('../openrouterClient', () => ({ askClaude: (...args: unknown[]) => askClaude(...args) }))
 
 // Import AFTER mock registration
+// Fresh modules: checkedSummary.ts, shared with the other summary tests, must bind to THIS file's mock
+// (in a single worker it would otherwise keep the first test file's).
+vi.resetModules()
 const { generateLodgementAiSummary, isClaudeSummary, lodgementSummaryPrompt, lodgementSummaryWithoutFigures } = await import('../lodgementSummary')
 
 const MODEL = 'anthropic/claude-sonnet-5.5'

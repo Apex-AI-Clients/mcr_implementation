@@ -9,6 +9,8 @@ vi.mock('@/lib/ai/atoAccountSummary', () => ({ generateAtoAccountSummary: (...a:
 vi.mock('@/lib/ai/openrouterClient', () => ({ aiSummariesEnabled: () => enabled() }))
 vi.mock('@/lib/supabase/server', () => ({ getSupabaseServerClient: vi.fn() }))
 
+// Fresh modules, bound to THIS file's mocks (a single worker would otherwise keep another test file's).
+vi.resetModules()
 const { ensureAtoAccountSummary } = await import('../store')
 
 function db(row: Record<string, unknown> | null) {

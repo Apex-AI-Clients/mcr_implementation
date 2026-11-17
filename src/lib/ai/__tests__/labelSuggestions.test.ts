@@ -12,6 +12,8 @@ import type { PrintedColumn, PrintedRow, PrintedStatement } from '@/lib/printed/
 
 const askClaude = vi.fn()
 vi.mock('../openrouterClient', () => ({ askClaude: (...args: unknown[]) => askClaude(...args) }))
+// Fresh modules, bound to THIS file's mocks (a single worker would otherwise keep another test file's).
+vi.resetModules()
 const { labelSuggestionPrompt, offeredLines, parseLabelSuggestions, suggestUnknownLabels, unknownMeanings } = await import('../labelSuggestions')
 
 const fy = (y: number): PrintedColumn => ({ header: String(y), periodStart: `${y - 1}-07-01`, periodEnd: `${y}-06-30`, kind: 'annual', financialYear: y })
