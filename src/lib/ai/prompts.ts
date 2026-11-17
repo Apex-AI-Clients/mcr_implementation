@@ -51,22 +51,18 @@ You are summarising an Australian ATO lodgement compliance analysis for a Small 
 WRITING RULES:
 - 3 to 5 sentences. Hard maximum: 90 words total.
 - Use plain English. No jargon. No bullet points. No markdown.
-- Cover three things in order: (1) compliance overview — how many BAS lodgements were late and over what period, (2) director penalty notices — use the DPN figures exactly as given below, and say where they come from, (3) debt composition — the principal, interest, penalty and ATO audit breakdown, and payments.
-- Never call anything a payment unless it is in "Payments received". Amendments that reduce a debt are reductions, not payments.
+- Cover three things in order: (1) compliance overview — how many BAS lodgements were late and over what period, (2) director penalty notices — use the figures exactly as given below and say where each comes from, (3) the ATO account — its lines and the ATO's balance, as given below.
+- Never call anything a payment unless its line says "Payments". Amendments and remissions are reductions, not payments.
 - Every dollar figure you write must be one of the figures below, or the difference between two of them.
 - Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
 - {bannedWordsInstruction}
 
-FIGURES TO SUMMARISE:
+FIGURES TO SUMMARISE (every one checked: the ATO account against the ATO's own running balance, the notices against their own arithmetic):
 - Statement period: {periodStart} to {periodEnd}
 - Total BAS lodgements filed late: {numberOfLateLodgements}
 - Cumulative days late across all lodgements: {cumulativeDaysLate}
 {dpnSection}
-- Principal debt (net of amendments): \${principalNet}
-- Interest / GIC (net of remissions): \${interestNet}
-- Penalties (net): \${penaltyNet}
-- ATO audit amendments (raised by the ATO): \${auditNet}
-- Payments received: {paymentsReceived}
+{accountSection}
 
 Respond with the summary text only. No preamble, no headers, no quotes.
 `.trim()

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { LODGEMENT_SUMMARY_PROMPT_TEMPLATE } from '../prompts'
-import type { DpnRiskBreakdown, DebtBreakdown } from '@/lib/analysis/types'
+import type { DpnRiskBreakdown } from '@/lib/analysis/types'
+import { computeLateLodgement } from '@/lib/analysis/computeLateLodgement'
+import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
+import { icaViewOf } from '@/lib/ica/view'
 
 /** The lodgement summary, with Claude mocked. Synthetic figures only. */
 
@@ -11,7 +14,7 @@ vi.mock('../openrouterClient', () => ({ askClaude: (...args: unknown[]) => askCl
 // Fresh modules: checkedSummary.ts, shared with the other summary tests, must bind to THIS file's mock
 // (in a single worker it would otherwise keep the first test file's).
 vi.resetModules()
-const { generateLodgementAiSummary, isClaudeSummary, lodgementSummaryPrompt, lodgementSummaryWithoutFigures } = await import('../lodgementSummary')
+const { canSummarise, generateLodgementAiSummary, isClaudeSummary, lodgementSummaryPrompt, lodgementSummaryWithoutFigures } = await import('../lodgementSummary')
 
 const MODEL = 'anthropic/claude-sonnet-5.5'
 const reply = (text: string) => ({ text, model: MODEL, generationId: 'gen-1' })
@@ -29,41 +32,22 @@ function makeDpnRisk(overrides: Partial<DpnRiskBreakdown> = {}): DpnRiskBreakdow
   }
 }
 
-function makeDebtBreakdown(overrides: Partial<DebtBreakdown> = {}): DebtBreakdown {
-  return {
-    principalDebits: 400000,
-    principalCredits: 20000,
-    principalNet: 380000,
-    interestDebits: 60000,
-    interestCredits: 5000,
-    interestNet: 55000,
-    penaltyDebits: 0,
-    penaltyCredits: 0,
-    penaltyNet: 0,
-    auditDebits: 0,
-    auditCredits: 0,
-    auditNet: 0,
-    paymentsReceived: 350000,
-    paymentsCount: 40,
-    firstPaymentDate: null,
-    lastPaymentDate: null,
-    governmentCredits: 0,
-    otherCredits: 30000,
-    totalAtoDebt: 435000,
-    refundsPaid: 0,
-    openingBalance: 0,
-    composedBalance: 55000,
-    atoBalance: null,
-    atoBalanceDate: null,
-    unexplainedDifference: null,
-    currentBalance: 55000,
-    ...overrides,
-  }
-}
+// A verified ATO account (synthetic rows): GST 380,000 lodged, interest 55,000, payments 350,000; balance 85,000.
+const ACCOUNT_CSV = [
+  '"Activity statement 001"',
+  '"TEST ENTITY"',
+  'Processed date,Effective date,Description,Debit (DR),Credit (CR),Balance',
+  '"05 Mar 2026","05 Mar 2026","\'Payment received","","$350,000.00","$85,000.00 DR"',
+  '"01 Feb 2026","01 Feb 2026","\'General interest charge calculated from 01 Jan 26 to 31 Jan 26","$55,000.00","","$435,000.00 DR"',
+  '"10 Jan 2026","28 Oct 2025","\'Original Activity Statement for the period ending 30 Sep 25","","","$380,000.00 DR"',
+  '"10 Jan 2026","28 Oct 2025","\'- GST","$380,000.00","","$380,000.00 DR"',
+  '"01 Jan 2026","01 Jan 2026","\'Payment received","","$0.00","$0.00"',
+].join('\r\n')
+const ACCOUNT = icaViewOf({ rows: computeLateLodgement(parseActivityStatementCsv(ACCOUNT_CSV)).rows, label: 'Activity statement 001', ica_status: 'verified' })
 
 const input = {
   dpnRisk: makeDpnRisk(),
-  debtBreakdown: makeDebtBreakdown(),
+  account: ACCOUNT,
   summary: { numberOfLateLodgements: 6, cumulativeDaysLate: 1320 },
 }
 
@@ -71,19 +55,7 @@ beforeEach(() => askClaude.mockReset())
 
 describe('LODGEMENT_SUMMARY_PROMPT_TEMPLATE', () => {
   it('contains all expected placeholders', () => {
-    for (const p of [
-      '{periodStart}',
-      '{periodEnd}',
-      '{numberOfLateLodgements}',
-      '{cumulativeDaysLate}',
-      '{dpnSection}',
-      '{principalNet}',
-      '{auditNet}',
-      '{bannedWordsInstruction}',
-      '{interestNet}',
-      '{penaltyNet}',
-      '{paymentsReceived}',
-    ]) {
+    for (const p of ['{periodStart}', '{periodEnd}', '{numberOfLateLodgements}', '{cumulativeDaysLate}', '{dpnSection}', '{accountSection}', '{bannedWordsInstruction}']) {
       expect(LODGEMENT_SUMMARY_PROMPT_TEMPLATE).toContain(p)
     }
   })
@@ -136,7 +108,7 @@ describe('generateLodgementAiSummary', () => {
   })
 })
 
-describe('DPN figures in the prompt', () => {
+describe('only proven figures, the ones the page shows', () => {
   const notices = {
     unpaid: 228_000,
     removable: 110_000,
@@ -151,26 +123,29 @@ describe('DPN figures in the prompt', () => {
     badges: ['Notice adds up', 'Matches the ATO account'],
   }
 
-  it("uses the notices' own figures when notices are on file, not the estimate", () => {
-    const prompt = lodgementSummaryPrompt({
-      ...input,
-      dpnRisk: makeDpnRisk({ totalGrossLate: 90_000, totalReducedByAmendments: 90_000, totalNetAtRisk: 0 }),
-      notices,
-    })
-    expect(prompt).toContain("source: the ATO's director penalty notices")
-    expect(prompt).toContain('Unpaid: $228,000')
-    expect(prompt).toContain('Stays with the director unless paid: $118,000')
-    expect(prompt).toContain('21 Oct 2026')
-    expect(prompt).not.toContain('Estimate from the ATO account')
-    expect(prompt).not.toContain('90,000')
+  it("gives the notices' Unpaid and the account's lodgements more than 90 days late since nil; never the removed figures", () => {
+    const prompt = lodgementSummaryPrompt({ ...input, notices })
+    expect(prompt).toContain("Unpaid on the ATO's director penalty notices")
+    expect(prompt).toContain('$228,000')
+    expect(prompt).toContain('Notice adds up, Matches the ATO account')
+    expect(prompt).toMatch(/Lodged more than 90 days late .*from the ATO account: \$8,150/)
+    expect(prompt).not.toMatch(/Stays with the director|Removed if|Estimated still owing|Reduced by later amendments|110,000|118,000/)
   })
 
-  it('labels the estimate as one, and never calls an amendment a payment', () => {
-    const prompt = lodgementSummaryPrompt({ ...input, debtBreakdown: makeDebtBreakdown({ paymentsReceived: 0, paymentsCount: 0 }) })
-    expect(prompt).toContain("Estimate from the ATO account (not the ATO's figures)")
-    expect(prompt).toContain('Reduced by later amendments for the same periods: $2,150')
-    expect(prompt).toContain('Payments received: none (no payments found in the ATO account)')
-    expect(prompt).not.toMatch(/paid since|reversed/i)
+  it("gives the ATO account's verified lines in its words, and the ATO's balance", () => {
+    const prompt = lodgementSummaryPrompt(input)
+    expect(prompt).toContain('- ATO account, GST lodged: $380,000')
+    expect(prompt).toContain('- ATO account, Payments: $350,000 (reduces the balance)')
+    expect(prompt).toContain("- The ATO's own balance at 5 Mar 2026: $85,000")
+    expect(prompt).not.toMatch(/unexplained/i)
+  })
+
+  it('is written only when the account is verified and every current notice proven', () => {
+    expect(canSummarise(ACCOUNT, notices)).toBe(true)
+    expect(canSummarise(ACCOUNT, null)).toBe(true)
+    expect(canSummarise(ACCOUNT, { ...notices, heldBack: true })).toBe(false)
+    expect(canSummarise({ ...ACCOUNT, verified: false }, notices)).toBe(false)
+    expect(canSummarise(null, notices)).toBe(false)
   })
 
   it('the summary without figures says where the DPN figures are', () => {
