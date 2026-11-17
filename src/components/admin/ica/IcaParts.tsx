@@ -69,7 +69,7 @@ export function RowsTable({ rows, max }: { rows: AsPrintedRow[]; max?: number })
   const shown = max ? rows.slice(0, max) : rows
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+      <table data-source-rows className="w-full text-xs">
         <thead>
           <tr className="border-b border-border text-left text-foreground/50">
             <th className="py-1.5 pr-3 font-medium">Processed date</th>

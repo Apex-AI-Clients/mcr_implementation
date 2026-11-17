@@ -11,18 +11,15 @@ import { formatDateRelative, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
   DpnRiskPanel,
-  ESTIMATE_LABEL,
   NOTICES_LABEL,
-  STAYS_LABEL,
   describeDaysLeft,
   formatDay,
   noticesSource,
-  removableLabel,
 } from '@/components/admin/lodgement/DpnRiskPanel'
 import { HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
-import { dpnEstimateWorkings } from '@/lib/analysis/dpnWorkings'
+import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 interface Props {
@@ -95,53 +92,61 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
   lines.push(csvRow(company))
   lines.push('')
 
-  // Director penalty notices: the notices' own figures, or the estimate.
-  if (notices) {
-    lines.push(csvRow('DIRECTOR PENALTY NOTICES'))
-    lines.push(csvRow('Source', NOTICES_LABEL))
-    lines.push(csvRow('Unpaid', formatCurrencyExport(notices.unpaid)))
-    lines.push(csvRow(removableLabel(notices.deadline), formatCurrencyExport(notices.removable)))
-    lines.push(csvRow(STAYS_LABEL, formatCurrencyExport(notices.staysWithDirector)))
-    lines.push(csvRow('Deadline', formatDay(notices.deadline), describeDaysLeft(notices.daysLeft, notices.deadline)))
-    lines.push(csvRow('Type', 'Unpaid', 'Removed if acted on by the deadline', STAYS_LABEL, 'Deadline'))
-    for (const t of notices.byType) {
-      lines.push(
-        csvRow(
-          t.label,
-          formatCurrencyExport(t.unpaid),
-          formatCurrencyExport(t.removable),
-          formatCurrencyExport(t.staysWithDirector),
-          formatDay(t.deadline),
-        ),
-      )
-    }
-    lines.push('')
-  }
-  if (analysis.dpnRisk) {
-    const dpn = analysis.dpnRisk
-    lines.push(csvRow(notices ? 'ESTIMATE FROM THE ATO ACCOUNT (secondary)' : 'DIRECTOR PENALTY NOTICES'))
-    if (!notices) lines.push(csvRow('Source', ESTIMATE_LABEL))
-    if (dpn.window) {
-      lines.push(csvRow('Window starts (balance last nil or in credit)', dpn.window.start ? formatIsoExport(dpn.window.start) : 'Never nil in this export'))
-      lines.push(csvRow('Balance last $1,000 or less (for information)', dpn.window.startUnder1000 ? formatIsoExport(dpn.window.startUnder1000) : '—'))
-    }
-    lines.push(csvRow(dpn.window ? 'Debt lodged >90 days late in the window' : 'Gross debt lodged >90 days late', formatCurrencyExport(dpn.totalGrossLate)))
-    lines.push(csvRow('Reduced by later amendments (same period only)', formatCurrencyExport(dpn.totalReducedByAmendments)))
-    if (dpn.window) {
-      lines.push(csvRow('Payments in the window', formatCurrencyExport(dpn.window.payments)))
-      lines.push(csvRow('Late-lodged debt paid (payments to oldest debts first)', formatCurrencyExport(dpn.totalPaidByPayments ?? 0)))
-    }
-    lines.push(csvRow('Estimated still owing', formatCurrencyExport(dpn.totalNetAtRisk)))
-    for (const line of dpnEstimateWorkings(dpn) ?? []) lines.push(csvRow('Workings', line))
+  // Director penalty notices (Gabby, 16 Nov 2026), as on the page: the notices' Unpaid and the account's
+  // late lodgements since the balance was last nil (verified accounts only), the late list, each notice.
+  lines.push(csvRow('DIRECTOR PENALTY NOTICES'))
+  lines.push(csvRow(NOTICES_LABEL, 'Unpaid', notices ? formatCurrencyExport(notices.unpaid) : 'No director penalty notice uploaded'))
+  const verifiedAccount = !!analysis.verification?.verified
+  if (analysis.dpnRisk && verifiedAccount) {
+    const since = lateSinceNil(analysis.dpnRisk)
     lines.push(
       csvRow(
-        'Period covered',
-        dpn.periodStart && dpn.periodEnd
-          ? `${formatIsoExport(dpn.periodStart)} to ${formatIsoExport(dpn.periodEnd)}`
-          : '—',
+        'From the ATO account',
+        'Lodged more than 90 days late since the balance was last nil',
+        formatCurrencyExport(since.total),
+        since.since ? `Since ${formatIsoExport(since.since)}` : 'Whole export (the balance was never nil)',
+        `GST ${formatCurrencyExport(since.gst)}`,
+        `PAYG withholding ${formatCurrencyExport(since.paygw)}`,
+        since.other ? `Other ${formatCurrencyExport(since.other)}` : '',
       ),
     )
     lines.push('')
+    lines.push(csvRow('LODGED MORE THAN 90 DAYS LATE (since the balance was last nil)'))
+    lines.push(csvRow('Period ending', 'Lodged (processed)', 'Due (effective)', 'Days late', 'GST', 'PAYG withholding', 'Other', 'Total', 'Description as printed'))
+    for (const r of lateStatements(analysis.dpnRisk.contributingDebits)) {
+      lines.push(
+        csvRow(
+          formatIsoExport(r.periodEnding),
+          formatIsoExport(r.lodged),
+          formatIsoExport(r.due),
+          r.daysLate,
+          formatCurrencyExport(r.gst),
+          formatCurrencyExport(r.paygw),
+          formatCurrencyExport(r.other),
+          formatCurrencyExport(r.total),
+          `'${r.description}`,
+        ),
+      )
+    }
+  }
+  lines.push('')
+  if (notices?.items.length) {
+    lines.push(csvRow(NOTICES_LABEL.toUpperCase()))
+    for (const n of notices.items) {
+      lines.push(
+        csvRow(
+          `${n.label} notice`,
+          `Issued ${formatDay(n.issuedOn)}`,
+          n.daysLeft < 0 ? `Deadline passed ${formatDay(n.deadline)}` : `Deadline ${formatDay(n.deadline)}, ${describeDaysLeft(n.daysLeft, n.deadline)}`,
+        ),
+      )
+      lines.push(csvRow('Period from', 'Period to', `Column 2: ${n.headings.column2}`, `Column 3: ${n.headings.column3}`, `Column 4: ${n.headings.column4}`, `Column 5: ${n.headings.column5}`))
+      for (const r of n.rows) {
+        lines.push(csvRow(formatIsoExport(r.periodFrom), formatIsoExport(r.periodTo), formatCurrencyExport(r.column2), formatCurrencyExport(r.column3), formatCurrencyExport(r.column4), formatCurrencyExport(r.column5)))
+      }
+      lines.push(csvRow('Total', '', formatCurrencyExport(n.totals.column2), formatCurrencyExport(n.totals.column3), formatCurrencyExport(n.totals.column4), formatCurrencyExport(n.totals.column5)))
+      lines.push('')
+    }
   }
 
   // The badge, and the debt composition as the ATO's own balance proved it (src/lib/ica): each line
@@ -465,11 +470,10 @@ function SummaryPanel({
       <div className="rounded-md border border-border bg-primary/30 px-4 py-3 space-y-1">
         <p className="text-xs font-semibold text-foreground/80">Debt Composition</p>
         <p className="text-xs text-foreground/45 leading-relaxed">
-          Splits the ATO ledger into tax lodged (Original + Client-Amended amounts), interest (General
-          Interest Charge and remissions), penalties and ATO audit amendments, then payments and
-          credits. Open any line to see the ATO rows behind it. Sub-lines, allocation and summary
-          rows are not counted twice; &quot;Other adjustments / unexplained difference&quot; lists every
-          row no line counts.
+          The ATO account line by line, in the ATO&apos;s own words: tax lodged (GST, PAYG withholding and
+          each other tax), interest and penalties less remissions, then payments, credits and refunds.
+          Every row is read the way the ATO&apos;s own running balance proves, so the lines add up to the
+          ATO&apos;s balance exactly. Open any line to see its rows as printed.
         </p>
       </div>
 
@@ -486,79 +490,34 @@ function SummaryPanel({
             <p className="text-sm text-foreground/85 leading-snug">
               {numberOfLateLodgements} {numberOfLateLodgements === 1 ? 'lodgement was' : 'lodgements were'} filed late,
               totalling {cumulativeDaysLate} days of delay.
-              {notices ? (
+              {notices && (
                 <>
                   {' '}The ATO&apos;s director penalty notices show{' '}
-                  <SourcedAmount value={notices.unpaid} format={money} source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, dpnPage)} /> unpaid:{' '}
-                  <SourcedAmount value={notices.removable} format={money} source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, dpnPage)} /> is
-                  removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by{' '}
-                  {formatDay(notices.deadline)}, and{' '}
-                  <span className={notices.staysWithDirector > 0 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                    <SourcedAmount value={notices.staysWithDirector} format={money} source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, dpnPage)} /> stays with
-                    the director unless paid
-                  </span>
-                  .
+                  <SourcedAmount value={notices.unpaid} format={money} source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, dpnPage)} /> unpaid.
                 </>
-              ) : (
-                dpn &&
-                dpn.totalGrossLate > 0 && (
+              )}
+              {!notices && ' No director penalty notice is uploaded.'}
+              {dpn && analysis.verification?.verified && (() => {
+                const since = lateSinceNil(dpn)
+                return (
                   <>
-                    {' '}No director penalty notice is uploaded. Estimated from the ATO account
-                    {dpn.window ? (dpn.window.start ? ` (since the balance was last nil, ${formatDay(dpn.window.start)})` : ' (the balance was never nil in this export)') : ''}:{' '}
+                    {' '}The ATO account shows{' '}
                     <SourcedAmount
-                      value={dpn.totalGrossLate}
+                      value={since.total}
                       format={money}
                       source={{
-                        from: ['Gross debt lodged more than 90 days late (an estimate)', `${dpn.contributingDebits.length} activity statement rows lodged more than 90 days past their due date, in the ATO account CSV.`],
-                        link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' },
+                        from: [
+                          'Lodged more than 90 days late since the balance was last nil',
+                          `${since.statements} activity statements; GST and PAYG withholding each counted on its own.`,
+                        ],
+                        calculation: `GST $${fmt(since.gst)} + PAYG withholding $${fmt(since.paygw)}${since.other ? ` + other $${fmt(since.other)}` : ''} = $${fmt(since.total)}`,
+                        link: { kind: 'href', href: '#late-statements', label: 'Show the statements' },
                       }}
                     />{' '}
-                    was lodged more than 90 days past due
-                    {dpn.window && (
-                      <>
-                        {' '}and{' '}
-                        <SourcedAmount
-                          value={dpn.window.payments}
-                          format={money}
-                          source={{ from: ['Payments since then', `${dpn.window.paymentsCount} payments in the ATO account CSV (allocation rows not counted twice).`], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
-                        />{' '}
-                        was paid since. If the ATO applied payments to the oldest debts first, an estimated{' '}
-                        <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : dpn.totalNetAtRisk > 0 ? 'text-warning font-semibold' : 'text-success font-semibold'}>
-                          <SourcedAmount
-                            value={dpn.totalNetAtRisk}
-                            format={money}
-                            source={{
-                              from: ['Estimated still owing on the late lodgements'],
-                              calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} amended − $${fmt(dpn.totalPaidByPayments ?? 0)} paid = $${fmt(dpn.totalNetAtRisk)}`,
-                              rule: dpnEstimateWorkings(dpn)?.join(' ') ?? null,
-                            }}
-                          />
-                        </span>{' '}
-                        is still owing on those lodgements.
-                      </>
-                    )}
-                    {!dpn.window && (
-                      <>
-                        , reduced by{' '}
-                        <SourcedAmount
-                          value={dpn.totalReducedByAmendments}
-                          format={money}
-                          source={{ from: ['Reduced by later amendments', 'Credits from amended activity statements for the same periods, in the ATO account CSV.'], link: { kind: 'href', href: '#debt-composition', label: 'Show the ATO rows' } }}
-                        />{' '}
-                        of later amendments for the same periods — leaving an estimated{' '}
-                        <span className={dpn.totalNetAtRisk > 10000 ? 'text-destructive font-semibold' : 'text-warning font-semibold'}>
-                          <SourcedAmount
-                            value={dpn.totalNetAtRisk}
-                            format={money}
-                            source={{ from: ['Estimated still owing on the late lodgements'], calculation: `$${fmt(dpn.totalGrossLate)} − $${fmt(dpn.totalReducedByAmendments)} = $${fmt(dpn.totalNetAtRisk)}` }}
-                          />
-                        </span>{' '}
-                        still owing on those lodgements.
-                      </>
-                    )}
+                    lodged more than 90 days late {since.since ? `since the balance was last nil (${formatDay(since.since)})` : '(the balance was never nil in this export)'}.
                   </>
                 )
-              )}
+              })()}
             </p>
           </div>
         )
@@ -850,6 +809,7 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
                 notices={dpnNotices}
                 clientId={clientId}
                 basePath={basePath}
+                fileName={fileBase}
               />
             </div>
           )}

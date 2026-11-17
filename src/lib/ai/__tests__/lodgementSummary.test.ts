@@ -146,6 +146,7 @@ describe('DPN figures in the prompt', () => {
     issuedOn: '2026-09-30',
     byType: [],
     notices: 2,
+    items: [],
   }
 
   it("uses the notices' own figures when notices are on file, not the estimate", () => {

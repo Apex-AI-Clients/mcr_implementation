@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DpnRiskPanel, ESTIMATE_LABEL, NOTICES_LABEL } from '../DpnRiskPanel'
+import { DpnRiskPanel, NOTICES_LABEL } from '../DpnRiskPanel'
 import { DebtCompositionPanel, ROWS_SHOWN } from '../DebtCompositionPanel'
 import { buildExportCsv } from '@/components/admin/LodgementAnalysisCard'
 import { computeDebtBreakdown } from '@/lib/analysis/computeLateLodgement'
@@ -50,63 +50,117 @@ const NOTICES: DpnNoticeFigures = {
     { type: 'gst', label: 'GST', unpaid: 22_300, removable: 1_100, staysWithDirector: 21_200, deadline: '2026-10-21' },
   ],
   notices: 2,
+  items: [],
 }
 
 const ESTIMATE: DpnRiskBreakdown = {
   thresholdDays: 90,
+  // One statement lodged 185 days late, by tax line (GST and PAYG withholding each on its own).
   contributingDebits: [
     {
       rowIndex: 1,
       processedDate: '2025-06-01T00:00:00.000Z',
       effectiveDate: '2024-11-28T00:00:00.000Z',
       periodEnding: '2024-09-30T00:00:00.000Z',
-      description: 'Original Activity Statement for the period ending 30 Sep 24',
+      description: 'Original Activity Statement for the period ending 30 Sep 24 — GST',
+      taxLine: 'GST',
       daysLate: 185,
-      debit: 8_000,
-      reducedByAmendments: 3_000,
+      debit: 5_000,
+      reducedByAmendments: 0,
       netAtRisk: 5_000,
+    },
+    {
+      rowIndex: 2,
+      processedDate: '2025-06-01T00:00:00.000Z',
+      effectiveDate: '2024-11-28T00:00:00.000Z',
+      periodEnding: '2024-09-30T00:00:00.000Z',
+      description: 'Original Activity Statement for the period ending 30 Sep 24 — PAYG Withholding',
+      taxLine: 'PAYG Withholding',
+      daysLate: 185,
+      debit: 3_000,
+      reducedByAmendments: 0,
+      netAtRisk: 3_000,
     },
   ],
   totalGrossLate: 8_000,
-  totalReducedByAmendments: 3_000,
-  totalNetAtRisk: 5_000,
+  totalReducedByAmendments: 0,
+  totalNetAtRisk: 8_000,
+  window: {
+    start: '2024-03-15',
+    startBalance: 0,
+    startUnder1000: '2024-03-15',
+    startingCredit: 0,
+    openingDebt: 0,
+    payments: 0,
+    paymentsCount: 0,
+    otherTaxDebts: 0,
+    otherTaxDebtsPaid: 0,
+    grossLateAllHistory: 9_500,
+  },
   periodStart: '2024-07-01T00:00:00.000Z',
   periodEnd: '2026-03-01T00:00:00.000Z',
 }
 
-describe('DPN panel', () => {
-  it('shows a passed deadline as passed, on its date', () => {
-    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, deadline: '2026-10-22', daysLeft: -25 }} clientId="client-1" />)
-    expect(screen.getByTestId('dpn-deadline').textContent).toMatch(/21-day deadline passed on 22 Oct 2026/)
-    expect(screen.getByTestId('dpn-deadline').textContent).not.toMatch(/days left|ago/)
-  })
+const NOTICE_ITEM: DpnNoticeFigures['items'][number] = {
+  documentId: 'doc-paygw',
+  filename: 'notice.pdf',
+  type: 'paygw',
+  label: 'PAYG withholding',
+  reference: 'REF',
+  issuedOn: '2026-09-30',
+  deadline: '2026-10-21',
+  daysLeft: 3,
+  headings: { column2: 'Amount withheld', column3: 'Unpaid', column4: 'Removed by 21 Oct 2026', column5: 'Stays with the director unless paid' },
+  rows: [{ periodFrom: '2024-07-01', periodTo: '2024-09-30', column2: 30_000, column3: 30_000, column4: 29_000, column5: 1_000 }],
+  totals: { column2: 30_000, column3: 30_000, column4: 29_000, column5: 1_000 },
+}
 
-  it("shows the notices' figures when notices are on file, with the estimate closed below", async () => {
-    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={NOTICES} clientId="client-1" />)
-    expect(screen.getByTestId('dpn-source').textContent).toBe(NOTICES_LABEL)
-    expect(screen.getByText('$52,300')).toBeTruthy()
-    expect(screen.getByText(/Removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by 21 Oct 2026/)).toBeTruthy()
-    expect(screen.getAllByText('Stays with the director unless paid').length).toBeGreaterThan(0)
-    expect(screen.getByTestId('dpn-deadline').textContent).toMatch(/Deadline 21 Oct 2026 · 3 days left/)
-    expect(screen.getByText('PAYG withholding')).toBeTruthy()
+describe('DPN panel (Gabby, 16 Nov 2026)', () => {
+  it('shows the two cards side by side, each saying where it comes from', () => {
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, items: [NOTICE_ITEM] }} clientId="client-1" />)
+    const section = screen.getByTestId('director-penalty-section')
+    expect(section.textContent).toContain(NOTICES_LABEL)
+    expect(section.textContent).toContain('$52,300.00')
+    expect(section.textContent).toContain('From the ATO account')
+    expect(section.textContent).toContain('Lodged more than 90 days late since the balance was last nil')
+    expect(section.textContent).toContain('$8,000.00')
+    expect(section.textContent).toMatch(/Since 15 Mar 2024 · GST \$5,000\.00 · PAYG withholding \$3,000\.00/)
     expect(screen.getByRole('link', { name: /DPN Summary/ }).getAttribute('href')).toBe('/clients/client-1/director-penalty-notices')
-    // The estimate is secondary and closed.
-    expect(screen.queryByText('Reduced by later amendments')).toBeNull()
-    const disclosure = screen.getByRole('button', { name: /Estimate from the ATO account/ })
-    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
-    await userEvent.click(disclosure)
-    expect(screen.getByText('Reduced by later amendments')).toBeTruthy()
   })
 
-  it('labels the estimate as one, and never calls an amendment paid', async () => {
-    const { container } = render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={null} />)
-    expect(screen.getByTestId('dpn-source').textContent).toBe(ESTIMATE_LABEL)
-    expect(screen.getByText('Reduced by later amendments')).toBeTruthy()
-    expect(screen.getByText('Estimated still owing')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: /contributing rows/ }))
-    expect(screen.getByRole('columnheader', { name: 'Reduced by later amendments' })).toBeTruthy()
-    // No payment rows: the word "paid" appears nowhere.
-    expect(container.textContent).not.toMatch(/\bpaid\b/i)
+  it('says so when no notice is uploaded', () => {
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={null} />)
+    expect(screen.getAllByText(/No director penalty notice uploaded/).length).toBeGreaterThan(0)
+  })
+
+  it('no longer shows the removed cards or the estimate panel', () => {
+    const { container } = render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, items: [NOTICE_ITEM] }} />)
+    expect(container.textContent).not.toMatch(/Reduced by later amendments|Estimated still owing|Paid, oldest debts first|Estimate from the ATO account|Removed if an SBR practitioner/)
+    // "Stays with the director unless paid" survives only as the notice's own Column 5 heading.
+    expect(container.querySelector('.grid')?.textContent).not.toMatch(/Stays with the director/)
+  })
+
+  it('lists the late statements one row per statement, GST and PAYG apart, with Copy and Excel', async () => {
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={null} />)
+    await userEvent.click(screen.getByRole('button', { name: /Show the 1 statement lodged more than 90 days late/ }))
+    const cells = within(screen.getAllByRole('table')[0]).getAllByRole('row')[1].textContent
+    expect(cells).toContain('$5,000.00')
+    expect(cells).toContain('$3,000.00')
+    expect(cells).toContain('$8,000.00')
+    expect(cells).toContain('185')
+    expect(screen.getByRole('button', { name: /^Copy all:/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Download these rows \(Excel\)/ })).toBeTruthy()
+  })
+
+  it('lists each notice with its rows as printed, and a passed deadline as passed', async () => {
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, items: [{ ...NOTICE_ITEM, deadline: '2026-10-22', daysLeft: -25 }] }} />)
+    const list = screen.getByTestId('dpn-notices-list')
+    expect(list.textContent).toContain('PAYG withholding notice')
+    expect(list.textContent).toContain('Deadline passed 22 Oct 2026')
+    expect(list.textContent).not.toMatch(/days left/)
+    await userEvent.click(within(list).getByRole('button', { name: /Show the notice's rows/ }))
+    expect(list.textContent).toContain('Column 5')
+    expect(list.textContent).toContain('$29,000.00')
   })
 })
 
@@ -191,9 +245,10 @@ describe('CSV export', () => {
     expect(csv).toContain('ATO ROWS BY LINE')
     expect(csv).toContain('GST lodged,"$10,000.00"')
     expect(csv).not.toMatch(/unexplained/i)
-    expect(csv).toContain(ESTIMATE_LABEL)
-    expect(csv).toContain('Reduced by later amendments (same period only)')
-    expect(csv).not.toMatch(/Paid since/i)
+    // The director penalty section as on the page.
+    expect(csv).toContain('Lodged more than 90 days late since the balance was last nil,"$8,000.00",Since')
+    expect(csv).toContain('LODGED MORE THAN 90 DAYS LATE')
+    expect(csv).not.toMatch(/Reduced by later amendments|Estimated still owing|Paid since/i)
   })
 
   it('exports no composition for a file not verified against the ATO balance', () => {
@@ -202,10 +257,15 @@ describe('CSV export', () => {
     expect(csv).not.toMatch(/unexplained/i)
   })
 
-  it("leads with the notices' figures when notices are on file", () => {
-    const csv = buildExportCsv(payload(), NOTICES)
-    expect(csv.indexOf(NOTICES_LABEL)).toBeGreaterThan(-1)
-    expect(csv.indexOf(NOTICES_LABEL)).toBeLessThan(csv.indexOf('ESTIMATE FROM THE ATO ACCOUNT (secondary)'))
-    expect(csv).toContain('Unpaid,"$52,300.00"')
+  it("gives the notices' Unpaid, and each notice with its rows as printed", () => {
+    const csv = buildExportCsv(payload(), { ...NOTICES, items: [NOTICE_ITEM] })
+    expect(csv).toContain(`${NOTICES_LABEL},Unpaid,"$52,300.00"`)
+    expect(csv).toContain('PAYG withholding notice')
+    expect(csv).toContain('Column 5: Stays with the director unless paid')
+    expect(csv).toContain('"$29,000.00"')
+  })
+
+  it('says when no notice is uploaded', () => {
+    expect(buildExportCsv(payload())).toContain(`${NOTICES_LABEL},Unpaid,No director penalty notice uploaded`)
   })
 })

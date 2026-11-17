@@ -1,4 +1,4 @@
-import type { DpnSummary } from './summary'
+import { columnLabels, type DpnSummary } from './summary'
 import { DPN_TYPE_LABEL, type DpnType } from './types'
 
 /**
@@ -24,6 +24,23 @@ export interface DpnNoticeFigures {
   issuedOn: string
   byType: { type: DpnType; label: string; unpaid: number; removable: number; staysWithDirector: number; deadline: string }[]
   notices: number
+  /** Each current notice, with its rows as printed (Columns 2–5, in dollars), newest first. */
+  items: DpnNoticeItem[]
+}
+
+export interface DpnNoticeItem {
+  documentId: string
+  filename: string
+  type: DpnType
+  label: string
+  reference: string | null
+  issuedOn: string
+  deadline: string
+  daysLeft: number
+  /** The notice's column headings (summary.ts columnLabels). */
+  headings: Record<'column2' | 'column3' | 'column4' | 'column5', string>
+  rows: { periodFrom: string; periodTo: string; column2: number; column3: number; column4: number; column5: number }[]
+  totals: { column2: number; column3: number; column4: number; column5: number }
 }
 
 const dollars = (cents: number) => Math.round(cents) / 100
@@ -49,5 +66,25 @@ export function dpnNoticeFigures(summary: DpnSummary): DpnNoticeFigures | null {
       deadline: t.earliestDeadline,
     })),
     notices: current.length,
+    items: current.map((n) => ({
+      documentId: n.documentId,
+      filename: n.filename,
+      type: n.type,
+      label: DPN_TYPE_LABEL[n.type],
+      reference: n.reference,
+      issuedOn: n.issuedOn,
+      deadline: n.deadline,
+      daysLeft: n.daysLeft,
+      headings: columnLabels(n.type, n.deadline),
+      rows: n.rows.map((r) => ({
+        periodFrom: r.periodFrom,
+        periodTo: r.periodTo,
+        column2: dollars(r.column2),
+        column3: dollars(r.column3),
+        column4: dollars(r.column4),
+        column5: dollars(r.column5),
+      })),
+      totals: { column2: dollars(n.totals.column2), column3: dollars(n.totals.column3), column4: dollars(n.totals.column4), column5: dollars(n.totals.column5) },
+    })),
   }
 }

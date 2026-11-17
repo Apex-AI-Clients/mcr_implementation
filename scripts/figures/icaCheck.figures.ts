@@ -2,6 +2,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { expect, it } from 'vitest'
 import { analyseIca, readIcaFile, readStoredRows } from '@/lib/ica'
+import { atoAccountText } from '@/lib/ica/upload'
+import { computeLateLodgement } from '@/lib/analysis/computeLateLodgement'
+import { parseActivityStatementCsv } from '@/lib/analysis/parseActivityStatement'
+import { lateSinceNil } from '@/lib/analysis/lateList'
 
 /**
  * The ICA engine (src/lib/ica) against its answer keys, all gitignored:
@@ -28,12 +32,14 @@ interface Key {
     cumulativeDaysLate?: number
     lines?: Record<string, { net: number; rows: number }>
     over90?: { statements: number; debit: number; byLine: Record<string, number> }
+    /** The DPN card: lodged more than 90 days late since the balance was last nil (computeDpnRisk). */
+    dpnSinceNil?: { since: string | null; total: number; gst: number; paygw: number }
   }
 }
 
 const cents = (d: number) => Math.round(d * 100)
 
-it.skipIf(!existsSync(KEYS))('ICA engine: every answer-key file verifies and gives its expected figures', () => {
+it.skipIf(!existsSync(KEYS))('ICA engine: every answer-key file verifies and gives its expected figures', async () => {
   const keys = JSON.parse(readFileSync(KEYS, 'utf8')).files as Key[]
   const problems: string[] = []
   const table: string[] = []
@@ -70,6 +76,14 @@ it.skipIf(!existsSync(KEYS))('ICA engine: every answer-key file verifies and giv
       for (const [key, want] of Object.entries(e.over90.byLine)) {
         diff(`>90 ${key}`, over.flatMap((s) => s.amounts).filter((x) => x.key === key).reduce((s, x) => s + x.debit, 0), cents(want))
       }
+    }
+    if (e.dpnSinceNil) {
+      const text = await atoAccountText(new Uint8Array(readFileSync(at)))
+      const card = lateSinceNil(computeLateLodgement(parseActivityStatementCsv(text!)).dpnRisk)
+      diff('since-nil date', card.since, e.dpnSinceNil.since)
+      diff('since-nil total', Math.round(card.total * 100), cents(e.dpnSinceNil.total))
+      diff('since-nil GST', Math.round(card.gst * 100), cents(e.dpnSinceNil.gst))
+      diff('since-nil PAYG', Math.round(card.paygw * 100), cents(e.dpnSinceNil.paygw))
     }
     if (a.spreadsheetCheck && !a.spreadsheetCheck.matches) problems.push(`${k.alias}: differs from its RBA ICA spreadsheet`)
     const by = (m: string) => r.matched.filter((w) => w.method === m).length
