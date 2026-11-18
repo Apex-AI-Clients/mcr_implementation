@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { measureBlocks, paginate } from '@/lib/pdfExport/paginate'
 
 // Shared "Export PDF" button. Rasterises a page region (identified by element
 // id) to a multi-page A4 PDF using html2canvas-pro + jsPDF, downloaded directly
@@ -88,21 +89,12 @@ export function ExportPdfButton({ targetId, fileName, lockedReason = null }: Pro
       )
 
       // 2. Capture the WHOLE region in a single html2canvas pass (one render →
-      // deterministic, matches the on-screen layout). Record each visible
-      // top-level section's vertical bounds so we can paginate at boundaries.
+      // deterministic, matches the on-screen layout).
       const scale = 2
-      const bounds: Array<{ top: number; bottom: number }> = []
-      for (const child of Array.from(clone.children)) {
-        const el = child as HTMLElement
-        if (el.offsetHeight === 0 || getComputedStyle(el).display === 'none') continue
-        bounds.push({ top: el.offsetTop, bottom: el.offsetTop + el.offsetHeight })
-      }
-
       const canvas = await html2canvas(clone, { scale, useCORS: true, backgroundColor: bgColor })
 
-      // 3. Paginate. Group whole sections onto each background-filled, padded
-      // page; only a section taller than one page is sliced internally, so
-      // cards are never cut mid-content.
+      // 3. Paginate onto background-filled, padded pages: whole blocks per page;
+      // only a block taller than one page is sliced.
       const pdf = new jsPDF({ unit: 'pt', format: 'a4' })
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
@@ -135,29 +127,14 @@ export function ExportPdfButton({ targetId, fileName, lockedReason = null }: Pro
         pdf.addImage(tmp.toDataURL('image/png'), 'PNG', pad, pad, usableW, h / pxPerPt)
       }
 
-      const secs = bounds.map((b) => ({ top: b.top * scale, bottom: b.bottom * scale }))
-      let i = 0
+      // Where to cut (lib/pdfExport/paginate.ts): at the region's blocks, looking inside any
+      // section taller than a page, so a page is never left nearly empty before a long card.
+      const pageCss = usableHpx / scale
+      const blocks = measureBlocks(clone, clone.getBoundingClientRect().top, pageCss)
       let firstPage = true
-      while (i < secs.length) {
-        const pageTop = secs[i].top
-        let j = i
-        while (j < secs.length && secs[j].bottom - pageTop <= usableHpx) j++
-
-        if (j === i) {
-          // This section alone is taller than a page — slice it across pages.
-          let sy = secs[i].top
-          while (sy < secs[i].bottom) {
-            const h = Math.min(usableHpx, secs[i].bottom - sy)
-            addSlice(sy, sy + h, !firstPage)
-            firstPage = false
-            sy += h
-          }
-          i++
-        } else {
-          addSlice(pageTop, secs[j - 1].bottom, !firstPage)
-          firstPage = false
-          i = j
-        }
+      for (const page of paginate(blocks, pageCss)) {
+        addSlice(page.top * scale, Math.min(page.bottom * scale, canvas.height), !firstPage)
+        firstPage = false
       }
 
       if (firstPage) fillPage() // nothing captured — leave a single filled page

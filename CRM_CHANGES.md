@@ -1051,3 +1051,18 @@ Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before depl
   `figures:check`) reads each banked file again with the current code and fails on any changed figure. After applying
   0060, run `PROOF_BANK_JOIN=yes npm run proof:check` once. Dry run on 18 Nov 2026: 4 notices and 26 statement files
   (26 years) from 7 clients would join; all 30 read again unchanged.
+
+### Stage 3 — the lodgement pages (18 Nov 2026)
+
+- **Income tax and super guarantee summaries on the ICA engine** (`src/lib/analysis/atoAccount/verifiedSummary.ts`): each
+  assessment, each quarter's SG charge, interest, Part 7 penalties and payments come only from the rows the ATO's own
+  balance proved. Shown for every verified file (before, only when the earlier engine reached the same balance), on the
+  page, in the CSV and in the AI summary. `figures:check` checks both real accounts against their answer keys on the
+  new engine: all figures match.
+- **Copy and search on every line**: each composition line copies what to search the ATO spreadsheet for (without
+  opening it); each late lodgement, payment and assessment row copies its description and amount; each SG quarter copies
+  its period as the ATO words it.
+- **Excel download** on the lodgement and ATO account pages: the analysis and the rows as printed, one sheet each.
+- **PDF export: no near-blank first page.** The export cut pages only at a page's top-level sections, so a short title
+  followed by a long card left page one nearly empty. It now cuts inside any section taller than a page (`src/lib/pdfExport/paginate.ts`),
+  on every page with Export PDF.
