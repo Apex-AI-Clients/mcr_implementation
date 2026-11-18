@@ -16,8 +16,8 @@ interface WorkspaceTopBarProps {
 }
 
 /**
- * Slim header for the routes that have no sidebar: Home (the dashboard) and
- * any single-page workspace. It carries the same controls the sidebar footer
+ * Slim header for the routes that have no sidebar: any single-page
+ * workspace. It carries the same controls the sidebar footer
  * does — theme, who you are, sign out — so dropping the sidebar doesn't drop
  * them with it.
  */
@@ -34,7 +34,7 @@ export function WorkspaceTopBar({ userEmail, signOut }: WorkspaceTopBarProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4">
       <div className="flex min-w-0 items-center gap-3">
-        <Link href="/" className="flex items-center gap-2.5" aria-label="Home">
+        <Link href="/clients" className="flex items-center gap-2.5" aria-label="Clients">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
             <span className="text-sm font-bold text-white">M</span>
           </div>

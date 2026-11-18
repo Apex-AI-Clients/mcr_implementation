@@ -57,7 +57,7 @@ export const WORKSPACES: Workspace[] = [
     name: 'SBR',
     fullName: 'Small Business Restructuring',
     description: 'Client files, documents and restructuring analysis',
-    // Opens on the client list: the SBR figures are on the home dashboard (14 Nov 2026).
+    // Opens on the client list (the home dashboard was removed, 18 Nov 2026).
     href: '/clients',
     icon: Briefcase,
     nav: [
