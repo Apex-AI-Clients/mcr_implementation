@@ -65,6 +65,26 @@ export async function downloadRowsXlsx(rows: AsPrintedRow[], fileName: string) {
   XLSX.writeFile(book, fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`)
 }
 
+/**
+ * A page's Excel download: its analysis (the same content as its CSV export, one sheet) and the
+ * account's rows exactly as printed (another). SheetJS is loaded only when asked.
+ */
+export async function downloadAnalysisXlsx(csv: string, rows: AsPrintedRow[], fileName: string) {
+  const XLSX = await import('xlsx')
+  const book = XLSX.utils.book_new()
+  const parsed = XLSX.read(csv, { type: 'string', raw: true })
+  XLSX.utils.book_append_sheet(book, parsed.Sheets[parsed.SheetNames[0]], 'Analysis')
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.aoa_to_sheet([
+      ['Processed date', 'Effective date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance'],
+      ...rows.map((r) => [r.processed, r.effective, r.description, r.debit, r.credit, r.balance]),
+    ]),
+    'Rows as printed',
+  )
+  XLSX.writeFile(book, fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`)
+}
+
 export function RowsTable({ rows, max }: { rows: AsPrintedRow[]; max?: number }) {
   const shown = max ? rows.slice(0, max) : rows
   return (

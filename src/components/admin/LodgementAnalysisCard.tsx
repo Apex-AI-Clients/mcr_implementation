@@ -16,7 +16,7 @@ import {
   formatDay,
   noticesSource,
 } from '@/components/admin/lodgement/DpnRiskPanel'
-import { CopyButton, HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
+import { CopyButton, downloadAnalysisXlsx, HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
@@ -729,6 +729,14 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
             <Button variant="ghost" size="sm" onClick={handleExport}>
               <Download className="h-3.5 w-3.5" />
               Export
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => verification && void downloadAnalysisXlsx(buildExportCsv(analysis, dpnNotices), verification.asPrinted, `${fileBase} — Lodgement analysis`)}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Excel
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowSummary((v) => !v)}>
               <Info className="h-3.5 w-3.5" />

@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { drCr } from '@/components/admin/AtoAccountsPanel'
 import { AccountCompositionPanel } from './AccountCompositionPanel'
-import { CopyButton, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
+import { CopyButton, downloadAnalysisXlsx, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import { AiSummaryCallout } from '@/components/admin/lodgement/AiSummaryCallout'
 import { atoAccountCsv, exportLock, type AtoAccountPayload } from '@/lib/analysis/atoAccount/exportCsv'
 import { unpaidPhrase, type IncomeTaxSummary } from '@/lib/analysis/atoAccount/incomeTax'
@@ -395,6 +395,12 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
             <Download className="h-3.5 w-3.5" />
             Export CSV
           </Button>
+          {verified && verification && (
+            <Button variant="ghost" size="sm" onClick={() => void downloadAnalysisXlsx(atoAccountCsv(payload, clientName), verification.asPrinted, fileName)}>
+              <Download className="h-3.5 w-3.5" />
+              Excel
+            </Button>
+          )}
           <ExportPdfButton targetId="ato-account-export-root" fileName={fileName} lockedReason={lock} />
         </div>
       </div>
