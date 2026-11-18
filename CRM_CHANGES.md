@@ -1105,3 +1105,14 @@ Migration `0062_line_dismissals.sql` is written, **not applied** ("Not a loan ac
   Removed if acted on by the deadline, Stays with the director, Deadline, Lodged more than 90 days late since nil),
   total row equal to the cards; in the CSV too.
 - **Comparison page**: "Cards" (default) or "Table", remembered in the browser; PDF and CSV follow the view.
+
+## CVL: A10 left blank; Complete / Unlock forms (migration 0063) — 18 Nov 2026
+
+Migration `0063_cvl_form_completions.sql` is written, **not applied**.
+
+- **Form 507 Part A, A10** is no longer pre-filled (its date used to start from Form 509's summary date; its name never
+  was): left for whoever completes it.
+- **CVL file page**: "Preview" is gone from each form's row; "Complete" takes its place. A completed form shows "Completed
+  by <name> on <date>", its "Fill in / Continue" button is off, its entry screen sends staff back to the file, and saving
+  or resetting it is refused. "Unlock forms" (top right of the ASIC forms list, shown once any form is complete) makes
+  every form editable again. "Download" stays.

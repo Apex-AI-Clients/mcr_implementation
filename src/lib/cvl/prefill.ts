@@ -469,7 +469,7 @@ function putDefaultYes(code: FormCode, out: Prefill) {
 
 /**
  * Every date beside a signature (Nov 2026): Form 509's "Date signed", A9,
- * A10, Form 507A's "Date signed", B31 and the tables' "...and dated" start
+ * Form 507A's "Date signed", B31 and the tables' "...and dated" start
  * from Form 509's "Date to which summary is made up" as saved — never from
  * 509's own "Date signed", whatever it was changed to. Each can be changed on
  * its form; one never changed follows a later change to the summary date.
@@ -486,6 +486,9 @@ const OWN_SOURCE: Record<string, AmountSource> = {
   f507a_report_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the report is dated another day.'] },
 }
 
+/** Never prefilled: A10 is left for whoever completes it (18 Nov 2026). */
+const NOT_PREFILLED = new Set(['a10_date'])
+
 function putSignatureDates(code: FormCode, ctx: CvlContext, out: Prefill) {
   const date = ctx.summaryDate ?? null
   const source: AmountSource = {
@@ -496,7 +499,7 @@ function putSignatureDates(code: FormCode, ctx: CvlContext, out: Prefill) {
     : 'Fills from Form 509\'s "Date to which summary is made up" once Form 509 is saved with it.'
   // Part B's B10, "Date the Company started trading", and Form 507A's "Date
   // of Report under s475(1)": the same date (Nov 2026).
-  const keys = [...signatureDateKeys(code), ...(SAME_DATE_KEYS[code] ?? [])]
+  const keys = [...signatureDateKeys(code), ...(SAME_DATE_KEYS[code] ?? [])].filter((k) => !NOT_PREFILLED.has(k))
   for (const key of keys) {
     if (key.startsWith(`${TABLE_DATED_KEY}:`)) {
       if (date) out.signedDates[key.slice(TABLE_DATED_KEY.length + 1)] = { value: date, source }

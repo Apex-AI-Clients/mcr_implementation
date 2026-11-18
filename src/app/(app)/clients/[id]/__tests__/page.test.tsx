@@ -93,6 +93,7 @@ function mockDb(
   company: Record<string, unknown> | null,
   cvlCase: Record<string, unknown> | null = null,
   drafts: Record<string, unknown>[] = [],
+  completions: Record<string, unknown>[] = [],
 ) {
   const rows: Record<string, unknown> = {
     cvl_cases: cvlCase,
@@ -100,6 +101,7 @@ function mockDb(
     company_details: company,
     accountant_details: null,
     cvl_form_answers: drafts,
+    cvl_form_completions: completions,
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => {
@@ -369,6 +371,17 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     expect(screen.getByText(/^Draft saved/)).toBeTruthy()
   })
 
+  it('a form marked complete: its Fill in is off, no Complete, and Unlock forms at the top (18 Nov 2026)', async () => {
+    mockDb(IN_CVL, COMPANY, CASE, [], [{ form_code: '509', subject: 'company', completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' }])
+    render(await CvlClientPage(PARAMS))
+    expect(screen.getByText(/Completed by Casey on/)).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: /Fill in|Continue/ }).map((l) => l.getAttribute('href'))).not.toContain('/cvl/cl_1/forms/509?subject=company')
+    expect(screen.queryByRole('button', { name: 'Mark Form 509 — The company complete' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Unlock forms/ })).toBeTruthy()
+    // The others can still be filled in and completed.
+    expect(screen.getByRole('button', { name: 'Mark Form 507 Part A — The company complete' })).toBeTruthy()
+  })
+
   it('shows the CVL page: the forms per director, the analyses as tiles inside CVL, no status bar', async () => {
     mockDb(IN_CVL, COMPANY, CASE)
     render(await CvlClientPage(PARAMS))
@@ -385,7 +398,9 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     ])
     expect(screen.getByText('— Jane Sample')).toBeTruthy()
     expect(screen.getByText('— Raj Example')).toBeTruthy()
-    expect(screen.getAllByRole('link', { name: /Preview$/ })[0].getAttribute('href')).toBe('/api/admin/cvl/case-1/preview?form=509&subject=company')
+    // No Preview (18 Nov 2026): each form has Complete instead.
+    expect(screen.queryByRole('link', { name: /Preview$/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Mark Form 509 — The company complete' })).toBeTruthy()
     // Each form's line says only where it stands: no ASIC version, no who saved it.
     expect(screen.queryByText(/ASIC version/)).toBeNull()
     expect(screen.queryByText(/Draft saved .* by /)).toBeNull()
@@ -398,9 +413,11 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
     const tile = within(screen.getByRole('region', { name: 'Analyses' })).getByRole('link', { name: /Director penalty notices/ })
     expect(tile.textContent).toMatch(/None uploaded|on file|confirmed/)
     expect(screen.queryByRole('link', { name: /Form 509 values/ })).toBeNull()
-    // Each form: Fill in first, then Preview, then Download.
+    // Each form: Fill in first, then Complete, then Download.
     const row = screen.getAllByRole('link', { name: /Fill in/ })[0].parentElement as HTMLElement
-    expect([...row.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Preview', 'Download'])
+    expect([...row.querySelectorAll('a, button')].map((a) => a.textContent?.trim())).toEqual(['Fill in', 'Complete', 'Download'])
+    // Nothing is complete yet: no Unlock forms.
+    expect(screen.queryByRole('button', { name: /Unlock forms/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
     // No director's personal risk section on this page.
     expect(screen.queryByText('Director’s personal risk')).toBeNull()

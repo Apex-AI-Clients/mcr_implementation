@@ -30,6 +30,7 @@ import type { DocumentRecord, AccountantDetails, CompanyDetails } from '@/types/
 import { ConvertToCvlButton } from '@/components/cvl/ConvertToCvlButton'
 import { cvlEnabled } from '@/lib/cvl/flag'
 import { CvlDetailLayout } from '@/components/cvl/CvlDetailLayout'
+import { loadCompletedForms } from '@/lib/cvl/completion'
 import { toCvlCase } from '@/lib/cvl/cases'
 import { clientBase, membershipOf, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
@@ -218,6 +219,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
         atoAccounts={atoAccounts}
         runningJob={runningJob}
         inSbr={inside.sbr}
+        completed={Object.fromEntries(await loadCompletedForms(supabase, cvlCase.id))}
       />
     )
   }
