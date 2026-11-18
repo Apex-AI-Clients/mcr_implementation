@@ -1066,3 +1066,20 @@ Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before depl
 - **PDF export: no near-blank first page.** The export cut pages only at a page's top-level sections, so a short title
   followed by a long card left page one nearly empty. It now cuts inside any section taller than a page (`src/lib/pdfExport/paginate.ts`),
   on every page with Export PDF.
+
+## Financial statements comparison: headline figures only; dashboard removed (migration 0061) — Gabby, 16 Nov 2026
+
+Migration `0061_headline_total_meanings.sql` is written, **not applied**.
+
+- **Comparison page** (`src/lib/printed/headline.ts`, `HeadlineFiguresTable.tsx`): one table, years side by side with the
+  current period as the last column. Rows: Director loan account (Debit), Loan account director (Credit), Net profit,
+  ATO related debt – ICA (the ATO's own running balance at each period's end, from the verified ATO account,
+  `src/lib/ica/balanceAt.ts`), ATO related debt – Income tax payable, Total current assets, Total non-current assets,
+  Total assets. Each figure keeps its ⓘ (file, page, printed line), now with "Copy this line"; a year not proven shows
+  "Being prepared"; "Confirm key figures" is linked from the table. The proof badges (with any printed total that does
+  not add up named under them) and "N scanned figures to check" stay above.
+- **Removed** from the page and its CSV/PDF: revenue, net assets, the detailed as-printed tables, the totals review tick,
+  and the AI comparison summary (its API route and prompt). Revenue and net assets are no longer key figures the
+  prediction waits for (5 key figures, not 7). Prediction proof: all 13 clients identical.
+- **Dashboard removed**: the home dashboard, its components, loaders and tests, and the Home menu item. `/` opens the
+  SBR client list.
