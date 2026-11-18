@@ -73,6 +73,11 @@ describe('VerifiedComposition', () => {
     expect(screen.getByText(/Search your spreadsheet for: “- GST”/)).toBeTruthy()
     expect(screen.queryByText(/unexplained/i)).toBeNull()
   })
+
+  it('every line can copy what to search for, without opening it', () => {
+    render(<VerifiedComposition view={view('verified')} fileName="x" />)
+    expect(screen.getByRole('button', { name: 'Copy search: - GST' })).toBeTruthy()
+  })
 })
 
 describe('LodgementAnalysisCard', () => {

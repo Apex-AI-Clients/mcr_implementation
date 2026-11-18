@@ -16,7 +16,7 @@ import {
   formatDay,
   noticesSource,
 } from '@/components/admin/lodgement/DpnRiskPanel'
-import { HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
+import { CopyButton, HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
@@ -330,6 +330,7 @@ function ContributingTable({ late }: { late: EnrichedRow[] }) {
             <th className="pb-2 pr-4 font-medium">Type</th>
             <th className="pb-2 pr-4 font-medium">Description</th>
             <th className="pb-2 font-medium text-right">Days Late</th>
+            <th className="no-print pb-2" />
           </tr>
         </thead>
         <tbody>
@@ -349,6 +350,9 @@ function ContributingTable({ late }: { late: EnrichedRow[] }) {
               </td>
               <td className="py-1.5 text-right font-semibold text-warning">
                 {row.lateLodgeDaysCleaned}
+              </td>
+              <td className="no-print py-1.5 pl-2 text-right">
+                <CopyButton text={`${row.description}\t${row.debit ?? row.credit ?? ''}`} />
               </td>
             </tr>
           ))}

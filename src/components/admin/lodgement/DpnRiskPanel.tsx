@@ -7,6 +7,7 @@ import type { AmountSource, SourceLink } from '@/lib/sources'
 import type { DpnRiskBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { DirectorPenaltySection } from './DirectorPenaltySection'
+import { CopyButton } from '@/components/admin/ica/IcaParts'
 
 const AUD = new Intl.NumberFormat('en-AU', {
   style: 'currency',
@@ -344,6 +345,7 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
                     <th className="pb-2 pr-4 font-medium">Date</th>
                     <th className="pb-2 pr-4 font-medium">Description</th>
                     <th className="pb-2 font-medium text-right">Amount</th>
+                    <th className="no-print pb-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -354,6 +356,9 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
                         {r.description || '—'}
                       </td>
                       <td className="py-1.5 text-right font-semibold text-success tabular-nums">{formatAud(r.credit ?? 0)}</td>
+                      <td className="no-print py-1.5 pl-2 text-right">
+                        <CopyButton text={`${r.description}\t${r.credit ?? ''}`} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

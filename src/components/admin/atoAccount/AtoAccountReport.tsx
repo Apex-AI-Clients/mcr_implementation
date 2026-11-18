@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { drCr } from '@/components/admin/AtoAccountsPanel'
 import { AccountCompositionPanel } from './AccountCompositionPanel'
-import { VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
+import { CopyButton, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import { AiSummaryCallout } from '@/components/admin/lodgement/AiSummaryCallout'
 import { atoAccountCsv, exportLock, type AtoAccountPayload } from '@/lib/analysis/atoAccount/exportCsv'
 import { unpaidPhrase, type IncomeTaxSummary } from '@/lib/analysis/atoAccount/incomeTax'
@@ -36,6 +36,14 @@ const longDate = (iso: string | null | undefined) => {
   return `${d} ${MONTHS[m - 1]} ${y}`
 }
 const period = (p: { from: string; to: string } | null) => (p ? `${longDate(p.from)} – ${longDate(p.to)}` : '—')
+/** "for the period from 01 Jan 26 to 31 Mar 26": a quarter as the ATO's descriptions word it. */
+export function atoPeriodPhrase(p: { from: string; to: string }): string {
+  const short = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return `${String(d).padStart(2, '0')} ${MONTHS[m - 1]} ${String(y).slice(2)}`
+  }
+  return `for the period from ${short(p.from)} to ${short(p.to)}`
+}
 
 const TITLE: Record<AtoAccountPayload['kind'], string> = {
   income_tax: 'Income tax account',
@@ -96,6 +104,7 @@ function IncomeTaxSection({ summary, account }: { summary: IncomeTaxSummary; acc
                 <th className="px-3 py-2 font-medium">Payment due</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
                 <th className="px-3 py-2 font-medium">Status</th>
+                <th className="no-print px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -116,11 +125,14 @@ function IncomeTaxSection({ summary, account }: { summary: IncomeTaxSummary; acc
                       ? 'Paid'
                       : `${a.unpaid < a.amount ? `${AUD.format(a.unpaid)} ` : ''}${unpaidPhrase(a) ?? 'unpaid, not yet due'}`}
                   </td>
+                  <td className="no-print px-3 py-2 text-right">
+                    <CopyButton text={`${a.description}\t${a.amount}`} />
+                  </td>
                 </tr>
               ))}
               {summary.assessments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-2 text-foreground/50">
+                  <td colSpan={6} className="px-3 py-2 text-foreground/50">
                     No assessments in the account.
                   </td>
                 </tr>
@@ -204,10 +216,14 @@ function QuarterRow({ q, account }: { q: SgQuarter; account: string }) {
           )}
           {q.events.length > 1 && <span className="ml-1 text-foreground/40">+{q.events.length - 1}</span>}
         </td>
+        <td className="no-print px-3 py-2 text-right">
+          {/* The quarter as the ATO words it: search the spreadsheet for its rows. */}
+          <CopyButton text={atoPeriodPhrase(q.period)} label="Copy search" />
+        </td>
       </tr>
       {/* Every event: on screen when opened, always in the PDF. */}
       <tr className={cn('border-b border-border/40', open ? '' : 'hidden print:table-row')}>
-        <td colSpan={6} className="px-3 pb-2 pl-8">
+        <td colSpan={7} className="px-3 pb-2 pl-8">
           <ul className="space-y-0.5 text-foreground/60">
             {q.events.map((e) => (
               <li key={e.rowIndex}>
@@ -253,6 +269,7 @@ function SuperGuaranteeSection({ summary, account }: { summary: SuperGuaranteeSu
                 <th className="px-3 py-2 text-right font-medium">Admin fee</th>
                 <th className="px-3 py-2 text-right font-medium">Total</th>
                 <th className="px-3 py-2 font-medium">How it was raised</th>
+                <th className="no-print px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -274,6 +291,7 @@ function SuperGuaranteeSection({ summary, account }: { summary: SuperGuaranteeSu
                   <SourcedAmount value={summary.totals.total} cents source={total('SG charge', 'total')} />
                 </td>
                 <td />
+                <td className="no-print" />
               </tr>
             </tbody>
           </table>

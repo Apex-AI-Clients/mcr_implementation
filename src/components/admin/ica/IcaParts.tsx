@@ -154,8 +154,11 @@ export function VerifiedComposition({ view, fileName }: { view: IcaView; fileNam
             <span>{l.named ? l.label : `“${l.label}”`}</span>
             <span className="text-xs text-foreground/40">· {l.rows} rows</span>
           </button>
-          <span className="tabular-nums font-medium" title={`Rows: ${l.search.join(' | ')}`}>
-            {aud(l.net)}
+          <span className="flex items-center gap-2">
+            <CopyButton text={l.search.join(' | ')} label="Copy search" />
+            <span className="tabular-nums font-medium" title={`Search: ${l.search.join(' | ')}`}>
+              {aud(l.net)}
+            </span>
           </span>
         </div>
         {open && (
