@@ -1083,3 +1083,25 @@ Migration `0061_headline_total_meanings.sql` is written, **not applied**.
   prediction waits for (5 key figures, not 7). Prediction proof: all 13 clients identical.
 - **Dashboard removed**: the home dashboard, its components, loaders and tests, and the Home menu item. `/` opens the
   SBR client list.
+
+### 18 Nov 2026 — key figures per document, director loan on a new layout, DPN by tax type, Cards/Table (migration 0062)
+
+Migration `0062_line_dismissals.sql` is written, **not applied** ("Not a loan account" answers).
+
+- **Key figures per document** (`src/lib/printed/dictionary.ts`): a single-line figure gets each year's own best line
+  (MBM: "Net Profit After Tax" FY2022–FY2025, "Net Profit" FY2026); in a year printing two chosen lines, only the
+  better-ranked counts. A balance sheet with no "Total current / non-current assets" uses its asset section totals only
+  when they add up exactly to the printed Total Assets ("From 'Total Bank' and 'Total Fixed Assets', which add up to the
+  printed Total Assets"); otherwise they are possible lines. Re-run for every client: only MBM changes.
+- **Director loan account (Debit) on the latest balance sheet** (`mapping.ts`): drawings are offered as a possible line
+  ("Money taken out by the owner (printed under Equity)"); the prediction waits for "Use it" or "Not a loan account".
+  When the confirmed lines are missing from a proven latest balance sheet and nothing there looks like a director loan
+  (lines confirmed for the Credit side excluded), it counts as $0: "Not printed on the FY2026 balance sheet; printed in
+  the FY2025 balance sheet as $100". Prediction proof: no client's inputs change; MBM still waits (on the drawings).
+- **Messages**: "The confirmed lines aren't on the FY2026 balance sheet"; earlier years keep their figures; the
+  director-loan tick no longer says "No balance sheet available" when one exists; a negative current assets total notes
+  an overdrawn bank account (as printed).
+- **Director penalty section**: the cards show their total, source and badge only; "By tax type" below them (Unpaid,
+  Removed if acted on by the deadline, Stays with the director, Deadline, Lodged more than 90 days late since nil),
+  total row equal to the cards; in the CSV too.
+- **Comparison page**: "Cards" (default) or "Table", remembered in the browser; PDF and CSV follow the view.

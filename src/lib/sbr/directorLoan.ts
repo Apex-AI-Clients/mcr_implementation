@@ -63,7 +63,8 @@ export function directorLoanInput(f: PredictionFinancials, basis: DirectorLoanBa
     source: f.loanReceivable?.source ?? f.balanceSheet?.label ?? null,
     asOf: f.loanReceivable?.asOf ?? f.balanceSheet?.column.periodEnd ?? null,
     info,
-    note: f.loanReceivable?.note ?? null,
+    // Only when there is one: the input is otherwise exactly as before (figures:proof).
+    ...(f.loanReceivable?.note ? { note: f.loanReceivable.note } : {}),
   }
 }
 
