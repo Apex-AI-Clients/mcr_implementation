@@ -319,6 +319,44 @@ export type Database = {
           },
         ]
       }
+      client_line_dismissals: {
+        Row: {
+          client_id: string
+          dismissed_at: string
+          dismissed_by: string
+          id: string
+          label: string | null
+          meaning: string
+          row_key: string
+        }
+        Insert: {
+          client_id: string
+          dismissed_at?: string
+          dismissed_by: string
+          id?: string
+          label?: string | null
+          meaning: string
+          row_key: string
+        }
+        Update: {
+          client_id?: string
+          dismissed_at?: string
+          dismissed_by?: string
+          id?: string
+          label?: string | null
+          meaning?: string
+          row_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_line_dismissals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_line_mappings: {
         Row: {
           auto_rule: string | null

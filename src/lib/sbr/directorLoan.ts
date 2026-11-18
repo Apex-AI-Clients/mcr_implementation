@@ -35,6 +35,8 @@ export interface DirectorLoanInput {
   asOf: string | null
   /** "“Owner … Funds Introduced” $40,667.15 owed by the company; net $89,500.72 owed to the company". */
   info: string | null
+  /** Why it is $0 when no line says so ("Not printed on the FY2026 balance sheet; printed in the FY2025 balance sheet as $100."). */
+  note?: string | null
 }
 
 const cents = (n: number) => `$${Math.abs(n).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -61,6 +63,7 @@ export function directorLoanInput(f: PredictionFinancials, basis: DirectorLoanBa
     source: f.loanReceivable?.source ?? f.balanceSheet?.label ?? null,
     asOf: f.loanReceivable?.asOf ?? f.balanceSheet?.column.periodEnd ?? null,
     info,
+    note: f.loanReceivable?.note ?? null,
   }
 }
 

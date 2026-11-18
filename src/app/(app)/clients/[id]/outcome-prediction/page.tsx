@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadDismissedLines, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { directorLoanInput, directorLoanYears } from '@/lib/sbr/directorLoan'
 import { balanceSheetLabel, loanHistory, predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
@@ -86,7 +86,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
 
   // Staff choices, and the auto-selections for the rest (autoMapping.ts).
   const { mapping } = await applyAutoMapping(supabase, id, printed, stored, names)
-  const financials = predictionFinancials(printed.comparison, mapping, names)
+  // Possible director loan lines staff turned down ("Not a loan account", migration 0062).
+  const dismissed = await loadDismissedLines(supabase, id)
+  const financials = predictionFinancials(printed.comparison, mapping, names, dismissed)
   // The loan account figures the predict route uses (sbr/directorLoan.ts): gross by default.
   const loanInput = directorLoanInput(financials)
   const bsColumn = financials.balanceSheet?.column ?? null

@@ -39,7 +39,8 @@ export interface IcaHeadline {
 export type LineStatus = 'confirmed' | 'suggested' | 'not_found'
 
 export type HeadlineCell =
-  | { kind: 'value'; value: number; lines: MappedLine[] }
+  /** `note`: said in its ⓘ ("As printed: current assets include an overdrawn bank account (−$47,964)"). */
+  | { kind: 'value'; value: number; lines: MappedLine[]; note?: string }
   | { kind: 'ica'; cell: IcaHeadlineCell }
   /** The year is not proven yet. */
   | { kind: 'held'; reasons: string[] }
@@ -83,10 +84,36 @@ export function headlineRows(comparison: PrintedComparison, mapping: MappingEntr
       if (h) return h
       const year = resolved.years[i]
       if (status === 'not_found' || !year || year.value === null) return { kind: 'blank', why: null }
-      return { kind: 'value', value: year.value, lines: year.lines }
+      const note = row.meaning === 'total_current_assets' ? overdrawnBankNote(comparison, i) : null
+      return { kind: 'value', value: year.value, lines: year.lines, ...(note ? { note } : {}) }
     })
     return { key: row.meaning, label: row.label, meaning: row.meaning, status, notPrinted: status === 'confirmed' && resolved.status === 'none', entries, cells }
   })
+}
+
+const BANK_WORDS = /\b(bank|cheque|savings|transaction|operating) (account|acc)\b|\bbank\b|\bcash at bank\b/i
+const BANK_SECTION = /^(bank|bank accounts|cash|cash at bank|cash (and|&) cash equivalents)$/i
+
+/**
+ * A year's current assets that include an overdrawn bank account (a negative balance printed among the
+ * current assets, MBM FY2024 (47,964)): said beside the printed total, which is shown as printed (Gabby,
+ * 18 Nov 2026). A line is a bank account when its words say so, or when the same account is printed under
+ * a "Bank" or "Cash" section in another year.
+ */
+export function overdrawnBankNote(comparison: PrintedComparison, i: number): string | null {
+  const bs = comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? []
+  const bankLabels = new Set(bs.filter((r) => r.path.some((p) => BANK_SECTION.test(p.trim()))).map((r) => r.label.trim().toLowerCase()))
+  const overdrawn = bs.filter((r) => {
+    const v = r.cells[i]?.value
+    if (r.style !== 'line' || !r.cells[i]?.printed || typeof v !== 'number' || v >= 0) return false
+    if (!r.path.some((p) => /^current assets$/i.test(p.trim()))) return false
+    return BANK_WORDS.test(r.label) || bankLabels.has(r.label.trim().toLowerCase())
+  })
+  if (overdrawn.length === 0) return null
+  const amounts = overdrawn.map((r) => `−$${Math.abs(r.cells[i].value as number).toLocaleString('en-AU', { maximumFractionDigits: 2 })}`)
+  return overdrawn.length === 1
+    ? `As printed: current assets include an overdrawn bank account (${amounts[0]})`
+    : `As printed: current assets include overdrawn bank accounts (${amounts.join(', ')})`
 }
 
 const csvCell = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)

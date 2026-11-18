@@ -107,17 +107,7 @@ export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId
                     ) : cell.kind === 'ica' ? (
                       <SourcedAmount value={cell.cell.value} format={(v) => audBalance(Math.round(v * 100))} source={icaSource(cell.cell, basePath)} />
                     ) : (
-                      <SourcedAmount
-                        value={cell.value}
-                        format={formatPrinted}
-                        source={printedLinesSource(
-                          `${row.label}${row.status === 'suggested' ? ' (suggested line, not confirmed yet)' : ''}`,
-                          `${STATEMENT_NAME[MEANING[row.meaning!].statement]}, ${columnTitle(comparison.columns[i]).title}`,
-                          cell.lines,
-                          cell.value,
-                          { confirmUrl: keyFigures },
-                        )}
-                      />
+                      <SourcedAmount value={cell.value} format={formatPrinted} source={valueSource(row, cell, comparison, i, keyFigures)} />
                     )}
                   </td>
                 ))}
@@ -202,4 +192,16 @@ function icaSource(cell: IcaHeadlineCell, basePath: string): AmountSource {
     link: { kind: 'href', href: `${basePath}/lodgement-compliance-analysis`, label: 'Open the ATO account' },
     copy: cell.balances.map((b) => (b.row ? `${b.row.rawProcessed}\t${b.row.description}\t${b.row.rawBalance}` : audBalance(b.cents))).join('\n'),
   }
+}
+
+/** A printed figure's ⓘ: its lines, and any note about how it is printed. Shared by the table and the cards. */
+export function valueSource(row: HeadlineRow, cell: Extract<HeadlineRow['cells'][number], { kind: 'value' }>, comparison: PrintedComparison, i: number, keyFigures: string): AmountSource {
+  const source = printedLinesSource(
+    `${row.label}${row.status === 'suggested' ? ' (suggested line, not confirmed yet)' : ''}`,
+    `${STATEMENT_NAME[MEANING[row.meaning!].statement]}, ${columnTitle(comparison.columns[i]).title}`,
+    cell.lines,
+    cell.value,
+    { confirmUrl: keyFigures },
+  )
+  return cell.note ? { ...source, from: [...source.from, cell.note] } : source
 }

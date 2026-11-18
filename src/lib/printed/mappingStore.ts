@@ -27,6 +27,25 @@ export interface MappingChange {
   rule: string | null
 }
 
+/**
+ * Lines staff said are not a meaning ("Not a loan account", migration 0062), as `${meaning}|${rowKey}`
+ * (mapping.ts, DismissedLines). Empty before 0062 is applied.
+ */
+export async function loadDismissedLines(supabase: ServerClient, clientId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from('client_line_dismissals').select('meaning, row_key').eq('client_id', clientId)
+  if (error) return new Set()
+  return new Set((data ?? []).map((d) => `${d.meaning}|${d.row_key}`))
+}
+
+/** "Not a loan account": the line is never offered for that meaning again. Throws before 0062 is applied. */
+export async function dismissLine(supabase: ServerClient, clientId: string, by: string, line: { meaning: Meaning; rowKey: string; label: string | null }): Promise<void> {
+  const { error } = await supabase
+    .from('client_line_dismissals')
+    .upsert({ client_id: clientId, meaning: line.meaning, row_key: line.rowKey, label: line.label, dismissed_by: by }, { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true })
+  if (error) throw new MappingError('Could not record the answer: the database is not ready for it yet (migration 0062).')
+  await supabase.from('client_line_mapping_changes').insert({ client_id: clientId, meaning: line.meaning, action: 'removed', row_key: line.rowKey, label: line.label, changed_by: by, rule: 'Not a loan account (a possible line staff turned down)' })
+}
+
 export async function loadMapping(supabase: ServerClient, clientId: string): Promise<MappingEntry[]> {
   // '*': auto_rule (migration 0043) is read when the column is there.
   const { data, error } = await supabase.from('client_line_mappings').select('*').eq('client_id', clientId)

@@ -172,6 +172,87 @@ const NET_PROFIT: RegExp[] = [
 const TOTAL_CURRENT_ASSETS: RegExp[] = [/^total current assets$/i]
 const TOTAL_NON_CURRENT_ASSETS: RegExp[] = [/^total non[- ]?current assets$/i]
 const TOTAL_ASSETS: RegExp[] = [/^total assets$/i]
+/** Drawings: money taken out by the owner or a director, printed under equity (Gabby, 18 Nov 2026). */
+const DRAWINGS = /\bdrawings?\b/i
+export const DRAWINGS_HINT = 'Money taken out by the owner (printed under Equity)'
+
+/** Asset sections by kind, for a balance sheet that prints no "Total current assets" (a Xero layout: "Bank", "Fixed Assets"). */
+const CURRENT_SECTION = /^(bank|bank accounts|cash|cash (and|&) cash equivalents|current assets|receivables|trade receivables|debtors|inventor(y|ies)|stock( on hand)?)$/i
+const NON_CURRENT_SECTION = /^(fixed assets|non[- ]?current assets|property,? plant (and|&) equipment|plant (and|&) equipment|intangibles?|intangible assets|investments|long[- ]term investments)$/i
+
+export interface SectionLine {
+  rowKey: string
+  rule: string
+  /** Not proven by the statement's own arithmetic: offered as a possible line, never auto-selected. */
+  possible: boolean
+}
+
+const cents = (v: unknown) => (typeof v === 'number' ? Math.round(v * 100) : null)
+
+/**
+ * For each year whose balance sheet prints no "Total current assets" / "Total non-current assets":
+ * its asset sections' printed totals, used ONLY when the statement's own arithmetic proves them
+ * (Gabby, 18 Nov 2026): every asset section is clearly current-type or non-current-type, there is
+ * exactly one of each, and their printed totals add up EXACTLY to the printed "Total Assets"
+ * (MBM FY2026: "Total Bank" 11,885.53 + "Total Fixed Assets" 313,633.20 = 325,518.73). Otherwise
+ * the section totals are offered as possible lines.
+ */
+export function assetSectionTotals(bs: ComparisonRow[], columns: number): { current: SectionLine[]; nonCurrent: SectionLine[] } {
+  const current = new Map<string, SectionLine>()
+  const nonCurrent = new Map<string, SectionLine>()
+  const add = (to: Map<string, SectionLine>, line: SectionLine) => {
+    const was = to.get(line.rowKey)
+    // Proven in any year wins over offered.
+    if (!was || (was.possible && !line.possible)) to.set(line.rowKey, line)
+  }
+  for (let i = 0; i < columns; i++) {
+    const printedIn = (r: ComparisonRow) => r.cells[i]?.printed && typeof r.cells[i].value === 'number'
+    const named = (rules: RegExp[]) => bs.some((r) => printedIn(r) && rules.some((rule) => rule.test(r.label.trim())))
+    if (named(TOTAL_CURRENT_ASSETS) && named(TOTAL_NON_CURRENT_ASSETS)) continue
+    const total = bs.find((r) => printedIn(r) && TOTAL_ASSETS.some((rule) => rule.test(r.label.trim())))
+    const sectionTotals = bs.filter(
+      (r) => printedIn(r) && r.style !== 'line' && r.path.length === 2 && /^assets$/i.test(r.path[0]) && r.label.trim().toLowerCase() === `total ${r.path[1]}`.toLowerCase(),
+    )
+    if (!total || sectionTotals.length === 0) continue
+    const kind = (r: ComparisonRow) => (CURRENT_SECTION.test(r.path[1].trim()) ? 'current' : NON_CURRENT_SECTION.test(r.path[1].trim()) ? 'non_current' : null)
+    const cur = sectionTotals.filter((r) => kind(r) === 'current')
+    const non = sectionTotals.filter((r) => kind(r) === 'non_current')
+    const allKnown = sectionTotals.every((r) => kind(r) !== null)
+    const sum = sectionTotals.reduce((s, r) => s + (cents(r.cells[i].value) ?? 0), 0)
+    const proven = allKnown && cur.length === 1 && non.length === 1 && sum === cents(total.cells[i].value)
+    if (proven) {
+      const rule = `From “${cur[0].label.trim()}” and “${non[0].label.trim()}”, which add up to the printed Total Assets.`
+      add(current, { rowKey: cur[0].key, rule, possible: false })
+      add(nonCurrent, { rowKey: non[0].key, rule, possible: false })
+    } else {
+      const why = 'An asset section total; its sections do not add up exactly to the printed Total Assets (or are not clearly current or non-current), so it is not used on its own.'
+      for (const r of cur) add(current, { rowKey: r.key, rule: why, possible: true })
+      for (const r of non) add(nonCurrent, { rowKey: r.key, rule: why, possible: true })
+    }
+  }
+  return { current: [...current.values()], nonCurrent: [...nonCurrent.values()] }
+}
+
+/**
+ * How well a printed line matches a single-line meaning (0 best): the first dictionary rule its label
+ * matches; a section total next; a line staff chose last. Decides which of two mapped lines counts in
+ * a year that prints both (mapping.ts).
+ */
+export function lineRank(meaning: Meaning, label: string): number {
+  const rules: Partial<Record<Meaning, RegExp[]>> = {
+    revenue: REVENUE,
+    net_profit: NET_PROFIT,
+    net_assets: NET_ASSETS,
+    income_tax_payable: [INCOME_TAX],
+    total_current_assets: TOTAL_CURRENT_ASSETS,
+    total_non_current_assets: TOTAL_NON_CURRENT_ASSETS,
+    total_assets: TOTAL_ASSETS,
+  }
+  const i = (rules[meaning] ?? []).findIndex((rule) => rule.test(label.trim()))
+  if (i >= 0) return i
+  return /^total /i.test(label.trim()) ? 50 : 100
+}
+
 const NET_ASSETS: RegExp[] = [/^net assets$/i, /^total (shareholders'?s? |members'? )?equity$/i, /^total trust funds$/i]
 
 /** An "Income" total that is net of cost of sales, or built on a profit line ("Trading Profit"): not revenue. */
@@ -182,8 +263,24 @@ function netOfCosts(rows: ComparisonRow[], total: ComparisonRow): boolean {
   )
 }
 
+/**
+ * One line per DOCUMENT (each year's statement, Gabby 18 Nov 2026): for every column, the
+ * best-ranked line printed in it. A meaning can so map to different printed lines in different
+ * years ("Net Profit After Tax" in FY2022–FY2025, "Net Profit" in FY2026); where two chosen lines
+ * print in the same year, the better-ranked one counts there (mapping.ts, lineRank).
+ */
+function bestPerDocument(rows: ComparisonRow[], rules: RegExp[], columns: number): string[] {
+  const ranked = [...new Set(rules.flatMap((rule) => rows.filter((r) => rule.test(r.label.trim()) && printedAnywhere(r))))]
+  const keys: string[] = []
+  for (let i = 0; i < columns; i++) {
+    const best = ranked.find((r) => r.cells[i]?.printed && typeof r.cells[i].value === 'number')
+    if (best && !keys.includes(best.key)) keys.push(best.key)
+  }
+  return ranked.filter((r) => keys.includes(r.key)).map((r) => r.key)
+}
+
 /** One line per layout: the best match, then more for years it leaves blank. */
-function bestPerLayout(rows: ComparisonRow[], rules: RegExp[], columns: number): string[] {
+export function bestPerLayout(rows: ComparisonRow[], rules: RegExp[], columns: number): string[] {
   const ranked = rules.flatMap((rule) => rows.filter((r) => rule.test(r.label.trim()) && printedAnywhere(r)))
   const chosen: ComparisonRow[] = []
   for (const r of ranked) {
@@ -196,7 +293,8 @@ function bestPerLayout(rows: ComparisonRow[], rules: RegExp[], columns: number):
 
 export function suggestMapping(comparison: PrintedComparison, names: RelatedNames = {}): Suggestions {
   const detailed = suggestMappingWithRules(comparison, names)
-  return Object.fromEntries(Object.entries(detailed).map(([m, lines]) => [m, lines.map((l) => l.rowKey)])) as Suggestions
+  // Lines offered only (possibleOnly) are never a suggestion: staff choose them (autoMapping.ts).
+  return Object.fromEntries(Object.entries(detailed).map(([m, lines]) => [m, lines.filter((l) => !l.possibleOnly).map((l) => l.rowKey)])) as Suggestions
 }
 
 /** A suggested line and the dictionary rule that matched it, in plain English (logged with an auto-selection). */
@@ -209,6 +307,8 @@ export interface SuggestedLine {
    * offered as a possible line (autoMapping.ts).
    */
   unknownPerson?: boolean
+  /** Offered as a possible line only, never auto-selected; why, in plain words. */
+  possibleOnly?: string
 }
 
 /** A loan line that names a person not on file: "Loan - Aaron Peters", "Loan from Aaron Peters". */
@@ -312,13 +412,15 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
   const plant = pick(lines.filter((r) => isAsset(r) && (PLANT.test(r.label) || (/depreciation/i.test(r.label) && PLANT.test(section(r))))))
   const shareCapital = pick(bs.filter((r) => r.style === 'line' && printedAnywhere(r) && EQUITY.test(section(r)) && SHARE_CAPITAL.test(r.label)))
 
+  const sections = assetSectionTotals(bs, comparison.columns.length)
+  const keys_taken = (key: string) => taken.has(key)
   const keys: Record<Meaning, string[]> = {
     // One printed line each: the best match.
-    revenue: bestPerLayout(revenueRows, REVENUE, n).slice(0, 1),
-    net_profit: bestPerLayout(pl, NET_PROFIT, n).slice(0, 1),
-    net_assets: bestPerLayout(bs, NET_ASSETS, n).slice(0, 1),
+    revenue: bestPerDocument(revenueRows, REVENUE, n),
+    net_profit: bestPerDocument(pl, NET_PROFIT, n),
+    net_assets: bestPerDocument(bs, NET_ASSETS, n),
     ato_debt: ato,
-    income_tax_payable: incomeTax.slice(0, 1),
+    income_tax_payable: bestPerDocument(bs.filter((r) => incomeTax.includes(r.key)), [/./], n),
     loan_receivable: loanReceivable,
     loan_payable: loanPayable,
     credit_cards: creditCards,
@@ -333,10 +435,18 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
     // Never guessed: what is left over is for staff to choose.
     other_assets: [],
     share_capital: shareCapital,
-    total_current_assets: bestPerLayout(bs, TOTAL_CURRENT_ASSETS, n).slice(0, 1),
-    total_non_current_assets: bestPerLayout(bs, TOTAL_NON_CURRENT_ASSETS, n).slice(0, 1),
-    total_assets: bestPerLayout(bs, TOTAL_ASSETS, n).slice(0, 1),
+    total_current_assets: [...bestPerDocument(bs, TOTAL_CURRENT_ASSETS, n), ...sections.current.filter((l) => !l.possible).map((l) => l.rowKey)],
+    total_non_current_assets: [...bestPerDocument(bs, TOTAL_NON_CURRENT_ASSETS, n), ...sections.nonCurrent.filter((l) => !l.possible).map((l) => l.rowKey)],
+    total_assets: bestPerDocument(bs, TOTAL_ASSETS, n),
   }
+  // Lines offered, never auto-selected: section totals the statement's arithmetic does not prove,
+  // and drawings (money taken out by the owner) for the director loan account (Debit).
+  const offered: Partial<Record<Meaning, { rowKey: string; why: string }[]>> = {
+    total_current_assets: sections.current.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
+    total_non_current_assets: sections.nonCurrent.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
+    loan_receivable: bs.filter((r) => r.style === 'line' && printedAnywhere(r) && DRAWINGS.test(r.label) && !keys_taken(r.key)).map((r) => ({ rowKey: r.key, why: DRAWINGS_HINT })),
+  }
+  const sectionRule = new Map([...sections.current, ...sections.nonCurrent].map((l) => [l.rowKey, l.rule]))
   const byKey = new Map([...bs, ...pl].map((r) => [r.key, r]))
   const loanRule = (meaning: 'loan_receivable' | 'loan_payable', key: string) => {
     const r = byKey.get(key)
@@ -354,15 +464,18 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
   return Object.fromEntries(
     (Object.keys(keys) as Meaning[]).map((m) => [
       m,
-      keys[m].map((rowKey) => {
-        const loan = m === 'loan_receivable' || m === 'loan_payable'
-        const label = byKey.get(rowKey)?.label ?? ''
-        return {
-          rowKey,
-          rule: loan ? loanRule(m, rowKey) : (RULE[m] ?? 'Matched by its printed label.'),
-          ...(loan && namesUnknownPerson(label, { directors, parties }) ? { unknownPerson: true } : {}),
-        }
-      }),
+      [
+        ...keys[m].map((rowKey) => {
+          const loan = m === 'loan_receivable' || m === 'loan_payable'
+          const label = byKey.get(rowKey)?.label ?? ''
+          return {
+            rowKey,
+            rule: loan ? loanRule(m, rowKey) : (sectionRule.get(rowKey) ?? RULE[m] ?? 'Matched by its printed label.'),
+            ...(loan && namesUnknownPerson(label, { directors, parties }) ? { unknownPerson: true } : {}),
+          }
+        }),
+        ...(offered[m] ?? []).filter((o) => !keys[m].includes(o.rowKey)).map((o) => ({ rowKey: o.rowKey, rule: o.why, possibleOnly: o.why })),
+      ],
     ]),
   ) as Record<Meaning, SuggestedLine[]>
 }
