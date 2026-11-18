@@ -161,7 +161,7 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
   const note =
     f.unreviewedFailures > 0
-      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are listed at the bottom of the comparison page.`
+      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are named under the year badges on the comparison page.`
       : null
   return item(input, 'financials', 'ready', note, href)
 }

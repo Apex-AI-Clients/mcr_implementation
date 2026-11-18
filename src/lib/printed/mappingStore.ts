@@ -192,6 +192,9 @@ export interface EffectiveMapping {
  * auto-selections are used as they are, so a half-read comparison never
  * withdraws them.
  */
+/** The balance sheet totals on the comparison page (migration 0061). */
+const TOTAL_MEANINGS: ReadonlySet<string> = new Set(['total_current_assets', 'total_non_current_assets', 'total_assets'])
+
 export async function applyAutoMapping(
   supabase: ServerClient,
   clientId: string,
@@ -231,7 +234,20 @@ export async function applyAutoMapping(
         .eq('confirmed_by', AUTO_BY)
       if (error) throw error
     }
-    const added = fresh.filter((e) => !before.has(id(e)))
+    const allAdded = fresh.filter((e) => !before.has(id(e)))
+    // The balance sheet totals (migration 0061) are kept on their own: before 0061 is applied the
+    // database refuses them, and that must never stop the other meanings being kept.
+    const totals = allAdded.filter((e) => TOTAL_MEANINGS.has(e.meaning))
+    if (totals.length) {
+      const { error } = await supabase
+        .from('client_line_mappings')
+        .upsert(
+          totals.map((e) => ({ ...mappingRow(clientId, e, rows.get(e.rowKey) ?? null), auto_rule: e.autoRule ?? null })),
+          { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true },
+        )
+      if (error) console.error('[line-mapping] could not keep the balance sheet totals (migration 0061):', error.message)
+    }
+    const added = allAdded.filter((e) => !TOTAL_MEANINGS.has(e.meaning))
     if (added.length) {
       const { error } = await supabase
         .from('client_line_mappings')

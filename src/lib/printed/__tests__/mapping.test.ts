@@ -149,7 +149,8 @@ describe('suggestMapping — the CVL meanings (migration 0040)', () => {
     expect(CVL_MEANINGS.map((m) => m.key)).toEqual(['cash_at_bank', 'cash_on_hand', 'trade_debtors', 'stock', 'plant_equipment', 'other_assets', 'share_capital'])
     expect(SBR_MEANINGS.some((m) => m.cvl)).toBe(false)
     expect(CVL_MEANINGS.every((m) => !m.required && !m.prediction && !m.tile)).toBe(true)
-    expect(KEY_FIGURES).toHaveLength(7)
+    // Five since 18 Nov 2026: revenue and net assets left the comparison page.
+    expect(KEY_FIGURES.map((m) => m.key)).toEqual(['loan_receivable', 'loan_payable', 'ato_debt', 'net_profit', 'income_tax_payable'])
   })
 })
 

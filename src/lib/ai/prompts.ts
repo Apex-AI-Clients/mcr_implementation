@@ -4,31 +4,6 @@
  * figures staff confirmed, read by code (src/lib/printed).
  */
 
-export const COMPARISON_SUMMARY_PROMPT_TEMPLATE = `
-You are summarising a multi-year comparison of a business's financial statements for an Australian restructuring practitioner. Write a clear, factual summary that a non-technical staff member can read in 30 seconds.
-
-WRITING RULES:
-- 4 to 6 sentences. Hard maximum: 140 words total.
-- Plain English. No jargon. No markdown. No bullet points.
-- Every dollar figure you write must be one of the figures below, or the difference between two of them. Do not add figures together, do not average them, and do not work out percentages.
-- Use only the figures below. If a figure is not listed for a year, do not mention it for that year.
-- A "current period" is part of a year only: never compare it with a full year as if it were one.
-- Do NOT recommend a course of action. Do NOT mention the SBR scheme by name.
-- {bannedWordsInstruction}
-
-WHAT TO COVER (natural prose, not headers), using only the figures given:
-1. Revenue over the years: direction and size.
-2. Net profit or loss each year.
-3. ATO-related debt and income tax payable over the years, and whether ATO-related debt is growing while revenue falls or holds.
-4. The loan accounts with the director or related parties: any build-up of money owed to the company, or owed by it.
-5. Net assets: the figures only, with no conclusion about the business.
-
-FIGURES, AS PRINTED IN THE STATEMENTS (oldest first):
-{figuresTable}
-{notPrinted}
-Respond with the summary paragraph only. No preamble, no headers, no quotes.
-`.trim()
-
 export const LABEL_SUGGESTION_PROMPT_TEMPLATE = `
 You help match printed lines in an Australian business's financial statements to a few standard meanings. You see only each line's printed label and the headings it sits under. There are no figures.
 

@@ -2,22 +2,24 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPrintedComparison, type ComparisonDocument } from '@/lib/printed/compare'
-import { MEANINGS } from '@/lib/printed/meanings'
-import { suggestMapping, type Suggestions } from '@/lib/printed/dictionary'
+import { suggestMapping } from '@/lib/printed/dictionary'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '@/lib/printed/types'
+import type { IcaHeadline } from '@/lib/printed/headline'
 
-/** The as-printed comparison page. Synthetic reports only. */
+/** The comparison page: headline figures only (Gabby, 16 Nov 2026). Synthetic reports only. */
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 
 const { PrintedComparisonClient } = await import('../PrintedComparisonClient')
 
-afterEach(cleanup)
-
-const NO_SUGGESTIONS = Object.fromEntries(MEANINGS.map((m) => [m.key, []])) as unknown as Suggestions
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 const fy = (y: number): PrintedColumn => ({ header: String(y), periodStart: `${y - 1}-07-01`, periodEnd: `${y}-06-30`, kind: 'annual', financialYear: y })
+const current: PrintedColumn = { header: '30 Sep 2025', periodStart: '2025-07-01', periodEnd: '2025-09-30', kind: 'current_period', financialYear: 2026 }
 const r = (path: string[], label: string, style: PrintedRow['style'], ...amounts: (number | null)[]): PrintedRow => ({
   page: 2,
   path,
@@ -26,116 +28,114 @@ const r = (path: string[], label: string, style: PrintedRow['style'], ...amounts
   amounts,
   text: `${label} ${amounts.map((a) => a ?? '-').join(' ')}`,
 })
-const bs = (cols: PrintedColumn[], rows: PrintedRow[]): PrintedStatement => ({ kind: 'balance_sheet', title: 'Balance Sheet', pages: [2], columns: cols, rows, wholeDollars: false })
+const bs = (cols: PrintedColumn[], rows: PrintedRow[]): PrintedStatement => ({ kind: 'balance_sheet', title: 'Balance Sheet', pages: [2], columns: cols, rows, wholeDollars: true })
+const pl = (cols: PrintedColumn[], rows: PrintedRow[]): PrintedStatement => ({ kind: 'profit_and_loss', title: 'Profit and Loss', pages: [1], columns: cols, rows, wholeDollars: true })
 const doc = (id: string, statements: PrintedStatement[]): ComparisonDocument => ({ documentId: id, filename: `${id}.pdf`, uploadedAt: id, read: { status: 'read', pageCount: 3, statements, issues: [] } })
 
-function comparison({ broken = false } = {}) {
+const sheet = (cols: PrintedColumn[], v: (a: number) => number[]) =>
+  bs(cols, [
+    r([], 'Assets', 'heading', ...cols.map(() => null)),
+    r(['Assets', 'Current Assets'], 'Cash at Bank', 'line', ...v(1000)),
+    r(['Assets', 'Current Assets'], 'Loan - Director', 'line', ...v(50)),
+    r(['Assets', 'Current Assets'], 'Total Current Assets', 'subtotal', ...v(1050)),
+    r(['Assets', 'Non-Current Assets'], 'Plant and Equipment', 'line', ...v(400)),
+    r(['Assets', 'Non-Current Assets'], 'Total Non-Current Assets', 'subtotal', ...v(400)),
+    r(['Assets'], 'Total Assets', 'subtotal', ...v(1450)),
+    r([], 'Liabilities', 'heading', ...cols.map(() => null)),
+    r(['Liabilities', 'Current Liabilities'], 'Income Tax Payable', 'line', ...v(70)),
+  ])
+
+function comparison() {
   return buildPrintedComparison([
-    doc('fy2024', [bs([fy(2024), fy(2023)], [r([], 'Assets', 'heading', null, null), r(['Assets'], 'Cash at Bank', 'line', 1000.5, 900), r(['Assets'], 'Total Assets', 'subtotal', 1000.5, 900)])]),
-    doc('fy2025', [
-      bs([fy(2025), fy(2024)], [
-        r([], 'Assets', 'heading', null, null),
-        r(['Assets'], 'Cash at Bank', 'line', 1200, 1000.5),
-        r(['Assets'], 'Loan - Director', 'line', 50, 25),
-        r(['Assets'], 'Total Assets', 'subtotal', broken ? 1300 : 1250, 1025.5),
-      ]),
-    ]),
-  ], { comparativeYears: true })
+    doc('fy2024', [pl([fy(2024)], [r([], 'Sales', 'line', 900), r([], 'Net Profit', 'total', 90)]), sheet([fy(2024)], (a) => [a - 100 > 0 ? a - 100 : a])]),
+    doc('fy2025', [pl([fy(2025)], [r([], 'Sales', 'line', 1000), r([], 'Net Profit', 'total', 120)]), sheet([fy(2025)], (a) => [a])]),
+    doc('sep2025', [pl([current], [r([], 'Sales', 'line', 300), r([], 'Net Profit', 'total', 30)]), sheet([current], (a) => [a + 5])]),
+  ])
 }
 
-function renderPage(c = comparison()) {
-  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt="2026-10-24T00:00:00.000Z" initialFiguresChecked={null} mapping={[]} suggestions={NO_SUGGESTIONS} />)
+const NO_ICA: IcaHeadline = { status: 'none', cells: [] }
+
+function renderPage({ mapping = [] as MappingEntry[], ica = NO_ICA } = {}) {
+  const c = comparison()
+  return render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} mapping={mapping} suggestions={suggestMapping(c)} ica={ica} />)
 }
 
 describe('PrintedComparisonClient', () => {
-  it('shows each year as printed, cents kept, blank where a year does not print the line, with the restatement note', () => {
+  it('shows only the headline figures, in Gabby’s order and wording, the current period as a column beside the years', () => {
     renderPage()
-    expect(screen.getByRole('columnheader', { name: /FY2023/ })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: '1,000.50' }).length).toBeGreaterThan(0)
-    const loan = screen.getByText('Loan - Director').closest('tr')!
-    const cells = within(loan).getAllByRole('cell')
-    expect(cells[2].textContent).toBe('Restated in FY2025 report: 25')
-    expect(cells[3].textContent).toBe('50')
+    const table = within(screen.getByTestId('headline-figures')).getByRole('table')
+    const heads = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(heads[0]).toBe('Figure')
+    expect(heads.slice(1).map((h) => h?.slice(0, 6))).toEqual(['FY2024', 'FY2025', 'Curren'])
+    const rows = within(table).getAllByRole('rowheader').map((h) => h.textContent ?? '')
+    const labels = [
+      'Director loan account (Debit)',
+      'Loan account director (Credit)',
+      'Net profit',
+      'ATO related debt – ICA',
+      'ATO related debt – Income tax payable',
+      'Total current assets',
+      'Total non-current assets',
+      'Total assets',
+    ]
+    labels.forEach((l, i) => expect(rows[i].startsWith(l)).toBe(true))
+    expect(rows).toHaveLength(8)
+    // Nothing else: no detailed tables, no revenue, no net assets, no summary.
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+    expect(screen.queryByText('Cash at Bank')).toBeNull()
+    expect(screen.queryByText(/^Revenue$/)).toBeNull()
+    expect(screen.queryByText(/Net assets/)).toBeNull()
+    expect(screen.queryByText(/Summary/)).toBeNull()
   })
 
-  it('shows the file, page and printed line of a clicked figure', async () => {
-    const user = userEvent.setup()
+  it('fills each row from its printed line, every year, and the current period too', () => {
     renderPage()
-    const total = screen.getByText('Total Assets').closest('tr')!
-    await user.click(within(total).getByRole('button', { name: '1,250' }))
-    expect(screen.getByText(/fy2025\.pdf, page 2, column/)).toBeTruthy()
-    expect(screen.getByText('“Total Assets 1250 1025.5”')).toBeTruthy()
+    const row = (key: string) => document.querySelector(`tr[data-row="${key}"]`) as HTMLElement
+    const cells = (key: string) => within(row(key)).getAllByRole('cell').map((c) => c.textContent)
+    expect(cells('total_assets')).toEqual(['1,350', '1,450', '1,455'])
+    expect(cells('total_current_assets')).toEqual(['950', '1,050', '1,055'])
+    expect(cells('total_non_current_assets')).toEqual(['300', '400', '405'])
+    expect(cells('net_profit')).toEqual(['90', '120', '30'])
+    expect(cells('income_tax_payable')).toEqual(['70', '70', '75'].map((v, i) => (i === 0 ? '70' : v)))
   })
 
-  it('lists a printed total that does not add up at the bottom (no red banner), and the export waits for the tick', () => {
-    const { container } = renderPage(comparison({ broken: true }))
-    expect(screen.queryByText(/Needs review/)).toBeNull()
-    const section = screen.getByRole('region', { name: "Totals that don't add up" })
-    expect(section.textContent).toContain('1 total does not add up')
-    expect(section.textContent).toContain('it does not stop the SBR prediction')
-    // At the bottom: after every statement table.
-    const tables = container.querySelectorAll('table')
-    expect(tables[tables.length - 1].compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('shows a suggested tile naming the printed line it is taken from, and "Check this match" opens the picker and saves', async () => {
+  it('each figure says where it is printed and can copy the line', async () => {
     const user = userEvent.setup()
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-    const c = comparison()
-    render(
-      <PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt={null} initialFiguresChecked={null} mapping={[]} suggestions={suggestMapping(c)} />,
-    )
-    const tile = screen.getByText('Loan account — owed TO the company').parentElement!
-    // Says it is not confirmed, names the printed line the amount is on, then the amount.
-    expect(tile.textContent).toContain('Not confirmed yet — suggested match:')
-    expect(tile.textContent).toContain('“Loan - Director”')
-    expect(tile.textContent).toContain('Balance sheet › Assets')
-    expect(tile.textContent).toMatch(/Amount on that line, FY2025\s*50/)
-    await user.click(within(tile).getByRole('button', { name: 'Check this match' }))
-    const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('checkbox', { name: /“Loan - Director”.*current/ })).toBeTruthy()
-    await user.click(within(dialog).getByRole('button', { name: 'Use this line' }))
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/clients/client-1/line-mapping', expect.objectContaining({ method: 'PUT' }))
-    vi.unstubAllGlobals()
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPage()
+    const totals = document.querySelector('tr[data-row="total_assets"]') as HTMLElement
+    await user.click(within(totals).getByRole('button', { name: 'Where 1,450 comes from' }))
+    const panel = screen.getByRole('dialog', { name: 'Where 1,450 comes from' })
+    expect(panel.textContent).toContain('page 2 of fy2025.pdf')
+    await user.click(within(panel).getByRole('button', { name: 'Copy this line' }))
+    expect(writeText).toHaveBeenCalledWith('Total Assets 1450')
   })
 
-  it('shows the review bar, and each tile marked by its state, until the key figures are confirmed', async () => {
-    const c = comparison()
-    const suggestions = suggestMapping(c)
-    const page = (mapping: MappingEntry[]) =>
-      render(<PrintedComparisonClient clientId="client-1" clientName="Example Pty Ltd" comparison={c} builtAt={null} initialFiguresChecked={null} mapping={mapping} suggestions={suggestions} />)
-    page([])
-    const bar = screen.getByRole('status', { name: 'Key figures to review' })
-    expect(bar.textContent).toContain('0/7')
-    expect(within(bar).getByRole('link', { name: /Review key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
-    const loanTile = screen.getByText('Loan account — owed TO the company').closest('[data-status]')!
-    expect(loanTile.getAttribute('data-status')).toBe('suggested')
-    expect(screen.getByText('Loan account — owed BY the company').closest('[data-status]')!.getAttribute('data-status')).toBe('not_found')
+  it('the ICA row: the ATO balance at each period end when verified, "Being prepared" when not, a dash without an account', () => {
+    const balances = [{ label: 'Activity statement 001', documentId: 'ica', filename: 'ica.csv', cents: 1234500, day: '2024-06-28', row: { rawProcessed: '28 Jun 2024', description: 'Payment received', rawBalance: '$12,345.00 DR' } }]
+    const ica: IcaHeadline = {
+      status: 'ok',
+      cells: [{ cell: { value: 12345, date: '2024-06-30', balances } }, { none: 'Activity statement 001: no balance' }, { cell: { value: 20000, date: '2025-09-30', balances: [{ ...balances[0], cents: 2000000 }] } }],
+    }
+    renderPage({ ica })
+    const row = () => document.querySelector('tr[data-row="ica"]') as HTMLElement
+    expect(within(row()).getAllByRole('cell').map((c) => c.textContent)).toEqual(['$12,345.00 DR', '—', '$20,000.00 DR'])
     cleanup()
-
-    // Every key figure confirmed: the bar gives way to a green pill.
-    const at = '2026-10-25T00:00:00Z'
-    const all: MappingEntry[] = MEANINGS.filter((m) => m.required).map((m) => ({ meaning: m.key, rowKey: '', label: null, nonePrinted: true, confirmedBy: 'Test Staff', confirmedAt: at }))
-    page(all)
-    expect(screen.queryByRole('status', { name: 'Key figures to review' })).toBeNull()
-    expect(screen.getByText('All key figures confirmed')).toBeTruthy()
-    expect(screen.getByText('Revenue').closest('[data-status]')!.getAttribute('data-status')).toBe('confirmed')
-
-    // Confirmed figures stay editable: the whole set, or one tile at a time.
-    expect(screen.getByRole('link', { name: /Edit key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
-    const revenue = screen.getByText('Revenue').closest('[data-status]') as HTMLElement
-    await userEvent.setup().click(within(revenue).getByRole('button', { name: 'Change' }))
-    const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('Change this key figure')).toBeTruthy()
-    expect(within(dialog).getByRole('radio', { name: /The statements don.t print this/ })).toBeTruthy()
+    renderPage({ ica: { status: 'held', cells: [] } })
+    expect(within(row()).getAllByRole('cell').map((c) => c.textContent)).toEqual(['Being prepared', 'Being prepared', 'Being prepared'])
+    cleanup()
+    renderPage()
+    expect(within(row()).getAllByRole('cell').map((c) => c.textContent)).toEqual(['—', '—', '—'])
   })
 
-  it('opens the exports when every printed total adds up', () => {
+  it('a suggested line is marked and opens the choice; "Confirm key figures" is always there', async () => {
+    const user = userEvent.setup()
     renderPage()
-    expect(screen.queryByText(/Needs review/)).toBeNull()
-    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('link', { name: /Confirm key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
+    const loan = document.querySelector('tr[data-row="loan_receivable"]') as HTMLElement
+    expect(loan.getAttribute('data-status')).toBe('suggested')
+    await user.click(within(loan).getByRole('button', { name: /check it/ }))
+    expect(within(screen.getByRole('dialog')).getByText('Check this key figure')).toBeTruthy()
   })
 })

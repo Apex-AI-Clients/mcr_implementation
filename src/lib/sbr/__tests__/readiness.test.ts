@@ -118,7 +118,7 @@ describe('financial statements', () => {
   it('never holds the prediction up for printed totals that do not add up: a note pointing to the comparison page', () => {
     const r = computeReadiness(input({ financials: { unreviewedFailures: 2 } }))
     expect(statusOf(r, 'financials')).toMatchObject({ status: 'ready' })
-    expect(statusOf(r, 'financials').detail).toBe('2 printed totals do not add up: they are listed at the bottom of the comparison page.')
+    expect(statusOf(r, 'financials').detail).toBe('2 printed totals do not add up: they are named under the year badges on the comparison page.')
     expect(r.canPredict).toBe(true)
   })
 

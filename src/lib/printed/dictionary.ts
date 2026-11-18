@@ -169,6 +169,9 @@ const NET_PROFIT: RegExp[] = [
   /^profit ?\/? ?\(?loss\)? before (distributions?|taxation|tax|income tax)$/i,
   /^profit \(?loss\)? from ordinary activities (before|after) (income )?tax/i,
 ]
+const TOTAL_CURRENT_ASSETS: RegExp[] = [/^total current assets$/i]
+const TOTAL_NON_CURRENT_ASSETS: RegExp[] = [/^total non[- ]?current assets$/i]
+const TOTAL_ASSETS: RegExp[] = [/^total assets$/i]
 const NET_ASSETS: RegExp[] = [/^net assets$/i, /^total (shareholders'?s? |members'? )?equity$/i, /^total trust funds$/i]
 
 /** An "Income" total that is net of cost of sales, or built on a profit line ("Trading Profit"): not revenue. */
@@ -246,6 +249,9 @@ const RULE: Partial<Record<Meaning, string>> = {
   net_assets: 'The net assets (or total equity) line the balance sheet prints.',
   ato_debt: 'A liability labelled ATO, BAS, GST, PAYG or activity statement (not super, not income tax).',
   income_tax_payable: 'A liability labelled income tax payable, provision for income tax or taxation.',
+  total_current_assets: 'The "Total current assets" line the balance sheet prints.',
+  total_non_current_assets: 'The "Total non-current assets" line the balance sheet prints.',
+  total_assets: 'The "Total assets" line the balance sheet prints.',
   credit_cards: 'A liability labelled credit card, Amex, Visa or Mastercard.',
   cash_loans: 'A liability labelled loan, chattel mortgage, hire purchase, finance or mortgage (not a related-party loan).',
   bank_overdraft: 'An overdraft, or a bank account printed under liabilities.',
@@ -327,6 +333,9 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
     // Never guessed: what is left over is for staff to choose.
     other_assets: [],
     share_capital: shareCapital,
+    total_current_assets: bestPerLayout(bs, TOTAL_CURRENT_ASSETS, n).slice(0, 1),
+    total_non_current_assets: bestPerLayout(bs, TOTAL_NON_CURRENT_ASSETS, n).slice(0, 1),
+    total_assets: bestPerLayout(bs, TOTAL_ASSETS, n).slice(0, 1),
   }
   const byKey = new Map([...bs, ...pl].map((r) => [r.key, r]))
   const loanRule = (meaning: 'loan_receivable' | 'loan_payable', key: string) => {

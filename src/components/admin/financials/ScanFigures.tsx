@@ -155,7 +155,9 @@ export function ScanChecksPanel({ clientId, comparison }: { clientId: string; co
 export function YearProofStrip({ comparison }: { comparison: PrintedComparison }) {
   const proofs = comparisonProof(comparison)
   if (proofs.length === 0) return null
+  const notes = proofs.filter((p) => p.status === 'printed_error').flatMap((p) => p.notes)
   return (
+    <div className="space-y-2">
     <ul data-testid="year-proofs" className="flex flex-wrap gap-2 text-xs">
       {proofs.map((p) => {
         const title = columnTitle(comparison.columns[p.index]).title
@@ -171,12 +173,21 @@ export function YearProofStrip({ comparison }: { comparison: PrintedComparison }
             {p.status === 'proven' && <> · ✓ {p.badge}</>}
             {p.status === 'held' && <> · Being prepared: {p.reasons.join('; ')}</>}
             {p.status === 'printed_error' && (
-              <> · As printed: {p.notes.length} printed total{p.notes.length === 1 ? ' does' : 's do'} not add up (listed at the bottom)</>
+              <> · As printed: {p.notes.length} printed total{p.notes.length === 1 ? ' does' : 's do'} not add up (listed below)</>
             )}
           </li>
         )
       })}
     </ul>
+    {/* The accountant's own totals that do not add up: shown as printed, named here; they never stop the prediction. */}
+    {notes.length > 0 && (
+      <ul data-testid="printed-total-notes" className="space-y-0.5 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-foreground/75">
+        {notes.map((n, i) => (
+          <li key={i}>{n}</li>
+        ))}
+      </ul>
+    )}
+    </div>
   )
 }
 
