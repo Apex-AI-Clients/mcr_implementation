@@ -7,6 +7,7 @@ import { tesseractTitles } from './ocr'
 import type { PrintedRead } from '@/lib/printed/types'
 import { readScannedPdf, type KeptReading, type PageReading, type ScanReader } from './readScanned'
 import { sendDeveloperAlert } from '@/lib/email/resend'
+import { joinProofBank } from '@/lib/proofBank/store'
 export { closeDeadScanJobs, latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
@@ -154,6 +155,8 @@ export async function runScanJob(
     await keepRead(supabase, { clientId, documentId, readerVersion }, result.read)
     // Figures the two readings disagree on (or one reader only read): the year waits, the developer is told once.
     await alertUncertainReading(supabase, clientId, documentId, result.read)
+    // Years the scan proved join the test bank (proofBank).
+    await joinProofBank(supabase, clientId)
     await supabase
       .from('scan_read_jobs')
       .update({

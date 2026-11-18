@@ -138,7 +138,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
  * before. If the scan check itself fails (a PDF pdf-lib cannot open), the
  * file is read as before.
  */
-async function readOrQueueScan(bytes: Uint8Array): Promise<PrintedRead> {
+export async function readOrQueueScan(bytes: Uint8Array): Promise<PrintedRead> {
   let found: Awaited<ReturnType<typeof scannedPages>> | null = null
   try {
     found = await scannedPages(bytes)
@@ -187,6 +187,8 @@ export interface LoadedComparison {
   builtAt: string | null
   /** Financial documents with no read by the current reader. */
   unread: number
+  /** Each file as the comparison took it (its read, staff choices applied). */
+  documents: ComparisonDocument[]
 }
 
 /**
@@ -213,5 +215,5 @@ export async function loadPrintedComparison(
     return { documentId: d.id, filename: d.original_filename, uploadedAt: d.uploaded_at, read: read ? applyScanChoices(read, choices.get(d.id) ?? []) : null }
   })
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
-  return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length }
+  return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
 }

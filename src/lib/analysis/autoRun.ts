@@ -9,6 +9,7 @@ import { analyseAndStoreAtoAccount, clientNamesFor } from './atoAccount/store'
 import { atoAccountText } from '@/lib/ica/upload'
 import { verifyAndStoreDocument } from '@/lib/ica/verifyStore'
 import { proveAndStoreNotices } from '@/lib/dpn/proofStore'
+import { joinProofBank } from '@/lib/proofBank/store'
 
 /**
  * Server-only. A client's analyses, run automatically when a document is
@@ -335,6 +336,9 @@ export async function runAutoAnalysis(params: {
         const proven = await proveAndStoreNotices(supabase, clientId)
         if (proven.unverified > 0) summary.notes.push(`${proven.unverified} director penalty notice(s) not proven`)
       }
+
+      // 7. The test bank (proofBank, migration 0060): each newly proven notice and statement joins it.
+      if (work.dpn.length > 0 || work.icaVerify.length > 0 || work.extract.length > 0) await joinProofBank(supabase, clientId)
     }
 
     await supabase

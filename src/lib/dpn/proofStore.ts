@@ -19,21 +19,9 @@ type ServerClient = ReturnType<typeof getSupabaseServerClient>
  */
 export async function proveAndStoreNotices(supabase: ServerClient, clientId: string): Promise<{ checked: number; unverified: number }> {
   try {
-    const [{ data: docs }, { data: noticeRows }, { data: company }, account] = await Promise.all([
-      supabase.from('documents').select('id, original_filename').eq('client_id', clientId).eq('doc_category', DOCUMENT_CATEGORIES.DIRECTOR_PENALTY_NOTICES),
-      supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
-      supabase.from('company_details').select('acn_number, directors').eq('client_id', clientId).maybeSingle(),
-      loadNoticeAccount(supabase, clientId).catch(() => null),
-    ])
-    if (!docs?.length || !noticeRows?.length) return { checked: 0, unverified: 0 }
-    const panel = buildDpnPanel({
-      documents: docs.map((d) => ({ id: d.id, originalFilename: d.original_filename })),
-      noticeRows,
-      client: { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
-      file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
-      todayIso: sydneyToday(),
-      account,
-    })
+    const loaded = await loadNoticePanel(supabase, clientId)
+    if (!loaded) return { checked: 0, unverified: 0 }
+    const { panel, noticeRows } = loaded
     const stored = new Map(noticeRows.map((r) => [r.document_id, r]))
     let unverified = 0
     for (const view of panel.notices) {
@@ -54,6 +42,26 @@ export async function proveAndStoreNotices(supabase: ServerClient, clientId: str
     console.error('[dpn-proof] failed', err instanceof Error ? err.message : 'unknown')
     return { checked: 0, unverified: 0 }
   }
+}
+
+/** The client's notices, each with its proof (proof.ts), as the pages show them; null with none. */
+export async function loadNoticePanel(supabase: ServerClient, clientId: string) {
+  const [{ data: docs }, { data: noticeRows }, { data: company }, account] = await Promise.all([
+    supabase.from('documents').select('id, original_filename').eq('client_id', clientId).eq('doc_category', DOCUMENT_CATEGORIES.DIRECTOR_PENALTY_NOTICES),
+    supabase.from('director_penalty_notices').select('*').eq('client_id', clientId),
+    supabase.from('company_details').select('acn_number, directors').eq('client_id', clientId).maybeSingle(),
+    loadNoticeAccount(supabase, clientId).catch(() => null),
+  ])
+  if (!docs?.length || !noticeRows?.length) return null
+  const panel = buildDpnPanel({
+    documents: docs.map((d) => ({ id: d.id, originalFilename: d.original_filename })),
+    noticeRows,
+    client: { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
+    file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
+    todayIso: sydneyToday(),
+    account,
+  })
+  return { panel, noticeRows }
 }
 
 /** What is stored: periods and counts, no amounts. */

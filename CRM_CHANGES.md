@@ -1046,3 +1046,8 @@ Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before depl
   the ATO account", "Every total on the statements adds up (FY2024, FY2025)"), "As printed: N printed totals do not add
   up", "Not used" (an empty export, or a statement whose years later reports cover), or "Being prepared". Read from the
   stored checks only; nothing is re-read when the page opens.
+- **Test bank** (`src/lib/proofBank`, migration `0060_proof_bank.sql`, written, **not applied**): every proven notice and
+  statement keeps its document id and the figures it proved; no copy of a file. `npm run proof:check` (also inside
+  `figures:check`) reads each banked file again with the current code and fails on any changed figure. After applying
+  0060, run `PROOF_BANK_JOIN=yes npm run proof:check` once. Dry run on 18 Nov 2026: 4 notices and 26 statement files
+  (26 years) from 7 clients would join; all 30 read again unchanged.

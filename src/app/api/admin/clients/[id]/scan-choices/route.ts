@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 import { loadStoredReads } from '@/lib/printed/store'
 import { saveScanChoice, ScanChoiceError } from '@/lib/scan/choices'
+import { joinProofBank } from '@/lib/proofBank/store'
 
 /**
  * PUT — staff correcting a figure Claude read from a scanned page
@@ -34,6 +35,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const reads = await loadStoredReads(supabase, clientId)
     const read = reads.get(parsed.data.documentId)?.read ?? null
     await saveScanChoice(supabase, { clientId, ...parsed.data, by: staffAuthorName(staff) }, read)
+    // A choice can prove a held year: it joins the test bank (proofBank).
+    await joinProofBank(supabase, clientId)
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof ScanChoiceError) return NextResponse.json({ error: err.message }, { status: 422 })

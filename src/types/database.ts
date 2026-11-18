@@ -2004,6 +2004,48 @@ export type Database = {
           },
         ]
       }
+      proof_bank: {
+        Row: {
+          client_id: string
+          document_id: string
+          expected: Json
+          id: string
+          joined_at: string
+          kind: string
+        }
+        Insert: {
+          client_id: string
+          document_id: string
+          expected: Json
+          id?: string
+          joined_at?: string
+          kind: string
+        }
+        Update: {
+          client_id?: string
+          document_id?: string
+          expected?: Json
+          id?: string
+          joined_at?: string
+          kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proof_bank_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proof_bank_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sbr_case_import_corrections: {
         Row: {
           applied: Json
