@@ -374,7 +374,8 @@ describe('Client page, Archive page and CVL page — files in CVL (migration 003
   it('a form marked complete: its Fill in is off, no Complete, and Unlock forms at the top (18 Nov 2026)', async () => {
     mockDb(IN_CVL, COMPANY, CASE, [], [{ form_code: '509', subject: 'company', completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' }])
     render(await CvlClientPage(PARAMS))
-    expect(screen.getByText(/Completed by Casey on/)).toBeTruthy()
+    expect(screen.getByText(/^Completed on /)).toBeTruthy()
+    expect(screen.queryByText(/Casey/)).toBeNull()
     expect(screen.getAllByRole('link', { name: /Fill in|Continue/ }).map((l) => l.getAttribute('href'))).not.toContain('/cvl/cl_1/forms/509?subject=company')
     expect(screen.queryByRole('button', { name: 'Mark Form 509 — The company complete' })).toBeNull()
     expect(screen.getByRole('button', { name: /Unlock forms/ })).toBeTruthy()

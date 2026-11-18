@@ -74,11 +74,11 @@ export function UnlockFormsButton({ caseId, count }: { caseId: string; count: nu
 }
 
 /** The disabled "Fill in" of a completed form. */
-export function LockedFillButton({ by, at }: { by: string; at: string }) {
+export function LockedFillButton({ at }: { at: string }) {
   return (
     <span
       aria-disabled="true"
-      title={`Completed by ${by} on ${new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}. Unlock the forms to edit it.`}
+      title={`Completed on ${new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}. Unlock the forms to edit it.`}
       className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 text-xs font-medium text-foreground/40"
     >
       <Lock className="h-3.5 w-3.5" /> Fill in

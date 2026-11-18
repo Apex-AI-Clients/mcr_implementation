@@ -205,7 +205,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       <p className="text-xs text-foreground/40">
                         <span className="sr-only">{f.title}. </span>
                         {f.done
-                          ? `Completed by ${f.done.by} on ${formatDate(f.done.at)}`
+                          ? `Completed on ${formatDate(f.done.at)}`
                           : f.draft
                             ? `Draft saved ${formatDate(f.draft.updated_at)}`
                             : 'Not opened yet'}
@@ -214,7 +214,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                   </div>
                   <div className="flex items-start gap-2">
                     {f.done ? (
-                      <LockedFillButton by={f.done.by} at={f.done.at} />
+                      <LockedFillButton at={f.done.at} />
                     ) : (
                       <Link
                         href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}

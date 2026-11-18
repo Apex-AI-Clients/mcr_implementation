@@ -1113,6 +1113,6 @@ Migration `0063_cvl_form_completions.sql` is written, **not applied**.
 - **Form 507 Part A, A10** is no longer pre-filled (its date used to start from Form 509's summary date; its name never
   was): left for whoever completes it.
 - **CVL file page**: "Preview" is gone from each form's row; "Complete" takes its place. A completed form shows "Completed
-  by <name> on <date>", its "Fill in / Continue" button is off, its entry screen sends staff back to the file, and saving
+  on <date>", its "Fill in / Continue" button is off, its entry screen sends staff back to the file, and saving
   or resetting it is refused. "Unlock forms" (top right of the ASIC forms list, shown once any form is complete) makes
   every form editable again. "Download" stays.

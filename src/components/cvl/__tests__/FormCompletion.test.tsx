@@ -50,11 +50,11 @@ describe('CVL form completion', () => {
     expect(fetchMock.mock.calls[0]).toEqual(['/api/admin/cvl/case-1/forms/completion', { method: 'DELETE' }])
   })
 
-  it('a completed form’s Fill in is off, and says who completed it', () => {
-    render(<LockedFillButton by="Casey" at="2026-11-18T00:00:00Z" />)
+  it('a completed form’s Fill in is off, and says when it was completed', () => {
+    render(<LockedFillButton at="2026-11-18T00:00:00Z" />)
     const fill = screen.getByText('Fill in').closest('[aria-disabled]')!
     expect(fill.getAttribute('aria-disabled')).toBe('true')
-    expect(fill.getAttribute('title')).toMatch(/^Completed by Casey on 18 Nov 2026\. Unlock the forms to edit it\.$/)
+    expect(fill.getAttribute('title')).toMatch(/^Completed on 18 Nov 2026\. Unlock the forms to edit it\.$/)
     expect(fill.closest('a')).toBeNull()
   })
 })
