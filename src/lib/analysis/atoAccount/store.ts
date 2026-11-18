@@ -11,8 +11,7 @@ import type { Database, Json } from '@/types/database'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { generateAtoAccountSummary } from '@/lib/ai/atoAccountSummary'
 import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
-import type { IncomeTaxSummary } from './incomeTax'
-import type { SuperGuaranteeSummary } from './superGuarantee'
+import { verifiedAccountSummary } from './verifiedSummary'
 
 /**
  * Server-only. Each ATO account CSV's analysis, stored in
@@ -354,21 +353,21 @@ export async function ensureAtoAccountSummary(supabase: ServerClient, clientId: 
   if (row.account_kind !== 'income_tax' && row.account_kind !== 'super_guarantee') return { kind: 'not_needed' }
   // Dates that could not be read: no figures to explain.
   if (storedUnparsedDateRows(row) > 0) return { kind: 'not_needed' }
-  // Only a file verified against the ATO's own balance is explained (migration 0058), and only from a
-  // summary that reaches that same balance exactly (the earlier engine's figures).
-  if (row.ica_status !== 'verified' || Number(row.unexplained_difference ?? 0) !== 0) return { kind: 'not_needed' }
-  if (row.needs_review && !row.reviewed_at) return { kind: 'locked' }
+  // Only a file verified against the ATO's own balance is explained (migration 0058), from the summary
+  // on the ICA engine: the rows that balance proved (verifiedSummary.ts).
+  const verified = verifiedAccountSummary({ kind: row.account_kind, rows: row.rows, label: row.account_label, ica_status: row.ica_status, ica_forced: row.ica_forced })
+  if (!verified) return { kind: 'not_needed' }
   if (row.ai_summary && row.ai_summary_generated_at && isClaudeSummary(row.ai_summary_model)) {
     return { kind: 'generated', text: row.ai_summary, generatedAt: row.ai_summary_generated_at }
   }
   if (!aiSummariesEnabled()) return { kind: 'not_needed' }
 
   try {
-    const account = { balance: row.balance === null ? null : Number(row.balance), balanceDate: row.balance_date }
+    const account = { balance: row.ica_balance === null ? null : Number(row.ica_balance), balanceDate: row.ica_balance_date }
     const ai =
-      row.account_kind === 'income_tax'
-        ? await generateAtoAccountSummary({ ...account, kind: 'income_tax', summary: row.summary as unknown as IncomeTaxSummary })
-        : await generateAtoAccountSummary({ ...account, kind: 'super_guarantee', summary: row.summary as unknown as SuperGuaranteeSummary })
+      verified.kind === 'income_tax'
+        ? await generateAtoAccountSummary({ ...account, kind: 'income_tax', summary: verified.summary })
+        : await generateAtoAccountSummary({ ...account, kind: 'super_guarantee', summary: verified.summary })
     const now = new Date().toISOString()
     await supabase
       .from('ato_account_analyses')

@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from 'fs'
 import path from 'path'
 import { LATE_LODGEMENT_SCOPE, type LateLodgementScope } from '@/lib/analysis/config'
 import { analyseAtoAccount } from '@/lib/analysis/atoAccount'
+import { verifiedAccountAnalysis } from '@/lib/analysis/atoAccount/verifiedSummary'
+import { readIcaFile } from '@/lib/ica/read'
 import {
   ATO_ACCOUNTS_DIR,
   analyseLodgements,
@@ -232,4 +234,31 @@ it('compares the ATO income tax and super guarantee accounts with the verified f
   }
   out('')
   if (failing > 0) throw new Error(`${failing} ATO account(s) differ from their verified figures (see above).`)
+})
+
+/**
+ * The same accounts on the ICA engine (Stage 3, 18 Nov 2026): the summary the pages now show,
+ * built only from the rows the ATO's own balance proved, against the same answer keys.
+ */
+it('the income tax and super guarantee summaries on the ICA engine match the verified figures', () => {
+  const accounts = readAtoAccounts()
+  if (accounts.length === 0) return
+  let failing = 0
+  for (const { alias, file } of accounts) {
+    const expectedFile = path.join(ATO_ACCOUNTS_DIR, `${alias}.expected.json`)
+    if (!existsSync(expectedFile)) continue
+    const ica = readIcaFile(new Uint8Array(readFileSync(path.join(ATO_ACCOUNTS_DIR, file))))
+    const kind = ica.kind === 'super_guarantee' ? 'super_guarantee' : 'income_tax'
+    const analysis = verifiedAccountAnalysis(kind, ica)
+    if (!analysis) {
+      failing++
+      out(`  ${alias} (ICA engine): DOES NOT VERIFY`)
+      continue
+    }
+    const differences = compareLodgement(JSON.parse(readFileSync(expectedFile, 'utf8')) as LodgementFigures, atoAccountFigures(analysis as never))
+    out(`  ${alias} (ICA engine): ${differences.length === 0 ? 'all verified figures match' : `${differences.length} difference(s)`}`)
+    for (const d of differences) out(`    ${d.replace(/^lodgement {2}/, '')}`)
+    if (differences.length) failing++
+  }
+  if (failing > 0) throw new Error(`${failing} ATO account summary(ies) on the ICA engine differ (see above).`)
 })

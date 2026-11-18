@@ -318,9 +318,7 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
   const verification = payload.verification ?? null
   const verified = !!verification?.verified
   const lock = verified ? null : exportLock(payload)
-  // The account's own summary comes from the earlier account engine: shown beside a verified composition
-  // only when that engine reaches the same ATO balance exactly.
-  const showSummary = !verified || payload.unexplained === 0
+  // The account's own summary is on the ICA engine (verifiedSummary.ts): from the rows the ATO's balance proved.
   const fileName = `${clientName}_${payload.label}`.replace(/[^\w.-]+/g, '_')
   const [ai, setAi] = useState({ text: payload.aiSummary ?? null, at: payload.aiSummaryGeneratedAt ?? null })
 
@@ -457,14 +455,14 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
         />}
       </div>
 
-      {showSummary && (
+      {payload.summary && (
         <>
           <Card>
-            {payload.kind === 'income_tax' ? (
+            {payload.kind === 'income_tax' && payload.summary ? (
               <IncomeTaxSection summary={payload.summary} account={payload.label} />
-            ) : (
+            ) : payload.kind === 'super_guarantee' && payload.summary ? (
               <SuperGuaranteeSection summary={payload.summary} account={payload.label} />
-            )}
+            ) : null}
           </Card>
 
           <p className="flex items-start gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-xs text-foreground/70">

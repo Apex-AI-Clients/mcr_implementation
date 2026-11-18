@@ -27,16 +27,36 @@ function db(row: Record<string, unknown> | null) {
   return { supabase: { from: () => chain } as never, updates }
 }
 
+// A synthetic income tax account the ICA engine verifies: newest first, its running balance the answer key.
+const ROWS = [
+  { rowIndex: 0, processedDate: '2026-10-01', effectiveDate: '2026-10-01', description: 'Payment received', debit: null, credit: 1000, balance: 20100 },
+  {
+    rowIndex: 1,
+    processedDate: '2026-04-16',
+    effectiveDate: '2026-05-15',
+    description: 'Tax return Companies - Income Tax for the period from 01 Jul 24 to 30 Jun 25',
+    debit: 21100,
+    credit: null,
+    balance: 21100,
+  },
+]
+
 const ROW = {
   id: 'an-1',
-  // Verified against the ATO's own balance (migration 0058), and the earlier engine reaches it exactly.
+  // Verified against the ATO's own balance (migration 0058).
   ica_status: 'verified',
-  unexplained_difference: 0,
+  ica_forced: {},
+  ica_balance: 20100,
+  ica_balance_date: '2026-10-01',
   account_kind: 'income_tax',
-  balance: 20100,
-  balance_date: '2026-10-01',
-  summary: { assessments: [], payments: { count: 0, total: 0, first: null, last: null }, gic: { charged: 0, remitted: 0, net: 0 } },
-  needs_review: false,
+  account_label: 'Income tax 001',
+  rows: ROWS,
+  // The earlier engine's figures: no longer what is explained.
+  unexplained_difference: 1250,
+  balance: 1,
+  balance_date: '2020-01-01',
+  summary: {},
+  needs_review: true,
   reviewed_at: null,
   ai_summary: null,
   ai_summary_generated_at: null,
@@ -49,25 +69,17 @@ beforeEach(() => {
 })
 
 describe('ensureAtoAccountSummary', () => {
-  it('writes one from the stored figures and keeps it', async () => {
+  it('writes one from the summary on the ICA engine (the rows the ATO balance proved) and keeps it', async () => {
     generate.mockResolvedValue({ text: 'Summary.', model: 'anthropic/claude-sonnet-5.5' })
     const { supabase, updates } = db(ROW)
     const out = await ensureAtoAccountSummary(supabase, 'c1', 'an-1')
     expect(out).toMatchObject({ kind: 'generated', text: 'Summary.' })
-    expect(generate.mock.calls[0][0]).toMatchObject({ kind: 'income_tax', balance: 20100, balanceDate: '2026-10-01' })
+    const input = generate.mock.calls[0][0]
+    expect(input).toMatchObject({ kind: 'income_tax', balance: 20100, balanceDate: '2026-10-01' })
+    expect(input.summary.assessedTotal).toBe(21100)
+    expect(input.summary.payments).toMatchObject({ count: 1, total: 1000 })
+    expect(input.summary.assessments[0]).toMatchObject({ amount: 21100, unpaid: 20100, paymentDue: '2026-05-15' })
     expect(updates[0]).toMatchObject({ ai_summary: 'Summary.', ai_summary_model: 'anthropic/claude-sonnet-5.5' })
-  })
-
-  it('writes none while the analysis needs review', async () => {
-    const { supabase } = db({ ...ROW, needs_review: true })
-    expect(await ensureAtoAccountSummary(supabase, 'c1', 'an-1')).toEqual({ kind: 'locked' })
-    expect(generate).not.toHaveBeenCalled()
-  })
-
-  it('writes one once reviewed', async () => {
-    generate.mockResolvedValue({ text: 'Summary.', model: 'anthropic/claude-sonnet-5.5' })
-    const { supabase } = db({ ...ROW, needs_review: true, reviewed_at: '2026-10-26T00:00:00Z' })
-    expect((await ensureAtoAccountSummary(supabase, 'c1', 'an-1')).kind).toBe('generated')
   })
 
   it('returns the stored one without asking again, and none when the summaries are off', async () => {
@@ -78,8 +90,9 @@ describe('ensureAtoAccountSummary', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
-  it('writes none for a file not verified against the ATO balance, or whose earlier figures do not reach it', async () => {
-    for (const row of [{ ...ROW, ica_status: 'unverified' }, { ...ROW, ica_status: null }, { ...ROW, unexplained_difference: 1250 }]) {
+  it('writes none for a file not verified against the ATO balance, or whose rows no longer verify', async () => {
+    const broken = ROWS.map((r) => (r.rowIndex === 0 ? { ...r, balance: 20000 } : r))
+    for (const row of [{ ...ROW, ica_status: 'unverified' }, { ...ROW, ica_status: null }, { ...ROW, rows: broken }]) {
       expect(await ensureAtoAccountSummary(db(row).supabase, 'c1', 'an-1')).toEqual({ kind: 'not_needed' })
     }
     expect(generate).not.toHaveBeenCalled()
