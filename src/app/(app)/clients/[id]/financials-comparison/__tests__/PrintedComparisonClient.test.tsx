@@ -16,7 +16,11 @@ const { PrintedComparisonClient } = await import('../PrintedComparisonClient')
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  window.localStorage.clear()
 })
+
+/** The table view, as a user who chose it last time. */
+const asTable = () => window.localStorage.setItem('mcr.financials-comparison.view', 'table')
 
 const fy = (y: number): PrintedColumn => ({ header: String(y), periodStart: `${y - 1}-07-01`, periodEnd: `${y}-06-30`, kind: 'annual', financialYear: y })
 const current: PrintedColumn = { header: '30 Sep 2025', periodStart: '2025-07-01', periodEnd: '2025-09-30', kind: 'current_period', financialYear: 2026 }
@@ -62,6 +66,7 @@ function renderPage({ mapping = [] as MappingEntry[], ica = NO_ICA } = {}) {
 
 describe('PrintedComparisonClient', () => {
   it('shows only the headline figures, in Gabby’s order and wording, the current period as a column beside the years', () => {
+    asTable()
     renderPage()
     const table = within(screen.getByTestId('headline-figures')).getByRole('table')
     const heads = within(table).getAllByRole('columnheader').map((h) => h.textContent)
@@ -89,6 +94,7 @@ describe('PrintedComparisonClient', () => {
   })
 
   it('fills each row from its printed line, every year, and the current period too', () => {
+    asTable()
     renderPage()
     const row = (key: string) => document.querySelector(`tr[data-row="${key}"]`) as HTMLElement
     const cells = (key: string) => within(row(key)).getAllByRole('cell').map((c) => c.textContent)
@@ -100,6 +106,7 @@ describe('PrintedComparisonClient', () => {
   })
 
   it('each figure says where it is printed and can copy the line', async () => {
+    asTable()
     const user = userEvent.setup()
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -113,6 +120,7 @@ describe('PrintedComparisonClient', () => {
   })
 
   it('the ICA row: the ATO balance at each period end when verified, "Being prepared" when not, a dash without an account', () => {
+    asTable()
     const balances = [{ label: 'Activity statement 001', documentId: 'ica', filename: 'ica.csv', cents: 1234500, day: '2024-06-28', row: { rawProcessed: '28 Jun 2024', description: 'Payment received', rawBalance: '$12,345.00 DR' } }]
     const ica: IcaHeadline = {
       status: 'ok',
@@ -130,6 +138,7 @@ describe('PrintedComparisonClient', () => {
   })
 
   it('a suggested line is marked and opens the choice; "Confirm key figures" is always there', async () => {
+    asTable()
     const user = userEvent.setup()
     renderPage()
     expect(screen.getByRole('link', { name: /Confirm key figures/ }).getAttribute('href')).toBe('/clients/client-1/financials-comparison/mapping')
@@ -137,5 +146,30 @@ describe('PrintedComparisonClient', () => {
     expect(loan.getAttribute('data-status')).toBe('suggested')
     await user.click(within(loan).getByRole('button', { name: /check it/ }))
     expect(within(screen.getByRole('dialog')).getByText('Check this key figure')).toBeTruthy()
+  })
+
+  it('opens on Cards: one card per headline figure, the same eight, every year with its source', () => {
+    renderPage()
+    const cards = screen.getByTestId('headline-cards')
+    const titles = [...cards.querySelectorAll('[data-card]')].map((c) => c.getAttribute('data-card'))
+    expect(titles).toEqual(['loan_receivable', 'loan_payable', 'net_profit', 'ica', 'income_tax_payable', 'total_current_assets', 'total_non_current_assets', 'total_assets'])
+    expect(screen.queryByText(/^Revenue$/)).toBeNull()
+    const total = cards.querySelector('[data-card="total_assets"]') as HTMLElement
+    expect(total.textContent).toContain('From the printed line “Total Assets”')
+    expect(total.textContent).toMatch(/FY2024\s*1,350/)
+    expect(within(total).getAllByRole('button', { name: /Where 1,455 comes from/ }).length).toBeGreaterThan(0)
+  })
+
+  it('switches to Table and back, and remembers the choice', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    expect(screen.getByRole('button', { name: 'Cards' }).getAttribute('aria-pressed')).toBe('true')
+    await user.click(screen.getByRole('button', { name: 'Table' }))
+    expect(screen.queryByTestId('headline-cards')).toBeNull()
+    expect(within(screen.getByTestId('headline-figures')).getByRole('table')).toBeTruthy()
+    expect(window.localStorage.getItem('mcr.financials-comparison.view')).toBe('table')
+    cleanup()
+    renderPage()
+    expect(screen.getByRole('button', { name: 'Table' }).getAttribute('aria-pressed')).toBe('true')
   })
 })

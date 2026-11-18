@@ -140,3 +140,19 @@ export function headlineCsv(input: { clientName: string; comparison: PrintedComp
   }
   return lines.join('\r\n')
 }
+
+/** The CSV of the "Cards" view: one block per figure, its printed lines, then every year. */
+export function headlineCardsCsv(input: { clientName: string; comparison: PrintedComparison; rows: HeadlineRow[] }): string {
+  const heads = input.comparison.columns.map(columnTitle)
+  const lines = [csvRow('Financial statements — headline figures', input.clientName), csvRow('Generated', new Date().toISOString())]
+  for (const r of input.rows) {
+    const printed = [...new Set(r.cells.flatMap((c) => (c.kind === 'value' ? c.lines.map((l) => l.label.trim()) : [])))]
+    const state = r.status === 'suggested' ? 'Suggested line, not confirmed yet' : r.status === 'not_found' ? 'No printed line matched' : r.notPrinted ? 'Not printed' : ''
+    lines.push('', csvRow(r.label.toUpperCase(), r.meaning ? (printed.length ? `From ${printed.map((l) => `“${l}”`).join(', ')}` : '') : "The ATO's own balance at each period's end (verified ATO account)", state))
+    r.cells.forEach((c, i) => {
+      const value = c.kind === 'value' ? formatPrinted(c.value) : c.kind === 'ica' ? audBalance(Math.round(c.cell.value * 100)) : c.kind === 'held' ? BEING_PREPARED : ''
+      lines.push(csvRow(`${heads[i].title} (${heads[i].period})`, value, c.kind === 'value' && c.note ? c.note : ''))
+    })
+  }
+  return lines.join('\r\n')
+}

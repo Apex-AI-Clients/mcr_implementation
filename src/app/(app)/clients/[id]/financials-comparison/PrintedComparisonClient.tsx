@@ -1,19 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Download, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
-import { HeadlineFiguresTable } from '@/components/admin/financials/HeadlineFiguresTable'
+import { HeadlineFiguresTable, type HeadlineView } from '@/components/admin/financials/HeadlineFiguresTable'
 import { ScanChecksPanel, ScanProgress, YearProofStrip } from '@/components/admin/financials/ScanFigures'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
 import type { Meaning } from '@/lib/printed/meanings'
 import type { PrintedComparison } from '@/lib/printed/compare'
-import { headlineCsv, headlineRows, type IcaHeadline } from '@/lib/printed/headline'
+import { headlineCardsCsv, headlineCsv, headlineRows, type IcaHeadline } from '@/lib/printed/headline'
+
+/** Where the Cards / Table choice is kept (per browser). */
+const VIEW_KEY = 'mcr.financials-comparison.view'
 
 interface Props {
   clientId: string
@@ -39,6 +42,24 @@ interface Props {
  */
 export function PrintedComparisonClient({ clientId, basePath = `/clients/${clientId}`, clientName, comparison, mapping, suggestions, possible = {}, ica, earlierYears = false }: Props) {
   const router = useRouter()
+  // Cards (the default) or Table, remembered in this browser (localStorage; a convenience only).
+  const [view, setView] = useState<HeadlineView>('cards')
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(VIEW_KEY)
+      if (saved === 'table' || saved === 'cards') setView(saved)
+    } catch {
+      // Storage blocked: the default.
+    }
+  }, [])
+  function chooseView(v: HeadlineView) {
+    setView(v)
+    try {
+      window.localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      // Storage blocked: the choice lasts for this visit.
+    }
+  }
   const [rereading, setRereading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasTables = comparison.tables.length > 0
@@ -59,7 +80,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
   }
 
   function exportCsv() {
-    const csv = headlineCsv({ clientName, comparison, rows })
+    const csv = view === 'cards' ? headlineCardsCsv({ clientName, comparison, rows }) : headlineCsv({ clientName, comparison, rows })
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -85,6 +106,21 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
             </p>
           </div>
           <div className="no-print flex flex-wrap items-center gap-2">
+            {hasTables && (
+              <div role="group" aria-label="View" className="inline-flex overflow-hidden rounded-md border border-border/60 text-xs">
+                {(['cards', 'table'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={view === v}
+                    onClick={() => chooseView(v)}
+                    className={view === v ? 'bg-accent px-2.5 py-1 font-medium text-white' : 'px-2.5 py-1 text-foreground/70 hover:bg-surface/60'}
+                  >
+                    {v === 'cards' ? 'Cards' : 'Table'}
+                  </button>
+                ))}
+              </div>
+            )}
             {hasTables && (
               <>
                 <ExportPdfButton targetId="financials-export-root" fileName={`${clientName}_headline_figures`} />
@@ -124,7 +160,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
               )}
             </label>
           )}
-          <HeadlineFiguresTable clientId={clientId} basePath={basePath} comparison={comparison} rows={rows} mapping={mapping} suggestions={suggestions} possible={possible} />
+          <HeadlineFiguresTable clientId={clientId} basePath={basePath} view={view} comparison={comparison} rows={rows} mapping={mapping} suggestions={suggestions} possible={possible} />
         </>
       )}
     </div>

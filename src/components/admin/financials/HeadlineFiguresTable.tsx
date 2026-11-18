@@ -20,9 +20,14 @@ import { formatBadgeDate } from '@/lib/ica/view'
 import { balanceLine, type IcaHeadlineCell } from '@/lib/ica/balanceAt'
 import { KeyFigureCard, isAutoSelected, keyFigureStatus } from './keyFigures/KeyFigureCard'
 
+/** How the headline figures are laid out (Gabby, 18 Nov 2026): one card per figure (the default), or a table. */
+export type HeadlineView = 'cards' | 'table'
+
 interface Props {
   clientId: string
   basePath?: string
+  /** 'cards' (default): one card per figure; 'table': years side by side. The same figures either way. */
+  view?: HeadlineView
   comparison: PrintedComparison
   /** headlineRows (printed/headline.ts): the same rows the CSV export writes. */
   rows: HeadlineRow[]
@@ -43,7 +48,7 @@ const LOOK: Record<LineStatus, { icon: typeof CheckCircle2; className: string; l
  * each printed line's row says whether it is confirmed and opens the choice; "Confirm key
  * figures" is always one click away.
  */
-export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId}`, comparison, rows, mapping, suggestions, possible = {} }: Props) {
+export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId}`, view = 'cards', comparison, rows, mapping, suggestions, possible = {} }: Props) {
   const [open, setOpen] = useState<Meaning | null>(null)
   const keyFigures = `${basePath}/financials-comparison/mapping`
   const entriesOf = (m: Meaning) => mapping.filter((e) => e.meaning === m)
@@ -67,6 +72,9 @@ export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId
         </div>
       </div>
 
+      {view === 'cards' ? (
+        <HeadlineCards rows={rows} comparison={comparison} basePath={basePath} keyFigures={keyFigures} onOpen={setOpen} />
+      ) : (
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full text-sm">
           <thead>
@@ -116,6 +124,7 @@ export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId
           </tbody>
         </table>
       </div>
+      )}
       {rows.some((r) => r.key === 'ica' && r.cells.some((c) => c.kind === 'blank' && c.why === 'No ATO account on file')) && (
         <p className="text-xs text-foreground/50">ATO related debt – ICA: no activity statement account has been uploaded.</p>
       )}
@@ -204,4 +213,91 @@ export function valueSource(row: HeadlineRow, cell: Extract<HeadlineRow['cells']
     { confirmUrl: keyFigures },
   )
   return cell.note ? { ...source, from: [...source.from, cell.note] } : source
+}
+
+const EDGE: Record<LineStatus | 'ica', string> = {
+  confirmed: 'border-t-success',
+  suggested: 'border-t-warning',
+  not_found: 'border-t-destructive border-dashed',
+  ica: 'border-t-accent',
+}
+
+/**
+ * "Cards": one card per headline figure, as the comparison page showed them before (Gabby, 18 Nov 2026):
+ * its state, the printed line(s) it comes from, the latest figure, every year, and Change. The same rows,
+ * proofs, ⓘ and Copy as the table.
+ */
+function HeadlineCards({
+  rows,
+  comparison,
+  basePath,
+  keyFigures,
+  onOpen,
+}: {
+  rows: HeadlineRow[]
+  comparison: PrintedComparison
+  basePath: string
+  keyFigures: string
+  onOpen: (m: Meaning) => void
+}) {
+  return (
+    <div data-testid="headline-cards" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {rows.map((row) => {
+        const shown = row.cells.map((c, i) => ({ c, i })).filter(({ c }) => c.kind === 'value' || c.kind === 'ica')
+        const latest = shown[shown.length - 1]
+        const lines = [...new Set(row.cells.flatMap((c) => (c.kind === 'value' ? c.lines.map((l) => l.label.trim()) : [])))]
+        const cellView = (c: HeadlineRow['cells'][number], i: number) =>
+          c.kind === 'held' ? (
+            <span className="text-foreground/55" title={c.reasons.join('; ')}>
+              {BEING_PREPARED}
+            </span>
+          ) : c.kind === 'blank' ? (
+            <span className="text-foreground/40" title={c.why ?? undefined}>
+              —
+            </span>
+          ) : c.kind === 'ica' ? (
+            <SourcedAmount value={c.cell.value} format={(v) => audBalance(Math.round(v * 100))} source={icaSource(c.cell, basePath)} />
+          ) : (
+            <SourcedAmount value={c.value} format={formatPrinted} source={valueSource(row, c, comparison, i, keyFigures)} />
+          )
+        return (
+          <div
+            key={row.key}
+            data-card={row.key}
+            data-status={row.status ?? undefined}
+            className={cn('rounded-lg border border-border/60 border-t-4 bg-card p-3', EDGE[row.status ?? 'ica'])}
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-foreground/55">
+              {row.meaning ? <LineLabel row={row} meaning={row.meaning} onOpen={onOpen} /> : row.label}
+            </div>
+            <p className="mt-1.5 text-[11px] text-foreground/55">
+              {row.meaning
+                ? lines.length
+                  ? `From ${lines.length > 1 ? 'the printed lines' : 'the printed line'} ${lines.map((l) => `“${l}”`).join(', ')}`
+                  : row.notPrinted
+                    ? 'Not printed'
+                    : 'No printed line yet'
+                : "The ATO's own balance at each period's end, from the verified ATO account"}
+            </p>
+            {latest ? (
+              <>
+                <p className="mt-3 text-[10px] uppercase tracking-wide text-foreground/45">{columnTitle(comparison.columns[latest.i]).title}</p>
+                <p className={cn('text-lg font-semibold tabular-nums', row.status === 'suggested' ? 'text-foreground/70' : 'text-foreground')}>{cellView(latest.c, latest.i)}</p>
+              </>
+            ) : (
+              <p className="mt-3 text-xs text-foreground/60">No figure for these years.</p>
+            )}
+            <ul className="mt-2 space-y-0.5 text-[11px] tabular-nums text-foreground/65">
+              {row.cells.map((c, i) => (
+                <li key={comparison.columns[i].key} className="flex justify-between gap-2">
+                  <span>{columnTitle(comparison.columns[i]).title}</span>
+                  <span>{cellView(c, i)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+    </div>
+  )
 }

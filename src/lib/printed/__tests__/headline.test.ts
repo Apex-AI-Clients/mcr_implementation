@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildPrintedComparison, type ComparisonDocument } from '../compare'
 import { suggestMapping } from '../dictionary'
-import { headlineCsv, headlineRows, HEADLINE_ROWS } from '../headline'
+import { headlineCardsCsv, headlineCsv, headlineRows, HEADLINE_ROWS } from '../headline'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '../types'
 
 /** The comparison page's headline figures and their CSV. Synthetic reports only. */
@@ -39,5 +39,14 @@ describe('headline figures', () => {
     expect(csv).toContain('ATO related debt – ICA,Being prepared,Being prepared,')
     expect(csv).toContain('Net profit,,,No printed line matched')
     expect(csv.join('\n')).not.toMatch(/Cash/)
+  })
+
+  it('the Cards CSV: one block per figure, its printed line, then every year', () => {
+    const c = buildPrintedComparison([doc], { comparativeYears: true })
+    const rows = headlineRows(c, [], suggestMapping(c), { status: 'held', cells: [] })
+    const csv = headlineCardsCsv({ clientName: 'Example', comparison: c, rows }).split('\r\n')
+    const at = csv.indexOf('TOTAL ASSETS,From “Total Assets”,"Suggested line, not confirmed yet"')
+    expect(at).toBeGreaterThan(0)
+    expect(csv.slice(at + 1, at + 3)).toEqual(['FY2024 (1 Jul 2023 – 30 Jun 2024),80,', 'FY2025 (1 Jul 2024 – 30 Jun 2025),100,'])
   })
 })
