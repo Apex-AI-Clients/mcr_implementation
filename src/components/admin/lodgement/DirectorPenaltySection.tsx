@@ -10,6 +10,7 @@ import { CopyButton, VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import type { DpnRiskBreakdown } from '@/lib/analysis/types'
 import { lateSinceNil, lateStatements, type LateStatementRow } from '@/lib/analysis/lateList'
 import type { DpnNoticeFigures, DpnNoticeItem } from '@/lib/dpn/noticeFigures'
+import { byTaxType, type NoticeCell, type TaxTypeRow } from '@/lib/dpn/byTaxType'
 
 /**
  * The lodgement page's director penalty section (Gabby, 16 Nov 2026):
@@ -108,10 +109,6 @@ export function DirectorPenaltySection({
                   }}
                 />
               </p>
-              <p data-explanation className="mt-0.5 text-xs text-foreground/55">
-                Column 3 of the current notices{notices.byType.length ? ' · ' : ''}
-                {notices.byType.map((t) => `${t.label} ${aud(t.unpaid)}`).join(' · ')}
-              </p>
               {notices.badges.length > 0 && (
                 <div className="mt-2">
                   <VerifiedBadge text={notices.badges.join(' · ')} />
@@ -139,8 +136,7 @@ export function DirectorPenaltySection({
             />
           </p>
           <p data-explanation className="mt-0.5 text-xs text-foreground/55">
-            {since.since ? `Since ${day(since.since)}` : 'Whole export (the balance was never nil)'} · GST {aud(since.gst)} · PAYG withholding {aud(since.paygw)}
-            {since.other ? ` · other ${aud(since.other)}` : ''} (each counted on its own)
+            {since.since ? `Since ${day(since.since)}` : 'Whole export (the balance was never nil)'}
           </p>
           {accountBadge && (
             <div className="mt-2">
@@ -149,6 +145,8 @@ export function DirectorPenaltySection({
           )}
         </Card>
       </div>
+
+      <ByTaxType notices={notices} since={since} dpnPage={dpnPage} />
 
       <div id="late-statements" className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -349,5 +347,82 @@ function NoticeProblems({ notice: n }: { notice: DpnNoticeItem }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/**
+ * "By tax type" (Gabby, 18 Nov 2026): the split the two cards no longer show. The notice columns only
+ * once that type's notices are proven; the last column from the verified ATO account, each type on its
+ * own. The total row equals the two cards.
+ */
+function ByTaxType({ notices, since, dpnPage }: { notices: DpnNoticeFigures | null; since: ReturnType<typeof lateSinceNil>; dpnPage?: string }) {
+  const rows = byTaxType(notices, since)
+  const noticeLink = dpnPage ? { kind: 'href' as const, href: dpnPage, label: 'Open the director penalty notices' } : null
+  const noticeCell = (row: TaxTypeRow, c: NoticeCell, column: string, what: string) =>
+    c.kind === 'held' ? (
+      <span className="text-xs text-foreground/55">{BEING_PREPARED}</span>
+    ) : c.kind === 'none' ? (
+      <span className="text-xs text-foreground/45">{row.key === 'total' || row.key === 'other' ? '—' : 'No notice uploaded'}</span>
+    ) : (
+      <SourcedAmount
+        value={c.value}
+        format={aud}
+        source={{
+          from: [
+            `${row.label}: ${what}`,
+            row.key === 'total'
+              ? `${column} of the current director penalty notices, every type added up.`
+              : `${column} of the current ${row.label} notice${(notices?.items.filter((n) => n.type === row.key).length ?? 0) === 1 ? '' : 's'}, each period once.`,
+          ],
+          link: noticeLink,
+        }}
+      />
+    )
+  return (
+    <section data-testid="dpn-by-tax-type" className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground/50">By tax type</h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border text-left text-foreground/50">
+              <th className="py-1.5 pr-3 font-medium">Type</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Unpaid (notices)</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Removed if acted on by the deadline</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Stays with the director unless paid</th>
+              <th className="py-1.5 pr-3 font-medium">Deadline</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Lodged more than 90 days late since the balance was last nil (ATO account)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} data-row={row.key} className={cn('border-b border-white/8', row.key === 'total' && 'font-semibold')}>
+                <th scope="row" className="py-1.5 pr-3 text-left font-medium text-foreground/85">{row.label}</th>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{noticeCell(row, row.unpaid, 'Column 3', 'unpaid')}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{noticeCell(row, row.removable, 'Column 4', 'removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by the deadline')}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{noticeCell(row, row.stays, 'Column 5', 'stays with the director unless paid')}</td>
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  {row.deadline ? (row.deadline.passed ? `Deadline passed ${day(row.deadline.iso)}` : day(row.deadline.iso)) : row.key === 'total' ? '' : '—'}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  <SourcedAmount
+                    value={row.lateSinceNil}
+                    format={aud}
+                    source={{
+                      from: [
+                        `${row.label}: lodged more than 90 days late since the balance was last nil`,
+                        row.key === 'total'
+                          ? 'Every tax type added up, each counted on its own (a credit of one never offsets another).'
+                          : `The ${row.label} lines of the activity statements lodged more than 90 days late${since.since ? ` since ${day(since.since)}` : ''}, from the ATO account verified against its own balance.`,
+                      ],
+                      link: { kind: 'href', href: '#late-statements', label: 'Show the statements' },
+                    }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }

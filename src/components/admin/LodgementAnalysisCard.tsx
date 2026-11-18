@@ -20,6 +20,7 @@ import { CopyButton, downloadAnalysisXlsx, HeldBackAccount, VerifiedBadge, Verif
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
+import { byTaxType, noticeCellText } from '@/lib/dpn/byTaxType'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 
 interface Props {
@@ -112,11 +113,23 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
         'Lodged more than 90 days late since the balance was last nil',
         formatCurrencyExport(since.total),
         since.since ? `Since ${formatIsoExport(since.since)}` : 'Whole export (the balance was never nil)',
-        `GST ${formatCurrencyExport(since.gst)}`,
-        `PAYG withholding ${formatCurrencyExport(since.paygw)}`,
-        since.other ? `Other ${formatCurrencyExport(since.other)}` : '',
       ),
     )
+    lines.push('')
+    lines.push(csvRow('BY TAX TYPE'))
+    lines.push(csvRow('Type', 'Unpaid (notices)', 'Removed if acted on by the deadline', 'Stays with the director unless paid', 'Deadline', 'Lodged more than 90 days late since the balance was last nil (ATO account)'))
+    for (const r of byTaxType(notices, since)) {
+      lines.push(
+        csvRow(
+          r.label,
+          noticeCellText(r.unpaid, formatCurrencyExport),
+          noticeCellText(r.removable, formatCurrencyExport),
+          noticeCellText(r.stays, formatCurrencyExport),
+          r.deadline ? `${r.deadline.passed ? 'Deadline passed ' : ''}${formatDay(r.deadline.iso)}` : '',
+          formatCurrencyExport(r.lateSinceNil),
+        ),
+      )
+    }
     lines.push('')
     lines.push(csvRow('LODGED MORE THAN 90 DAYS LATE (since the balance was last nil)'))
     lines.push(csvRow('Period ending', 'Lodged (processed)', 'Due (effective)', 'Days late', 'GST', 'PAYG withholding', 'Other', 'Total', 'Description as printed'))

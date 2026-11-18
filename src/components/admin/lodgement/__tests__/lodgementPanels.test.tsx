@@ -127,8 +127,33 @@ describe('DPN panel (Gabby, 16 Nov 2026)', () => {
     expect(section.textContent).toContain('From the ATO account')
     expect(section.textContent).toContain('Lodged more than 90 days late since the balance was last nil')
     expect(section.textContent).toContain('$8,000.00')
-    expect(section.textContent).toMatch(/Since 15 Mar 2024 · GST \$5,000\.00 · PAYG withholding \$3,000\.00/)
+    // The cards: their total, source and badge only; the split is in "By tax type" (18 Nov 2026).
+    const cards = section.querySelector('.grid')!.textContent!
+    expect(cards).toContain('Since 15 Mar 2024')
+    expect(cards).not.toMatch(/GST \$5,000\.00|PAYG withholding \$|each counted on its own/)
     expect(screen.getByRole('link', { name: /DPN Summary/ }).getAttribute('href')).toBe('/clients/client-1/director-penalty-notices')
+  })
+
+  it('splits both cards by tax type below them, the total row equal to the cards', () => {
+    const gst = { ...NOTICE_ITEM, documentId: 'doc-gst', type: 'gst' as const, label: 'GST', deadline: '2026-10-10', daysLeft: -8 }
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, items: [NOTICE_ITEM, gst] }} />)
+    const table = within(screen.getByTestId('dpn-by-tax-type')).getByRole('table')
+    const row = (key: string) => [...table.querySelectorAll(`tr[data-row="${key}"] td`)].map((c) => c.textContent)
+    expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['PAYG withholding', 'GST', 'Total'])
+    expect(row('paygw')).toEqual(['$30,000.00', '$29,000.00', '$1,000.00', '21 Oct 2026', '$3,000.00'])
+    expect(row('gst')).toEqual(['$22,300.00', '$1,100.00', '$21,200.00', 'Deadline passed 10 Oct 2026', '$5,000.00'])
+    expect(row('total')).toEqual(['$52,300.00', '$30,100.00', '$22,200.00', '', '$8,000.00'])
+  })
+
+  it('by tax type: "Being prepared" for a type whose notice is not proven, "No notice uploaded" for one without', () => {
+    const held = { ...NOTICE_ITEM, proof: { ...NOTICE_ITEM.proof, status: 'unverified' as const } }
+    render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={{ ...NOTICES, heldBack: true, items: [held] }} />)
+    const table = within(screen.getByTestId('dpn-by-tax-type')).getByRole('table')
+    const row = (key: string) => [...table.querySelectorAll(`tr[data-row="${key}"] td`)].map((c) => c.textContent)
+    expect(row('paygw').slice(0, 3)).toEqual(['Being prepared', 'Being prepared', 'Being prepared'])
+    expect(row('gst').slice(0, 3)).toEqual(['No notice uploaded', 'No notice uploaded', 'No notice uploaded'])
+    // The ATO account column does not wait for the notices.
+    expect(row('gst')[4]).toBe('$5,000.00')
   })
 
   it('says so when no notice is uploaded', () => {
@@ -146,7 +171,7 @@ describe('DPN panel (Gabby, 16 Nov 2026)', () => {
   it('lists the late statements one row per statement, GST and PAYG apart, with Copy and Excel', async () => {
     render(<DpnRiskPanel dpnRisk={ESTIMATE} notices={null} />)
     await userEvent.click(screen.getByRole('button', { name: /Show the 1 statement lodged more than 90 days late/ }))
-    const cells = within(screen.getAllByRole('table')[0]).getAllByRole('row')[1].textContent
+    const cells = within(document.getElementById('late-statements')!.querySelector('table')!).getAllByRole('row')[1].textContent
     expect(cells).toContain('$5,000.00')
     expect(cells).toContain('$3,000.00')
     expect(cells).toContain('$8,000.00')
