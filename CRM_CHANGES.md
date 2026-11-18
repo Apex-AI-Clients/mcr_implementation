@@ -1041,3 +1041,8 @@ Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before depl
   the file is refreshed.
 - **Prediction and readiness**: inputs show the proof they come from; a held year or unproven notice waits.
 - **AI summaries**: written only from proven figures.
+- **Client page, "Documents"** (`src/lib/clients/documentProofs.ts`, `DocumentProofList.tsx`): each ATO file, notice and
+  statement, oldest first, with what was proven ("Matches the ATO's own balance: $X at <date>", "Notice adds up · Matches
+  the ATO account", "Every total on the statements adds up (FY2024, FY2025)"), "As printed: N printed totals do not add
+  up", "Not used" (an empty export, or a statement whose years later reports cover), or "Being prepared". Read from the
+  stored checks only; nothing is re-read when the page opens.

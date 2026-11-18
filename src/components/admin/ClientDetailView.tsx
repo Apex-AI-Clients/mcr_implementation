@@ -35,6 +35,8 @@ import { clientBase, membershipOf, workspaceOf } from '@/lib/clients/workspace'
 import Link from 'next/link'
 import { Archive, ArrowLeft, Building, Gavel, Landmark, Pencil } from 'lucide-react'
 import { loadNoticeAccount } from '@/lib/dpn/noticeAccount'
+import { loadDocumentProofs } from '@/lib/clients/loadDocumentProofs'
+import { DocumentProofList } from '@/components/admin/DocumentProofList'
 
 interface ClientDetailViewProps {
   id: string
@@ -194,6 +196,9 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     todayIso: sydneyToday(),
     account: await loadNoticeAccount(supabase, id).catch(() => null),
   })
+
+  // What each ATO file, notice and statement proved (or "Being prepared").
+  const documentProofRows = await loadDocumentProofs(supabase, id, { documents, notices: dpn.notices }).catch(() => [])
 
   // Document status, naming the required categories that have no file yet.
   const statusBadge = documentStatusBadge(client.status, documents.map((d) => d.docCategory))
@@ -456,6 +461,8 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
           atoAccounts={atoAccounts.accounts.map((a) => ({ id: a.id, kind: a.kind, label: a.label }))}
         />
       </div>
+
+      <DocumentProofList rows={documentProofRows} />
 
       <AtoAccountsPanel clientId={client.id} overview={atoAccounts} basePath={base} />
     </div>
