@@ -139,8 +139,35 @@ export function SourceBody({ source }: { source: AmountSource }) {
       ))}
       {source.rule && <p className="text-foreground/70">Rule: {source.rule}</p>}
       {source.calculation && <p className="whitespace-pre-line tabular-nums text-foreground/70">{source.calculation}</p>}
-      {source.link && <SourceLinkView link={source.link} />}
+      {(source.link || source.copy) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {source.link && <SourceLinkView link={source.link} />}
+          {source.copy && <CopyLine text={source.copy} />}
+        </div>
+      )}
     </>
+  )
+}
+
+/** "Copy this line": the printed line exactly as printed, to search the PDF or the ATO export with. */
+function CopyLine({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text)
+          setDone(true)
+          setTimeout(() => setDone(false), 1500)
+        } catch {
+          // The browser refused; nothing else to do.
+        }
+      }}
+      className="no-print text-accent hover:text-accent/80"
+    >
+      {done ? 'Copied' : 'Copy this line'}
+    </button>
   )
 }
 

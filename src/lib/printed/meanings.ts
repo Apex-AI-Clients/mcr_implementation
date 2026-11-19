@@ -34,6 +34,9 @@ export type Meaning =
   | 'plant_equipment'
   | 'other_assets'
   | 'share_capital'
+  | 'total_current_assets'
+  | 'total_non_current_assets'
+  | 'total_assets'
 
 export interface MeaningInfo {
   key: Meaning
@@ -58,7 +61,7 @@ export interface MeaningInfo {
 export const MEANINGS: MeaningInfo[] = [
   {
     key: 'loan_receivable',
-    label: 'Loan account — owed TO the company',
+    label: 'Director loan account (Debit)',
     hint: 'Money the director or related parties owe the company.',
     statement: 'balance_sheet',
     multiple: true,
@@ -68,7 +71,7 @@ export const MEANINGS: MeaningInfo[] = [
   },
   {
     key: 'loan_payable',
-    label: 'Loan account — owed BY the company',
+    label: 'Loan account director (Credit)',
     hint: 'Money the company owes the director or related parties.',
     statement: 'balance_sheet',
     multiple: true,
@@ -84,9 +87,11 @@ export const MEANINGS: MeaningInfo[] = [
     multiple: true,
     required: true,
     prediction: true,
-    tile: true,
+    // The comparison page shows the ATO debt from the verified ATO account instead (16 Nov 2026).
+    tile: false,
   },
-  { key: 'revenue', label: 'Revenue', hint: 'Total sales or income for the year.', statement: 'profit_and_loss', multiple: false, required: true, prediction: false, tile: true },
+  // Off the comparison page (Gabby, 16 Nov 2026): no longer a key figure the prediction waits for.
+  { key: 'revenue', label: 'Revenue', hint: 'Total sales or income for the year.', statement: 'profit_and_loss', multiple: false, required: false, prediction: false, tile: false },
   {
     key: 'net_profit',
     label: 'Net profit',
@@ -103,9 +108,10 @@ export const MEANINGS: MeaningInfo[] = [
     hint: 'Total assets less total liabilities, often printed as total equity.',
     statement: 'balance_sheet',
     multiple: false,
-    required: true,
+    // Off the comparison page (Gabby, 16 Nov 2026): no longer a key figure the prediction waits for.
+    required: false,
     prediction: false,
-    tile: true,
+    tile: false,
   },
   {
     key: 'income_tax_payable',
@@ -117,6 +123,16 @@ export const MEANINGS: MeaningInfo[] = [
     prediction: false,
     tile: true,
   },
+  // The balance sheet's own totals, on the comparison page (Gabby, 16 Nov 2026). Auto-selected from the printed total.
+  ...(
+    [
+      ['total_current_assets', 'Total current assets', 'The total of current assets the balance sheet prints.'],
+      ['total_non_current_assets', 'Total non-current assets', 'The total of non-current assets the balance sheet prints.'],
+      ['total_assets', 'Total assets', 'The total assets line the balance sheet prints.'],
+    ] as const
+  ).map(
+    ([key, label, hint]): MeaningInfo => ({ key, label, hint, statement: 'balance_sheet', multiple: false, required: false, prediction: false, tile: true }),
+  ),
   { key: 'credit_cards', label: 'Credit cards', hint: 'Credit card balances owed.', statement: 'balance_sheet', multiple: true, required: false, prediction: false, tile: false },
   {
     key: 'cash_loans',
@@ -164,5 +180,5 @@ export const SBR_MEANINGS = MEANINGS.filter((m) => !m.cvl)
 /** The meanings only the CVL forms use (Form 509). */
 export const CVL_MEANINGS = MEANINGS.filter((m) => m.cvl)
 
-/** The seven key figures the SBR prediction waits for. */
+/** The key figures the SBR prediction waits for (five since 18 Nov 2026: revenue and net assets left the page). */
 export const KEY_FIGURES = MEANINGS.filter((m) => m.required)

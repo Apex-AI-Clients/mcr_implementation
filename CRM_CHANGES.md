@@ -1020,3 +1020,99 @@ Code: `src/lib/ica/verifyStore.ts`, `src/lib/ica/view.ts`, `src/components/admin
   more than 90 days late; now $307,280). No other client's figure changed (`npm run figures:check`).
 - **Re-run existing files** after applying 0058: `npm run ica:rerun` (dry run, read only), then
   `ICA_RERUN_APPLY=yes npm run ica:rerun` (stores each check, alerts for any unverified file, clears stored AI summaries).
+
+## Only proven figures: notices, financial statements, prediction, summaries (migration 0059) — GABBY-APPROVED 18 Nov 2026
+
+Migration `0059_dpn_proof.sql` is written, **not applied**. Apply it before deploying this branch.
+
+- **Director penalty notices** (`src/lib/dpn/proof.ts`, `proofStore.ts`, automatic run step 6): a notice's figures are
+  used only when Column 3 = 4 + 5 on every row, the totals equal the rows, its fields read, and each period's Column 2
+  equals the verified ATO account for that period and tax type. Periods outside the ATO export are not a mismatch
+  ("Matches the ATO account for N of M periods; …"). Otherwise: rows as printed, "Totals being prepared", alert
+  (`ica_alerts.document_kind = 'dpn'`).
+- **Financial statements** (`src/lib/printed/proof.ts`): a scanned statement page is read twice, by Claude (page
+  image, rule 12a) and by Tesseract on our server (`src/lib/scan/ocrLines.ts`, `reconcile.ts`), and the two compared
+  figure by figure. A year is **proven** when every figure both readings agree on (or staff chose) and every printed
+  total adds up: badge "Every total on the statements adds up". A figure they disagree on, or only one read, goes to
+  staff to choose ("N scanned figures to check" on the comparison page) and its year is **held**: lines shown as
+  printed, "Being prepared" for the prediction and summaries, an alert (`document_kind = 'statement'`; ids, pages and
+  counts only). A text-layer PDF whose own printed totals do not add up is shown as printed with a note naming the
+  line and never blocks the prediction. Figures read by Claude alone before this change show "Being prepared" until
+  the file is refreshed.
+- **Prediction and readiness**: inputs show the proof they come from; a held year or unproven notice waits.
+- **AI summaries**: written only from proven figures.
+- **Client page, "Documents"** (`src/lib/clients/documentProofs.ts`, `DocumentProofList.tsx`): each ATO file, notice and
+  statement, oldest first, with what was proven ("Matches the ATO's own balance: $X at <date>", "Notice adds up · Matches
+  the ATO account", "Every total on the statements adds up (FY2024, FY2025)"), "As printed: N printed totals do not add
+  up", "Not used" (an empty export, or a statement whose years later reports cover), or "Being prepared". Read from the
+  stored checks only; nothing is re-read when the page opens.
+- **Test bank** (`src/lib/proofBank`, migration `0060_proof_bank.sql`, written, **not applied**): every proven notice and
+  statement keeps its document id and the figures it proved; no copy of a file. `npm run proof:check` (also inside
+  `figures:check`) reads each banked file again with the current code and fails on any changed figure. After applying
+  0060, run `PROOF_BANK_JOIN=yes npm run proof:check` once. Dry run on 18 Nov 2026: 4 notices and 26 statement files
+  (26 years) from 7 clients would join; all 30 read again unchanged.
+
+### Stage 3 — the lodgement pages (18 Nov 2026)
+
+- **Income tax and super guarantee summaries on the ICA engine** (`src/lib/analysis/atoAccount/verifiedSummary.ts`): each
+  assessment, each quarter's SG charge, interest, Part 7 penalties and payments come only from the rows the ATO's own
+  balance proved. Shown for every verified file (before, only when the earlier engine reached the same balance), on the
+  page, in the CSV and in the AI summary. `figures:check` checks both real accounts against their answer keys on the
+  new engine: all figures match.
+- **Copy and search on every line**: each composition line copies what to search the ATO spreadsheet for (without
+  opening it); each late lodgement, payment and assessment row copies its description and amount; each SG quarter copies
+  its period as the ATO words it.
+- **Excel download** on the lodgement and ATO account pages: the analysis and the rows as printed, one sheet each.
+- **PDF export: no near-blank first page.** The export cut pages only at a page's top-level sections, so a short title
+  followed by a long card left page one nearly empty. It now cuts inside any section taller than a page (`src/lib/pdfExport/paginate.ts`),
+  on every page with Export PDF.
+
+## Financial statements comparison: headline figures only; dashboard removed (migration 0061) — Gabby, 16 Nov 2026
+
+Migration `0061_headline_total_meanings.sql` is written, **not applied**.
+
+- **Comparison page** (`src/lib/printed/headline.ts`, `HeadlineFiguresTable.tsx`): one table, years side by side with the
+  current period as the last column. Rows: Director loan account (Debit), Loan account director (Credit), Net profit,
+  ATO related debt – ICA (the ATO's own running balance at each period's end, from the verified ATO account,
+  `src/lib/ica/balanceAt.ts`), ATO related debt – Income tax payable, Total current assets, Total non-current assets,
+  Total assets. Each figure keeps its ⓘ (file, page, printed line), now with "Copy this line"; a year not proven shows
+  "Being prepared"; "Confirm key figures" is linked from the table. The proof badges (with any printed total that does
+  not add up named under them) and "N scanned figures to check" stay above.
+- **Removed** from the page and its CSV/PDF: revenue, net assets, the detailed as-printed tables, the totals review tick,
+  and the AI comparison summary (its API route and prompt). Revenue and net assets are no longer key figures the
+  prediction waits for (5 key figures, not 7). Prediction proof: all 13 clients identical.
+- **Dashboard removed**: the home dashboard, its components, loaders and tests, and the Home menu item. `/` opens the
+  SBR client list.
+
+### 18 Nov 2026 — key figures per document, director loan on a new layout, DPN by tax type, Cards/Table (migration 0062)
+
+Migration `0062_line_dismissals.sql` is written, **not applied** ("Not a loan account" answers).
+
+- **Key figures per document** (`src/lib/printed/dictionary.ts`): a single-line figure gets each year's own best line
+  (MBM: "Net Profit After Tax" FY2022–FY2025, "Net Profit" FY2026); in a year printing two chosen lines, only the
+  better-ranked counts. A balance sheet with no "Total current / non-current assets" uses its asset section totals only
+  when they add up exactly to the printed Total Assets ("From 'Total Bank' and 'Total Fixed Assets', which add up to the
+  printed Total Assets"); otherwise they are possible lines. Re-run for every client: only MBM changes.
+- **Director loan account (Debit) on the latest balance sheet** (`mapping.ts`): drawings are offered as a possible line
+  ("Money taken out by the owner (printed under Equity)"); the prediction waits for "Use it" or "Not a loan account".
+  When the confirmed lines are missing from a proven latest balance sheet and nothing there looks like a director loan
+  (lines confirmed for the Credit side excluded), it counts as $0: "Not printed on the FY2026 balance sheet; printed in
+  the FY2025 balance sheet as $100". Prediction proof: no client's inputs change; MBM still waits (on the drawings).
+- **Messages**: "The confirmed lines aren't on the FY2026 balance sheet"; earlier years keep their figures; the
+  director-loan tick no longer says "No balance sheet available" when one exists; a negative current assets total notes
+  an overdrawn bank account (as printed).
+- **Director penalty section**: the cards show their total, source and badge only; "By tax type" below them (Unpaid,
+  Removed if acted on by the deadline, Stays with the director, Deadline, Lodged more than 90 days late since nil),
+  total row equal to the cards; in the CSV too.
+- **Comparison page**: "Cards" (default) or "Table", remembered in the browser; PDF and CSV follow the view.
+
+## CVL: A10 left blank; Complete / Unlock forms (migration 0063) — 18 Nov 2026
+
+Migration `0063_cvl_form_completions.sql` is written, **not applied**.
+
+- **Form 507 Part A, A10** is no longer pre-filled (its date used to start from Form 509's summary date; its name never
+  was): left for whoever completes it.
+- **CVL file page**: "Preview" is gone from each form's row; "Complete" takes its place. A completed form shows "Completed
+  on <date>", its "Fill in / Continue" button is off, its entry screen sends staff back to the file, and saving
+  or resetting it is refused. "Unlock forms" (top right of the ASIC forms list, shown once any form is complete) makes
+  every form editable again. "Download" stays.

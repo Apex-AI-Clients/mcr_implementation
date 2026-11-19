@@ -1,15 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { ShieldAlert, ChevronDown, ChevronUp, Wallet, X, FileDown, ArrowRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Wallet, X, FileDown } from 'lucide-react'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import type { AmountSource, SourceLink } from '@/lib/sources'
 import type { DpnRiskBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
-import { dpnEstimateWorkings } from '@/lib/analysis/dpnWorkings'
-import { describeDeadline } from '@/lib/dpn/summary'
+import { DirectorPenaltySection } from './DirectorPenaltySection'
+import { CopyButton } from '@/components/admin/ica/IcaParts'
 
 const AUD = new Intl.NumberFormat('en-AU', {
   style: 'currency',
@@ -76,330 +74,6 @@ export function removableLabel(deadline: string): string {
   return `Removed if an SBR practitioner, administrator or liquidator is appointed, or it is paid, by ${formatDay(deadline)}`
 }
 
-function netColorClass(net: number): string {
-  if (net === 0) return 'text-success'
-  if (net > 10000) return 'text-destructive'
-  return 'text-warning'
-}
-
-function netBgClass(net: number): string {
-  if (net === 0) return 'bg-success/10 border-success/20'
-  if (net > 10000) return 'bg-destructive/10 border-destructive/20'
-  return 'bg-warning/10 border-warning/20'
-}
-
-interface TileProps {
-  label: string
-  value: number
-  source: AmountSource
-  colorClass?: string
-  bgClass?: string
-}
-
-function MetricTile({ label, value, source, colorClass, bgClass }: TileProps) {
-  return (
-    <div className={cn('rounded-lg border p-4 text-center', bgClass ?? 'bg-surface/50 border-border/40')}>
-      <p className={cn('text-2xl font-bold tabular-nums', colorClass ?? 'text-foreground')}>
-        <SourcedAmount value={value} format={formatAud} source={source} />
-      </p>
-      <p className="mt-1 text-xs text-foreground/50">{label}</p>
-    </div>
-  )
-}
-
-/**
- * The estimate from the ATO account (computeDpnRisk): since the balance was
- * last nil, debt lodged more than 90 days late, less later amendments for the
- * SAME period and the payments made since, applied to the oldest debts first.
- * An estimate stored before 16 Nov 2026 (no window) shows as it was worked out.
- */
-function EstimateBody({ dpnRisk }: { dpnRisk: DpnRiskBreakdown }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasDebits = dpnRisk.contributingDebits.length > 0
-  const w = dpnRisk.window
-  const workings = dpnEstimateWorkings(dpnRisk)
-  const paid = dpnRisk.totalPaidByPayments ?? 0
-  const sinceText = w ? (w.start ? `since the balance was last nil or in credit (${formatDay(w.start)})` : 'over the whole export (the balance was never nil)') : null
-  return (
-    <div className="space-y-3">
-      <div className={cn('grid gap-3', w ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
-        <MetricTile
-          label={w ? 'Lodged >90 days late since balance was nil' : 'Gross debt lodged >90 days late'}
-          value={dpnRisk.totalGrossLate}
-          source={{
-            from: [
-              'Gross debt lodged more than 90 days late (an estimate, not the ATO’s notice)',
-              `${dpnRisk.contributingDebits.length} activity statement rows lodged more than 90 days past their due date${sinceText ? `, ${sinceText}` : ''}, as printed in the ATO account CSV.`,
-            ],
-            calculation: dpnRisk.contributingDebits.length ? `${dpnRisk.contributingDebits.map((r) => formatAud(r.debit)).join(' + ')} = ${formatAud(dpnRisk.totalGrossLate)}` : null,
-            rule: w ? 'Everything before the last nil or credit balance was paid.' : null,
-            link: ROWS_LINK,
-          }}
-          colorClass="text-foreground/80"
-          bgClass="bg-surface/50 border-border/40"
-        />
-        <MetricTile
-          label="Reduced by later amendments"
-          value={dpnRisk.totalReducedByAmendments}
-          source={{
-            from: ['Reduced by later amendments', 'Credits from amended activity statements for the SAME periods as the late lodgements, in the ATO account CSV.'],
-            rule: 'An amendment reduces only the debt for its own period.',
-            link: ROWS_LINK,
-          }}
-          colorClass="text-foreground/80"
-          bgClass="bg-surface/50 border-border/40"
-        />
-        {w && (
-          <MetricTile
-            label="Paid, oldest debts first"
-            value={paid}
-            source={{
-              from: [
-                'Late-lodged debt reached by payments (an estimate)',
-                `${w.paymentsCount} payments totalling ${formatAud(w.payments)} ${sinceText}${w.startingCredit > 0 ? `, plus the ${formatAud(w.startingCredit)} credit held then` : ''}. ${formatAud(w.otherTaxDebtsPaid)} of it went to other tax debts that fell due earlier.`,
-              ],
-              rule: 'Payments in date order, applied to the tax debts already on the account in due-date order (the ATO’s usual oldest-first practice). Interest and penalties are not counted as debts here.',
-              link: ROWS_LINK,
-            }}
-            colorClass="text-foreground/80"
-            bgClass="bg-surface/50 border-border/40"
-          />
-        )}
-        <MetricTile
-          label="Estimated still owing"
-          value={dpnRisk.totalNetAtRisk}
-          source={{
-            from: ['Estimated still owing on the late lodgements'],
-            calculation: w
-              ? `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} − ${formatAud(paid)} = ${formatAud(dpnRisk.totalNetAtRisk)}`
-              : `${formatAud(dpnRisk.totalGrossLate)} − ${formatAud(dpnRisk.totalReducedByAmendments)} = ${formatAud(dpnRisk.totalNetAtRisk)}`,
-            rule: w
-              ? 'An estimate: assumes the ATO applied payments to the oldest debts first.'
-              : 'Payments are not counted: the ATO decides which debt each payment goes to, and the account does not say.',
-            link: ROWS_LINK,
-          }}
-          colorClass={netColorClass(dpnRisk.totalNetAtRisk)}
-          bgClass={`border ${netBgClass(dpnRisk.totalNetAtRisk)}`}
-        />
-      </div>
-      {workings ? (
-        <div data-testid="dpn-workings" className="space-y-1 rounded-lg border border-border/40 bg-surface/50 px-4 py-3 text-xs text-foreground/70">
-          {workings.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-foreground/45">
-          An amendment reduces only the debt for its own period. Payments are not counted: the ATO decides which debt
-          each payment goes to, and the account does not say.
-        </p>
-      )}
-
-      {hasDebits && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            className="flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
-          >
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {expanded ? 'Hide' : 'Show'} contributing rows ({dpnRisk.contributingDebits.length})
-          </button>
-
-          {expanded && (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-left text-foreground/40">
-                    <th className="pb-2 pr-4 font-medium">Processed</th>
-                    <th className="pb-2 pr-4 font-medium">Period Ending</th>
-                    <th className="pb-2 pr-4 font-medium text-right">Days Late</th>
-                    <th className="pb-2 pr-4 font-medium text-right">Gross</th>
-                    <th className="pb-2 pr-4 font-medium text-right">Reduced by later amendments</th>
-                    {w && <th className="pb-2 pr-4 font-medium text-right">Paid, oldest first</th>}
-                    <th className="pb-2 font-medium text-right">Estimated still owing</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dpnRisk.contributingDebits.map((r) => (
-                    <tr key={r.rowIndex} className="border-b border-border/40 last:border-0">
-                      <td className="py-1.5 pr-4 text-foreground/70 whitespace-nowrap">{formatIso(r.processedDate)}</td>
-                      <td className="py-1.5 pr-4 text-foreground/70 whitespace-nowrap">{formatIso(r.periodEnding)}</td>
-                      <td
-                        className={cn('py-1.5 pr-4 text-right font-semibold', {
-                          'text-destructive': r.daysLate > 365,
-                          'text-warning': r.daysLate > 0 && r.daysLate <= 365,
-                        })}
-                      >
-                        {r.daysLate}
-                      </td>
-                      <td className="py-1.5 pr-4 text-right text-foreground/70">
-                        {r.debit > 0 ? (
-                          <SourcedAmount
-                            value={r.debit}
-                            format={formatAud}
-                            source={{
-                              from: [`Lodged for the period ending ${formatIso(r.periodEnding)}`, `The ATO account row processed ${formatIso(r.processedDate)}: ${formatAud(r.debit)} debit, ${r.daysLate} days past the due date.`],
-                              link: ROWS_LINK,
-                            }}
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="py-1.5 pr-4 text-right text-foreground/70">
-                        {r.reducedByAmendments > 0 ? (
-                          <SourcedAmount
-                            value={r.reducedByAmendments}
-                            format={formatAud}
-                            source={{
-                              from: [`Later amendments for the period ending ${formatIso(r.periodEnding)}`, 'Credits from amended activity statements for this period, in the ATO account CSV.'],
-                              link: ROWS_LINK,
-                            }}
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      {w && (
-                        <td className="py-1.5 pr-4 text-right text-foreground/70">
-                          {(r.paidByPayments ?? 0) > 0 ? (
-                            <SourcedAmount
-                              value={r.paidByPayments ?? 0}
-                              format={formatAud}
-                              source={{
-                                from: [`Paid on the period ending ${formatIso(r.periodEnding)} (an estimate)`, 'Payments since the balance was last nil, applied to the oldest tax debts first.'],
-                                link: ROWS_LINK,
-                              }}
-                            />
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                      )}
-                      <td
-                        className={cn('py-1.5 text-right font-semibold', {
-                          'text-destructive': r.netAtRisk > 0,
-                          'text-success': r.netAtRisk === 0,
-                        })}
-                      >
-                        <SourcedAmount
-                          value={r.netAtRisk}
-                          format={formatAud}
-                          source={{
-                            from: [`Estimated still owing for the period ending ${formatIso(r.periodEnding)}`],
-                            calculation: w
-                              ? `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} − ${formatAud(r.paidByPayments ?? 0)} = ${formatAud(r.netAtRisk)}`
-                              : `${formatAud(r.debit)} − ${formatAud(r.reducedByAmendments)} = ${formatAud(r.netAtRisk)}`,
-                            link: ROWS_LINK,
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** The notices' own figures: columns 3, 4 and 5, the deadline, and each type. */
-function NoticesBody({ notices, dpnPage }: { notices: DpnNoticeFigures; dpnPage?: string }) {
-  const urgent = isUrgentDeadline(notices.daysLeft)
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricTile
-          label="Unpaid"
-          value={notices.unpaid}
-          source={noticesSource('Unpaid, per the director penalty notices', 'Unpaid amount', notices, dpnPage)}
-          colorClass="text-foreground/80"
-          bgClass="bg-surface/50 border-border/40"
-        />
-        <MetricTile
-          label={removableLabel(notices.deadline)}
-          value={notices.removable}
-          source={noticesSource(removableLabel(notices.deadline), 'Removed if acted on by the deadline', notices, dpnPage)}
-          colorClass="text-warning"
-          bgClass="bg-warning/10 border-warning/20"
-        />
-        <MetricTile
-          label={STAYS_LABEL}
-          value={notices.staysWithDirector}
-          source={noticesSource(STAYS_LABEL, STAYS_LABEL, notices, dpnPage)}
-          colorClass={notices.staysWithDirector > 0 ? 'text-destructive' : 'text-success'}
-          bgClass={
-            notices.staysWithDirector > 0 ? 'bg-destructive/10 border-destructive/20' : 'bg-success/10 border-success/20'
-          }
-        />
-      </div>
-
-      <div
-        data-testid="dpn-deadline"
-        className={cn(
-          'flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-2.5 text-xs',
-          urgent ? 'border-destructive/30 bg-destructive/10' : 'border-border/40 bg-surface/50',
-        )}
-      >
-        <span className={urgent ? 'font-semibold text-destructive' : 'text-foreground/70'}>
-          {describeDeadline(notices.daysLeft, notices.deadline)}
-        </span>
-        <span className="text-foreground/45">
-          {notices.notices} current notice{notices.notices === 1 ? '' : 's'}, latest issued {formatDay(notices.issuedOn)}
-        </span>
-      </div>
-
-      {notices.byType.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-foreground/40">
-                <th className="pb-2 pr-4 font-medium">Type</th>
-                <th className="pb-2 pr-4 text-right font-medium">Unpaid</th>
-                <th className="pb-2 pr-4 text-right font-medium">Removed if acted on by the deadline</th>
-                <th className="pb-2 pr-4 text-right font-medium">{STAYS_LABEL}</th>
-                <th className="pb-2 text-right font-medium">Deadline</th>
-              </tr>
-            </thead>
-            <tbody>
-              {notices.byType.map((t) => (
-                <tr key={t.type} className="border-b border-border/40 last:border-0">
-                  <td className="py-1.5 pr-4 text-foreground/70">{t.label}</td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.unpaid} format={formatAud} source={noticesSource(`${t.label}: unpaid`, 'Unpaid amount', notices, dpnPage)} />
-                  </td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.removable} format={formatAud} source={noticesSource(`${t.label}: removed if acted on by ${formatDay(t.deadline)}`, 'Removed if acted on by the deadline', notices, dpnPage)} />
-                  </td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums text-foreground/70">
-                    <SourcedAmount value={t.staysWithDirector} format={formatAud} source={noticesSource(`${t.label}: ${STAYS_LABEL.toLowerCase()}`, STAYS_LABEL, notices, dpnPage)} />
-                  </td>
-                  <td className="py-1.5 text-right whitespace-nowrap text-foreground/70">{formatDay(t.deadline)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {dpnPage && (
-        <Link
-          href={dpnPage}
-          className="no-print inline-flex items-center gap-1 text-xs font-medium text-accent hover:text-accent/80"
-        >
-          DPN Summary
-          <ArrowRight className="h-3 w-3" />
-        </Link>
-      )}
-    </div>
-  )
-}
-
 interface Props {
   dpnRisk: DpnRiskBreakdown
   paymentRows?: EnrichedRow[]
@@ -408,6 +82,10 @@ interface Props {
   clientId?: string
   /** The client page its links go under: /clients/{id} (SBR, the default) or /cvl/{id} (CVL). */
   basePath?: string
+  /** The base name for downloads (the source file's name). */
+  fileName?: string
+  /** The ATO account's proof badge ("Matches the ATO's own balance: ..."). */
+  accountBadge?: string | null
 }
 
 /**
@@ -416,9 +94,8 @@ interface Props {
  * account only as a closed, secondary item. Without, the estimate, labelled
  * as one. The payments received card below is real payments only.
  */
-export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId, basePath }: Props) {
+export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, clientId, basePath, fileName = 'ATO account', accountBadge = null }: Props) {
   const dpnPage = clientId ? `${basePath ?? `/clients/${clientId}`}/director-penalty-notices` : undefined
-  const [showEstimate, setShowEstimate] = useState(false)
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
 
@@ -575,40 +252,8 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-foreground/50" />
-          <h3 className="text-sm font-semibold text-foreground">Director penalty notices</h3>
-        </div>
-        <p className="mt-0.5 text-xs text-foreground/50" data-testid="dpn-source">
-          {notices ? NOTICES_LABEL : ESTIMATE_LABEL}
-        </p>
-      </div>
-
-      {notices ? (
-        <>
-          <NoticesBody notices={notices} dpnPage={dpnPage} />
-          {/* The estimate stays available, second and closed. */}
-          <div className="rounded-lg border border-border/40">
-            <button
-              type="button"
-              onClick={() => setShowEstimate((v) => !v)}
-              aria-expanded={showEstimate}
-              className="flex w-full items-center gap-1 px-4 py-2.5 text-left text-xs text-foreground/60 hover:text-foreground transition-colors"
-            >
-              {showEstimate ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              Estimate from the ATO account (secondary: the figures above are the ATO&apos;s own)
-            </button>
-            {showEstimate && (
-              <div className="border-t border-border/40 p-4">
-                <EstimateBody dpnRisk={dpnRisk} />
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <EstimateBody dpnRisk={dpnRisk} />
-      )}
+      {/* Gabby, 16 Nov 2026: the notices' Unpaid and the account's late lodgements side by side, the late list, each notice. */}
+      <DirectorPenaltySection dpnRisk={dpnRisk} notices={notices} dpnPage={dpnPage} fileName={fileName} accountBadge={accountBadge} />
 
       {/* Payments received — compact summary card */}
       {cashPayments.length > 0 && (() => {
@@ -700,6 +345,7 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
                     <th className="pb-2 pr-4 font-medium">Date</th>
                     <th className="pb-2 pr-4 font-medium">Description</th>
                     <th className="pb-2 font-medium text-right">Amount</th>
+                    <th className="no-print pb-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -710,6 +356,9 @@ export function DpnRiskPanel({ dpnRisk, paymentRows = [], notices = null, client
                         {r.description || '—'}
                       </td>
                       <td className="py-1.5 text-right font-semibold text-success tabular-nums">{formatAud(r.credit ?? 0)}</td>
+                      <td className="no-print py-1.5 pl-2 text-right">
+                        <CopyButton text={`${r.description}\t${r.credit ?? ''}`} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

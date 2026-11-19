@@ -4,19 +4,26 @@ import sharp from 'sharp'
 import { createWorker, type Worker } from 'tesseract.js'
 import { statementKind } from '@/lib/printed/readStatements'
 import type { PageImage } from './pageImages'
+import type { OcrLine } from './ocrLines'
 
 /**
  * Server-only. Tesseract (tesseract.js, open source, WebAssembly) on our own
- * server, for ONE job: reading the title at the top of each scanned page, so
- * only the statement pages are sent to Claude (CLAUDE.md rule 12: no other
- * scanned page ever leaves our server). It reads no figure. The English model
- * ships with the app (@tesseract.js-data/eng), so nothing is downloaded or
- * sent anywhere. Never used on a text-layer page.
+ * server, for two jobs:
+ *   - reading the title at the top of each scanned page, so only the statement
+ *     pages are sent to Claude (CLAUDE.md rule 12: no other scanned page ever
+ *     leaves our server);
+ *   - the second, independent reading of every figure on those statement pages
+ *     (restored 18 Nov 2026, Gabby: a scanned figure is proven only when both
+ *     readers agree and the totals add up; reconcile.ts).
+ * The English model ships with the app (@tesseract.js-data/eng), so nothing is
+ * downloaded or sent anywhere. Never used on a text-layer page.
  */
 
 export interface TitleReader {
   /** The page's top third, cheaply: its title lines. */
   titleLines(image: PageImage): Promise<string[]>
+  /** Every word on the page, with its position (image pixels), line by line: the second reading. */
+  readLines(image: PageImage): Promise<OcrLine[]>
   close(): Promise<void>
 }
 
@@ -71,6 +78,16 @@ export async function tesseractTitles(): Promise<TitleReader> {
         .split('\n')
         .map((l) => l.replace(/\s+/g, ' ').trim())
         .filter(Boolean)
+    },
+    async readLines(image) {
+      const { data } = await worker.recognize(Buffer.from(image.bytes), {}, { blocks: true })
+      return (data.blocks ?? []).flatMap((b) =>
+        b.paragraphs.flatMap((p) =>
+          p.lines.map((l) => ({
+            words: l.words.map((w) => ({ text: w.text, confidence: w.confidence, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 })),
+          })),
+        ),
+      )
     },
     async close() {
       await worker.terminate()

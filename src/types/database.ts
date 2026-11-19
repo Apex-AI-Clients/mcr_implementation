@@ -319,6 +319,44 @@ export type Database = {
           },
         ]
       }
+      client_line_dismissals: {
+        Row: {
+          client_id: string
+          dismissed_at: string
+          dismissed_by: string
+          id: string
+          label: string | null
+          meaning: string
+          row_key: string
+        }
+        Insert: {
+          client_id: string
+          dismissed_at?: string
+          dismissed_by: string
+          id?: string
+          label?: string | null
+          meaning: string
+          row_key: string
+        }
+        Update: {
+          client_id?: string
+          dismissed_at?: string
+          dismissed_by?: string
+          id?: string
+          label?: string | null
+          meaning?: string
+          row_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_line_dismissals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_line_mappings: {
         Row: {
           auto_rule: string | null
@@ -815,6 +853,41 @@ export type Database = {
           },
         ]
       }
+      cvl_form_completions: {
+        Row: {
+          case_id: string
+          completed_at: string
+          completed_by: string
+          form_code: string
+          id: string
+          subject: string
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string
+          completed_by: string
+          form_code: string
+          id?: string
+          subject: string
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string
+          completed_by?: string
+          form_code?: string
+          id?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cvl_form_completions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cvl_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cvl_generated_documents: {
         Row: {
           answers_snapshot: Json
@@ -898,6 +971,9 @@ export type Database = {
       }
       director_penalty_notices: {
         Row: {
+          proof_check: Json | null
+          proof_checked_at: string | null
+          proof_status: string | null
           acn: string | null
           client_id: string
           company_name: string | null
@@ -924,6 +1000,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          proof_check?: Json | null
+          proof_checked_at?: string | null
+          proof_status?: string | null
           acn?: string | null
           client_id: string
           company_name?: string | null
@@ -950,6 +1029,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          proof_check?: Json | null
+          proof_checked_at?: string | null
+          proof_status?: string | null
           acn?: string | null
           client_id?: string
           company_name?: string | null
@@ -1389,6 +1471,7 @@ export type Database = {
       }
       ica_alerts: {
         Row: {
+          document_kind: string
           account_kind: string | null
           client_id: string
           created_at: string
@@ -1401,6 +1484,7 @@ export type Database = {
           windows: Json
         }
         Insert: {
+          document_kind?: string
           account_kind?: string | null
           client_id: string
           created_at?: string
@@ -1413,6 +1497,7 @@ export type Database = {
           windows?: Json
         }
         Update: {
+          document_kind?: string
           account_kind?: string | null
           client_id?: string
           created_at?: string
@@ -1987,6 +2072,48 @@ export type Database = {
             foreignKeyName: "printed_reads_document_id_fkey"
             columns: ["document_id"]
             isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proof_bank: {
+        Row: {
+          client_id: string
+          document_id: string
+          expected: Json
+          id: string
+          joined_at: string
+          kind: string
+        }
+        Insert: {
+          client_id: string
+          document_id: string
+          expected: Json
+          id?: string
+          joined_at?: string
+          kind: string
+        }
+        Update: {
+          client_id?: string
+          document_id?: string
+          expected?: Json
+          id?: string
+          joined_at?: string
+          kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proof_bank_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proof_bank_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
             referencedRelation: "documents"
             referencedColumns: ["id"]
           },

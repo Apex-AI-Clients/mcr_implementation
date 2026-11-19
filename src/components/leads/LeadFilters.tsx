@@ -100,8 +100,8 @@ export function LeadFilters({ filters, onChange, onReset, sources = [] }: LeadFi
       </button>
       */}
 
-      {/* The toggle above is hidden, but the home dashboard links here with
-          the follow-up filter on (?followup=1): say so, and let it be removed. */}
+      {/* The toggle above is hidden, but a link may still arrive with the
+          follow-up filter on (?followup=1, from the old home dashboard): say so, and let it be removed. */}
       {filters.followUpOnly && (
         <button
           type="button"

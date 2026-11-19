@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { OutcomePredictionClient } from './OutcomePredictionClient'
 import { loadReadiness } from '@/lib/sbr/loadReadiness'
 import { loadPrintedComparison } from '@/lib/printed/store'
-import { applyAutoMapping, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
+import { applyAutoMapping, loadDismissedLines, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { directorLoanInput, directorLoanYears } from '@/lib/sbr/directorLoan'
 import { balanceSheetLabel, loanHistory, predictionFinancials } from '@/lib/printed/mapping'
 import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
@@ -23,6 +23,8 @@ import {
 import type { Json } from '@/types/database'
 import { loadAtoAccounts, loadFactorsSourceNote } from '@/lib/analysis/atoAccount/store'
 import { ATO_ACCOUNT_CREDITOR_ROWS, atoAccountCreditorRows } from '@/lib/sbr/creditors'
+import { badgeText } from '@/lib/ica/view'
+import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
 
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +44,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
     supabase.from('clients').select('id, name, archived_at, workflow').eq('id', id).maybeSingle(),
     supabase
       .from('lodgement_analyses')
-      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label, unparsed_date_rows, ica_status')
+      .select('id, document_id, number_of_late_lodgements, cumulative_days_late, rows, analysed_at, statement_label, unparsed_date_rows, ica_status, ica_balance, ica_balance_date')
       .eq('client_id', id)
       .order('analysed_at', { ascending: false })
       .limit(1)
@@ -84,7 +86,9 @@ export default async function OutcomePredictionPage({ params }: Props) {
 
   // Staff choices, and the auto-selections for the rest (autoMapping.ts).
   const { mapping } = await applyAutoMapping(supabase, id, printed, stored, names)
-  const financials = predictionFinancials(printed.comparison, mapping, names)
+  // Possible director loan lines staff turned down ("Not a loan account", migration 0062).
+  const dismissed = await loadDismissedLines(supabase, id)
+  const financials = predictionFinancials(printed.comparison, mapping, names, dismissed)
   // The loan account figures the predict route uses (sbr/directorLoan.ts): gross by default.
   const loanInput = directorLoanInput(financials)
   const bsColumn = financials.balanceSheet?.column ?? null
@@ -151,6 +155,7 @@ export default async function OutcomePredictionPage({ params }: Props) {
       })
     : null
 
+  const noticeFigures = await loadDpnNoticeFigures(supabase, id).catch(() => null)
   const initialAuto = {
     // The same count the prediction route makes (analysis/config.ts).
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
@@ -177,6 +182,14 @@ export default async function OutcomePredictionPage({ params }: Props) {
     directorLoanInitial: directorLoan,
     atoDebtNote: ato.note,
     dpnNote: dpnNote(savedRow && typeof savedFeatures.dpn === 'boolean' ? savedFeatures.dpn : null, readiness.dpn),
+    // The proof each input comes from (shown beside the inputs).
+    proofs: {
+      atoAccount:
+        icaVerified && lodgement.data?.ica_balance !== null && lodgement.data?.ica_balance !== undefined && lodgement.data?.ica_balance_date
+          ? badgeText(Math.round(Number(lodgement.data.ica_balance) * 100), lodgement.data.ica_balance_date)
+          : null,
+      notices: noticeFigures && !noticeFigures.heldBack && noticeFigures.badges.length ? noticeFigures.badges.join(' · ') : null,
+    },
     creditorAmount: debt.amount,
     creditorSource: debt.description,
     creditorMissing: debt.missing,

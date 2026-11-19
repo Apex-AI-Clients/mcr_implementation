@@ -7,6 +7,10 @@ import { summariseNotices } from '@/lib/dpn/summary'
 import { buildDpnCsv } from '@/lib/dpn/exportCsv'
 import { buildDpnPdf } from '@/lib/dpn/exportPdf'
 import type { DpnNoticeView } from '@/lib/dpn/view'
+import { proveNotice } from '@/lib/dpn/proof'
+
+/** The view as the panel builds it: the notice's own arithmetic proof (no ATO account here). */
+const withProof = (v: Omit<DpnNoticeView, 'proof'>): DpnNoticeView => ({ ...v, proof: v.notice ? proveNotice(v.notice, null) : null })
 import type { DirectorPenaltyNotice, DpnAmounts, DpnType } from '@/lib/dpn/types'
 import { readPdfPageCells, readPdfPageLines } from '@/lib/pdf/pageLines'
 import { DIR, out, readJson } from './figures'
@@ -115,7 +119,7 @@ it('reads the DPN samples and matches the verified figures', async () => {
 
   // ── The summary and its exports, from the real notices ──────────────────
   const asAtIso = new Date().toISOString().slice(0, 10)
-  const views: DpnNoticeView[] = parsedNotices.map((notice, i) => ({
+  const views: DpnNoticeView[] = parsedNotices.map((notice, i) => withProof({
     documentId: `sample-${i + 1}`,
     filename: `sample-${i + 1}.pdf`,
     notice: {

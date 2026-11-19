@@ -5,7 +5,7 @@ import { clientFileHref } from './workspace'
  * Archiving client files (migration 0024).
  *
  * A client file never leaves the SBR client list by being destroyed any more.
- * It is archived — hidden from the client list, the dashboard and intake, but
+ * It is archived — hidden from the client list and intake, but
  * kept whole — and from the Archive it is either made a client again or
  * deleted permanently.
  *

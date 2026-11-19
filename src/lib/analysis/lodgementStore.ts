@@ -3,7 +3,8 @@ import { DOCUMENT_CATEGORIES } from '@/lib/constants'
 import { isActivityStatementCsv, parseActivityStatementCsv } from './parseActivityStatement'
 import { computeLateLodgement, reanalyseStoredRows } from './computeLateLodgement'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
-import { generateLodgementAiSummary, isClaudeSummary } from '@/lib/ai/lodgementSummary'
+import { canSummarise, generateLodgementAiSummary, isClaudeSummary } from '@/lib/ai/lodgementSummary'
+import { icaViewOf } from '@/lib/ica/view'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
 import { ATO_UPLOAD_EXTENSIONS, atoAccountText } from '@/lib/ica/upload'
 import { verifyAndStoreDocument } from '@/lib/ica/verifyStore'
@@ -141,15 +142,15 @@ export async function analyseAndStoreLodgement(
   let aiModel: string | null = null
   if (options.aiSummary && verified && aiSummariesEnabled() && needsSummary(result)) {
     try {
-      const ai = await generateLodgementAiSummary({
-        dpnRisk: result.dpnRisk,
-        debtBreakdown: result.debtBreakdown,
-        summary: result.summary,
-        // The ATO's own notices, when on file, instead of the estimate.
-        notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
-      })
-      aiText = ai.text
-      aiModel = ai.model
+      // Only proven figures: the account as verified, and every current notice proven.
+      const { data: checked } = await supabase.from('lodgement_analyses').select('rows, statement_label, ica_status, ica_forced, ica_check').eq('id', stored.id).single()
+      const account = checked ? icaViewOf({ rows: checked.rows, label: checked.statement_label, ica_status: checked.ica_status, ica_forced: checked.ica_forced, ica_check: checked.ica_check }) : null
+      const notices = await loadDpnNoticeFigures(supabase, clientId).catch(() => null)
+      if (canSummarise(account, notices)) {
+        const ai = await generateLodgementAiSummary({ dpnRisk: result.dpnRisk, account, summary: result.summary, notices })
+        aiText = ai.text
+        aiModel = ai.model
+      }
     } catch (err) {
       console.error('[lodgement] AI summary failed', err instanceof Error ? err.name : 'unknown')
     }
@@ -179,7 +180,7 @@ export type SummaryOutcome =
 export async function ensureLodgementSummary(supabase: ServerClient, clientId: string): Promise<SummaryOutcome> {
   const { data: row } = await supabase
     .from('lodgement_analyses')
-    .select('id, ai_summary, ai_summary_generated_at, ai_summary_model, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late, ica_status')
+    .select('id, ai_summary, ai_summary_generated_at, ai_summary_model, rows, dpn_risk, debt_breakdown, number_of_late_lodgements, cumulative_days_late, statement_label, ica_status, ica_forced, ica_check')
     .eq('client_id', clientId)
     .order('analysed_at', { ascending: false })
     .limit(1)
@@ -204,15 +205,13 @@ export async function ensureLodgementSummary(supabase: ServerClient, clientId: s
   }
   if (!(dpnRisk?.totalGrossLate > 0) && !(summary.numberOfLateLodgements > 0)) return { kind: 'not_needed' }
   if (!aiSummariesEnabled()) return { kind: 'not_needed' }
+  // Only proven figures: the account as verified, and every current notice proven.
+  const account = icaViewOf({ rows: row.rows, label: row.statement_label, ica_status: row.ica_status, ica_forced: row.ica_forced, ica_check: row.ica_check })
+  const notices = await loadDpnNoticeFigures(supabase, clientId).catch(() => null)
+  if (!canSummarise(account, notices)) return { kind: 'not_needed' }
 
   try {
-    const ai = await generateLodgementAiSummary({
-      dpnRisk,
-      debtBreakdown:
-        fresh?.debtBreakdown ?? (row.debt_breakdown as unknown as ReturnType<typeof computeLateLodgement>['debtBreakdown']),
-      summary,
-      notices: await loadDpnNoticeFigures(supabase, clientId).catch(() => null),
-    })
+    const ai = await generateLodgementAiSummary({ dpnRisk, account, summary, notices })
     const now = new Date().toISOString()
     await supabase
       .from('lodgement_analyses')

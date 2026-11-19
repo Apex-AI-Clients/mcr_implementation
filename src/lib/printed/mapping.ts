@@ -1,7 +1,8 @@
 import type { CellSource, ComparisonColumn, ComparisonRow, PrintedComparison } from './compare'
-import { KEY_FIGURES, MEANINGS, type Meaning } from './meanings'
-import { suggestMapping, type RelatedNames } from './dictionary'
+import { KEY_FIGURES, MEANING, MEANINGS, type Meaning } from './meanings'
+import { DRAWINGS_HINT, lineRank, namesDirector, suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
+import { comparisonProof, heldMessage } from './proof'
 
 /**
  * A client's confirmed mapping (migration 0034) applied to the as-printed
@@ -103,12 +104,20 @@ export function resolveMeaning(comparison: PrintedComparison, mapping: MappingEn
     if (row) mapped.push(row)
     else missing.push(e.label ?? e.rowKey)
   }
+  // A single-line meaning mapped per document (dictionary.ts, bestPerDocument) can have a line for each
+  // year's layout: in a year that prints more than one of them, only the best-ranked counts, never the sum.
+  const single = !MEANING[meaning].multiple
+  const rank = (r: ComparisonRow) => lineRank(meaning, r.label)
   const years = comparison.columns.map((column, i) => {
-    const lines = mapped.flatMap((r): MappedLine[] => {
+    const printedRows = mapped.filter((r) => r.cells[i].printed && typeof r.cells[i].value === 'number')
+    const counted = single && printedRows.length > 1 ? [printedRows.reduce((best, r) => (rank(r) < rank(best) ? r : best))] : printedRows
+    const lines = counted.map((r): MappedLine => {
       const cell = r.cells[i]
-      if (!cell.printed || typeof cell.value !== 'number') return []
-      const read = readLoanLine(r, meaning, cell.value)
-      return [{ label: r.label, value: read.value, printed: cell.value, source: cell.source, rule: read.rule }]
+      const read = readLoanLine(r, meaning, cell.value as number)
+      const autoRule = entries.find((e) => e.rowKey === r.key)?.autoRule ?? null
+      // A section total used as a total (dictionary.ts, assetSectionTotals): its ⓘ says how it is proven.
+      const rule = read.rule ?? (autoRule && autoRule.startsWith('From “') ? autoRule : null)
+      return { label: r.label, value: read.value, printed: cell.value as number, source: cell.source, rule }
     })
     return { column, value: lines.length ? lines.reduce((s, l) => s + l.value, 0) : null, lines }
   })
@@ -127,6 +136,8 @@ export function mappingConfirmed(mapping: MappingEntry[]): boolean {
 // ─── The SBR prediction's financial inputs ────────────────────────────────────
 
 export interface MappedFigure {
+  /** Why it is what it is, when the lines alone do not say ("Not printed on the FY2026 balance sheet; …"). */
+  note?: string
   amount: number
   /** "FY2025 balance sheet" or "current period at 30 Sep 2026". */
   source: string
@@ -145,6 +156,19 @@ export interface NotIdentified {
   message: string
   /** Printed lines that look like it and are not mapped, as printed. */
   candidates: string[]
+  /** The same lines with what staff need to answer "Use it?" or "Not a loan account" (director loan only). */
+  possible?: PossibleLoanLine[]
+  /** The lines already confirmed for it: "Use it" adds the possible line to these. */
+  confirmedRowKeys?: string[]
+}
+
+/** A line on the latest balance sheet that may be the director loan account (Debit): staff decide. */
+export interface PossibleLoanLine {
+  rowKey: string
+  label: string
+  /** As printed in the latest column. */
+  value: number | null
+  hint: string
 }
 
 export interface PredictionFinancials {
@@ -220,7 +244,7 @@ function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], ind
 }
 
 /** Columns the balance sheet prints anything in, oldest first: the years a loan can be read for. */
-function balanceSheetColumns(comparison: PrintedComparison): number[] {
+export function balanceSheetColumns(comparison: PrintedComparison): number[] {
   const bsTable = comparison.tables.find((t) => t.kind === 'balance_sheet')
   if (!bsTable) return []
   return [...comparison.columns.keys()].filter((i) => bsTable.rows.some((r) => r.cells[i].printed))
@@ -249,10 +273,42 @@ export function loanHistory(comparison: PrintedComparison, mapping: MappingEntry
   })
 }
 
-export function predictionFinancials(comparison: PrintedComparison, mapping: MappingEntry[], names: RelatedNames = {}): PredictionFinancials {
+/**
+ * Lines staff said are not this meaning ("Not a loan account", migration 0062), as `${meaning}|${rowKey}`.
+ * They are never offered again for it.
+ */
+export type DismissedLines = ReadonlySet<string>
+
+/** Words of a director or related-party loan account, and drawings (Gabby, 18 Nov 2026). */
+const LOAN_LIKE = /\b(loans?|directors?|shareholders?|related|associates?|associated|beneficiar(y|ies)|drawings?)\b/i
+const BANK_FINANCE = /\b(hire purchase|chattel|mortgage|equipment finance|unexpired interest|lease)\b/i
+const DRAWINGS_LINE = /\bdrawings?\b/i
+
+export function predictionFinancials(
+  comparison: PrintedComparison,
+  mapping: MappingEntry[],
+  names: RelatedNames = {},
+  dismissed: DismissedLines = new Set(),
+): PredictionFinancials {
   // The latest column the balance sheet prints anything in.
   const index = balanceSheetColumns(comparison).pop()
   const column = index === undefined ? null : comparison.columns[index]
+  // Only a proven year is used (proof.ts): an uncertain scan reading waits, "Being prepared".
+  if (column && index !== undefined && comparisonProof(comparison)[index]?.status === 'held') {
+    const message = heldMessage(balanceSheetLabel(column).replace(/^Current period to/, 'current period to'))
+    return {
+      confirmed: mappingConfirmed(mapping),
+      balanceSheet: { column, label: columnSourceLabel(column) },
+      loanReceivable: null,
+      loanPayable: null,
+      notIdentified: { loanReceivable: { message, candidates: [] }, atoDebt: { message, candidates: [] } },
+      atoDebt: null,
+      creditCards: null,
+      cashLoans: null,
+      bankOverdraft: null,
+      tradeSuppliers: null,
+    }
+  }
   const printedNil = (meaning: Meaning) => index !== undefined && printedNilAt(comparison, mapping, meaning, index)
   const figure = (meaning: Meaning, { absolute = false, noneIsZero = false } = {}): MappedFigure | null => {
     if (!column || index === undefined) return null
@@ -282,16 +338,52 @@ export function predictionFinancials(comparison: PrintedComparison, mapping: Map
   // The loan accounts in the latest column (loanSidesAt).
   const sides = column && index !== undefined ? loanSidesAt(comparison, mapping, index) : { to: null, by: null }
 
-  const loanReceivable = sides.to
+  let loanReceivable = sides.to
   const atoDebt = figure('ato_debt')
   const notIdentified: PredictionFinancials['notIdentified'] = {}
-  if (column && (loanReceivable === null || loanCandidates.length > 0)) {
+  const recv = resolveMeaning(comparison, mapping, 'loan_receivable')
+  const sheet = column ? balanceSheetLabel(column).replace(/^Current period to/, 'the current period to') : ''
+  // Lines on the latest balance sheet that may be the director loan account (Debit): a loan, director,
+  // shareholder, related, associate, beneficiary or drawings line, or one naming a director; never a line
+  // mapped to anything (the Credit side included), bank finance, or one staff said is not a loan account.
+  const possibleLoans: PossibleLoanLine[] =
+    column && index !== undefined
+      ? (comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? [])
+          .filter((r) => r.style === 'line' && r.cells[index].printed && !mappedKeys.has(r.key) && !dismissed.has(`loan_receivable|${r.key}`))
+          .filter((r) => !BANK_FINANCE.test(r.label) && (LOAN_LIKE.test(r.label) || namesDirector(r.label, names.directors ?? [])))
+          .map((r) => ({
+            rowKey: r.key,
+            label: r.label.trim(),
+            value: typeof r.cells[index].value === 'number' ? (r.cells[index].value as number) : null,
+            hint: DRAWINGS_LINE.test(r.label) ? DRAWINGS_HINT : `Printed under ${r.path.join(' › ') || 'the balance sheet'}`,
+          }))
+      : []
+  const drawings = possibleLoans.filter((l) => DRAWINGS_LINE.test(l.label))
+  // The confirmed lines are not on the latest balance sheet (a new layout, MBM FY2026): $0 only when the
+  // year is proven and nothing on it looks like a director loan; otherwise the possible lines, and wait.
+  const linesGone = column && index !== undefined && recv.status === 'mapped' && recv.years[index].lines.length === 0 && loanReceivable === null
+  if (linesGone && possibleLoans.length === 0 && comparisonProof(comparison)[index!]?.status !== 'held') {
+    const before = [...recv.years.slice(0, index)].reverse().find((y) => y.value !== null)
+    loanReceivable = {
+      source: columnSourceLabel(column!),
+      asOf: column!.periodEnd,
+      amount: 0,
+      lines: [],
+      note: `Not printed on the ${balanceSheetLabel(column!)}${before ? `; printed in the ${balanceSheetLabel(before.column)} as $${Math.round(before.value!).toLocaleString('en-AU')}` : ''}.`,
+    }
+  }
+  const waitingOn = [...new Set([...loanCandidates, ...(linesGone ? possibleLoans.map((l) => l.label) : drawings.map((l) => l.label))])]
+  const offered = possibleLoans.filter((l) => waitingOn.includes(l.label))
+  if (column && (loanReceivable === null || waitingOn.length > 0)) {
+    const lead = recv.status === 'mapped' && recv.years[index!]?.lines.length === 0 ? `The confirmed lines aren't on the ${sheet}.` : recv.status === 'mapped' ? `The ${sheet} also prints a line that may be money owed to the company.` : 'No line is confirmed for money owed to the company.'
     notIdentified.loanReceivable = {
       message:
-        loanCandidates.length > 0
-          ? `No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (${balanceSheetLabel(column).replace(/^Current period to/, 'the current period to')}), which prints ${loanCandidates.map((l) => `“${l}”`).join(', ')}: choose the line, or confirm none is printed.`
-          : `No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (${balanceSheetLabel(column).replace(/^Current period to/, 'the current period to')}): choose the line, or confirm none is printed.`,
-      candidates: loanCandidates,
+        waitingOn.length > 0
+          ? `${lead} The prediction uses the latest balance sheet (${sheet}), which prints ${waitingOn.map((l) => `“${l}”`).join(', ')}: use it, or say it is not a loan account.`
+          : `${lead} The prediction uses the latest balance sheet (${sheet}): choose the line, or confirm none is printed.`,
+      candidates: waitingOn,
+      possible: offered,
+      confirmedRowKeys: mapping.filter((e) => e.meaning === 'loan_receivable' && !e.nonePrinted).map((e) => e.rowKey),
     }
   }
   if (!column) {

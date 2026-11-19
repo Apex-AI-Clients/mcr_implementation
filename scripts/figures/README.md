@@ -58,3 +58,25 @@ account types, moves and clients only. It writes nothing.
 `ATO_REFILE_APPLY=yes npm run ato:refile` makes the moves and records each
 file's account type, first two lines and note. Run it only after the dry run
 has been checked.
+
+## The test bank: proven notices and statements (migration 0060)
+
+Every notice and financial statement that is proven (`src/lib/dpn/proof.ts`,
+`src/lib/printed/proof.ts`) joins `proof_bank` in the company Supabase with its
+document id and the figures it proved: a notice's type, issue date and rows in
+cents (no name, reference, ACN or address); a statement's figures for each year
+it proved. No copy of a file is kept anywhere.
+
+- Joining happens on its own: after each automatic run, after a scan is read,
+  and after staff choose a scanned figure. An entry is never overwritten.
+- `npm run proof:check` reads every banked file again from storage with the
+  current code and prints any changed figure (client alias, document id
+  prefix, statement and a hash of the line; never the printed label). It exits
+  1 on any change. `npm run figures:check` runs the same check (and skips it,
+  saying so, before 0060 or without database settings).
+- `PROOF_BANK_JOIN=yes npm run proof:check` first joins every proven file not
+  banked yet: run it once after applying 0060.
+- A scanned file is checked from its kept reading (with staff choices): it is
+  never sent to Claude again for a check.
+- After a deliberate change to a proven figure: delete that file's row from
+  `proof_bank`; the next run banks it again.

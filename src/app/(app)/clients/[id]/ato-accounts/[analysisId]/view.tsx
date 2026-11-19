@@ -12,6 +12,7 @@ import { storedUnparsedDateRows } from '@/lib/analysis/atoAccount/store'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
 import { icaViewOf } from '@/lib/ica/view'
 import { HeldBackAccount } from '@/components/admin/ica/IcaParts'
+import { verifiedAccountSummary } from '@/lib/analysis/atoAccount/verifiedSummary'
 
 /**
  * An income tax or superannuation guarantee account's summary, from its
@@ -88,6 +89,8 @@ export async function AtoAccountView({ id, analysisId, workspace }: ClientPageVi
     )
   }
 
+  // The account's own summary on the ICA engine: only the rows the ATO's balance proved (verifiedSummary.ts).
+  const own = verifiedAccountSummary({ kind: row.account_kind, rows: row.rows, label: row.account_label, ica_status: row.ica_status, ica_forced: row.ica_forced })
   const payload = {
     verification,
     id: row.id,
@@ -105,7 +108,7 @@ export async function AtoAccountView({ id, analysisId, workspace }: ClientPageVi
     reviewedAt: row.reviewed_at,
     analysedAt: row.analysed_at,
     composition: row.composition as unknown as AccountComposition,
-    summary: row.summary,
+    summary: own?.summary ?? null,
     // Only a summary written by Claude under the figure check; an older one is written again.
     aiSummary: isClaudeSummary(row.ai_summary_model) ? row.ai_summary : null,
     aiSummaryGeneratedAt: isClaudeSummary(row.ai_summary_model) ? row.ai_summary_generated_at : null,

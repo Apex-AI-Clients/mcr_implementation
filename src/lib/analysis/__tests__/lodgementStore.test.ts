@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/ai/lodgementSummary', () => ({
   generateLodgementAiSummary: vi.fn(),
   isClaudeSummary: (model: string | null) => !!model && model.startsWith('anthropic/'),
+  // Whether the figures are proven is tested with the summary itself (lodgementSummary.test.ts).
+  canSummarise: () => true,
 }))
 vi.mock('@/lib/ai/openrouterClient', () => ({ aiSummariesEnabled: vi.fn(() => true) }))
 // The check against the ATO's own balance (ica/verifyStore.ts) is its own unit; here only its answer matters.

@@ -11,6 +11,7 @@ import { describeManualReason, noticeTypeLabel, tableLayoutNote } from '@/lib/dp
 import { describeDaysLeft } from '@/lib/dpn/summary'
 import { formatCents, type DpnNoticeView } from '@/lib/dpn/view'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import { formatDate } from '@/lib/utils'
 
 interface DpnNoticeListProps {
@@ -67,7 +68,8 @@ function NoticeCard({
   const router = useRouter()
   const [reading, setReading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { notice, issues, deadline } = view
+  const { notice, issues, deadline, proof } = view
+  const proven = proof?.status === 'verified'
 
   async function readNotice() {
     setReading(true)
@@ -133,12 +135,42 @@ function NoticeCard({
                 </span>
               </p>
             ))}
+          {proof && proof.badges.length > 0 && <VerifiedBadge text={proof.badges.join(' · ')} />}
+          {proof?.note && <p data-testid="dpn-proof-note" className="text-foreground/60">{proof.note}.</p>}
+          {proof && !proven && (
+            <div data-testid="dpn-proof-problems" data-source-rows className="space-y-1 rounded-md border border-border bg-surface/60 px-2.5 py-2 text-foreground/70">
+              {proof.rowsNotAddingUp.map((r) => (
+                <p key={`add-${r.periodFrom}`}>
+                  {formatDate(r.periodFrom)} – {formatDate(r.periodTo)}: Column 3 is not Column 4 + Column 5 on the notice as read.
+                </p>
+              ))}
+              {proof.fieldsMissing.length > 0 && <p>Not read from the notice: {proof.fieldsMissing.join(', ')}.</p>}
+              {(proof.account?.mismatches ?? []).map((m) => (
+                <div key={`mm-${m.periodFrom}`}>
+                  <p>
+                    {formatDate(m.periodFrom)} – {formatDate(m.periodTo)}: the notice&apos;s Column 2 is {formatCents(m.notice)}; the ATO account shows {formatCents(m.account)}:
+                  </p>
+                  <ul className="ml-4 list-disc text-foreground/55">
+                    {m.accountRows.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
           {tableLayoutNote(notice) && (
             <p data-testid="dpn-three-column" className="text-foreground/60">
               {tableLayoutNote(notice)}
             </p>
           )}
-          {notice.totals && (
+          {notice.totals && !proven && (
+            <p>
+              Unpaid <span className="text-foreground/60">Being prepared</span>
+              {notice.directorName && <span className="text-foreground/60"> · to {notice.directorName}</span>}
+            </p>
+          )}
+          {notice.totals && proven && (
             <p>
               Unpaid{' '}
               <span className="font-medium tabular-nums">

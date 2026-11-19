@@ -47,6 +47,10 @@ export const PLAUSIBLE: Record<Meaning, (r: ComparisonRow) => boolean> = {
   plant_equipment: (r) => isAsset(r),
   other_assets: (r) => isAsset(r),
   share_capital: (r) => /equity|capital/.test(path(r)) || /\bcapital\b|\bshares?\b/i.test(r.label),
+  // The balance sheet's own totals (a printed subtotal or total line).
+  total_current_assets: (r) => r.style !== 'line' && /\bcurrent assets\b/i.test(r.label) && !/non[- ]?current/i.test(r.label),
+  total_non_current_assets: (r) => r.style !== 'line' && /\bnon[- ]?current assets\b/i.test(r.label),
+  total_assets: (r) => r.style !== 'line' && /\btotal assets\b/i.test(r.label),
 }
 
 function statementRows(comparison: PrintedComparison, meaning: Meaning): ComparisonRow[] {

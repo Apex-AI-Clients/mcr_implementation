@@ -16,6 +16,8 @@ export interface AmountSource {
   /** For a calculated amount: the sum with the actual numbers. */
   calculation?: string | null
   link?: SourceLink | null
+  /** The printed line(s) exactly as printed, for "Copy this line" (to search the PDF or the ATO export). */
+  copy?: string | null
 }
 
 export type SourceLink =
@@ -60,6 +62,7 @@ export function printedLinesSource(
     rule: rules.length ? rules.join(' ') : null,
     calculation: lines.length > 1 ? `${lines.map((l) => aud(l.value)).join(' + ').replace(/\+ −/g, '− ')} = ${aud(total)}` : null,
     link: first ? { kind: 'pdf', documentId: first.documentId, page: first.page } : confirmUrl ? { kind: 'href', href: confirmUrl, label: 'Confirm key figures' } : null,
+    copy: lines.map((l) => l.source?.text ?? `${l.label} ${asPrinted(l.printed)}`).join('\n'),
   }
 }
 

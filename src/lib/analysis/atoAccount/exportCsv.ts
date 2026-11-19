@@ -29,8 +29,8 @@ export type AtoAccountPayload = {
   aiSummary?: string | null
   aiSummaryGeneratedAt?: string | null
 } & (
-  | { kind: 'income_tax'; summary: IncomeTaxSummary }
-  | { kind: 'super_guarantee'; summary: SuperGuaranteeSummary }
+  | { kind: 'income_tax'; summary: IncomeTaxSummary | null }
+  | { kind: 'super_guarantee'; summary: SuperGuaranteeSummary | null }
 )
 
 /** Above $1,000 unexplained and not reviewed yet: the page's exports are locked. */
@@ -63,9 +63,8 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
   }
   lines.push('')
 
-  // The earlier engine's summary goes beside a verified composition only when it reaches the same balance exactly.
-  const showSummary = !v || p.unexplained === 0
-  if (showSummary && p.kind === 'income_tax') {
+  // The account's own summary, on the ICA engine (verifiedSummary.ts); none when the file is not verified.
+  if (p.kind === 'income_tax' && p.summary) {
     const s = p.summary
     lines.push(row('ASSESSMENTS'))
     lines.push(row('Period from', 'Period to', 'Assessed on', 'Payment due', 'Amount', 'Unpaid', 'Status'))
@@ -79,7 +78,7 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
     lines.push(row('GIC remitted or amended', money(s.gic.remitted)))
     lines.push(row('GIC net', money(s.gic.net)))
     lines.push(row('Note', s.note))
-  } else if (showSummary && p.kind === 'super_guarantee') {
+  } else if (p.kind === 'super_guarantee' && p.summary) {
     const s = p.summary
     lines.push(row('QUARTERS'))
     lines.push(row('Quarter from', 'Quarter to', 'SG shortfall', 'Nominal interest', 'Administration fee', 'Total', 'Latest', 'Every event (newest first)'))

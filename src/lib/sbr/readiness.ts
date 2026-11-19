@@ -69,6 +69,11 @@ export interface ReadinessInput {
     unreviewedFailures: number
     /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
     mappingConfirmed: boolean
+    /**
+     * The year the prediction's figures come from (the latest balance sheet) is not proven:
+     * an uncertain scan reading (printed/proof.ts). Its reasons; absent or empty: proven.
+     */
+    heldReasons?: string[]
   }
   lodgement: {
     /** CSVs uploaded under the integrated client account. */
@@ -149,10 +154,14 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
       href,
     )
   }
+  // An uncertain scan reading of the year the prediction uses: it waits (Gabby, 18 Nov 2026). No "Run now": staff choose the figures.
+  if ((f.heldReasons ?? []).length > 0) {
+    return { ...item(input, 'financials', 'needs_review', `Being prepared: ${f.heldReasons!.join('; ')}.`, href), canRunNow: false }
+  }
   // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
   const note =
     f.unreviewedFailures > 0
-      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are listed at the bottom of the comparison page.`
+      ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are named under the year badges on the comparison page.`
       : null
   return item(input, 'financials', 'ready', note, href)
 }
@@ -215,8 +224,13 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
   // about them (a different ACN, say): that is shown there, not here.
   const read = d.notices.filter((v) => v.notice && v.notice.status !== 'needs_manual')
   if (read.length > 0) {
+    // A notice is used only when proven (dpn/proof.ts): one that is not holds the prediction.
+    if (read.some((v) => v.proof && v.proof.status !== 'verified')) {
+      return { ...item(input, 'dpn', input.jobRunning ? 'processing' : 'not_started', `${TOTALS_HELD_BACK}.`, href), canRunNow: false }
+    }
     const types = [...new Set(read.map((v) => noticeTypeLabel(v.notice!) ?? 'notice'))].join(' and ')
-    return item(input, 'dpn', 'ready', `${read.length} notice${read.length === 1 ? '' : 's'} read (${types}).`, href)
+    const badges = ['Notice adds up', 'Matches the ATO account'].filter((b) => read.every((v) => v.proof?.badges.includes(b)))
+    return item(input, 'dpn', 'ready', `${read.length} notice${read.length === 1 ? '' : 's'} read (${types})${badges.length ? `: ${badges.join(' · ')}` : ''}.`, href)
   }
   if (d.notices.some((v) => !v.notice)) {
     return input.jobRunning

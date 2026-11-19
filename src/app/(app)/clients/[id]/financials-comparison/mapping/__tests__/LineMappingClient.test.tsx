@@ -88,9 +88,9 @@ describe('Confirm key figures', () => {
     expect(within(revenue).getByText('Auto-selected')).toBeTruthy()
     expect(within(revenue).getByText(/Auto-selected: The total income/)).toBeTruthy()
     expect(within(revenue).getByRole('button', { name: /Change/ })).toBeTruthy()
-    expect(within(cardOf('Loan account — owed BY the company')).getByText('Not printed.')).toBeTruthy()
-    // Six of seven: income tax waits for its possible line.
-    expect(screen.getByText('6 of 7 confirmed')).toBeTruthy()
+    expect(within(cardOf('Loan account director (Credit)')).getByText('Not printed.')).toBeTruthy()
+    // Four of five: income tax waits for its possible line.
+    expect(screen.getByText('4 of 5 confirmed')).toBeTruthy()
     const tax = cardOf('Income tax payable')
     expect(within(tax).getByText('Check the possible line')).toBeTruthy()
     expect(tax.textContent).toContain('Possible line: “GST” $20 (FY2025)')
@@ -101,7 +101,7 @@ describe('Confirm key figures', () => {
   it('confirms every suggestion at once, and nothing that has no suggestion', async () => {
     const user = userEvent.setup()
     renderPage()
-    expect(screen.getByText('0 of 7 confirmed')).toBeTruthy()
+    expect(screen.getByText('0 of 5 confirmed')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Confirm all suggestions' }))
     const selection = sentSelection()
     expect(selection.revenue).toEqual({ rowKeys: [key('Total Income')] })
@@ -124,7 +124,7 @@ describe('Confirm key figures', () => {
     expect(card.textContent).toContain('FY2025')
     expect(within(card).getByText(/Confirmed by Test Staff/)).toBeTruthy()
     expect(within(cardOf('Revenue')).getByText('Suggested')).toBeTruthy()
-    expect(screen.getByText('1 of 7 confirmed')).toBeTruthy()
+    expect(screen.getByText('1 of 5 confirmed')).toBeTruthy()
   })
 
   it('offers only plausible lines, the current one first and marked, and all lines on request', async () => {

@@ -24,9 +24,13 @@ describe('prefill — signature dates from Form 509', () => {
     expect(value(prefillForm('509', 'company', withSummary()), 'date_signed')).toBe(SUMMARY)
   })
 
-  it('fills A9, A10, Form 507A and the tables’ "...and dated" on Part A', () => {
+  it('fills A9, Form 507A and the tables’ "...and dated" on Part A; never A10', () => {
     const p = prefillForm('507a', 'company', withSummary())
-    for (const key of ['a9_date', 'a10_date', 'f507a_date_signed']) expect(value(p, key)).toBe(SUMMARY)
+    for (const key of ['a9_date', 'f507a_date_signed']) expect(value(p, key)).toBe(SUMMARY)
+    // A10 is left blank, name and date (18 Nov 2026): no value, no note.
+    expect(p.fields.a10_date).toBeUndefined()
+    expect(p.fields.a10_name).toBeUndefined()
+    expect(p.notes.a10_date).toBeUndefined()
     // Form 507A's "Date of Report under s475(1)" too.
     expect(value(p, 'f507a_report_date')).toBe(SUMMARY)
     expect(p.fields.f507a_report_date.source.from[1]).toBe('Change it here if the report is dated another day.')

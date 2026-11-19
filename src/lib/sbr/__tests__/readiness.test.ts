@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { computeReadiness, type ReadinessInput } from '../readiness'
 import type { DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
+import { proveNotice } from '@/lib/dpn/proof'
 
 /** The readiness checklist's rules. Synthetic data only. */
 
@@ -19,7 +20,8 @@ function notice(over: Partial<StoredNotice> = {}): StoredNotice {
     companyName: 'EXAMPLE TRADING PTY LTD',
     acn: '000000019',
     directorName: 'Jane Sample',
-    rows: [],
+    // One period that adds up (Column 3 = 4 + 5), so the notice is proven (dpn/proof.ts).
+    rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 1_000_00, column3: 1_000_00, column4: 800_00, column5: 200_00 }],
     totals: null,
     tableLayout: 'five_column',
     enteredBy: null,
@@ -34,6 +36,7 @@ const view = (n: StoredNotice | null, issues: string[] = []): DpnNoticeView => (
   notice: n,
   issues,
   deadline: '2026-10-21',
+  proof: n ? proveNotice(n, null) : null,
 })
 
 function input(over: {
@@ -115,8 +118,15 @@ describe('financial statements', () => {
   it('never holds the prediction up for printed totals that do not add up: a note pointing to the comparison page', () => {
     const r = computeReadiness(input({ financials: { unreviewedFailures: 2 } }))
     expect(statusOf(r, 'financials')).toMatchObject({ status: 'ready' })
-    expect(statusOf(r, 'financials').detail).toBe('2 printed totals do not add up: they are listed at the bottom of the comparison page.')
+    expect(statusOf(r, 'financials').detail).toBe('2 printed totals do not add up: they are named under the year badges on the comparison page.')
     expect(r.canPredict).toBe(true)
+  })
+
+  it('waits, without Run now, while the year the prediction uses is held (an uncertain scan reading)', () => {
+    const r = computeReadiness(input({ financials: { heldReasons: ['1 scanned figure the two readings disagree on: choose each'] } }))
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_review', canRunNow: false })
+    expect(statusOf(r, 'financials').detail).toBe('Being prepared: 1 scanned figure the two readings disagree on: choose each.')
+    expect(r.canPredict).toBe(false)
   })
 
   it('is Needs review, pointing at the comparison page, until staff confirm the key figures', () => {
@@ -179,6 +189,16 @@ describe('ATO activity statement', () => {
 })
 
 describe('director penalty notices and the DPN factor', () => {
+  it('waits, "Totals being prepared.", while a read notice is not proven; names the badges once it is', () => {
+    const bad = notice({ rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 100, column3: 100, column4: 50, column5: 49 }] })
+    const held = statusOf(computeReadiness(input({ dpn: { notices: [view(bad)], noneIssued: null } })), 'dpn')
+    expect(held).toMatchObject({ status: 'not_started', detail: 'Totals being prepared.', canRunNow: false })
+    const good = notice({ rows: [{ periodFrom: '2025-07-01', periodTo: '2025-09-30', column2: 100, column3: 100, column4: 50, column5: 50 }] })
+    const ready = statusOf(computeReadiness(input({ dpn: { notices: [view(good)], noneIssued: null } })), 'dpn')
+    expect(ready.status).toBe('ready')
+    expect(ready.detail).toMatch(/: Notice adds up\.$/)
+  })
+
   it('is ready, with No, when staff ticked "none issued"', () => {
     const r = computeReadiness(input({ dpn: { notices: [], noneIssued: { by: 'Sam', at: '2026-10-10T00:00:00Z' } } }))
     expect(statusOf(r, 'dpn').status).toBe('ready')
@@ -205,7 +225,7 @@ describe('director penalty notices and the DPN factor', () => {
     const r = computeReadiness(
       input({ dpn: { notices: [view(notice()), view(notice({ documentId: 'dpn-2', status: 'needs_manual' }))] } }),
     )
-    expect(statusOf(r, 'dpn')).toMatchObject({ status: 'ready', detail: '1 notice read (PAYG withholding).' })
+    expect(statusOf(r, 'dpn')).toMatchObject({ status: 'ready', detail: '1 notice read (PAYG withholding): Notice adds up.' })
     expect(r.dpn).toBe(true)
   })
 

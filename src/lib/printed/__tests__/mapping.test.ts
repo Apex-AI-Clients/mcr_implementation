@@ -149,7 +149,8 @@ describe('suggestMapping — the CVL meanings (migration 0040)', () => {
     expect(CVL_MEANINGS.map((m) => m.key)).toEqual(['cash_at_bank', 'cash_on_hand', 'trade_debtors', 'stock', 'plant_equipment', 'other_assets', 'share_capital'])
     expect(SBR_MEANINGS.some((m) => m.cvl)).toBe(false)
     expect(CVL_MEANINGS.every((m) => !m.required && !m.prediction && !m.tile)).toBe(true)
-    expect(KEY_FIGURES).toHaveLength(7)
+    // Five since 18 Nov 2026: revenue and net assets left the comparison page.
+    expect(KEY_FIGURES.map((m) => m.key)).toEqual(['loan_receivable', 'loan_payable', 'ato_debt', 'net_profit', 'income_tax_payable'])
   })
 })
 
@@ -205,6 +206,18 @@ describe('the confirmed mapping', () => {
     const c = comparison()
     expect(predictionFinancials(c, []).loanReceivable).toBeNull()
     expect(creditorDebt({ icaRows: null, mappedAto: null }).amount).toBeNull()
+  })
+
+  it('gives the prediction nothing from a held year (a scanned figure the two readings disagree on): "Being prepared"', () => {
+    const c = comparison()
+    const bs = c.tables.find((t) => t.kind === 'balance_sheet')!
+    const cash = bs.rows.find((row) => row.label === 'Cash')!
+    const last = c.columns.length - 1
+    cash.cells[last] = { ...cash.cells[last], scan: { status: 'disagree', claude: 100, ocr: 108, key: 'k', documentId: 'fy25', page: 1, band: null, column: 0 } }
+    const f = predictionFinancials(c, [{ meaning: 'loan_receivable', lines: ['Loan - Related Parties'] }] as never)
+    expect(f.loanReceivable).toBeNull()
+    expect(f.atoDebt).toBeNull()
+    expect(f.notIdentified.loanReceivable?.message).toMatch(/^Being prepared: /)
   })
 })
 
@@ -371,7 +384,7 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
     expect(f.loanPayable).toMatchObject({ amount: 40_667.15 })
   })
 
-  it('never makes a silent $0: a mapped loan line not printed on the latest balance sheet is not identified', () => {
+  it('a confirmed loan line not on the latest (proven) balance sheet, with nothing there like a loan: $0, saying where it was last printed', () => {
     // Last year's report prints the loan; this year's report does not print the line at all.
     const report = (id: string, year: number, rows: PrintedRow[]): ComparisonDocument => ({
       documentId: id,
@@ -389,8 +402,39 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       report('fy25', 2025, [r(CL, 'Accrued Charges', 'line', 100)]),
     ])
     const f = predictionFinancials(c, entries(c, { loan_receivable: ['Loan - Director'], loan_payable: 'none' }))
+    expect(f.notIdentified.loanReceivable).toBeUndefined()
+    expect(f.loanReceivable).toMatchObject({ amount: 0, lines: [], note: 'Not printed on the FY2025 balance sheet; printed in the FY2024 balance sheet as $5,000.' })
+  })
+
+  it('never a silent $0 when the latest balance sheet prints a line like a loan or drawings: "use it, or not a loan account", and wait', () => {
+    const report = (id: string, year: number, rows: PrintedRow[]): ComparisonDocument => ({
+      documentId: id,
+      filename: `${id}.pdf`,
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [{ kind: 'balance_sheet', title: 'Balance Sheet', pages: [1], columns: [fy(year)], wholeDollars: true, rows: [r([], 'Liabilities', 'heading', null), r(['Liabilities'], 'Current Liabilities', 'heading', null), ...rows] }],
+      },
+    })
+    const c = buildPrintedComparison([
+      report('fy24', 2024, [r(CL, 'Loan - Director', 'line', -5_000), r(CL, 'Loans from Directors', 'line', 300)]),
+      report('fy25', 2025, [r(CL, 'Loans from Directors', 'line', 900), r(['Equity'], 'Owner A Drawings', 'line', 4_000)]),
+    ])
+    // "Loans from Directors" is the confirmed Credit line: never a candidate. The drawings are.
+    const mapping = entries(c, { loan_receivable: ['Loan - Director'], loan_payable: ['Loans from Directors'] })
+    const f = predictionFinancials(c, mapping)
     expect(f.loanReceivable).toBeNull()
-    expect(f.notIdentified.loanReceivable?.message).toBe('No line is confirmed for money owed to the company. The prediction uses the latest balance sheet (FY2025 balance sheet): choose the line, or confirm none is printed.')
+    expect(f.notIdentified.loanReceivable?.message).toBe(
+      "The confirmed lines aren't on the FY2025 balance sheet. The prediction uses the latest balance sheet (FY2025 balance sheet), which prints “Owner A Drawings”: use it, or say it is not a loan account.",
+    )
+    expect(f.notIdentified.loanReceivable?.possible).toEqual([
+      { rowKey: expect.any(String), label: 'Owner A Drawings', value: 4_000, hint: 'Money taken out by the owner (printed under Equity)' },
+    ])
+    // Staff said "Not a loan account": now $0, with where it was last printed.
+    const dismissed = new Set([`loan_receivable|${f.notIdentified.loanReceivable!.possible![0].rowKey}`])
+    expect(predictionFinancials(c, mapping, {}, dismissed).loanReceivable).toMatchObject({ amount: 0, note: 'Not printed on the FY2025 balance sheet; printed in the FY2024 balance sheet as $5,000.' })
   })
 
   it('gives the loan for every balance sheet on file, oldest first, by the same rule (loanHistory)', () => {
@@ -415,11 +459,11 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
     expect(years.map((y) => [y.label, y.owedTo, y.owedBy])).toEqual([
       ['FY2023 balance sheet', 9_000, 1_000],
       ['FY2024 balance sheet', 5_000, 2_000],
-      // Not printed on the latest: not identified, never $0.
+      // Not printed on the latest: not identified for that year.
       ['FY2025 balance sheet', null, null],
     ])
-    // The latest agrees with what the prediction uses.
-    expect(predictionFinancials(c, mapping).loanReceivable).toBeNull()
+    // The prediction: nothing on the latest (proven) balance sheet looks like a loan, so $0 with a note.
+    expect(predictionFinancials(c, mapping).loanReceivable).toMatchObject({ amount: 0, lines: [] })
     expect(directorLoanYears(years, 'gross').map((y) => y.amount)).toEqual([9_000, 5_000, null])
     expect(directorLoanYears(years, 'net').map((y) => y.amount)).toEqual([8_000, 3_000, null])
   })

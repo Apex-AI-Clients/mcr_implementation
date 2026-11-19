@@ -47,16 +47,21 @@ export interface PrintedRow {
 }
 
 /**
- * read      read by Claude from the scanned page: accepted as read
- * chosen    corrected by staff (scan_figure_choices): the figure typed in
+ * agree     both readings (Claude, Tesseract) print the same figure: proven, when its totals add up
+ * disagree  they differ, or one of them does not have the line: staff choose
+ * single    one reading only (the second could not be made): staff choose
+ * chosen    staff chose or typed the figure (scan_figure_choices)
+ * read      read by Claude alone (a reading stored 10–18 Nov 2026): not proven until read again by both
  */
-export type ScanCellStatus = 'read' | 'chosen'
+export type ScanCellStatus = 'agree' | 'disagree' | 'single' | 'chosen' | 'read'
 
 export interface ScanCell {
   status: ScanCellStatus
-  /** Claude's figure, as read from the page. */
+  /** Tesseract's figure; undefined when it did not read this line. */
+  ocr?: PrintedAmount
+  /** Claude's figure; undefined when it did not read this line. */
   claude?: PrintedAmount
-  /** Who corrected it, and when (status 'chosen'). */
+  /** Who chose, and when (status 'chosen'). */
   chosenBy?: string
   chosenAt?: string
 }

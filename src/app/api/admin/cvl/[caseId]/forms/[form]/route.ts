@@ -6,6 +6,7 @@ import { CURRENT_VERSION, FORM_CODES } from '@/lib/forms/registry'
 import type { FormCode } from '@/lib/forms/types'
 import { cleanAnswers, cleanEditedKeys } from '@/lib/cvl/drafts'
 import { isSubject } from '@/lib/cvl/prefill'
+import { isFormCompleted } from '@/lib/cvl/completion'
 import type { Json } from '@/types/database'
 
 /**
@@ -59,6 +60,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const { supabase, row, open } = await caseOf(caseId)
     if (!row) return NextResponse.json({ error: 'CVL file not found' }, { status: 404 })
     if (!open) return NextResponse.json({ error: 'This file is not an open CVL file.' }, { status: 409 })
+    // A form marked complete is not edited until the forms are unlocked (migration 0063).
+    if (await isFormCompleted(supabase, caseId, code, subject)) return NextResponse.json({ error: 'This form is marked complete. Unlock the forms to edit it.' }, { status: 409 })
 
     const updatedAt = new Date().toISOString()
     const updatedBy = staffAuthorName(staff)
@@ -94,6 +97,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const { supabase, row, open } = await caseOf(caseId)
     if (!row) return NextResponse.json({ error: 'CVL file not found' }, { status: 404 })
     if (!open) return NextResponse.json({ error: 'This file is not an open CVL file.' }, { status: 409 })
+    if (await isFormCompleted(supabase, caseId, form, subject)) return NextResponse.json({ error: 'This form is marked complete. Unlock the forms to edit it.' }, { status: 409 })
 
     const { error } = await supabase.from('cvl_form_answers').delete().eq('case_id', caseId).eq('form_code', form).eq('subject', subject)
     if (error) throw error

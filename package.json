@@ -30,7 +30,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "ica:check": "node scripts/ica/run.mjs scripts/ica/check.ts",
-    "ica:rerun": "node scripts/ica/run.mjs scripts/ica/rerun.ts"
+    "ica:rerun": "node scripts/ica/run.mjs scripts/ica/rerun.ts",
+    "proof:check": "node scripts/ica/run.mjs scripts/proof/check.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

@@ -5,6 +5,7 @@ import { DpnPanel } from '../DpnPanel'
 import { DpnNoticeList } from '../DpnNoticeList'
 import type { DpnPanelData, DpnNoticeView } from '@/lib/dpn/view'
 import type { StoredNotice } from '@/lib/dpn/stored'
+import { proveNotice } from '@/lib/dpn/proof'
 
 /**
  * The client page's DPN card (the tick, or the way to the summary), the
@@ -47,7 +48,7 @@ const NOTICE: StoredNotice = {
 }
 
 function view(overrides: Partial<DpnNoticeView> = {}): DpnNoticeView {
-  return { documentId: 'doc-1', filename: 'notice.pdf', notice: NOTICE, issues: [], deadline: '2026-10-21', ...overrides }
+  return { documentId: 'doc-1', filename: 'notice.pdf', notice: NOTICE, issues: [], deadline: '2026-10-21', proof: proveNotice(NOTICE, null), ...overrides }
 }
 
 function data(overrides: Partial<DpnPanelData> = {}): DpnPanelData {

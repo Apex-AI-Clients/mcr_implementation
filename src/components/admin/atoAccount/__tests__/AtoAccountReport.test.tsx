@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { AtoAccountReport } from '../AtoAccountReport'
+import { AtoAccountReport, atoPeriodPhrase } from '../AtoAccountReport'
 import { analyseAtoAccount } from '@/lib/analysis/atoAccount'
 import type { AtoAccountPayload } from '@/lib/analysis/atoAccount/exportCsv'
 
@@ -86,6 +86,12 @@ describe('AtoAccountReport', () => {
     expect(screen.getByText(/This account is for OTHER CONTRACTORS PTY LTD/)).toBeTruthy()
     expect(screen.getByText('Unpaid superannuation guarantee charge can be the subject of a director penalty notice.')).toBeTruthy()
     expect(screen.queryByText(/lodged by the company/i)).toBeNull()
+  })
+
+  it('each quarter can copy its period as the ATO words it, to search the spreadsheet', () => {
+    render(<AtoAccountReport payload={payload()} clientName="Example Trading" />)
+    expect(screen.getByRole('button', { name: 'Copy search: for the period from 01 Jul 21 to 30 Sep 21' })).toBeTruthy()
+    expect(atoPeriodPhrase({ from: '2025-10-01', to: '2025-12-31' })).toBe('for the period from 01 Oct 25 to 31 Dec 25')
   })
 
   it('asks for the AI summary once unlocked, and shows it', async () => {

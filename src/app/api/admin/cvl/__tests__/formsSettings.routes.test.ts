@@ -11,6 +11,7 @@ vi.mock('@/lib/auth/staff', async (importOriginal) => ({
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser } from '@/lib/auth/staff'
 import { DELETE, PUT } from '../[caseId]/forms/[form]/route'
+import { DELETE as unlockForms, POST as completeForm } from '../[caseId]/forms/completion/route'
 import { PUT as putSetting } from '../settings/route'
 
 /** Saving entry-screen drafts and CVL settings. Synthetic data only. */
@@ -19,18 +20,25 @@ const params = (form: string) => ({ params: Promise.resolve({ caseId: 'case-1', 
 const put = (body: unknown) => new NextRequest('http://localhost/api/admin/cvl/case-1/forms/x', { method: 'PUT', body: JSON.stringify(body) })
 
 /** The CVL case: in CVL unless removed from CVL (migration 0047); null: no such case. */
-function mockDb(cvlCase: { removed_at: string | null } | null = { removed_at: null }) {
+function mockDb(cvlCase: { removed_at: string | null } | null = { removed_at: null }, completed: { form_code: string; subject: string }[] = []) {
   const upsert = vi.fn<(row: Record<string, unknown>, opts: unknown) => Promise<{ error: null }>>(() => Promise.resolve({ error: null }))
   const del = vi.fn(() => ({ eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }) }))
+  const unlock = vi.fn(() => ({ eq: () => Promise.resolve({ error: null }) }))
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (t: string) =>
       t === 'cvl_cases'
         ? { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cvlCase ? { id: 'case-1', client_id: 'cl_1', ...cvlCase } : null }) }) }) }
         : t === 'cvl_settings'
           ? { upsert, select: () => Promise.resolve({ data: [] }) }
-          : { upsert, delete: del },
+          : t === 'cvl_form_completions'
+            ? {
+                upsert,
+                delete: unlock,
+                select: () => ({ eq: () => Promise.resolve({ data: completed.map((c) => ({ ...c, completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' })), error: null }) }),
+              }
+            : { upsert, delete: del },
   } as never)
-  return { upsert, del }
+  return { upsert, del, unlock }
 }
 
 beforeEach(() => {
@@ -115,5 +123,39 @@ describe('PUT /api/admin/cvl/settings', () => {
     expect(upsert.mock.calls[0][0]).toMatchObject({ key: 'external_administrator', value: null, confirmed: false })
     expect((await putSetting(putReq({ key: 'nonsense', value: 'x', confirmed: false }))).status).toBe(400)
     expect((await putSetting(putReq({ key: 'f509_place.director_loan', value: 'r6', confirmed: false }))).status).toBe(400)
+  })
+})
+
+describe('Complete and Unlock forms (18 Nov 2026, migration 0063)', () => {
+  const caseParams = { params: Promise.resolve({ caseId: 'case-1' }) }
+  const post = (body: unknown) => new NextRequest('http://localhost/api/admin/cvl/case-1/forms/completion', { method: 'POST', body: JSON.stringify(body) })
+
+  it('marks a form complete, who did it from the session', async () => {
+    const { upsert } = mockDb()
+    expect((await completeForm(post({ form: '507a', subject: 'company' }), caseParams)).status).toBe(200)
+    expect(upsert.mock.calls[0][0]).toEqual({ case_id: 'case-1', form_code: '507a', subject: 'company', completed_by: 'Casey' })
+  })
+
+  it('refuses a subject that does not fit the form, and a file taken off the CVL list', async () => {
+    mockDb()
+    expect((await completeForm(post({ form: '507b', subject: 'company' }), caseParams)).status).toBe(400)
+    mockDb({ removed_at: '2026-10-01T00:00:00Z' })
+    expect((await completeForm(post({ form: '509', subject: 'company' }), caseParams)).status).toBe(409)
+  })
+
+  it('a completed form cannot be saved or reset; Unlock forms makes it editable again', async () => {
+    const { upsert, del } = mockDb({ removed_at: null }, [{ form_code: '509', subject: 'company' }])
+    const res = await PUT(put({ subject: 'company', answers: { fields: {} } }), params('509'))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('This form is marked complete. Unlock the forms to edit it.')
+    expect((await DELETE(new NextRequest('http://localhost/api/admin/cvl/case-1/forms/509?subject=company', { method: 'DELETE' }), params('509'))).status).toBe(409)
+    expect(upsert).not.toHaveBeenCalled()
+    expect(del).not.toHaveBeenCalled()
+    // Another form of the same case is not locked.
+    expect((await PUT(put({ subject: 'company', answers: { fields: {} } }), params('507a'))).status).toBe(200)
+
+    const { unlock } = mockDb()
+    expect((await unlockForms(new NextRequest('http://localhost/api/admin/cvl/case-1/forms/completion', { method: 'DELETE' }), caseParams)).status).toBe(200)
+    expect(unlock).toHaveBeenCalled()
   })
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -40,6 +41,7 @@ import type { ComparableCase, SbrPrediction, SbrPredictionInput } from '@/lib/sb
 import type { DirectorLoanInput, DirectorLoanYear } from '@/lib/sbr/directorLoan'
 import { SourceButton, SourcedAmount } from '@/components/ui/SourcedAmount'
 import { calculated, enteredByStaff, printedLinesSource, type AmountSource } from '@/lib/sources'
+import { VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import {
   directorLoanLabel,
   changedNote,
@@ -60,6 +62,8 @@ import {
 } from '@/lib/sbr/creditors'
 
 interface InitialAuto {
+  /** The proof each input comes from: the ATO account's and the notices' badges (null when none). */
+  proofs?: { atoAccount: string | null; notices: string | null }
   cumulativeDaysLate: number | null
   numberOfLateLodgements: number | null
   daysSinceLastPayment: number | null
@@ -304,6 +308,9 @@ function directorLoanSource(loan: DirectorLoanInput | undefined, amount: number,
     loan.receivable,
     { confirmUrl: mappingUrl },
   )
+  if (loan.note && loan.receivableLines.length === 0) {
+    return { from: ['Director loan receivable amount (owed to the company)', loan.note], link: mappingUrl ? { kind: 'href', href: mappingUrl, label: 'Confirm key figures' } : null }
+  }
   return loan.basis === 'net'
     ? { ...source, calculation: `${formatAudCents(loan.receivable)} owed to the company − ${formatAudCents(loan.payable)} owed by it = ${formatAudCents(amount)}` }
     : source
@@ -970,6 +977,20 @@ function InputPanel(props: InputPanelProps) {
           <p className="mb-3 text-xs text-foreground/40">
             Sourced from existing analysis tables.
           </p>
+          {(auto.proofs?.atoAccount || auto.proofs?.notices) && (
+            <div data-testid="prediction-input-proofs" className="mb-3 space-y-1.5 text-xs text-foreground/60">
+              {auto.proofs?.atoAccount && (
+                <p>
+                  Late lodgements, days since the last payment and the ATO debt: <VerifiedBadge text={auto.proofs.atoAccount} />
+                </p>
+              )}
+              {auto.proofs?.notices && (
+                <p>
+                  Director penalty notices: <VerifiedBadge text={auto.proofs.notices} />
+                </p>
+              )}
+            </div>
+          )}
           <dl className="space-y-3 text-xs">
             <ReadOnlyField
               label="Cumulative days late"
@@ -1002,6 +1023,9 @@ function InputPanel(props: InputPanelProps) {
                     </Link>
                   )}
                 </p>
+                {clientId && (auto.directorLoan.notIdentified.possible ?? []).length > 0 && (
+                  <PossibleLoanLines clientId={clientId} notIdentified={auto.directorLoan.notIdentified} />
+                )}
               </div>
             ) : (
             <ReadOnlyField
@@ -1068,6 +1092,7 @@ function InputPanel(props: InputPanelProps) {
               <DirectorLoanAutoCaption
                 detected={auto.directorLoanDetected}
                 reasoning={auto.directorLoanReasoning}
+                balanceSheet={auto.hasFinancials ? (auto.directorLoanBalanceSheet ?? null) : null}
               />
               {auto.directorLoanInitial?.note && (
                 <p className="mt-1 pl-1 text-xs text-warning">{auto.directorLoanInitial.note}</p>
@@ -1626,14 +1651,19 @@ function CheckboxField({
 function DirectorLoanAutoCaption({
   detected,
   reasoning,
+  balanceSheet = null,
 }: {
   detected: boolean | null
   reasoning: string | null
+  /** "FY2026 balance sheet" when one is read: the tick then waits for its loan account, not for a balance sheet. */
+  balanceSheet?: string | null
 }) {
   if (detected === null) {
     return (
       <p className="mt-1 pl-1 text-xs text-foreground/40">
-        No balance sheet available — set manually.
+        {balanceSheet
+          ? `Waiting for the director loan account on the ${balanceSheet} (see "Director loan receivable amount" above) — or set it manually.`
+          : 'No balance sheet available — set manually.'}
       </p>
     )
   }
@@ -3081,7 +3111,7 @@ function formatFeatureValue(feature: string, value: number | boolean | string): 
 /**
  * The director loan on every balance sheet on file, oldest first, by the
  * prediction's own rule: so staff see the trend. Only the latest is used.
- * Not identified on the latest: every year shows "—" (the line is not chosen).
+ * Not identified on the latest: that year shows "—"; the earlier years keep their figures.
  */
 function DirectorLoanYears({ years, notIdentified, basis }: { years: DirectorLoanYear[]; notIdentified: boolean; basis: 'gross' | 'net' }) {
   if (years.length < 2) return null
@@ -3094,7 +3124,7 @@ function DirectorLoanYears({ years, notIdentified, basis }: { years: DirectorLoa
           const latest = i === years.length - 1
           return (
             <li key={y.label} className={latest ? 'font-medium text-foreground' : 'text-foreground/60'}>
-              <span className="text-foreground/50">{y.label}:</span> {notIdentified || y.amount === null ? '—' : money(y.amount)}
+              <span className="text-foreground/50">{y.label}:</span> {y.amount === null || (latest && notIdentified) ? '—' : money(y.amount)}
               {latest && <span className="text-foreground/40"> (used)</span>}
             </li>
           )
@@ -3102,5 +3132,61 @@ function DirectorLoanYears({ years, notIdentified, basis }: { years: DirectorLoa
       </ul>
       <p className="mt-1 text-foreground/40">Only the latest balance sheet is used by the prediction; the earlier years are shown for context.</p>
     </div>
+  )
+}
+
+/**
+ * A line on the latest balance sheet that may be the director loan account (Debit), e.g. drawings: staff
+ * answer "Use it" (it joins the confirmed lines) or "Not a loan account" (migration 0062). The prediction
+ * waits until they do (mapping.ts, predictionFinancials).
+ */
+function PossibleLoanLines({ clientId, notIdentified }: { clientId: string; notIdentified: NonNullable<DirectorLoanInput['notIdentified']> }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  async function answer(rowKey: string, use: boolean) {
+    setBusy(rowKey)
+    setError(null)
+    try {
+      const res = use
+        ? await fetch(`/api/admin/clients/${clientId}/line-mapping`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ selection: { loan_receivable: { rowKeys: [...new Set([...(notIdentified.confirmedRowKeys ?? []), rowKey])] } } }),
+          })
+        : await fetch(`/api/admin/clients/${clientId}/line-dismissals`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ meaning: 'loan_receivable', rowKey }),
+          })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not save the answer')
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the answer')
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <ul className="mt-2 space-y-1.5" data-testid="possible-loan-lines">
+      {(notIdentified.possible ?? []).map((l) => (
+        <li key={l.rowKey} className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs">
+          <p className="text-foreground">
+            Possible line: <span className="font-medium">“{l.label}”</span>
+            {l.value !== null ? ` $${Math.abs(l.value).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''} — use it?
+          </p>
+          <p className="text-foreground/60">{l.hint}</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button size="sm" variant="ghost" loading={busy === l.rowKey} disabled={busy !== null} onClick={() => answer(l.rowKey, true)}>
+              Use it
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => answer(l.rowKey, false)}>
+              Not a loan account
+            </Button>
+          </div>
+        </li>
+      ))}
+      {error && <li className="text-xs text-destructive">{error}</li>}
+    </ul>
   )
 }

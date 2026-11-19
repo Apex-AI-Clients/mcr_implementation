@@ -34,9 +34,9 @@ export function AdminSidebar({ userEmail, signOut }: AdminSidebarProps) {
     <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
         <Link
-          href="/"
-          aria-label="Home"
-          title="Home"
+          href="/clients"
+          aria-label="Clients"
+          title="Clients"
           className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
         >
           <span className="text-white text-sm font-bold">M</span>

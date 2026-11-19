@@ -27,6 +27,25 @@ export interface MappingChange {
   rule: string | null
 }
 
+/**
+ * Lines staff said are not a meaning ("Not a loan account", migration 0062), as `${meaning}|${rowKey}`
+ * (mapping.ts, DismissedLines). Empty before 0062 is applied.
+ */
+export async function loadDismissedLines(supabase: ServerClient, clientId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from('client_line_dismissals').select('meaning, row_key').eq('client_id', clientId)
+  if (error) return new Set()
+  return new Set((data ?? []).map((d) => `${d.meaning}|${d.row_key}`))
+}
+
+/** "Not a loan account": the line is never offered for that meaning again. Throws before 0062 is applied. */
+export async function dismissLine(supabase: ServerClient, clientId: string, by: string, line: { meaning: Meaning; rowKey: string; label: string | null }): Promise<void> {
+  const { error } = await supabase
+    .from('client_line_dismissals')
+    .upsert({ client_id: clientId, meaning: line.meaning, row_key: line.rowKey, label: line.label, dismissed_by: by }, { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true })
+  if (error) throw new MappingError('Could not record the answer: the database is not ready for it yet (migration 0062).')
+  await supabase.from('client_line_mapping_changes').insert({ client_id: clientId, meaning: line.meaning, action: 'removed', row_key: line.rowKey, label: line.label, changed_by: by, rule: 'Not a loan account (a possible line staff turned down)' })
+}
+
 export async function loadMapping(supabase: ServerClient, clientId: string): Promise<MappingEntry[]> {
   // '*': auto_rule (migration 0043) is read when the column is there.
   const { data, error } = await supabase.from('client_line_mappings').select('*').eq('client_id', clientId)
@@ -192,6 +211,9 @@ export interface EffectiveMapping {
  * auto-selections are used as they are, so a half-read comparison never
  * withdraws them.
  */
+/** The balance sheet totals on the comparison page (migration 0061). */
+const TOTAL_MEANINGS: ReadonlySet<string> = new Set(['total_current_assets', 'total_non_current_assets', 'total_assets'])
+
 export async function applyAutoMapping(
   supabase: ServerClient,
   clientId: string,
@@ -231,7 +253,20 @@ export async function applyAutoMapping(
         .eq('confirmed_by', AUTO_BY)
       if (error) throw error
     }
-    const added = fresh.filter((e) => !before.has(id(e)))
+    const allAdded = fresh.filter((e) => !before.has(id(e)))
+    // The balance sheet totals (migration 0061) are kept on their own: before 0061 is applied the
+    // database refuses them, and that must never stop the other meanings being kept.
+    const totals = allAdded.filter((e) => TOTAL_MEANINGS.has(e.meaning))
+    if (totals.length) {
+      const { error } = await supabase
+        .from('client_line_mappings')
+        .upsert(
+          totals.map((e) => ({ ...mappingRow(clientId, e, rows.get(e.rowKey) ?? null), auto_rule: e.autoRule ?? null })),
+          { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true },
+        )
+      if (error) console.error('[line-mapping] could not keep the balance sheet totals (migration 0061):', error.message)
+    }
+    const added = allAdded.filter((e) => !TOTAL_MEANINGS.has(e.meaning))
     if (added.length) {
       const { error } = await supabase
         .from('client_line_mappings')

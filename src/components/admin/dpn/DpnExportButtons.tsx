@@ -27,8 +27,10 @@ function baseName(meta: DpnExportMeta): string {
  * page shows. pdf-lib is loaded only when a PDF is asked for.
  */
 export function DpnExportButtons({ summary, meta }: DpnExportButtonsProps) {
+  // Totals of a notice that is not proven (dpn/proof.ts) are never exported.
   const [building, setBuilding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const held = summary.notices.some((n) => n.standing === 'current' && n.proof?.status !== 'verified')
 
   async function exportPdf() {
     setBuilding(true)
@@ -43,6 +45,8 @@ export function DpnExportButtons({ summary, meta }: DpnExportButtonsProps) {
       setBuilding(false)
     }
   }
+
+  if (held) return <p className="text-xs text-foreground/50">Export: being prepared (a notice is not proven yet).</p>
 
   // The same buttons, words and order as the comparison and prediction pages.
   return (

@@ -4,11 +4,13 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { printedExportsLocked, printedHardChecks } from '@/lib/printed/review'
 import { loadMapping, withAutoMapping } from '@/lib/printed/mappingStore'
-import { mappingConfirmed } from '@/lib/printed/mapping'
+import { balanceSheetColumns, mappingConfirmed } from '@/lib/printed/mapping'
 import { findLiveComparisonJob } from '@/lib/financials/jobLiveness'
 import { findActivityStatementCsv } from '@/lib/analysis/lodgementStore'
 import { buildDpnPanel, sydneyToday } from '@/lib/dpn/view'
 import { computeReadiness, type Readiness } from './readiness'
+import { loadNoticeAccount } from '@/lib/dpn/noticeAccount'
+import { comparisonProof } from '@/lib/printed/proof'
 
 /**
  * Server-only. Everything computeReadiness needs, read for one client.
@@ -100,6 +102,7 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     client: client ?? { no_dpn_confirmed_at: null, no_dpn_confirmed_by: null, no_dpn_cleared_note: null },
     file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
     todayIso: sydneyToday(),
+    account: await loadNoticeAccount(supabase, clientId).catch(() => null),
   })
 
   return computeReadiness({
@@ -115,6 +118,12 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
       scanning: printed.comparison.documents.filter((d) => d.status === 'scan_pending').length,
       unreviewedFailures,
       mappingConfirmed: mappingConfirmed(mapping),
+      // The latest balance sheet's year (the prediction's figures) must be proven (printed/proof.ts).
+      heldReasons: (() => {
+        const latest = balanceSheetColumns(printed.comparison).pop()
+        const proof = latest === undefined ? null : comparisonProof(printed.comparison)[latest]
+        return proof?.status === 'held' ? proof.reasons : []
+      })(),
     },
     lodgement: {
       csvCount: csvs.length,

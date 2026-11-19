@@ -24,6 +24,8 @@ import type { DpnAmounts } from '@/lib/dpn/types'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import type { AmountSource } from '@/lib/sources'
 import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clients/workspace'
+import { loadNoticeAccount } from '@/lib/dpn/noticeAccount'
+import { VerifiedBadge } from '@/components/admin/ica/IcaParts'
 
 /** A figure printed on one notice: its PDF, and the column it is in. */
 function noticeSource(n: SummaryNotice, column: string, cents: number): AmountSource {
@@ -82,6 +84,8 @@ export async function DirectorPenaltyNoticesView({ id, workspace }: ClientPageVi
     client,
     file: { acn: company?.acn_number ?? null, directors: readDirectors(company?.directors) },
     todayIso,
+    // Each notice checked against the verified ATO account (dpn/proof.ts).
+    account: await loadNoticeAccount(supabase, id).catch(() => null),
   })
   const summary = summariseNotices(panel.notices, todayIso)
   const meta = { clientName: client.name, asAtIso: todayIso }
@@ -149,12 +153,28 @@ function SectionTitle({ id, children }: { id: string; children: React.ReactNode 
 function CompanyTotals({ summary }: { summary: DpnSummary }) {
   const current = summary.notices.filter((n) => n.standing === 'current')
   const of = (type: string) => current.filter((n) => n.type === type)
+  // A type whose current notice is not proven (dpn/proof.ts): its totals wait, "Being prepared".
+  const held = new Set(current.filter((n) => n.proof?.status !== 'verified').map((n) => n.type))
+  const badges = ['Notice adds up', 'Matches the ATO account'].filter((b) => current.length > 0 && current.every((n) => n.proof?.badges.includes(b)))
   return (
     <section aria-labelledby="dpn-company-heading">
       <SectionTitle id="dpn-company-heading">What the company owes, by type</SectionTitle>
+      {badges.length > 0 && (
+        <div className="-mt-1 mb-3">
+          <VerifiedBadge text={badges.join(' · ')} />
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
         {summary.companyByType.map((t) => {
           const labels = columnLabels(t.type, t.earliestDeadline)
+          if (held.has(t.type)) {
+            return (
+              <div key={t.type} className="rounded-xl border border-border bg-card p-4">
+                <h3 className="text-sm font-semibold text-foreground">{typeLabel(t.type)}</h3>
+                <p className="mt-3 text-sm text-foreground/60">Being prepared: the notice is listed below as printed.</p>
+              </div>
+            )
+          }
           return (
             <div key={t.type} className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-baseline justify-between gap-2">
@@ -173,7 +193,7 @@ function CompanyTotals({ summary }: { summary: DpnSummary }) {
           )
         })}
       </div>
-      {summary.companyByType.length > 1 && (
+      {summary.companyByType.length > 1 && held.size === 0 && (
         <p className="mt-3 text-sm text-foreground/80">
           All types:{' '}
           <span className="font-semibold tabular-nums">
@@ -296,6 +316,15 @@ function DirectorTotals({ summary }: { summary: DpnSummary }) {
   const current = summary.notices.filter((n) => n.standing === 'current')
   const theirs = (director: string, type?: string) => current.filter((n) => n.directorName === director && (!type || n.type === type))
   const headings = amountHeadings(summary.directors.flatMap((d) => d.byType.map((t) => t.type)))
+  // Any current notice not proven (dpn/proof.ts): the directors' totals wait too.
+  if (current.some((n) => n.proof?.status !== 'verified')) {
+    return (
+      <section aria-labelledby="dpn-directors-heading">
+        <SectionTitle id="dpn-directors-heading">By director (current notices)</SectionTitle>
+        <p className="text-sm text-foreground/60">Being prepared: a notice is not proven yet, and is listed below as printed.</p>
+      </section>
+    )
+  }
   return (
     <section aria-labelledby="dpn-directors-heading">
       <SectionTitle id="dpn-directors-heading">By director (current notices)</SectionTitle>

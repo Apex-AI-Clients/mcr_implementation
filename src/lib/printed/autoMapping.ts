@@ -117,13 +117,15 @@ export function autoMapping(
     const describe = (r: ComparisonRow, why: string): PossibleLine => ({ rowKey: r.key, label: r.label.trim() || '(line with no label)', ...latestPrinted(r, comparison.columns), why })
 
     if (confirmed.length > 0) {
-      const disagreed = confirmed.every((e) => e.nonePrinted) && suggested[m].length > 0
+      // Lines only offered (possibleOnly) never count as the dictionary matching.
+      const matched = suggested[m].filter((l) => !l.possibleOnly)
+      const disagreed = confirmed.every((e) => e.nonePrinted) && matched.length > 0
       const stale = staleBefore !== null && confirmed.every((e) => e.confirmedAt !== '' && Date.parse(e.confirmedAt) < Date.parse(staleBefore))
       // Given under an older reader: switched to the lines matched now, with a note.
       if (disagreed && stale) {
         const was = confirmed[0]
         const note = `Updated after a reading fix (was: Not printed, by ${was.confirmedBy} on ${day(was.confirmedAt)})`
-        for (const l of suggested[m]) {
+        for (const l of matched) {
           const r = rows.find((x) => x.key === l.rowKey)
           if (!r) continue
           entries.push({ meaning: m, rowKey: r.key, label: r.label || '(no label)', nonePrinted: false, confirmedBy: AUTO_BY, confirmedAt: '', autoRule: l.rule, updatedNote: note })
@@ -133,7 +135,7 @@ export function autoMapping(
       }
       // A staff "Not printed" given since: say so, change nothing.
       if (disagreed) {
-        possible[m] = suggested[m].flatMap((l) => {
+        possible[m] = matched.flatMap((l) => {
           const r = rows.find((x) => x.key === l.rowKey)
           return r ? [describe(r, `Confirmed as not printed, but now matched: ${l.rule}`)] : []
         })
@@ -143,15 +145,16 @@ export function autoMapping(
     // No statement of that kind read yet: nothing to select from.
     if (rows.length === 0) continue
 
-    // A loan naming a person not on file is never auto-selected: staff decide ("Use it?").
-    const unknown = suggested[m].filter((l) => l.unknownPerson)
+    // Never auto-selected, staff decide ("Use it?"): a loan naming a person not on file; drawings for
+    // the director loan account; asset section totals the statement's arithmetic does not prove.
+    const unknown = suggested[m].filter((l) => l.unknownPerson || l.possibleOnly)
     if (unknown.length > 0) {
       possible[m] = unknown.flatMap((l) => {
         const r = rows.find((x) => x.key === l.rowKey)
-        return r ? [describe(r, 'A loan naming a person who is not the client, a director, a beneficiary or the trustee company on file.')] : []
+        return r ? [describe(r, l.possibleOnly ?? 'A loan naming a person who is not the client, a director, a beneficiary or the trustee company on file.')] : []
       })
     }
-    const certain = suggested[m].filter((l) => !l.unknownPerson)
+    const certain = suggested[m].filter((l) => !l.unknownPerson && !l.possibleOnly)
     if (unknown.length > 0 && certain.length === 0) continue
     if (certain.length > 0) {
       for (const l of certain) {
