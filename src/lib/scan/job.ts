@@ -8,6 +8,7 @@ import type { PrintedRead } from '@/lib/printed/types'
 import { readScannedPdf, type KeptReading, type PageReading, type ScanReader } from './readScanned'
 import { sendDeveloperAlert } from '@/lib/email/resend'
 import { joinProofBank } from '@/lib/proofBank/store'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
 export { closeDeadScanJobs, latestScanJob, scanJobAlive, SCAN_JOB_MAX_AGE_MS, type ScanJob } from './jobState'
 
 /**
@@ -168,9 +169,18 @@ export async function runScanJob(
       })
       .eq('id', job.id)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'The scanned pages could not be read.'
+    // Staff see a neutral word; what went wrong goes to the developer (24 Nov 2026): the error's kind
+    // and ids only, never its text (a provider's message can quote what it was sent).
+    const message = 'The scanned pages could not be read yet. They will be tried again.'
     console.error('[scan] job failed:', err instanceof Error ? err.name : 'unknown')
     await supabase.from('scan_read_jobs').update({ status: 'failed', message, finished_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', job.id)
+    await raiseDeveloperAlert(supabase, {
+      kind: 'scan_read',
+      key: `scan_read:${job.id}`,
+      subject: `Scanned statement reading failed — client ${clientId.slice(0, 8)}`,
+      lines: ['A scanned statement reading stopped with an error. Staff see "could not be read yet".', '', `Client id: ${clientId}`, `Document id: ${documentId}`, `Job id: ${job.id}`, `Error kind: ${err instanceof Error ? err.name : 'unknown'}`],
+      details: { clientId, documentId, jobId: job.id },
+    })
   } finally {
     await titles?.close().catch(() => undefined)
   }

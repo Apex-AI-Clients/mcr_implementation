@@ -92,7 +92,9 @@ export function documentProofs(input: DocumentProofInput): DocumentProofRow[] {
         rows.push({ ...row, status: 'being_prepared', text: BEING_PREPARED })
       } else if (own.length === 0) {
         // Read, but no year's figures come from it (a later report prints them, or nothing was found).
-        rows.push({ ...row, status: use.status === 'failed' ? 'being_prepared' : 'not_used', text: use.status === 'failed' ? BEING_PREPARED : (use.message ?? 'Not used: later reports cover its years') })
+        // Not read in full: "Being prepared" (the reader's own words go to the developer alert, 24 Nov 2026).
+        const unread = use.status === 'failed' || use.issues.length > 0
+        rows.push({ ...row, status: unread ? 'being_prepared' : 'not_used', text: unread ? BEING_PREPARED : (use.message ?? 'Not used: later reports cover its years') })
       } else if (own.some((y) => y.status === 'held')) {
         const held = own.filter((y) => y.status === 'held')
         rows.push({ ...row, status: 'being_prepared', text: `${BEING_PREPARED}: ${held.map((y) => title(y.index)).join(', ')} (${[...new Set(held.flatMap((y) => y.reasons))].join('; ')})` })

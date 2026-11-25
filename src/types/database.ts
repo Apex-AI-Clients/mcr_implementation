@@ -319,6 +319,39 @@ export type Database = {
           },
         ]
       }
+      developer_alerts: {
+        Row: {
+          created_at: string
+          details: Json
+          email_error: string | null
+          emailed_at: string | null
+          id: string
+          key: string
+          kind: string
+          resolved_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          key: string
+          kind: string
+          resolved_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          key?: string
+          kind?: string
+          resolved_at?: string | null
+        }
+        Relationships: []
+      }
       client_line_dismissals: {
         Row: {
           client_id: string

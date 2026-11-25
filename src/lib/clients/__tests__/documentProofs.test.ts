@@ -121,6 +121,15 @@ describe('documentProofs', () => {
     ])
   })
 
+  it("a statement the reader could not read in full is \"Being prepared\", never the reader's own words (24 Nov 2026)", () => {
+    const issue = { kind: 'no_column_header' as const, page: 3, text: 'Profit and Loss', message: '"Profit and Loss" on page 3: no column header line (years, dates or "Total") found under the title.' }
+    const c = comparison([cell('fs24'), cell('fs24')], {
+      documents: [{ documentId: 'odd', filename: 'odd.pdf', status: 'read', found: null, used: false, message: `Some of it could not be read: ${issue.message}`, issues: [issue] }],
+    })
+    const rows = documentProofs(input({ documents: [doc('odd', 'historical_financials')], comparison: c }))
+    expect(rows.map((r) => [r.status, r.text])).toEqual([['being_prepared', 'Being prepared']])
+  })
+
   it('lists files oldest first and leaves other documents out', () => {
     const rows = documentProofs(input({ documents: [doc('b', 'integrated_client_account', '2026-11-05'), doc('t', 'trust_deed'), doc('a', 'integrated_client_account', '2026-11-01')] }))
     expect(rows.map((r) => r.documentId)).toEqual(['a', 'b'])

@@ -8,6 +8,7 @@ import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
 import { loadSourceChoices } from './sourceChoices'
 import { alertFailedCrossChecks } from './crossCheckAlerts'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
 
 /**
  * Server-only. A client's financial statement PDFs, read as printed and kept
@@ -136,6 +137,27 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
   // Before migration 0064 there is no report column: keep the read without it (read as annual statements).
   if (error && read.report && /report/.test(error.message)) ({ error } = await supabase.from('printed_reads').upsert(row))
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
+  // What the reader could not read is the developer's to fix, not staff's to see (24 Nov 2026):
+  // ids, kinds and pages only, once per document and reader version.
+  if (read.issues.length > 0 && read.status !== 'no_text_layer') {
+    const kinds = [...new Set(read.issues.map((i) => i.kind))]
+    const pages = [...new Set(read.issues.map((i) => i.page).filter((p): p is number => p !== null))]
+    await raiseDeveloperAlert(supabase, {
+      kind: 'statement_read',
+      key: `statement_read:${doc.id}:${READER_VERSION}`,
+      subject: `Statements reader: ${read.issues.length} line(s) not read — client ${clientId.slice(0, 8)}`,
+      lines: [
+        'The financial statements reader could not read part of a file. Staff see "Being prepared" for it.',
+        '',
+        `Client id: ${clientId}`,
+        `Document id: ${doc.id}`,
+        `Reader version: ${READER_VERSION}`,
+        `Problems: ${read.issues.length} (${kinds.join(', ')})`,
+        `Pages: ${pages.join(', ') || 'whole file'}`,
+      ],
+      details: { clientId, documentId: doc.id, issues: read.issues.length, kinds: kinds.join(',') },
+    })
+  }
   return { documentId: doc.id, read, readAt: keptAt ?? readAt }
 }
 

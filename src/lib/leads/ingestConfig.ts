@@ -361,6 +361,8 @@ export const FIELD_MAPS: Record<'website' | 'google_form' | 'facebook', FieldMap
       // see normaliseStateValue. Copied verbatim from the production
       // unmapped-key warnings, brackets, commas and all.
       'which_australian_state_are_you_in?_(e.g._vic,_nsw,_qld)',
+      // Form 1517286326904322, "MCR26_MAIN_LeadForm_V5": the same question without the examples.
+      'which_australian_state_are_you_in?',
       'which_state_are_you_from?',
       'what_state_are_you_located_in?', // ATO Debt Aus-update-new, 1220173909314387
       'state',
