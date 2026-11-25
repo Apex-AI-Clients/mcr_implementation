@@ -8,6 +8,7 @@ import type { DpnRiskBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { DirectorPenaltySection } from './DirectorPenaltySection'
 import { CopyButton } from '@/components/admin/ica/IcaParts'
+import { dateText, monthYearText } from '@/lib/dates'
 
 const AUD = new Intl.NumberFormat('en-AU', {
   style: 'currency',
@@ -38,28 +39,17 @@ function formatAud(value: number): string {
 
 function formatIso(iso: string | Date | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-AU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  return dateText(iso)
 }
 
 function formatMonthYear(d: Date | string | null): string {
   if (!d) return '—'
-  const date = typeof d === 'string' ? new Date(d) : d
-  return date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
+  return monthYearText(d)
 }
 
 /** "21 Oct 2026" from an ISO date (a calendar date, not an instant). */
 export function formatDay(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-AU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
+  return dateText(iso.slice(0, 10))
 }
 
 export { describeDaysLeft, describeDeadline } from '@/lib/dpn/summary'

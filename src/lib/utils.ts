@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { dateText } from './dates'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,12 +14,9 @@ export function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
+/** "19 Nov 2026" (src/lib/dates.ts): the day in Sydney for a moment, the day itself for a date. */
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-AU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+  return dateText(iso)
 }
 
 export function formatDateRelative(iso: string): string {

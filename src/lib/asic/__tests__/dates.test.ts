@@ -106,7 +106,7 @@ describe('parseExtractDateTime', () => {
 
 describe('formatExtractDate', () => {
   it("shows the extract's own calendar date", () => {
-    expect(formatExtractDate('2026-09-23T14:07:38+10:00')).toBe('23 September 2026')
+    expect(formatExtractDate('2026-09-23T14:07:38+10:00')).toBe('23 Sep 2026')
     expect(formatExtractDate(null)).toBe('')
   })
 })

@@ -1,4 +1,5 @@
 import { differenceInCalendarDays } from 'date-fns'
+import { dateText } from '@/lib/dates'
 
 /**
  * The creditor debt an SBR offer is sized against, and the dates the
@@ -159,13 +160,9 @@ function whyNotIca(icaRows: readonly IcaRow[] | null | undefined): string {
   return 'the lodgement analysis rows carry no balance owing (re-run the lodgement analysis)'
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "26 Sep 2026" — fixed three-letter months (the en-AU locale gives "Sept", "June"). */
-export const longDate = (iso: string) => {
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`)
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
-}
+export const longDate = (iso: string) => dateText(iso.slice(0, 10))
 
 /**
  * The creditor debt, from the best source available — never from two added

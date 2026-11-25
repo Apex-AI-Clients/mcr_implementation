@@ -1,6 +1,7 @@
 import type { AccountComposition } from './engine'
 import { unpaidPhrase, type IncomeTaxSummary } from './incomeTax'
 import { SG_EVENT_LABEL, type SuperGuaranteeSummary } from './superGuarantee'
+import { dateText } from '@/lib/dates'
 
 /**
  * An income tax or super guarantee analysis as the page shows it, ready for
@@ -53,7 +54,7 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
   const lines: string[] = []
   lines.push(row(p.label, clientName))
   lines.push(row('Entity on the export', p.entityName))
-  lines.push(row('Balance owing', balance(p.balance), p.balanceDate ? `at ${p.balanceDate}` : ''))
+  lines.push(row('Balance owing', balance(p.balance), p.balanceDate ? `at ${dateText(p.balanceDate)}` : ''))
   // Verified against the ATO's own balance (src/lib/ica): the badge; nothing is unexplained.
   const v = p.verification?.verified ? p.verification : null
   if (v?.badge) lines.push(row(v.badge))
@@ -117,7 +118,7 @@ export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string 
     for (const l of c.lines.filter((x) => debt.has(x.section))) lines.push(row(l.label, money(l.net), `${l.rows} rows`, l.search.join(' | ')))
     lines.push(row('= ATO debt', money(c.atoDebt)))
     for (const l of c.lines.filter((x) => !debt.has(x.section))) lines.push(row(l.label, money(l.net), `${l.rows} rows`, l.search.join(' | ')))
-    lines.push(row(`= The ATO's balance${v.balanceDate ? ` at ${v.balanceDate}` : ''}`, money(c.total)))
+    lines.push(row(`= The ATO's balance${v.balanceDate ? ` at ${dateText(v.balanceDate)}` : ''}`, money(c.total)))
     return lines.join('\n') + '\n'
   }
   for (const l of p.composition.lines) lines.push(row(l.label, money(l.amount), l.explanation))

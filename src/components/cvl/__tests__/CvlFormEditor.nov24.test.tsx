@@ -127,9 +127,9 @@ describe('B14 → B15, B24 "Unsure", completed forms', () => {
     expect((document.getElementById('f-b24_itr_start') as HTMLInputElement).value).toBe('2025-07-01')
     fireEvent.click(groups[0].querySelectorAll('input')[0])
     expect(document.getElementById('f-b24_itr_start')).toBeNull()
-    // Back to a date: the one typed before.
+    // Back to a date: the one typed before, shown DD/MM/YYYY.
     fireEvent.click(groups[0].querySelectorAll('input')[1])
-    expect((document.getElementById('f-b24_itr_start') as HTMLInputElement).value).toBe('2025-07-01')
+    expect((document.getElementById('f-b24_itr_start') as HTMLInputElement).value).toBe('01/07/2025')
   })
 
   it('a completed form shows its banner, read-only, with no Save', () => {

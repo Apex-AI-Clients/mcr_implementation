@@ -7,6 +7,7 @@ import { debtComposition, type CompositionKey, type CompositionLine, type Uncoun
 import type { DebtBreakdown, EnrichedRow } from '@/lib/analysis/types'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import type { AmountSource } from '@/lib/sources'
+import { dateText } from '@/lib/dates'
 
 /** Where the activity statement's rows are listed: this composition, line by line. */
 const ROWS_LINK = { kind: 'href' as const, href: '#debt-composition', label: 'Show the ATO rows' }
@@ -37,11 +38,7 @@ function fmtBalance(value: number): string {
   return value < 0 ? `${AUD.format(-value)} CR` : AUD.format(value)
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const longDate = (iso: string) => {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const longDate = (iso: string) => dateText(iso)
 
 /** Rows shown under a line before "Show all": interest alone can run to thousands. */
 export const ROWS_SHOWN = 50

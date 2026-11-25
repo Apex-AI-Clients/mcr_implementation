@@ -1,6 +1,7 @@
 import type { PrintedComparison } from './compare'
 import { columnTitle, formatPrinted } from './csv'
 import { periodSourceCsv } from './periodSourceText'
+import { dateTimeText } from '@/lib/dates'
 import { loanSidesAt, resolveMeaning, type MappedLine, type MappingEntry } from './mapping'
 import type { Meaning } from './meanings'
 import { comparisonProof } from './proof'
@@ -158,7 +159,7 @@ export function headlineCsv(input: { clientName: string; comparison: PrintedComp
   const heads = input.comparison.columns.map(columnTitle)
   const lines = [
     csvRow('Financial statements — headline figures', input.clientName),
-    csvRow('Generated', new Date().toISOString()),
+    csvRow('Generated', dateTimeText(new Date())),
     '',
     csvRow('Figure', ...heads.map((h) => `${h.title} (${h.period})`), 'Note'),
   ]
@@ -190,7 +191,7 @@ function proofCsv(p: ReturnType<typeof comparisonProof>[number]): string {
 /** The CSV of the "Cards" view: one block per figure, its printed lines, then every year. */
 export function headlineCardsCsv(input: { clientName: string; comparison: PrintedComparison; rows: HeadlineRow[] }): string {
   const heads = input.comparison.columns.map(columnTitle)
-  const lines = [csvRow('Financial statements — headline figures', input.clientName), csvRow('Generated', new Date().toISOString())]
+  const lines = [csvRow('Financial statements — headline figures', input.clientName), csvRow('Generated', dateTimeText(new Date()))]
   for (const r of input.rows) {
     const printed = [...new Set(r.cells.flatMap((c) => (c.kind === 'value' ? c.lines.map((l) => l.label.trim()) : [])))]
     const state = r.status === 'suggested' ? 'Suggested line, not confirmed yet' : r.status === 'not_found' ? 'No printed line matched' : r.notPrinted ? 'Not printed' : ''

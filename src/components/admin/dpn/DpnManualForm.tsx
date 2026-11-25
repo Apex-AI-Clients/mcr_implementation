@@ -6,6 +6,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { DateInput } from '@/components/ui/DateInput'
 import { Select } from '@/components/ui/Select'
 import { rowAddsUp } from '@/lib/dpn/checks'
 import { ManualNoticeSchema, centsToTyped, parseTypedAmount } from '@/lib/dpn/manualEntry'
@@ -167,7 +168,12 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
       <form id="dpn-manual-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div className="grid gap-3 sm:grid-cols-3">
           <Input id="dpn-reference" label="Our reference" value={reference} onChange={(e) => setReference(e.target.value)} />
-          <Input id="dpn-issued" label="Date of issue" type="date" value={issuedOn} onChange={(e) => setIssuedOn(e.target.value)} />
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="dpn-issued" className="text-xs font-medium text-muted">
+              Date of issue
+            </label>
+            <DateInput id="dpn-issued" value={issuedOn || null} onChange={(iso) => setIssuedOn(iso ?? '')} className="h-9 w-full rounded-lg border border-border bg-input-bg px-3 text-sm text-foreground focus:border-accent focus:outline-none" />
+          </div>
           <Select
             id="dpn-type"
             label="This notice is for"
@@ -210,20 +216,18 @@ export function DpnManualForm({ clientId, documentId, notice, onClose }: DpnManu
                 return (
                   <tr key={row.key} className="border-b border-border last:border-0">
                     <td className="px-2 py-1.5">
-                      <input
-                        type="date"
+                      <DateInput
                         aria-label={`Row ${index + 1} period from`}
-                        value={row.periodFrom}
-                        onChange={(e) => setCell(row.key, 'periodFrom', e.target.value)}
+                        value={row.periodFrom || null}
+                        onChange={(iso) => setCell(row.key, 'periodFrom', iso ?? '')}
                         className="h-8 w-full rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none"
                       />
                     </td>
                     <td className="px-2 py-1.5">
-                      <input
-                        type="date"
+                      <DateInput
                         aria-label={`Row ${index + 1} period to`}
-                        value={row.periodTo}
-                        onChange={(e) => setCell(row.key, 'periodTo', e.target.value)}
+                        value={row.periodTo || null}
+                        onChange={(iso) => setCell(row.key, 'periodTo', iso ?? '')}
                         className="h-8 w-full rounded-md border border-border bg-input-bg px-2 text-sm text-foreground focus:border-accent focus:outline-none"
                       />
                     </td>

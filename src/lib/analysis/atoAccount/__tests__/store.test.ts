@@ -189,7 +189,7 @@ describe('the CSV and the lock', () => {
 
   it('writes the balance, each assessment and the composition', () => {
     const text = atoAccountCsv(payload, 'Example Trading')
-    expect(text).toContain('Balance owing,20100.00 DR,at 2026-10-01')
+    expect(text).toContain('Balance owing,20100.00 DR,at 1 Oct 2026')
     expect(text).toContain('2024-07-01,2025-06-30,2026-04-16,2026-05-15,20000.00,20000.00,unpaid 139 days past the payment due date')
     expect(text).toContain("Note,Company income tax isn't covered by director penalty notices.")
     expect(text).toContain('DEBT COMPOSITION')

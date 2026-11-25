@@ -2,6 +2,7 @@ import type { DpnNoticeView } from '@/lib/dpn/view'
 import { noticeTypeLabel } from '@/lib/dpn/stored'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
+import { dateText } from '@/lib/dates'
 
 /**
  * Whether a client is ready for an SBR outcome prediction: three items, each
@@ -115,10 +116,7 @@ export interface Readiness {
   dpn: boolean | null
 }
 
-const shortDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(
-    new Date(iso),
-  )
+const shortDate = (iso: string) => dateText(iso)
 
 function item(input: ReadinessInput, key: ReadinessKey, status: ReadinessStatus, detail: string | null, href: string): ReadinessItem {
   return {

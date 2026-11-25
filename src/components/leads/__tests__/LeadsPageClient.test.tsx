@@ -538,11 +538,11 @@ describe('LeadsPageClient', () => {
       })
 
       const [repeatRow, singleRow] = inTable().getAllByRole('row').slice(1)
-      expect(within(repeatRow).getByText('10 Sept')).toBeTruthy()
+      expect(within(repeatRow).getByText('10 Sep')).toBeTruthy()
       await user.hover(within(repeatRow).getByText('3 enquiries'))
       expect(await screen.findByRole('tooltip')).toHaveProperty(
         'textContent',
-        'Latest from Website, 10 Sept 2026',
+        'Latest from Website, 10 Sep 2026',
       )
       // One enquiry is the normal case and gets no indicator.
       expect(within(singleRow).queryByText(/enquiries/)).toBeNull()

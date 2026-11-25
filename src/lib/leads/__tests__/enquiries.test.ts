@@ -77,13 +77,13 @@ describe('enquiry count and tooltip', () => {
         lastEnquiryAt: '2026-09-10T02:00:00.000Z',
         latestEnquirySource: 'website',
       }),
-    ).toBe('Latest from Website, 10 Sept 2026')
+    ).toBe('Latest from Website, 10 Sep 2026')
   })
 
   it('gives the date alone when the source was not loaded', () => {
     expect(
       describeLatestEnquiry({ lastEnquiryAt: '2026-09-10T02:00:00.000Z', latestEnquirySource: null }),
-    ).toBe('Latest 10 Sept 2026')
+    ).toBe('Latest 10 Sep 2026')
   })
 })
 

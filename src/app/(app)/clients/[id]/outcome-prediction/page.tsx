@@ -25,6 +25,7 @@ import { loadAtoAccounts, loadFactorsSourceNote } from '@/lib/analysis/atoAccoun
 import { ATO_ACCOUNT_CREDITOR_ROWS, atoAccountCreditorRows } from '@/lib/sbr/creditors'
 import { badgeText } from '@/lib/ica/view'
 import { loadDpnNoticeFigures } from '@/lib/dpn/loadNoticeFigures'
+import { sydneyToday } from '@/lib/dpn/view'
 
 
 export const dynamic = 'force-dynamic'
@@ -160,7 +161,8 @@ export default async function OutcomePredictionPage({ params }: Props) {
     // The same count the prediction route makes (analysis/config.ts).
     cumulativeDaysLate: late?.cumulativeDaysLate ?? null,
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
-    daysSinceLastPayment: lodgement.data && unparsed === 0 && icaVerified ? daysSinceLastPayment(icaRows) : null,
+    // To today (Sydney), as the prediction counts it (creditorDebt.ts, restored 25 Nov 2026).
+    daysSinceLastPayment: lodgement.data && unparsed === 0 && icaVerified ? daysSinceLastPayment(icaRows, sydneyToday()) : null,
     // The account's whole history, so "no payments" shows what was searched.
     icaHistory: (() => {
       const { first, last } = icaDateRange(icaRows)

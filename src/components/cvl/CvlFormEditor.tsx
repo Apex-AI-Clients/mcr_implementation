@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Download, Loader2, Lock, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
+import { DateInput } from '@/components/ui/DateInput'
 import type { AmountSource } from '@/lib/sources'
 import { formatDate } from '@/lib/utils'
 import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
@@ -1281,17 +1282,20 @@ function FieldInput({
       </div>
     )
   } else {
-    const type = f.type === 'date' ? 'date' : 'text'
-    // A date input shows only YYYY-MM-DD: a draft holding "28/09/2016" would
-    // look empty while the PDF printed it. Shown as the date it is.
-    const shown = type === 'date' ? isoDateForInput(value) : value
+    // A draft holding "28/09/2016" (or ISO) shows as the date it is, always DD/MM/YYYY (DateInput).
+    const shown = f.type === 'date' ? isoDateForInput(value) : value
     control = f.type === 'date' && unsureToggle ? (
       <UnsureDate id={id} value={value} onChange={onChange} info={info} />
+    ) : f.type === 'date' ? (
+      <div className="flex items-center gap-1">
+        <DateInput id={id} value={shown === null || shown === undefined ? null : String(shown)} onChange={onChange} className={inputClass} />
+        {info}
+      </div>
     ) : (
       <div className="flex items-center gap-1">
         <input
           id={id}
-          type={type}
+          type="text"
           inputMode={f.type === 'money' ? 'decimal' : undefined}
           value={shown === null || shown === undefined ? '' : String(shown)}
           onChange={(e) => {
@@ -1374,17 +1378,17 @@ function UnsureDate({ id, value, onChange, info }: { id: string; value: FieldVal
       {unsure ? (
         <span className="text-xs text-foreground/50">Printed as &ldquo;Unsure&rdquo; across the date boxes</span>
       ) : (
-        <input
-          id={id}
-          type="date"
-          value={shown === null || shown === undefined ? '' : String(shown)}
-          onChange={(e) => {
-            const raw = e.target.value
-            setLastDate(raw === '' ? null : raw)
-            onChange(raw === '' ? null : raw)
-          }}
-          className={`${inputClass} w-auto`}
-        />
+        <span className="w-44">
+          <DateInput
+            id={id}
+            value={shown === null || shown === undefined ? null : String(shown)}
+            onChange={(iso) => {
+              setLastDate(iso)
+              onChange(iso)
+            }}
+            className={inputClass}
+          />
+        </span>
       )}
       {info}
     </div>
@@ -1597,10 +1601,19 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                         onChange={(e) => set(i, c.key, e.target.checked)}
                         className="accent-accent"
                       />
+                    ) : c.type === 'date' ? (
+                      <span className="block min-w-[130px]">
+                        <DateInput
+                          aria-label={`${c.label}, row ${i + 1}`}
+                          value={r[c.key] === null || r[c.key] === undefined ? null : String(isoDateForInput(r[c.key]))}
+                          onChange={(iso) => set(i, c.key, iso)}
+                          className="w-full rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
+                        />
+                      </span>
                     ) : (
                       <input
                         aria-label={`${c.label}, row ${i + 1}`}
-                        type={c.type === 'date' ? 'date' : 'text'}
+                        type="text"
                         inputMode={c.type === 'money' ? 'decimal' : undefined}
                         value={r[c.key] === null || r[c.key] === undefined ? '' : String(r[c.key])}
                         onChange={(e) => {

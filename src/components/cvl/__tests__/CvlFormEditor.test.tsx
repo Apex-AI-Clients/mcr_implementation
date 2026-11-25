@@ -737,9 +737,10 @@ describe('CvlFormEditor — signature dates', () => {
 
   it('on Form 509, Date signed follows the summary date as it is typed, until changed by hand', async () => {
     renderForm('509')
-    expect(input('date_signed').type).toBe('date')
+    // A DD/MM/YYYY text box on any computer (24 Nov 2026), not the browser's own date box.
+    expect(input('date_signed').type).toBe('text')
     fireEvent.change(input('summary_date'), { target: { value: '2026-11-14' } })
-    expect(input('date_signed').value).toBe('2026-11-14')
+    expect(input('date_signed').value).toBe('14/11/2026')
     fireEvent.change(input('date_signed'), { target: { value: '2026-11-20' } })
     fireEvent.change(input('summary_date'), { target: { value: '2026-11-15' } })
     expect(input('date_signed').value).toBe('2026-11-20')
@@ -748,9 +749,9 @@ describe('CvlFormEditor — signature dates', () => {
   it('on Part B, B31 and the tables’ date start from the saved summary date, and the tables’ date is saved', async () => {
     const fetchMock = stubFetch()
     renderForm('507b', '2026-11-14')
-    expect(input('b31_date').value).toBe('2026-11-14')
+    expect(input('b31_date').value).toBe('14/11/2026')
     // A date at each table: B2, B3, B21 and B28.
-    for (const id of ['B2', 'B3', 'B21', 'B28']) expect(input(`signedDate:${id}`).value).toBe('2026-11-14')
+    for (const id of ['B2', 'B3', 'B21', 'B28']) expect(input(`signedDate:${id}`).value).toBe('14/11/2026')
     fireEvent.change(input('signedDate:B3'), { target: { value: '2026-11-21' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true))
@@ -787,7 +788,7 @@ describe('CvlFormEditor — B10 shows the date it prints', () => {
         saved={null}
       />,
     )
-    expect((document.getElementById('f-b10_date') as HTMLInputElement).value).toBe('2014-06-12')
+    expect((document.getElementById('f-b10_date') as HTMLInputElement).value).toBe('12/06/2014')
   })
 
   it('shows a DD/MM/YYYY date a draft holds, instead of an empty box', () => {

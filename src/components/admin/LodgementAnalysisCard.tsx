@@ -22,6 +22,7 @@ import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
 import { byTaxType, noticeCellText } from '@/lib/dpn/byTaxType'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { dateField, dateText } from '@/lib/dates'
 
 interface Props {
   clientId: string
@@ -61,17 +62,12 @@ function formatBalanceExport(value: number | null): string {
 
 function formatDateExport(d: Date | string | null | undefined): string {
   if (!d) return ''
-  const date = typeof d === 'string' ? new Date(d) : d
-  return date.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')
+  return dateField(d)
 }
 
 function formatIsoExport(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-AU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  return dateText(iso)
 }
 
 /** A signed amount for the CSV: "-$1,234.00" for a negative. */
@@ -192,7 +188,7 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
     for (const l of v.composition.lines.filter((x) => debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
     lines.push(csvRow('= ATO debt', formatSignedExport(v.composition.atoDebt)))
     for (const l of v.composition.lines.filter((x) => !debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
-    lines.push(csvRow(`= The ATO's balance${v.balanceDate ? ` at ${v.balanceDate}` : ''}`, formatSignedExport(v.composition.total)))
+    lines.push(csvRow(`= The ATO's balance${v.balanceDate ? ` at ${dateText(v.balanceDate)}` : ''}`, formatSignedExport(v.composition.total)))
     lines.push('')
     lines.push(csvRow('ATO ROWS BY LINE'))
     lines.push(csvRow('Line', 'Processed date', 'Effective date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance'))

@@ -171,7 +171,7 @@ describe('describeAcnAbnOutcome', () => {
     expect(describeAcnAbnOutcome({ kind: 'found', abn: ABN })).toBe('Use ABN 11 123 456 780')
     expect(
       describeAcnAbnOutcome({ kind: 'cancelled', abn: ABN, cancelledOn: '2024-03-11' }),
-    ).toBe('ABN 11 123 456 780 was cancelled on 11 March 2024')
+    ).toBe('ABN 11 123 456 780 was cancelled on 11 Mar 2024')
     expect(describeAcnAbnOutcome({ kind: 'cancelled', abn: ABN, cancelledOn: '' })).toBe(
       'ABN 11 123 456 780 was cancelled',
     )

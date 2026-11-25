@@ -1,5 +1,6 @@
 import type { ComparisonColumn, PrintedComparison } from './compare'
 import type { PrintedAmount } from './types'
+import { dateText } from '@/lib/dates'
 
 /**
  * The as-printed comparison as CSV. Pure. Every figure exactly as printed
@@ -8,11 +9,9 @@ import type { PrintedAmount } from './types'
  * under NEEDS REVIEW with who checked them, when.
  */
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function shortDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
+  return dateText(iso)
 }
 
 /** "FY2024" or "Current period"; the period under it: "1 Jul 2023 – 30 Jun 2024". */

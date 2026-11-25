@@ -1,5 +1,6 @@
 import { candidateAbnsForAcn, digitsOnly, formatAbn, isValidAcn } from '@/lib/asic/identifiers'
 import { lookupAbn, type AbrDetailsResult } from './browser'
+import { dateText } from '@/lib/dates'
 
 /**
  * "Does the company with this ACN have an ABN of its own?" — asked of the
@@ -93,15 +94,7 @@ export async function lookupAbnForAcn(
 
 /** "2024-03-11" -> "11 March 2024". The raw value when it is not a date. */
 function formatRegisterDate(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!match) return iso
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
-  return new Intl.DateTimeFormat('en-AU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(date)
+  return dateText(iso.slice(0, 10)) || iso
 }
 
 /** The line shown under the company ABN. Empty when there is nothing to say. */

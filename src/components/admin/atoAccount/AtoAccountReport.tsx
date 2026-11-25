@@ -17,6 +17,7 @@ import { SG_HIGHLIGHT, type SgQuarter, type SuperGuaranteeSummary } from '@/lib/
 import { cn } from '@/lib/utils'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { aud, calculated, type AmountSource } from '@/lib/sources'
+import { dateText } from '@/lib/dates'
 
 /** The ATO rows are listed under the debt composition, line by line. */
 const ROWS_LINK = { kind: 'href' as const, href: '#account-composition', label: 'Show the ATO rows' }
@@ -30,11 +31,7 @@ const cents = (n: number) => aud(n)
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const longDate = (iso: string | null | undefined) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const longDate = (iso: string | null | undefined) => dateText(iso) || '—'
 const period = (p: { from: string; to: string } | null) => (p ? `${longDate(p.from)} – ${longDate(p.to)}` : '—')
 /** "for the period from 01 Jan 26 to 31 Mar 26": a quarter as the ATO's descriptions word it. */
 export function atoPeriodPhrase(p: { from: string; to: string }): string {

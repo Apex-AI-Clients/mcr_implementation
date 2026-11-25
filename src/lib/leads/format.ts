@@ -8,6 +8,7 @@ import {
   PARTNERS,
   ACTIVITY_TYPE_META,
 } from './constants'
+import { dateField, dateText, dateTimeText, dayMonthText } from '@/lib/dates'
 
 /**
  * Rendering and parsing edge for lead data.
@@ -564,38 +565,22 @@ export function daysBetween(iso: string, now: Date = new Date()): number {
 
 /** "26 Aug" — the list column. */
 export function formatShortDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-AU', {
-    timeZone: AU_TZ,
-    day: 'numeric',
-    month: 'short',
-  }).format(new Date(iso))
+  return dayMonthText(iso)
 }
 
 /** "26 Aug 2026" — timeline entries and the record. */
 export function formatFullDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-AU', {
-    timeZone: AU_TZ,
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(iso))
+  return dateText(iso)
 }
 
 /** "26 Aug 2026, 2:05 pm" — an enquiry, where the time of day matters. */
 export function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat('en-AU', {
-    timeZone: AU_TZ,
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(iso))
+  return dateTimeText(iso)
 }
 
-/** ISO date for CSV, sortable in a spreadsheet. */
+/** A date for the CSV / Excel exports: DD/MM/YYYY, the day in Sydney (24 Nov 2026: Australian dates everywhere). */
 export function formatIsoDate(iso: string): string {
-  return sydneyYmd(new Date(iso))
+  return dateField(iso)
 }
 
 /** "Today" / "Yesterday" / "3 days ago" / "26 Aug 2026". */

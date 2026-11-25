@@ -11,6 +11,7 @@ import type { DpnRiskBreakdown } from '@/lib/analysis/types'
 import { lateSinceNil, lateStatements, type LateStatementRow } from '@/lib/analysis/lateList'
 import type { DpnNoticeFigures, DpnNoticeItem } from '@/lib/dpn/noticeFigures'
 import { byTaxType, type NoticeCell, type TaxTypeRow } from '@/lib/dpn/byTaxType'
+import { dateText } from '@/lib/dates'
 
 /**
  * The lodgement page's director penalty section (Gabby, 16 Nov 2026):
@@ -29,9 +30,7 @@ const aud = (n: number) => AUD.format(n)
 
 /** "21 Oct 2026" from an ISO date or instant. */
 function day(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso)
-  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: iso.length === 10 ? 'UTC' : undefined })
+  return dateText(iso) || '—'
 }
 
 async function downloadXlsx(name: string, header: string[], rows: (string | number)[][]) {

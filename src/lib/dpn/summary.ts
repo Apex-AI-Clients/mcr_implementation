@@ -4,6 +4,7 @@ import type { NoticeSource } from './stored'
 import { DPN_TYPE_LABEL, type DpnAmounts, type DpnRow, type DpnType } from './types'
 import type { DpnNoticeView } from './view'
 import type { NoticeProof } from './proof'
+import { dateText } from '@/lib/dates'
 
 /**
  * A client's director penalty notices, summarised for the DPN page and its
@@ -187,16 +188,10 @@ export function summariseNotices(views: readonly DpnNoticeView[], todayIso: stri
   }
 }
 
-const SHORT_DATE = new Intl.DateTimeFormat('en-AU', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
 
 /** "2026-10-21" -> "21 Oct 2026". ISO dates here are calendar dates, not instants. */
 export function formatIsoDate(iso: string): string {
-  return SHORT_DATE.format(new Date(`${iso}T00:00:00Z`))
+  return dateText(iso)
 }
 
 /**

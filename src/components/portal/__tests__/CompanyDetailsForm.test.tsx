@@ -129,7 +129,7 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
       screen.getByRole('group', { name: 'The ASIC extract has a different value' }).textContent,
     ).toContain('ASIC: Sample Trading Pty Ltd / Form: Older Client Pty Ltd')
     expect(screen.getAllByText('Matches ASIC extract')).toHaveLength(2)
-    expect(screen.getByText(/Filled from ASIC extract dated 23 September 2026/)).toBeTruthy()
+    expect(screen.getByText(/Filled from ASIC extract dated 23 Sep 2026/)).toBeTruthy()
 
     expect(await save(user, fetchMock)).toEqual({
       clientId: 'cl_1',
@@ -148,7 +148,7 @@ describe('CompanyDetailsForm — a client converted before the ASIC fields exist
       companyDetailsSource: 'asic_pdf',
     })
     // Saved: the banner gives way to the line a saved record carries.
-    expect(await screen.findByText('From ASIC extract as at 23 September 2026')).toBeTruthy()
+    expect(await screen.findByText('From ASIC extract as at 23 Sep 2026')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Undo fill' })).toBeNull()
   })
 
@@ -209,7 +209,7 @@ describe('CompanyDetailsForm — a record that came from an extract', () => {
     expect(field('Director 1 name').value).toBe('Jane Sample')
     expect(field('Director 1 date of birth').value).toBe('14/03/1970')
     expect(screen.getByRole('group', { name: 'Directors' })).toBeTruthy()
-    expect(screen.getByText('From ASIC extract as at 23 September 2026')).toBeTruthy()
+    expect(screen.getByText('From ASIC extract as at 23 Sep 2026')).toBeTruthy()
   })
 
   it("stays 'asic_pdf' when something else on the form is edited", async () => {
@@ -236,7 +236,7 @@ describe('CompanyDetailsForm — a record that came from an extract', () => {
     await user.clear(field(PRINCIPAL))
     await user.type(field(PRINCIPAL), '9 New Street')
 
-    expect(screen.getByText('From ASIC extract as at 23 September 2026, edited')).toBeTruthy()
+    expect(screen.getByText('From ASIC extract as at 23 Sep 2026, edited')).toBeTruthy()
     expect(await save(user, fetchMock)).toMatchObject({
       principalPlaceOfBusiness: '9 New Street',
       asicExtractDate: EXTRACT_DATE,

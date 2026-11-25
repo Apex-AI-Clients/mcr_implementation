@@ -3,6 +3,7 @@ import { searchHelpers } from './compose'
 import { readStoredRows } from './read'
 import { audBalance, type Cents } from './types'
 import { forcedFrom, type IcaStatus } from './status'
+import { dateText } from '@/lib/dates'
 
 /**
  * What the pages show of an ATO account file, from its stored rows and stored
@@ -66,12 +67,10 @@ export interface IcaView {
 
 const dollars = (c: Cents) => c / 100
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "2 Nov 2026", as the ATO writes dates (not the locale's "Sept"). */
 export function formatBadgeDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
+  return dateText(iso)
 }
 
 export function badgeText(balanceCents: Cents, date: string): string {

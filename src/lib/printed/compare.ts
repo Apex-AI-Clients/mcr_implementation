@@ -1,5 +1,6 @@
 import { verifyStatement, type TotalCheck } from './verify'
 import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind, ScanCell, ScanSummary } from './types'
+import { dateText } from '@/lib/dates'
 
 /**
  * The as-printed comparison: a client's financial statement PDFs, read by
@@ -457,7 +458,7 @@ export interface ComparisonOptions {
 
 /** "The profit and loss runs to 16 Nov 2026 but the balance sheet is as at 31 Oct 2026." */
 function endsDifferMessage(ends: Partial<Record<PrintedStatementKind, string>>): string {
-  const day = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  const day = (iso: string) => dateText(iso)
   const pl = ends.profit_and_loss
   const bs = ends.balance_sheet
   return pl && bs

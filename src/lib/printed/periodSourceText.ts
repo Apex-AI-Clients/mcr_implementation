@@ -1,5 +1,6 @@
 import type { PeriodSources, StatementSource } from './compare'
 import { STATEMENT_NAME } from './picker'
+import { dateText } from '@/lib/dates'
 
 /**
  * Where a period's figures come from, in words (Gabby, 25 Nov 2026), for the page, the PDF and the
@@ -19,7 +20,7 @@ export function alsoInText(a: StatementSource['alsoIn'][number]): string {
 /** One line per statement, or one for both when the same file gives both. */
 export function sourceLines(period: PeriodSources): { statement: string | null; source: string; chosen: string | null }[] {
   const shown = period.statements.filter((s) => s.source)
-  const chosen = (s: StatementSource) => (s.chosen ? `chosen by ${s.chosen.by} on ${new Date(s.chosen.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : null)
+  const chosen = (s: StatementSource) => (s.chosen ? `chosen by ${s.chosen.by} on ${dateText(s.chosen.at)}` : null)
   if (shown.length === 2 && shown[0].source!.documentId === shown[1].source!.documentId && (shown[0].chosen === null) === (shown[1].chosen === null)) {
     return [{ statement: null, source: sourceName(shown[0].source!), chosen: chosen(shown[0]) }]
   }

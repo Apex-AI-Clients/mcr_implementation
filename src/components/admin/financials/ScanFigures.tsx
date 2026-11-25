@@ -8,6 +8,7 @@ import { parseAmount } from '@/lib/printed/amounts'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
 import type { ComparisonCell, ComparisonColumn, ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
 import type { PrintedAmount } from '@/lib/printed/types'
+import { dateText } from '@/lib/dates'
 
 /**
  * Figures read from a scanned page (src/lib/scan): the crop of the printed
@@ -95,7 +96,7 @@ export function ScanCorrection({ clientId, scan }: { clientId: string; scan: Sca
       {scan.status === 'chosen' && (
         <p className="text-foreground/70">
           Chosen by {scan.chosenBy}
-          {scan.chosenAt ? ` on ${new Date(scan.chosenAt).toLocaleDateString('en-AU')}` : ''}.
+          {scan.chosenAt ? ` on ${dateText(scan.chosenAt)}` : ''}.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-1.5">

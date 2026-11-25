@@ -131,7 +131,7 @@ describe('Part A', () => {
     expect(value(p, 'a3_registered_suburb')).toBe('North Melbourne')
     expect(value(p, 'a3_principal_postcode')).toBe('2000')
     expect(p.fields.company_name.source.link).toEqual({ kind: 'href', href: '/api/admin/clients/cl_1/asic-extract/ex-1?page=1', label: 'Open the ASIC extract at page 1' })
-    expect(p.fields.company_name.source.from[1]).toBe('ASIC extract dated 23 September 2026.')
+    expect(p.fields.company_name.source.from[1]).toBe('ASIC extract dated 23 Sep 2026.')
   })
 
   it('fills the External Administrator box, box for box, from its one setting', () => {

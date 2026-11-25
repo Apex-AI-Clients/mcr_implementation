@@ -3,6 +3,7 @@ import type { SuperGuaranteeSummary } from '@/lib/analysis/atoAccount/superGuara
 import type { DpnSummary } from '@/lib/dpn/summary'
 import type { DpnType } from '@/lib/dpn/types'
 import type { MappedLine } from '@/lib/printed/mapping'
+import { dateField } from '@/lib/dates'
 
 /**
  * The director's personal risk, for a CVL file (Stage 5). Pure, rule-based,
@@ -70,7 +71,7 @@ export interface LoanYear {
 
 const round = (n: number) => Math.round(n * 100) / 100
 const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
-const ddmmyyyy = (isoDate: string) => isoDate.split('-').reverse().join('/')
+const ddmmyyyy = (isoDate: string) => dateField(isoDate)
 
 /* ---------------- PAYG withholding and GST ---------------- */
 

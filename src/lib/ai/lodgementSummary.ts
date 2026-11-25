@@ -18,6 +18,7 @@ import type { DpnRiskBreakdown } from '@/lib/analysis/types'
 import { lateSinceNil } from '@/lib/analysis/lateList'
 import type { IcaView } from '@/lib/ica/view'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
+import { dateText, monthYearText } from '@/lib/dates'
 
 function formatNum(value: number): string {
   return value.toLocaleString('en-AU', { maximumFractionDigits: 0 })
@@ -25,12 +26,11 @@ function formatNum(value: number): string {
 
 function formatMonthYear(isoOrNull: string | null): string {
   if (!isoOrNull) return 'N/A'
-  const d = new Date(isoOrNull)
-  return d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
+  return monthYearText(isoOrNull) || 'N/A'
 }
 
 function formatDay(iso: string): string {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return dateText(iso)
 }
 
 /**

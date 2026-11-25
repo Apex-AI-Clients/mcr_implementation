@@ -3,6 +3,7 @@ import { KEY_FIGURES, MEANING, MEANINGS, type Meaning } from './meanings'
 import { DRAWINGS_HINT, lineRank, namesDirector, personAccount, personKey, suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
 import { comparisonProof, heldMessage } from './proof'
+import { dateText } from '@/lib/dates'
 
 /**
  * A client's confirmed mapping (migration 0034) applied to the as-printed
@@ -195,11 +196,7 @@ export interface PredictionFinancials {
   tradeSuppliers: MappedFigure | null
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const dayLabel = (iso: string) => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const dayLabel = (iso: string) => dateText(iso)
 
 export function columnSourceLabel(c: ComparisonColumn): string {
   return c.kind === 'annual' ? `${c.key} balance sheet` : `current period at ${dayLabel(c.periodEnd)}`

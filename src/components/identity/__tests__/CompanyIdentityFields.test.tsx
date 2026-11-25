@@ -124,7 +124,7 @@ describe('CompanyIdentityFields — ABN Lookup by ACN', () => {
 
     await user.type(field('ACN'), ACN)
     expect(
-      await screen.findByText('ABN 11 123 456 780 was cancelled on 11 March 2024.', undefined, WAIT),
+      await screen.findByText('ABN 11 123 456 780 was cancelled on 11 Mar 2024.', undefined, WAIT),
     ).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Use it anyway' }))
     expect(field('Company ABN').value).toBe(ABN)

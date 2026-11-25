@@ -11,6 +11,7 @@ import { isClaudeSummary } from '@/lib/ai/lodgementSummary'
 import { icaViewOf } from '@/lib/ica/view'
 import { loadFactorsSourceNote } from '@/lib/analysis/atoAccount/store'
 import { clientBase, sharedPageRedirect, type ClientPageView } from '@/lib/clients/workspace'
+import { dateText } from '@/lib/dates'
 
 export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
   const base = clientBase(id, workspace)
@@ -106,7 +107,7 @@ export async function LodgementAnalysisView({ id, workspace }: ClientPageView) {
     ? { label: 'Totals being prepared', variant: 'muted' as const }
     : rawAnalysis
     ? {
-        label: `Analysed ${new Date(rawAnalysis.analysed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+        label: `Analysed ${dateText(rawAnalysis.analysed_at)}`,
         variant: 'success' as const,
       }
     : { label: 'Not analysed yet', variant: 'muted' as const }
