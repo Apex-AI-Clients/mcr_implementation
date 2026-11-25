@@ -9,7 +9,8 @@ const refresh = vi.fn()
 const router = { refresh }
 vi.mock('next/navigation', () => ({ useRouter: () => router }))
 vi.resetModules()
-const { ScanChecksPanel, YearProofStrip } = await import('../ScanFigures')
+const { ScanChecksPanel } = await import('../ScanFigures')
+const { PeriodSources } = await import('../PeriodSources')
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
 beforeEach(() => {
@@ -47,7 +48,7 @@ describe('scanned figures to check', () => {
   it('a year whose readings agree shows the badge, and nothing to check', () => {
     render(
       <>
-        <YearProofStrip comparison={comparison(cell('agree', 9600, 9600))} />
+        <PeriodSources clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />
         <ScanChecksPanel clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />
       </>,
     )
@@ -59,7 +60,7 @@ describe('scanned figures to check', () => {
     const c = comparison(cell('disagree', 9999, 9600))
     render(
       <>
-        <YearProofStrip comparison={c} />
+        <PeriodSources clientId="c1" comparison={c} />
         <ScanChecksPanel clientId="c1" comparison={c} />
       </>,
     )

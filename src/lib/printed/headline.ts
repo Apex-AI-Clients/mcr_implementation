@@ -1,9 +1,10 @@
 import type { PrintedComparison } from './compare'
 import { columnTitle, formatPrinted } from './csv'
-import { resolveMeaning, type MappedLine, type MappingEntry } from './mapping'
+import { periodSourceCsv } from './periodSourceText'
+import { loanSidesAt, resolveMeaning, type MappedLine, type MappingEntry } from './mapping'
 import type { Meaning } from './meanings'
 import { comparisonProof } from './proof'
-import type { Suggestions } from './dictionary'
+import { assetSectionTotals, personAccount, personKey, type Suggestions } from './dictionary'
 import { audBalance } from '@/lib/ica/types'
 import type { IcaHeadlineCell } from '@/lib/ica/balanceAt'
 
@@ -60,9 +61,34 @@ export interface HeadlineRow {
   cells: HeadlineCell[]
 }
 
+/** Said in the ⓘ of an income tax payable figure printed below zero (Gabby, 25 Nov 2026). */
+export const NEGATIVE_LIABILITY_NOTE = 'Printed as a negative liability'
+
 export function headlineRows(comparison: PrintedComparison, mapping: MappingEntry[], suggestions: Suggestions, ica: IcaHeadline): HeadlineRow[] {
   const proofs = comparisonProof(comparison)
   const held = (i: number): HeadlineCell | null => (proofs[i]?.status === 'held' ? { kind: 'held', reasons: proofs[i].reasons } : null)
+  const sections = assetSectionTotals(comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? [], comparison.columns.length)
+  const sectionRules = new Map([...sections.current, ...sections.nonCurrent].filter((l) => !l.possible).map((l) => [l.rowKey, l.rule]))
+  const usedFor = (meaning: Meaning) => {
+    const entries = mapping.filter((e) => e.meaning === meaning)
+    const suggestion = suggestions[meaning] ?? []
+    const status: LineStatus = entries.length ? 'confirmed' : suggestion.length ? 'suggested' : 'not_found'
+    // A suggested asset section total carries its rule, so sections proven together are added up (mapping.ts).
+    const sectionRule = (rowKey: string) => (meaning === 'total_current_assets' || meaning === 'total_non_current_assets' ? (sectionRules.get(rowKey) ?? null) : null)
+    const used: MappingEntry[] =
+      status === 'confirmed' ? entries : suggestion.map((rowKey) => ({ meaning, rowKey, label: null, nonePrinted: false, confirmedBy: '', confirmedAt: '', autoRule: sectionRule(rowKey) }))
+    return { entries, status, used }
+  }
+  // One account per person (mapping.ts groupPersons): when the loan lines include a person's own
+  // account lines, both loan rows come from the per-person sides, as the prediction reads them.
+  const loanUsed = [...usedFor('loan_receivable').used, ...usedFor('loan_payable').used]
+  const rows = comparison.tables.flatMap((t) => t.rows)
+  const personCounts = new Map<string, number>()
+  for (const e of loanUsed) {
+    const p = personAccount(rows.find((r) => r.key === e.rowKey)?.label ?? '')
+    if (p) personCounts.set(personKey(p.name), (personCounts.get(personKey(p.name)) ?? 0) + 1)
+  }
+  const byPerson = [...personCounts.values()].some((n) => n >= 2)
   return HEADLINE_ROWS.map((row) => {
     if (row.kind === 'ica') {
       const cells = comparison.columns.map((_, i): HeadlineCell => {
@@ -73,18 +99,26 @@ export function headlineRows(comparison: PrintedComparison, mapping: MappingEntr
       })
       return { key: 'ica', label: row.label, meaning: null, status: null, notPrinted: false, entries: [], cells }
     }
-    const entries = mapping.filter((e) => e.meaning === row.meaning)
-    const suggestion = suggestions[row.meaning] ?? []
-    const status: LineStatus = entries.length ? 'confirmed' : suggestion.length ? 'suggested' : 'not_found'
-    const used: MappingEntry[] =
-      status === 'confirmed' ? entries : suggestion.map((rowKey) => ({ meaning: row.meaning, rowKey, label: null, nonePrinted: false, confirmedBy: '', confirmedAt: '' }))
+    const { entries, status, used } = usedFor(row.meaning)
     const resolved = resolveMeaning(comparison, used, row.meaning)
+    const loanRow = row.meaning === 'loan_receivable' || row.meaning === 'loan_payable'
     const cells = comparison.columns.map((_, i): HeadlineCell => {
       const h = held(i)
       if (h) return h
+      if (loanRow && byPerson) {
+        const sides = loanSidesAt(comparison, loanUsed, i)
+        const side = row.meaning === 'loan_receivable' ? sides.to : sides.by
+        if (!side || (side.lines.length === 0 && resolved.years[i]?.value === null)) return { kind: 'blank', why: null }
+        return { kind: 'value', value: side.amount, lines: side.lines }
+      }
       const year = resolved.years[i]
       if (status === 'not_found' || !year || year.value === null) return { kind: 'blank', why: null }
-      const note = row.meaning === 'total_current_assets' ? overdrawnBankNote(comparison, i) : null
+      const note =
+        row.meaning === 'total_current_assets'
+          ? overdrawnBankNote(comparison, i)
+          : row.meaning === 'income_tax_payable' && year.lines.some((l) => l.printed < 0)
+            ? NEGATIVE_LIABILITY_NOTE
+            : null
       return { kind: 'value', value: year.value, lines: year.lines, ...(note ? { note } : {}) }
     })
     return { key: row.meaning, label: row.label, meaning: row.meaning, status, notPrinted: status === 'confirmed' && resolved.status === 'none', entries, cells }
@@ -138,7 +172,19 @@ export function headlineCsv(input: { clientName: string; comparison: PrintedComp
       ),
     )
   }
+  const proofs = comparisonProof(input.comparison)
+  lines.push(
+    '',
+    csvRow('Checks', ...proofs.map(proofCsv), ''),
+    csvRow('Source', ...input.comparison.columns.map((_, i) => periodSourceCsv(input.comparison.periodSources?.[i])), ''),
+  )
   return lines.join('\r\n')
+}
+
+/** A period's badges, or why it is not proven, for a CSV cell. */
+function proofCsv(p: ReturnType<typeof comparisonProof>[number]): string {
+  if (p.status === 'held') return `${BEING_PREPARED}: ${p.reasons.join('; ')}`
+  return [...p.badges.map((b) => `✓ ${b}`), ...p.notes.map((n) => `⚠ ${n}`)].join('; ')
 }
 
 /** The CSV of the "Cards" view: one block per figure, its printed lines, then every year. */
@@ -154,5 +200,10 @@ export function headlineCardsCsv(input: { clientName: string; comparison: Printe
       lines.push(csvRow(`${heads[i].title} (${heads[i].period})`, value, c.kind === 'value' && c.note ? c.note : ''))
     })
   }
+  const proofs = comparisonProof(input.comparison)
+  lines.push('', csvRow('PERIODS', 'Checks', 'Source'))
+  input.comparison.columns.forEach((_, i) => {
+    lines.push(csvRow(`${heads[i].title} (${heads[i].period})`, proofs[i] ? proofCsv(proofs[i]) : '', periodSourceCsv(input.comparison.periodSources?.[i])))
+  })
   return lines.join('\r\n')
 }

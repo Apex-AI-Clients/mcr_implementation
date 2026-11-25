@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
+import { periodSourceCsv, sourceLines } from '@/lib/printed/periodSourceText'
 import { KEY_FIGURES, MEANING, type Meaning } from '@/lib/printed/meanings'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { PrintedComparison } from '@/lib/printed/compare'
@@ -80,12 +81,21 @@ export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId
           <thead>
             <tr className="border-b border-border text-left text-xs text-foreground/50">
               <th className="px-3 py-2 font-medium">Figure</th>
-              {comparison.columns.map((c) => {
+              {comparison.columns.map((c, i) => {
                 const t = columnTitle(c)
+                const period = comparison.periodSources?.[i]
+                const sources = period ? sourceLines(period) : []
+                const differs = period?.statements.some((s) => s.alsoIn.some((a) => a.differs.length > 0)) ?? false
                 return (
                   <th key={c.key} scope="col" className="px-3 py-2 text-right font-medium">
                     <span className="block text-foreground/80">{t.title}</span>
                     <span className="block text-[10px] font-normal text-foreground/40">{t.period}</span>
+                    {sources.length > 0 && (
+                      <span data-testid="column-source" className="block text-[10px] font-normal text-foreground/45" title={period ? periodSourceCsv(period) : undefined}>
+                        Source: {[...new Set(sources.map((s) => s.source.split(' — ')[0]))].join(' / ')}
+                        {differs && <span className="text-warning"> · ⚠ differs elsewhere</span>}
+                      </span>
+                    )}
                   </th>
                 )
               })}

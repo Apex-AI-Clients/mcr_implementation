@@ -1,6 +1,6 @@
 import type { CellSource, ComparisonColumn, ComparisonRow, PrintedComparison } from './compare'
 import { KEY_FIGURES, MEANING, MEANINGS, type Meaning } from './meanings'
-import { DRAWINGS_HINT, lineRank, namesDirector, suggestMapping, type RelatedNames } from './dictionary'
+import { DRAWINGS_HINT, lineRank, namesDirector, personAccount, personKey, suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
 import { comparisonProof, heldMessage } from './proof'
 
@@ -38,6 +38,8 @@ export interface MappedLine {
   source: CellSource | null
   /** The reading rule applied to the printed amount, in plain English; null when it is taken as printed. */
   rule: string | null
+  /** One person's account (groupPersons): the person's own printed lines it adds up. */
+  parts?: MappedLine[]
 }
 
 const LOAN_MEANINGS: Meaning[] = ['loan_receivable', 'loan_payable']
@@ -108,9 +110,13 @@ export function resolveMeaning(comparison: PrintedComparison, mapping: MappingEn
   // year's layout: in a year that prints more than one of them, only the best-ranked counts, never the sum.
   const single = !MEANING[meaning].multiple
   const rank = (r: ComparisonRow) => lineRank(meaning, r.label)
+  // Asset section totals proven to add up together ("Total Bank" and "Total Current Assets",
+  // dictionary.ts assetSectionTotals): counted together, never one of them alone.
+  const addedUp = new Set(entries.filter((e) => /^From “.*”, added up:/.test(e.autoRule ?? '')).map((e) => e.rowKey))
   const years = comparison.columns.map((column, i) => {
     const printedRows = mapped.filter((r) => r.cells[i].printed && typeof r.cells[i].value === 'number')
-    const counted = single && printedRows.length > 1 ? [printedRows.reduce((best, r) => (rank(r) < rank(best) ? r : best))] : printedRows
+    const sections = printedRows.filter((r) => addedUp.has(r.key))
+    const counted = single && sections.length > 1 ? sections : single && printedRows.length > 1 ? [printedRows.reduce((best, r) => (rank(r) < rank(best) ? r : best))] : printedRows
     const lines = counted.map((r): MappedLine => {
       const cell = r.cells[i]
       const read = readLoanLine(r, meaning, cell.value as number)
@@ -211,13 +217,57 @@ function printedNilAt(comparison: PrintedComparison, mapping: MappingEntry[], me
   return rows.length > 0 && rows.every((row) => row.cells[index].printed && row.cells[index].value === null)
 }
 
+const money2 = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * One account per person (Gabby, 25 Nov 2026): a name printed with two or more of its own account
+ * lines ("Matthew Trow - Drawings", "- Share of Profit", "- Capital Introduced") is one director loan
+ * account, its lines added up. Netted within the person, never across people: a person owing the
+ * company is on the Debit side (owed TO), one the company owes on the Credit side (owed BY); a person
+ * netting to nil stays on the Debit side at $0, so the ⓘ still lists them. The person's line carries
+ * its own lines (`parts`). In place, on the two sides as loanSidesAt sorted them (values positive).
+ */
+export function groupPersons(to: MappedLine[], by: MappedLine[]): void {
+  const groups = new Map<string, { name: string; to: MappedLine[]; by: MappedLine[] }>()
+  for (const [side, lines] of [['to', to], ['by', by]] as const) {
+    for (const l of lines) {
+      const p = personAccount(l.label)
+      if (!p) continue
+      const g = groups.get(personKey(p.name)) ?? { name: p.name, to: [], by: [] }
+      g[side].push(l)
+      groups.set(personKey(p.name), g)
+    }
+  }
+  for (const g of groups.values()) {
+    const parts = [...g.to, ...g.by]
+    if (parts.length < 2) continue
+    for (const l of parts) {
+      const list = g.to.includes(l) ? to : by
+      list.splice(list.indexOf(l), 1)
+    }
+    const owedTo = Math.round((g.to.reduce((s, l) => s + l.value, 0) - g.by.reduce((s, l) => s + l.value, 0)) * 100) / 100
+    const printed = Math.round(parts.reduce((s, l) => s + l.printed, 0) * 100) / 100
+    const way = owedTo > 0 ? `owes the company ${money2(owedTo)}` : owedTo < 0 ? `is owed ${money2(-owedTo)} by the company` : 'nets to nil'
+    const line: MappedLine = {
+      label: g.name,
+      value: Math.abs(owedTo),
+      printed,
+      source: parts[0].source,
+      rule: `One account per person: ${parts.map((l) => `“${l.label.trim()}” ${money2(l.printed)}`).join(' + ')} = ${money2(printed)} as printed, so ${g.name} ${way}.`,
+      parts,
+    }
+    ;(owedTo >= 0 ? to : by).push(line)
+  }
+}
+
 /**
  * The loan accounts in one balance sheet column, each line on the side its
  * printed sign says, whichever of the two meanings it was confirmed under
  * (old reader: a negative loan under liabilities is a receivable, wherever the
- * model had filed it). Null on a side: not identified for that column.
+ * model had filed it); a person's own lines netted into one account
+ * (groupPersons). Null on a side: not identified for that column.
  */
-function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], index: number): { to: MappedFigure | null; by: MappedFigure | null } {
+export function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], index: number): { to: MappedFigure | null; by: MappedFigure | null } {
   const column = comparison.columns[index]
   const base = { source: columnSourceLabel(column), asOf: column.periodEnd }
   const recv = resolveMeaning(comparison, mapping, 'loan_receivable')
@@ -231,6 +281,7 @@ function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], ind
   })
   for (const l of recv.years[index].lines) (l.value >= 0 ? to : by).push(l.value >= 0 ? l : moved(l, false))
   for (const l of pay.years[index].lines) (l.value >= 0 ? by : to).push(l.value >= 0 ? l : moved(l, true))
+  groupPersons(to, by)
   const sum = (lines: MappedLine[]) => Math.round(lines.reduce((t, l) => t + l.value, 0) * 100) / 100
   const side = (lines: MappedLine[], r: ResolvedMeaning, meaning: Meaning): MappedFigure | null => {
     if (lines.length > 0) return { ...base, amount: sum(lines), lines }

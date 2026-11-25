@@ -151,6 +151,42 @@ export function namesParty(label: string, parties: readonly string[]): boolean {
   })
 }
 
+/**
+ * A person's (or company's) own account lines, as Xero prints a trust's or partnership's beneficiary
+ * accounts (Gabby, 25 Nov 2026): "Matthew Trow - Drawings", "Matthew Trow - Share of Profit",
+ * "Matthew Trow - Capital Introduced". All of one name's lines are one account.
+ */
+const PERSON_ACCOUNT =
+  /^(.+?)\s+[-–]\s+(drawings?|share of (?:profits?|loss(?:es)?|profit\s*\/\s*loss)|capital introduced|funds introduced|loans?(?: account)?|current account|distributions?(?: payable)?|beneficiary account)$/i
+
+/** "Matthew Trow - Drawings" → { name: "Matthew Trow", kind: "Drawings" }; null for any other line. */
+export function personAccount(label: string): { name: string; kind: string } | null {
+  const m = PERSON_ACCOUNT.exec(label.trim())
+  if (!m) return null
+  const name = m[1].trim()
+  // "Loan - Drawings", "Total - Drawings": not a name.
+  if (!/[a-z]{2,}/i.test(name) || /^(loans?|total|less|owner|director|directors|shareholders?)$/i.test(name)) return null
+  return { name, kind: m[2].trim() }
+}
+
+export const personKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+/** The names with a "<Name> - Share of Profit" line on the balance sheet: beneficiaries, so related (Gabby, 25 Nov 2026). */
+export function profitShareNames(labels: string[]): Set<string> {
+  return new Set(labels.flatMap((l) => {
+    const p = personAccount(l)
+    return p && /^share of/i.test(p.kind) ? [personKey(p.name)] : []
+  }))
+}
+
+/** Why a person-account name is related: a director, the client / trust / trustee company, or a beneficiary. Null: not known. */
+export function personRelatedReason(name: string, { directors = [], parties = [] }: RelatedNames, shares: Set<string>): string | null {
+  if (namesDirector(name, directors)) return 'a director on file'
+  if (namesParty(name, parties)) return 'the client, the trust or the trustee company on file'
+  if (shares.has(personKey(name))) return 'a beneficiary (the balance sheet prints their share of profit)'
+  return null
+}
+
 /** CVL, Form 509 assets and share capital (migration 0040). */
 const CASH_AT_BANK = /\b(cash at bank|bank accounts?|cheque account|operating account|business (cheque |transaction )?account|savings account|term deposits?)\b/i
 const CASH_ON_HAND = /\b(cash on hand|petty cash|cash in hand|float)\b/i
@@ -208,22 +244,30 @@ export function assetSectionTotals(bs: ComparisonRow[], columns: number): { curr
   for (let i = 0; i < columns; i++) {
     const printedIn = (r: ComparisonRow) => r.cells[i]?.printed && typeof r.cells[i].value === 'number'
     const named = (rules: RegExp[]) => bs.some((r) => printedIn(r) && rules.some((rule) => rule.test(r.label.trim())))
-    if (named(TOTAL_CURRENT_ASSETS) && named(TOTAL_NON_CURRENT_ASSETS)) continue
     const total = bs.find((r) => printedIn(r) && TOTAL_ASSETS.some((rule) => rule.test(r.label.trim())))
     const sectionTotals = bs.filter(
       (r) => printedIn(r) && r.style !== 'line' && r.path.length === 2 && /^assets$/i.test(r.path[0]) && r.label.trim().toLowerCase() === `total ${r.path[1]}`.toLowerCase(),
     )
-    if (!total || sectionTotals.length === 0) continue
     const kind = (r: ComparisonRow) => (CURRENT_SECTION.test(r.path[1].trim()) ? 'current' : NON_CURRENT_SECTION.test(r.path[1].trim()) ? 'non_current' : null)
     const cur = sectionTotals.filter((r) => kind(r) === 'current')
     const non = sectionTotals.filter((r) => kind(r) === 'non_current')
+    // Both totals printed and no current-type section beside "Current Assets" (Xero's "Bank"): as printed.
+    if (named(TOTAL_CURRENT_ASSETS) && named(TOTAL_NON_CURRENT_ASSETS) && cur.length <= 1) continue
+    if (!total || sectionTotals.length === 0) continue
     const allKnown = sectionTotals.every((r) => kind(r) !== null)
     const sum = sectionTotals.reduce((s, r) => s + (cents(r.cells[i].value) ?? 0), 0)
-    const proven = allKnown && cur.length === 1 && non.length === 1 && sum === cents(total.cells[i].value)
+    // Bank printed as its own section beside Current Assets (Xero): current assets are both
+    // (Gabby, 25 Nov 2026: FY2026 18,326.75 + 26,925.93 = 45,252.68), never "Total Current Assets" alone.
+    const proven = allKnown && cur.length >= 1 && non.length === 1 && sum === cents(total.cells[i].value)
     if (proven) {
-      const rule = `From “${cur[0].label.trim()}” and “${non[0].label.trim()}”, which add up to the printed Total Assets.`
-      add(current, { rowKey: cur[0].key, rule, possible: false })
-      add(nonCurrent, { rowKey: non[0].key, rule, possible: false })
+      const names = (rows: ComparisonRow[]) => rows.map((r) => `“${r.label.trim()}”`).join(' and ')
+      const one = cur.length === 1
+      const curRule = one
+        ? `From ${names(cur)} and ${names(non)}, which add up to the printed Total Assets.`
+        : `From ${names(cur)}, added up: with ${names(non)} they add up to the printed Total Assets.`
+      const nonRule = one ? curRule : `From ${names(non)}: with ${names(cur)} it adds up to the printed Total Assets.`
+      for (const r of cur) add(current, { rowKey: r.key, rule: curRule, possible: false })
+      add(nonCurrent, { rowKey: non[0].key, rule: nonRule, possible: false })
     } else {
       const why = 'An asset section total; its sections do not add up exactly to the printed Total Assets (or are not clearly current or non-current), so it is not used on its own.'
       for (const r of cur) add(current, { rowKey: r.key, rule: why, possible: true })
@@ -397,8 +441,44 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
     fundsLoaned(r) ||
     (isLiability(r) && latest(r) >= 0 && (related(r) || unnamedLoan(r))) ||
     (isAsset(r) && latest(r) < 0 && (related(r) || unnamedLoan(r)))
-  const loanReceivable = pick(lines.filter((r) => owedTo(r) && !fundsLoaned(r)))
-  const loanPayable = pick(lines.filter(owedBy))
+  // One account per person (Gabby, 25 Nov 2026): a name printed with two or more of its own account
+  // lines ("Matthew Trow - Drawings", "- Share of Profit", "- Capital Introduced") is one director loan
+  // account, its lines added up (mapping.ts nets them per year, never across people). A related name
+  // (a director, the client / trust / trustee company, a beneficiary): all its lines, on the side its
+  // latest net says. Any other name: offered, staff decide.
+  const shares = profitShareNames(bs.map((r) => r.label))
+  const groups = new Map<string, { name: string; rows: ComparisonRow[] }>()
+  for (const r of lines.filter((x) => isLiability(x) || isAsset(x))) {
+    const p = personAccount(r.label)
+    if (!p) continue
+    const g = groups.get(personKey(p.name)) ?? { name: p.name, rows: [] }
+    g.rows.push(r)
+    groups.set(personKey(p.name), g)
+  }
+  const personRule = new Map<string, string>()
+  const personOffered: { rowKey: string; why: string }[] = []
+  const personTo: ComparisonRow[] = []
+  const personBy: ComparisonRow[] = []
+  for (const g of groups.values()) {
+    if (g.rows.length < 2) continue
+    const kinds = [...new Set(g.rows.map((r) => personAccount(r.label)!.kind))].join(', ')
+    const reason = personRelatedReason(g.name, { directors, parties }, shares)
+    if (!reason) {
+      for (const r of g.rows) personOffered.push({ rowKey: r.key, why: `“${g.name}”'s own account lines (${kinds}): not a director, beneficiary or the client on file.` })
+      g.rows.forEach((r) => taken.add(r.key))
+      continue
+    }
+    // Owed TO the company: printed negative under liabilities, positive under assets.
+    const owed = g.rows.reduce((s, r) => s + (isLiability(r) ? -latest(r) : latest(r)), 0)
+    for (const r of g.rows) personRule.set(r.key, `One account per person: “${g.name}”'s own lines (${kinds}) are added up — ${reason}. Its net says which way it is owed, year by year.`)
+    ;(owed >= 0 ? personTo : personBy).push(...g.rows)
+  }
+  const personReceivable = pick(personTo)
+  const personPayable = pick(personBy)
+  // Drawings naming nobody ("Owner A Drawings"): offered only, never selected (Gabby, 25 Nov 2026).
+  const unnamedDrawings = (r: ComparisonRow) => DRAWINGS.test(r.label) && !personAccount(r.label) && !namesDirector(r.label, directors) && !namesParty(r.label, parties)
+  const loanReceivable = [...personReceivable, ...pick(lines.filter((r) => owedTo(r) && !fundsLoaned(r) && !unnamedDrawings(r)))]
+  const loanPayable = [...personPayable, ...pick(lines.filter((r) => owedBy(r) && !unnamedDrawings(r)))]
   const creditCards = pick(lines.filter((r) => isLiability(r) && CREDIT_CARD.test(r.label)))
   const overdraft = pick(lines.filter((r) => isLiability(r) && (OVERDRAFT.test(r.label) || under(r, OVERDRAFT) || BANK_ACCOUNT.test(r.label.trim()))))
   const cashLoans = pick(lines.filter((r) => isLiability(r) && FINANCE.test(r.label)))
@@ -435,8 +515,8 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
     // Never guessed: what is left over is for staff to choose.
     other_assets: [],
     share_capital: shareCapital,
-    total_current_assets: [...bestPerDocument(bs, TOTAL_CURRENT_ASSETS, n), ...sections.current.filter((l) => !l.possible).map((l) => l.rowKey)],
-    total_non_current_assets: [...bestPerDocument(bs, TOTAL_NON_CURRENT_ASSETS, n), ...sections.nonCurrent.filter((l) => !l.possible).map((l) => l.rowKey)],
+    total_current_assets: [...new Set([...bestPerDocument(bs, TOTAL_CURRENT_ASSETS, n), ...sections.current.filter((l) => !l.possible).map((l) => l.rowKey)])],
+    total_non_current_assets: [...new Set([...bestPerDocument(bs, TOTAL_NON_CURRENT_ASSETS, n), ...sections.nonCurrent.filter((l) => !l.possible).map((l) => l.rowKey)])],
     total_assets: bestPerDocument(bs, TOTAL_ASSETS, n),
   }
   // Lines offered, never auto-selected: section totals the statement's arithmetic does not prove,
@@ -444,13 +524,18 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
   const offered: Partial<Record<Meaning, { rowKey: string; why: string }[]>> = {
     total_current_assets: sections.current.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
     total_non_current_assets: sections.nonCurrent.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
-    loan_receivable: bs.filter((r) => r.style === 'line' && printedAnywhere(r) && DRAWINGS.test(r.label) && !keys_taken(r.key)).map((r) => ({ rowKey: r.key, why: DRAWINGS_HINT })),
+    loan_receivable: [
+      ...personOffered,
+      ...bs.filter((r) => r.style === 'line' && printedAnywhere(r) && DRAWINGS.test(r.label) && !keys_taken(r.key)).map((r) => ({ rowKey: r.key, why: DRAWINGS_HINT })),
+    ],
   }
   const sectionRule = new Map([...sections.current, ...sections.nonCurrent].map((l) => [l.rowKey, l.rule]))
   const byKey = new Map([...bs, ...pl].map((r) => [r.key, r]))
   const loanRule = (meaning: 'loan_receivable' | 'loan_payable', key: string) => {
     const r = byKey.get(key)
     if (!r) return 'A loan account line.'
+    const person = personRule.get(key)
+    if (person) return person
     const why = relatedLoanReason(r.label, { directors, parties }) ?? 'A loan with no lender, vehicle or person named.'
     const side = isLiability(r) ? 'liabilities' : 'assets'
     const sign = latest(r) < 0 ? 'negative' : 'positive'

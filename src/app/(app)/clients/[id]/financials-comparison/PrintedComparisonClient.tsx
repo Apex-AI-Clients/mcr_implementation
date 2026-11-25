@@ -7,7 +7,8 @@ import { ArrowLeft, Download, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { HeadlineFiguresTable, type HeadlineView } from '@/components/admin/financials/HeadlineFiguresTable'
-import { ScanChecksPanel, ScanProgress, YearProofStrip } from '@/components/admin/financials/ScanFigures'
+import { ScanChecksPanel, ScanProgress } from '@/components/admin/financials/ScanFigures'
+import { PeriodSources } from '@/components/admin/financials/PeriodSources'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
@@ -141,7 +142,7 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
       </div>
 
       <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
-      <YearProofStrip comparison={comparison} />
+      <PeriodSources clientId={clientId} comparison={comparison} />
       <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
       {!hasTables ? (
