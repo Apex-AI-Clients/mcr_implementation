@@ -29,8 +29,24 @@ import { out } from './figures'
  * without dates (an export re-saved in Excel, before the date fix) as a
  * re-run would store it: today's code over its raw cells. In memory only.
  *
+ * PROOF_READ_MISSING=yes reads every financial statements PDF with no read by
+ * this code's READER_VERSION, as the comparison page does before staff predict
+ * (store.ts, readMissing): downloaded and read in memory, the read kept nowhere
+ * (its save is blocked like any write). Without it, a READER_VERSION bump shows
+ * as every prediction "not ready".
+ *
  * Run with TZ=UTC, as the server: stored dates are ISO strings.
  */
+
+vi.mock('@/lib/printed/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/printed/store')>()
+  if (process.env.PROOF_READ_MISSING?.trim() !== 'yes') return actual
+  return {
+    ...actual,
+    loadPrintedComparison: (...[supabase, clientId, options]: Parameters<typeof actual.loadPrintedComparison>) =>
+      actual.loadPrintedComparison(supabase, clientId, { ...options, readMissing: true }),
+  }
+})
 
 const blocked = { count: 0 }
 let readOnlyClient: SupabaseClient | null = null
