@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
 import type { PeriodSources as PeriodSourcesData, PrintedComparison, StatementSource } from '@/lib/printed/compare'
@@ -12,22 +12,44 @@ import { STATEMENT_NAME } from '@/lib/printed/picker'
 import { alsoInText, sourceLines, sourceName } from '@/lib/printed/periodSourceText'
 
 /**
- * Each period above the headline figures (Gabby, 25 Nov 2026), for the Cards and Table views alike:
+ * Each period, below the headline figures, for the Cards and Table views alike (Gabby, 25 Nov 2026):
  * its badges ("Every total on the statements adds up", "Profit and loss agrees with balance sheet",
  * "Carries forward from the previous year"), where its figures come from ("Source: …"), every other
  * file printing them ("Also in: … — ✓ same figures / ⚠ differs on N lines", view), "Use this source
  * instead", a failed check's note with "Use the same source for both", and current-period statements
  * ending on different dates. Choices are kept with who and when (comparison-sources).
+ *
+ * Hidden by default behind its heading's arrow; the heading says how many periods have something to
+ * look at, so a note is never hidden silently.
  */
-export function PeriodSources({ clientId, comparison }: { clientId: string; comparison: PrintedComparison }) {
+export function PeriodSources({ clientId, comparison, defaultOpen = false }: { clientId: string; comparison: PrintedComparison; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   const proofs = comparisonProof(comparison)
   if (proofs.length === 0) return null
+  const flagged = proofs.filter((p) => p.status !== 'proven' || comparison.periodSources?.[p.index]?.endsDiffer).length
   return (
-    <ul data-testid="year-proofs" className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
-      {proofs.map((p) => (
-        <PeriodCard key={p.column} clientId={clientId} comparison={comparison} proof={p} period={comparison.periodSources?.[p.index]} />
-      ))}
-    </ul>
+    <section data-testid="period-sources" className="space-y-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="period-sources-list"
+        onClick={() => setOpen((o) => !o)}
+        className="no-print flex w-full items-center gap-1.5 text-left text-sm font-semibold text-foreground hover:text-foreground/80"
+      >
+        <ChevronRight className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-90')} aria-hidden />
+        Periods: sources and checks
+        <span className={cn('ml-1 text-xs font-normal', flagged ? 'text-warning' : 'text-foreground/50')}>
+          {flagged ? `${flagged} period${flagged === 1 ? '' : 's'} to look at` : `${proofs.length} period${proofs.length === 1 ? '' : 's'}, nothing to look at`}
+        </span>
+      </button>
+      {open && (
+        <ul id="period-sources-list" data-testid="year-proofs" className="grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-3">
+          {proofs.map((p) => (
+            <PeriodCard key={p.column} clientId={clientId} comparison={comparison} proof={p} period={comparison.periodSources?.[p.index]} />
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 

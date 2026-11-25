@@ -48,7 +48,7 @@ describe('scanned figures to check', () => {
   it('a year whose readings agree shows the badge, and nothing to check', () => {
     render(
       <>
-        <PeriodSources clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />
+        <PeriodSources clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} defaultOpen />
         <ScanChecksPanel clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />
       </>,
     )
@@ -60,7 +60,7 @@ describe('scanned figures to check', () => {
     const c = comparison(cell('disagree', 9999, 9600))
     render(
       <>
-        <PeriodSources clientId="c1" comparison={c} />
+        <PeriodSources clientId="c1" comparison={c} defaultOpen />
         <ScanChecksPanel clientId="c1" comparison={c} />
       </>,
     )

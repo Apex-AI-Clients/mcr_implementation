@@ -142,7 +142,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
       </div>
 
       <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
-      <PeriodSources clientId={clientId} comparison={comparison} />
       <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
       {!hasTables ? (
@@ -162,6 +161,8 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
             </label>
           )}
           <HeadlineFiguresTable clientId={clientId} basePath={basePath} view={view} comparison={comparison} rows={rows} mapping={mapping} suggestions={suggestions} possible={possible} />
+          {/* Each period's source and checks, below the figures, hidden until opened. */}
+          <PeriodSources clientId={clientId} comparison={comparison} />
         </>
       )}
     </div>

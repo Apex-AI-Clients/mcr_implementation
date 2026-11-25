@@ -47,12 +47,30 @@ const doc = (id: string, kind: 'export' | 'annual_statements', ...statements: Pr
 })
 
 describe('PeriodSources', () => {
+  it('is hidden by default; its heading says what needs a look, and the arrow opens it', () => {
+    const fine = buildPrintedComparison([doc('xpl', 'export', pl([annual(2026), annual(2025)], [90, 50]))])
+    const { unmount } = render(<PeriodSources clientId="c1" comparison={fine} />)
+    const toggle = screen.getByRole('button', { name: /Periods: sources and checks/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toContain('2 periods, nothing to look at')
+    expect(screen.queryByTestId('year-proofs')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId('year-proofs').querySelectorAll('[data-period]')).toHaveLength(2)
+    unmount()
+
+    // A failed check: still closed, but the heading counts it.
+    const failing = buildPrintedComparison([doc('both', 'export', pl([annual(2026)], [100]), bs([annual(2026)], [90]))])
+    render(<PeriodSources clientId="c1" comparison={failing} />)
+    expect(screen.getByRole('button', { name: /Periods: sources and checks/ }).textContent).toContain('1 period to look at')
+  })
+
   it('shows the badges, the source, and an "Also in" that differs, with its lines and "Use this source instead"', async () => {
     const comparison = buildPrintedComparison([
       doc('fs26', 'annual_statements', pl([annual(2026)], [100]), bs([annual(2026)], [100])),
       doc('xpl', 'export', pl([annual(2026), annual(2025)], [90, 50])),
     ])
-    render(<PeriodSources clientId="c1" comparison={comparison} />)
+    render(<PeriodSources clientId="c1" comparison={comparison} defaultOpen />)
     const fy26 = screen.getByTestId('year-proofs').querySelector('[data-period="FY2026"]') as HTMLElement
     expect(fy26.textContent).toContain('Every total on the statements adds up')
     expect(fy26.textContent).toContain('Profit and loss agrees with balance sheet')
@@ -73,7 +91,7 @@ describe('PeriodSources', () => {
       [doc('fs26', 'annual_statements', pl([annual(2026)], [100]), bs([annual(2026)], [100])), doc('xpl', 'export', pl([annual(2026), annual(2025)], [90, 50]))],
       { sourceChoices: [choice] },
     )
-    render(<PeriodSources clientId="c1" comparison={comparison} />)
+    render(<PeriodSources clientId="c1" comparison={comparison} defaultOpen />)
     const fy26 = screen.getByTestId('year-proofs').querySelector('[data-period="FY2026"]') as HTMLElement
     expect(fy26.getAttribute('data-status')).toBe('printed_error')
     expect(within(fy26).getByTestId('printed-total-notes').textContent).toContain('They come from different files')
