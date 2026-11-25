@@ -4,9 +4,9 @@ import type { PrintedComparison, SourceChoice } from './compare'
 
 /**
  * Server-only. "Use this source instead" (Gabby, 25 Nov 2026): staff choosing which file a period's
- * profit and loss or balance sheet is taken from, kept in comparison_source_choices (migration 0063).
+ * profit and loss or balance sheet is taken from, kept in comparison_source_choices (migration 0064).
  * Append-only: the latest row per period and statement counts (compare.ts), the rest is the log of
- * who chose what, when. Before 0063 is applied there are no choices and the rules decide.
+ * who chose what, when. Before 0064 is applied there are no choices and the rules decide.
  */
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>

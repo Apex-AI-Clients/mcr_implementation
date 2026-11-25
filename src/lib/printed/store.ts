@@ -133,7 +133,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     read_at: keptAt ?? readAt,
   }
   let { error } = await supabase.from('printed_reads').upsert({ ...row, ...(read.report ? { report: read.report as unknown as never } : {}) })
-  // Before migration 0063 there is no report column: keep the read without it (read as annual statements).
+  // Before migration 0064 there is no report column: keep the read without it (read as annual statements).
   if (error && read.report && /report/.test(error.message)) ({ error } = await supabase.from('printed_reads').upsert(row))
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
   return { documentId: doc.id, read, readAt: keptAt ?? readAt }
@@ -226,7 +226,7 @@ export async function loadPrintedComparison(
       }
     }
   }
-  // Staff corrections of figures read from a scan (scan_figure_choices); staff choices of source (0063).
+  // Staff corrections of figures read from a scan (scan_figure_choices); staff choices of source (0064).
   const [choices, sourceChoices] = await Promise.all([loadScanChoices(supabase, clientId), loadSourceChoices(supabase, clientId)])
   const input: ComparisonDocument[] = docs.map((d) => {
     const read = reads.get(d.id)?.read ?? null

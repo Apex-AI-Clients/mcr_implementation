@@ -1,5 +1,5 @@
 -- ============================================================
--- 0063 — Multi-year and current-period exports in the SBR comparison
+-- 0064 — Multi-year and current-period exports in the SBR comparison
 -- ============================================================
 --
 -- Gabby uploads Xero / MYOB exports (a profit and loss or balance sheet with
@@ -34,7 +34,7 @@
 ALTER TABLE public.printed_reads ADD COLUMN IF NOT EXISTS report jsonb;
 
 COMMENT ON COLUMN public.printed_reads.report IS
-  'Annual financial statements or a software export, read from the PDF''s content (reportKind.ts). Null: read before 0063.';
+  'Annual financial statements or a software export, read from the PDF''s content (reportKind.ts). Null: read before 0064.';
 
 CREATE TABLE IF NOT EXISTS public.comparison_source_choices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
