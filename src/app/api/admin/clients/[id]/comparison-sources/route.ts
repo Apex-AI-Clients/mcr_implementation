@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { requireStaffUser, staffAuthorName } from '@/lib/auth/staff'
 import { loadPrintedComparison } from '@/lib/printed/store'
 import { checkSourceChoice, saveSourceChoice, SourceChoiceError, STATEMENT_KINDS } from '@/lib/printed/sourceChoices'
+import { alertFailedCrossChecks } from '@/lib/printed/crossCheckAlerts'
 
 /**
  * POST — "Use this source instead" (Gabby, 25 Nov 2026): which file a period's profit and loss or
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { comparison } = await loadPrintedComparison(supabase, clientId, { comparativeYears: true })
     checkSourceChoice(comparison, column, statements, documentId)
     await saveSourceChoice(supabase, clientId, staffAuthorName(staff), { column, statements, documentId })
+    // The new source may make a cross-check fail: alert once, as after a read.
+    const { comparison: after } = await loadPrintedComparison(supabase, clientId, { comparativeYears: true })
+    await alertFailedCrossChecks(supabase, clientId, after)
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof SourceChoiceError) return NextResponse.json({ error: err.message }, { status: 422 })

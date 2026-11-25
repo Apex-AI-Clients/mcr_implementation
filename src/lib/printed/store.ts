@@ -7,6 +7,7 @@ import type { PrintedRead, ReportKind, ScanSummary } from './types'
 import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
 import { loadSourceChoices } from './sourceChoices'
+import { alertFailedCrossChecks } from './crossCheckAlerts'
 
 /**
  * Server-only. A client's financial statement PDFs, read as printed and kept
@@ -216,9 +217,13 @@ export async function loadPrintedComparison(
 ): Promise<LoadedComparison> {
   const [docs, stored] = await Promise.all([loadFinancialDocuments(supabase, clientId), loadStoredReads(supabase, clientId)])
   const reads = new Map(stored)
+  let readNow = 0
   if (readMissing || force) {
     for (const doc of docs) {
-      if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
+      if (force || !reads.has(doc.id)) {
+        reads.set(doc.id, await readAndStore(supabase, clientId, doc))
+        readNow++
+      }
     }
   }
   // Staff corrections of figures read from a scan (scan_figure_choices); staff choices of source (0063).
@@ -228,5 +233,8 @@ export async function loadPrintedComparison(
     return { documentId: d.id, filename: d.original_filename, uploadedAt: d.uploaded_at, read: read ? applyScanChoices(read, choices.get(d.id) ?? []) : null }
   })
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
-  return { comparison: buildPrintedComparison(input, { comparativeYears, sourceChoices }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
+  const comparison = buildPrintedComparison(input, { comparativeYears, sourceChoices })
+  // Files read just now: a cross-check that fails alerts the developer, once (crossCheckAlerts.ts).
+  if (readNow > 0) await alertFailedCrossChecks(supabase, clientId, comparison)
+  return { comparison, builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
 }

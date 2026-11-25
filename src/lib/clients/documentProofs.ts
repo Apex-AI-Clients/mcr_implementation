@@ -97,8 +97,14 @@ export function documentProofs(input: DocumentProofInput): DocumentProofRow[] {
         const held = own.filter((y) => y.status === 'held')
         rows.push({ ...row, status: 'being_prepared', text: `${BEING_PREPARED}: ${held.map((y) => title(y.index)).join(', ')} (${[...new Set(held.flatMap((y) => y.reasons))].join('; ')})` })
       } else if (own.some((y) => y.status === 'printed_error')) {
-        const notes = own.flatMap((y) => y.notes)
-        rows.push({ ...row, status: 'as_printed', text: `As printed: ${notes.length} printed total${notes.length === 1 ? ' does' : 's do'} not add up (${own.filter((y) => y.status === 'printed_error').map((y) => title(y.index)).join(', ')})` })
+        const failedChecks = own.flatMap((y) => y.crossChecks.filter((c) => c.status === 'failed'))
+        const totals = own.flatMap((y) => y.notes).length - failedChecks.length
+        const parts = [
+          ...(totals > 0 ? [`${totals} printed total${totals === 1 ? ' does' : 's do'} not add up`] : []),
+          ...(failedChecks.some((c) => c.check === 'pl_agrees_bs') ? ['the profit and loss does not agree with the balance sheet'] : []),
+          ...(failedChecks.some((c) => c.check === 'carries_forward') ? ['retained earnings do not carry forward from the previous year'] : []),
+        ]
+        rows.push({ ...row, status: 'as_printed', text: `As printed: ${parts.join('; ')} (${own.filter((y) => y.status === 'printed_error').map((y) => title(y.index)).join(', ')})` })
       } else {
         rows.push({ ...row, status: 'proven', text: `${STATEMENTS_BADGE} (${own.map((y) => title(y.index)).join(', ')})` })
       }
