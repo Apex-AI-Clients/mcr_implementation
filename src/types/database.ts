@@ -898,6 +898,41 @@ export type Database = {
           },
         ]
       }
+      cvl_form_completions: {
+        Row: {
+          case_id: string
+          completed_at: string
+          completed_by: string
+          form_code: string
+          id: string
+          subject: string
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string
+          completed_by: string
+          form_code: string
+          id?: string
+          subject: string
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string
+          completed_by?: string
+          form_code?: string
+          id?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cvl_form_completions_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cvl_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cvl_generated_documents: {
         Row: {
           answers_snapshot: Json

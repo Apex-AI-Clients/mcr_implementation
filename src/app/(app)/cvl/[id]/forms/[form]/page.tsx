@@ -8,6 +8,7 @@ import { isSubject, prefillForm, subjectsFor, type Subject } from '@/lib/cvl/pre
 import { entryState, readDraft, savedA7Total, savedSummaryDate } from '@/lib/cvl/drafts'
 import { entryMap } from '@/lib/cvl/entryMap'
 import { CvlFormEditor } from '@/components/cvl/CvlFormEditor'
+import { isFormCompleted } from '@/lib/cvl/completion'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,9 @@ export default async function CvlFormPage({ params, searchParams }: Props) {
 
   const subjects = subjectsFor(code, { directors: ctx.company?.directors.length ?? 0 })
   const subject: Subject = isSubject(asked) && subjects.includes(asked) ? asked : subjects[0]
+
+  // A form marked complete is not edited until the forms are unlocked (migration 0063): back to the file.
+  if (await isFormCompleted(supabase, cvlCase.id, code, subject)) redirect(`/cvl/${id}`)
 
   const draftRow = (draftRows ?? []).find((r) => r.subject === subject) ?? null
   const draft = draftRow ? readDraft(draftRow.answers) : null

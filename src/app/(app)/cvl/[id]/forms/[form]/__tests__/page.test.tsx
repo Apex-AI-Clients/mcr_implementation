@@ -26,13 +26,16 @@ const DRAFTS = [
 ]
 
 let queried: string[] = []
+let completed: { form_code: string; subject: string; completed_by: string; completed_at: string }[] = []
 
 beforeEach(() => {
   queried = []
+  completed = []
   const rows: Record<string, unknown> = {
     clients: { id: 'cl_1', archived_at: null, workflow: 'cvl', cvl_cases: { removed_at: null } },
     cvl_cases: { id: 'case-1' },
     cvl_form_answers: DRAFTS,
+    cvl_form_completions: completed,
   }
   vi.mocked(getSupabaseServerClient).mockReturnValue({
     from: (table: string) => {
@@ -64,9 +67,10 @@ describe('CVL form page', () => {
     expect(page.props.subject).toBe('director:2')
     expect(page.props.saved?.at).toBe('2026-11-02T00:00:00Z')
     expect(page.props.subjects.map((s) => s.label)).toEqual(['Jordan Sample', 'Casey Example'])
-    // The client, its case, this form's drafts, and Form 509's saved summary
-    // date (every signature date starts from it, Nov 2026): each read once.
-    expect(queried.sort()).toEqual(['clients', 'cvl_cases', 'cvl_form_answers', 'cvl_form_answers'])
+    // The client, its case, this form's drafts, Form 509's saved summary date
+    // (every signature date starts from it, Nov 2026), and whether the form is
+    // marked complete (migration 0063): each read once.
+    expect(queried.sort()).toEqual(['clients', 'cvl_cases', 'cvl_form_answers', 'cvl_form_answers', 'cvl_form_completions'])
   })
 
   it('opens the first director, with their draft, when none (or one the file has not got) is asked for', async () => {
@@ -82,5 +86,11 @@ describe('CVL form page', () => {
 
   it('answers not found for a form that does not exist', async () => {
     await expect(open('999')).rejects.toThrow('notFound')
+  })
+
+  it('a form marked complete opens nothing: back to the CVL file until the forms are unlocked', async () => {
+    // The same list the mocked database reads.
+    completed.push({ form_code: '507b', subject: 'director:2', completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' })
+    await expect(open('507b', 'director:2')).rejects.toThrow('redirect:/cvl/cl_1')
   })
 })

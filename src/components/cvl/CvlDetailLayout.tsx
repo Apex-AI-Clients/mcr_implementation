@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, BarChart3, Briefcase, Building, CheckCircle2, Circle, Download, Eye, FileText, Gavel, Landmark, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Briefcase, Building, CheckCircle2, Circle, Download, FileText, Gavel, Landmark, Lock, Pencil, ShieldAlert, Users, type LucideIcon } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DocumentStatusGrid } from '@/components/admin/DocumentStatusGrid'
 import { AsicExtractOnFile } from '@/components/asic/AsicExtractOnFile'
@@ -8,6 +8,7 @@ import { CompletenessBar } from '@/components/admin/CompletenessBar'
 import { ComparisonJobStatus } from '@/components/admin/ComparisonJobStatus'
 import { LeadOriginLink } from '@/components/leads/LeadOriginLink'
 import { CvlDeleteButton } from './CvlDeleteButton'
+import { CompleteFormButton, LockedFillButton, UnlockFormsButton } from './FormCompletion'
 import { MoveToSbrButton } from './MoveToSbrButton'
 import { FORM_CODES, formVersion } from '@/lib/forms/registry'
 import { subjectsFor } from '@/lib/cvl/prefill'
@@ -33,6 +34,8 @@ interface CvlDetailLayoutProps {
   runningJob: { id: string; created_at: string } | null
   /** Also on the SBR list (migration 0047): Open in SBR; else Move to SBR. */
   inSbr: boolean
+  /** Forms marked complete (migration 0063), by `${formCode}|${subject}`: not editable until unlocked. */
+  completed?: Record<string, { by: string; at: string }>
 }
 
 interface Analysis {
@@ -60,7 +63,7 @@ const formatAcn = (acn: string | null) => {
  * next first, then the ASIC forms (one Part B per director), the company and
  * its directors at a glance, and the documents and analyses the forms draw on.
  */
-export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob, inSbr }: CvlDetailLayoutProps) {
+export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company, accountant, documents, dpn, atoAccounts, runningJob, inSbr, completed = {} }: CvlDetailLayoutProps) {
   const base = `/cvl/${client.id}`
   const directors = company?.directors ?? []
   const forms = FORM_CODES.flatMap((code) =>
@@ -73,6 +76,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
         short: SHORT[code],
         who: n ? (directors[n - 1]?.name ?? `Director ${n}`) : 'The company',
         draft: drafts.find((d) => d.form_code === code && d.subject === subject) ?? null,
+        done: completed[`${code}|${subject}`] ?? null,
       }
     }),
   )
@@ -177,6 +181,8 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                 <FileText className="h-4 w-4 text-foreground/50" />
                 <CardTitle>ASIC forms</CardTitle>
               </div>
+              {/* Completed forms cannot be edited until unlocked (18 Nov 2026). */}
+              {forms.some((f) => f.done) && <UnlockFormsButton caseId={cvlCase.id} count={forms.filter((f) => f.done).length} />}
             </CardHeader>
             <p className="-mt-2 mb-3 text-xs text-foreground/50">
               One Part B per director. Opened or not, each prints with what the client file has; blank boxes are filled on the form.
@@ -185,7 +191,9 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
               {forms.map((f) => (
                 <li key={`${f.code}-${f.subject}`} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="flex min-w-0 items-start gap-2.5">
-                    {f.draft ? (
+                    {f.done ? (
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                    ) : f.draft ? (
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
                     ) : (
                       <Circle className="mt-0.5 h-4 w-4 shrink-0 text-foreground/30" aria-hidden="true" />
@@ -196,25 +204,26 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                       </p>
                       <p className="text-xs text-foreground/40">
                         <span className="sr-only">{f.title}. </span>
-                        {f.draft ? `Draft saved ${formatDate(f.draft.updated_at)}` : 'Not opened yet'}
+                        {f.done
+                          ? `Completed on ${formatDate(f.done.at)}`
+                          : f.draft
+                            ? `Draft saved ${formatDate(f.draft.updated_at)}`
+                            : 'Not opened yet'}
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Link
-                      href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20"
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> {f.draft ? 'Continue' : 'Fill in'}
-                    </Link>
-                    <a
-                      href={`/api/admin/cvl/${cvlCase.id}/preview?form=${f.code}&subject=${encodeURIComponent(f.subject)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs text-muted hover:text-foreground"
-                    >
-                      <Eye className="h-3.5 w-3.5" /> Preview
-                    </a>
+                  <div className="flex items-start gap-2">
+                    {f.done ? (
+                      <LockedFillButton at={f.done.at} />
+                    ) : (
+                      <Link
+                        href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/20"
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> {f.draft ? 'Continue' : 'Fill in'}
+                      </Link>
+                    )}
+                    {!f.done && <CompleteFormButton caseId={cvlCase.id} form={f.code} subject={f.subject} label={`${f.short} — ${f.who}`} />}
                     <a
                       href={`/api/admin/cvl/${cvlCase.id}/preview?form=${f.code}&subject=${encodeURIComponent(f.subject)}&download=1`}
                       download
