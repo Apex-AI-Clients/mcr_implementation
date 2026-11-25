@@ -2002,6 +2002,7 @@ export type Database = {
           statements: Json
           status: string
           scan: Json | null
+          report: Json | null
         }
         Insert: {
           client_id: string
@@ -2013,6 +2014,7 @@ export type Database = {
           statements?: Json
           status: string
           scan?: Json | null
+          report?: Json | null
         }
         Update: {
           client_id?: string
@@ -2024,6 +2026,7 @@ export type Database = {
           statements?: Json
           status?: string
           scan?: Json | null
+          report?: Json | null
         }
         Relationships: [
           {

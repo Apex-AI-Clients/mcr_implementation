@@ -84,3 +84,5 @@ supabase/.temp/
 /data/
 /docs/
 /reference/
+/pdfs*/
+/*.pdf

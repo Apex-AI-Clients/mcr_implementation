@@ -3,7 +3,7 @@ import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { PdfTooLongError, PdfUnreadableError, readPrintedStatements } from './readPdf'
 import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from './compare'
 import { readStatements } from './readStatements'
-import type { PrintedRead, ScanSummary } from './types'
+import type { PrintedRead, ReportKind, ScanSummary } from './types'
 import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
 
@@ -27,8 +27,11 @@ import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
  * 2026-11-04.1: "Profit / Loss from sale of assets" inside a section is a line;
  * a "(%)" row is a ratio; scanned pages are read (src/lib/scan).
  * 2026-11-10.1: scanned pages are read by Claude alone (Tesseract removed).
+ * 2026-11-25.1: multi-year and current-period exports: a label wrapped around its
+ * figures, a header printed above its year, the entity name, annual statements or
+ * export (reportKind.ts); a negative liabilities total verifies.
  */
-export const READER_VERSION = '2026-11-10.1'
+export const READER_VERSION = '2026-11-25.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -77,6 +80,7 @@ export async function loadStoredReads(supabase: ServerClient, clientId: string):
         statements: row.statements as unknown as PrintedRead['statements'],
         issues: row.issues as unknown as PrintedRead['issues'],
         ...((row as { scan?: unknown }).scan ? { scan: (row as { scan?: unknown }).scan as ScanSummary } : {}),
+        ...((row as { report?: unknown }).report ? { report: (row as { report?: unknown }).report as ReportKind } : {}),
       },
     })
   }
@@ -115,7 +119,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     return { documentId: doc.id, read, readAt }
   }
   const keptAt = read.status === 'scan_pending' ? null : await unchangedReadAt(supabase, doc.id, read)
-  const { error } = await supabase.from('printed_reads').upsert({
+  const row = {
     document_id: doc.id,
     client_id: clientId,
     reader_version: READER_VERSION,
@@ -125,7 +129,10 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     issues: read.issues as unknown as never,
     ...(read.scan ? { scan: read.scan as unknown as never } : {}),
     read_at: keptAt ?? readAt,
-  })
+  }
+  let { error } = await supabase.from('printed_reads').upsert({ ...row, ...(read.report ? { report: read.report as unknown as never } : {}) })
+  // Before migration 0063 there is no report column: keep the read without it (read as annual statements).
+  if (error && read.report && /report/.test(error.message)) ({ error } = await supabase.from('printed_reads').upsert(row))
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
   return { documentId: doc.id, read, readAt: keptAt ?? readAt }
 }
@@ -169,9 +176,14 @@ async function unchangedReadAt(supabase: ServerClient, documentId: string, read:
   const same =
     data.status === read.status &&
     (data.page_count ?? 0) === read.pageCount &&
-    canonical(data.statements) === canonical(read.statements) &&
+    // The entity's name (added 25 Nov 2026) is not a figure: a read that differs only by it is unchanged.
+    canonical(withoutEntity(data.statements)) === canonical(withoutEntity(read.statements)) &&
     canonical(data.issues) === canonical(read.issues)
   return same ? data.read_at : null
+}
+
+function withoutEntity(statements: unknown): unknown {
+  return Array.isArray(statements) ? statements.map((s) => (s && typeof s === 'object' ? { ...(s as Record<string, unknown>), entity: undefined } : s)) : statements
 }
 
 /** JSON with object keys sorted: jsonb does not keep key order. */

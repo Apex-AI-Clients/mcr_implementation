@@ -103,6 +103,27 @@ export interface PrintedStatement {
   rows: PrintedRow[]
   /** Every figure printed with whole dollars only: totals then verify to rounding. */
   wholeDollars: boolean
+  /**
+   * The entity the title block names ("Example Holdings Pty Ltd"), as printed; null when none is
+   * printed. Absent on reads stored before 25 Nov 2026.
+   */
+  entity?: string | null
+}
+
+/**
+ * What kind of report a PDF is, from its content (never its file name):
+ *
+ *   annual_statements  the accountant's financial statements: a contents page, notes to the
+ *                      financial statements, a compilation report, a directors' or trustees'
+ *                      declaration, a "Notes" column, or the statements titled "Income Statement" /
+ *                      "Statement of Financial Position"
+ *   export             a plain report from the accounting software (Xero, MYOB): statement title,
+ *                      entity and period only, however many columns
+ */
+export interface ReportKind {
+  kind: 'annual_statements' | 'export'
+  /** What made it annual statements: the printed words and their page ("Notes to the Financial Statements (page 6)"). */
+  markers: string[]
 }
 
 /**
@@ -136,6 +157,8 @@ export interface PrintedRead {
   issues: ReadIssue[]
   /** Set when the PDF has scanned pages. */
   scan?: ScanSummary
+  /** Annual statements or a software export. Absent on reads stored before 25 Nov 2026 (read as annual statements). */
+  report?: ReportKind
 }
 
 export const NO_TEXT_LAYER_MESSAGE =
