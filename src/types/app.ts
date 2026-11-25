@@ -15,8 +15,6 @@ export interface DocumentRecord {
   atoAccountLabel?: string | null
   /** Why the file is in its slot: moved there automatically, or its account type not recognised yet. */
   categoryNote?: string | null
-  /** Line 2's entity is not the client's company or trust. */
-  entityWarning?: string | null
 }
 
 export interface AccountantDetails {

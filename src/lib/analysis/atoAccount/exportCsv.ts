@@ -52,7 +52,7 @@ const balance = (n: number | null) => (n === null ? '' : `${Math.abs(n).toFixed(
 export function atoAccountCsv(p: AtoAccountPayload, clientName: string): string {
   const lines: string[] = []
   lines.push(row(p.label, clientName))
-  lines.push(row('Entity on the export', p.entityName, p.entityMatches === false ? "Does not match the client's company or trust name" : ''))
+  lines.push(row('Entity on the export', p.entityName))
   lines.push(row('Balance owing', balance(p.balance), p.balanceDate ? `at ${p.balanceDate}` : ''))
   // Verified against the ATO's own balance (src/lib/ica): the badge; nothing is unexplained.
   const v = p.verification?.verified ? p.verification : null

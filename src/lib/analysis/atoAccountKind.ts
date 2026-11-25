@@ -103,27 +103,17 @@ export function entityMatches(entityName: string | null, names: readonly (string
   return known.some((n) => nameKey(n) === key)
 }
 
-/** The warning shown beside a file whose entity is not the client's. */
-export function entityMismatchNote(entityName: string): string {
-  return `This account is for ${entityName}, which does not match the client's company or trust name. Check it is the right client.`
-}
-
-/** What a file row shows for an ATO account CSV: its account, why it is in this slot, and an entity warning. */
+/**
+ * What a file row shows for an ATO account CSV: its account and why it is in this slot. No warning
+ * when the entity on it is not the client's name (removed 25 Nov 2026 at the user's request; the
+ * match is still stored, entity_matches).
+ */
 export interface AtoFileInfo {
   atoAccountLabel: string | null
   categoryNote: string | null
-  entityWarning: string | null
 }
 
-/** The ATO account details of a documents row, checked against the names the client goes by. */
-export function atoFileInfo(
-  row: { ato_account_label: string | null; ato_entity_name: string | null; category_note: string | null },
-  names: readonly (string | null | undefined)[],
-): AtoFileInfo {
-  const mismatch = entityMatches(row.ato_entity_name, names) === false
-  return {
-    atoAccountLabel: row.ato_account_label,
-    categoryNote: row.category_note,
-    entityWarning: mismatch && row.ato_entity_name ? entityMismatchNote(row.ato_entity_name) : null,
-  }
+/** The ATO account details of a documents row. */
+export function atoFileInfo(row: { ato_account_label: string | null; category_note: string | null }): AtoFileInfo {
+  return { atoAccountLabel: row.ato_account_label, categoryNote: row.category_note }
 }

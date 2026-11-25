@@ -80,10 +80,11 @@ describe('AtoAccountReport', () => {
     expect(screen.getByText(/reviewed by Staff Member on 26 Oct 2026/)).toBeTruthy()
   })
 
-  it('heads each quarter with its latest event, highlights the ATO raising it, and warns of another entity', () => {
+  it('heads each quarter with its latest event, highlights the ATO raising it, and never warns of another entity', () => {
     render(<AtoAccountReport payload={payload()} clientName="Example Trading" />)
     expect(screen.getAllByText('ATO audit').length).toBeGreaterThan(0)
-    expect(screen.getByText(/This account is for OTHER CONTRACTORS PTY LTD/)).toBeTruthy()
+    // Removed 25 Nov 2026: no warning when the entity on the export is not the client's name.
+    expect(screen.queryByText(/does not match the client/)).toBeNull()
     expect(screen.getByText('Unpaid superannuation guarantee charge can be the subject of a director penalty notice.')).toBeTruthy()
     expect(screen.queryByText(/lodged by the company/i)).toBeNull()
   })

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/utils'
@@ -114,12 +114,6 @@ export function AtoAccountsPanel({
                   <Badge variant="warning" className="ml-2">
                     Needs review
                   </Badge>
-                )}
-                {a.entityMatches === false && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-warning">
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                    Different entity
-                  </span>
                 )}
               </span>
               <span className="flex shrink-0 items-center gap-2 tabular-nums">

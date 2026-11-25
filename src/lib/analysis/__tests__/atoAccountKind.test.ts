@@ -75,14 +75,8 @@ describe("the entity against the client's names", () => {
     expect(entityMatches(null, ['Example Trading'])).toBeNull()
   })
 
-  it('warns on the file row only when they differ', () => {
+  it('shows no entity warning on the file row, even when the entity differs (removed 25 Nov 2026)', () => {
     const row = { ato_account_label: 'Income tax 001', ato_entity_name: 'OTHER CONTRACTORS PTY LTD', category_note: null }
-    expect(atoFileInfo(row, ['Example Trading Pty Ltd'])).toEqual({
-      atoAccountLabel: 'Income tax 001',
-      categoryNote: null,
-      entityWarning:
-        "This account is for OTHER CONTRACTORS PTY LTD, which does not match the client's company or trust name. Check it is the right client.",
-    })
-    expect(atoFileInfo({ ...row, ato_entity_name: 'EXAMPLE TRADING PTY LTD' }, ['Example Trading Pty Ltd']).entityWarning).toBeNull()
+    expect(atoFileInfo(row)).toEqual({ atoAccountLabel: 'Income tax 001', categoryNote: null })
   })
 })

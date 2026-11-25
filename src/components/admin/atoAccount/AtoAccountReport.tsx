@@ -405,14 +405,6 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
         </div>
       </div>
 
-      {payload.entityMatches === false && (
-        <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          This account is for {payload.entityName}, which does not match the client&rsquo;s company or trust name. Check it is the
-          right client.
-        </p>
-      )}
-
       {verified && verification?.badge && <VerifiedBadge text={verification.badge} />}
 
       {lock ? (
