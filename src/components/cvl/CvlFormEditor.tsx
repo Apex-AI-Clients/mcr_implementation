@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check, Download, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Download, Loader2, Lock, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SourceButton } from '@/components/ui/SourcedAmount'
 import type { AmountSource } from '@/lib/sources'
@@ -14,6 +14,9 @@ import { choiceValue, choiceValues } from '@/lib/forms/choice'
 import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
 import type { Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
+import { fetchWithTimeout, withTimeout } from '@/lib/fetchWithTimeout'
+import { isUnsure, UNSURE, UNSURE_TOGGLE_KEYS } from '@/lib/forms/unsure'
+import { UnlockFormsButton } from './FormCompletion'
 
 interface CvlFormEditorProps {
   caseId: string
@@ -25,7 +28,23 @@ interface CvlFormEditorProps {
   prefill: Prefill
   initial: EntryState
   saved: { at: string; by: string; version: string } | null
+  /**
+   * Marked complete (migration 0063): shown read-only under a banner, "Unlock to edit" (24 Nov 2026).
+   * `completed`: how many of the case's forms are complete, for the unlock button.
+   */
+  locked?: { at: string; completed: number } | null
 }
+
+/** How long Save / Back to pre-filled wait for the server before giving up with a message. */
+const SAVE_TIMEOUT_MS = 30_000
+/** How long the preview may take to fill (in the browser, then on the server) before saying so. */
+const FILL_TIMEOUT_MS = 45_000
+/** How long Download waits for its PDF before giving up with a message. */
+const DOWNLOAD_TIMEOUT_MS = 90_000
+
+/** B14's reasons are copied into B15's as they are typed, until B15's are changed directly (24 Nov 2026). */
+const B14_REASONS = 'b14_reasons'
+const B15_REASONS = 'b15_reasons'
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const blank = (v: FieldValue) => v === null || v === undefined || v === ''
@@ -40,9 +59,9 @@ const blank = (v: FieldValue) => v === null || v === undefined || v === ''
  * Every answer can be changed; a pre-filled one carries an ⓘ saying where it
  * came from until staff change it. Every Yes/No starts at "No". Answers
  * written by hand on the printout (signatures, the dates beside them, B6
- * log-ins, the B1 address) are shown but cannot be typed or saved.
+ * log-ins) are shown but cannot be typed or saved.
  */
-export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefill, initial, saved: savedAtOpen }: CvlFormEditorProps) {
+export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefill, initial, saved: savedAtOpen, locked = null }: CvlFormEditorProps) {
   const router = useRouter()
   // The tables open with empty rows to type into (withStartingRows). Blank
   // rows are never saved or printed, so they are not a change to save.
@@ -129,6 +148,12 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
           next = markEdited(TRUST_NAME_KEY, false, next)
         }
       }
+      // Part B: B15's reasons follow B14's as they are typed, while B15's are empty or still the same
+      // as B14's were. Once B15's are changed directly they are left alone ("Copy from B14 again").
+      if (map.code === '507b' && key === B14_REASONS && (blank(s.fields[B15_REASONS]) || same(s.fields[B15_REASONS], s.fields[B14_REASONS]))) {
+        fields[B15_REASONS] = value
+        next = markEdited(B15_REASONS, !blank(value), next)
+      }
       const pre = prefill.fields[key]
       return markEdited(key, pre ? !same(pre.value, value) : !blank(value), next)
     })
@@ -150,43 +175,58 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
     setState((s) => markEdited(`table:${id}`, true, { ...s, tables: { ...s.tables, [id]: rows } }))
   }
 
+  // One save (or reset) at a time: a second press while one is under way is ignored, never queued.
+  const busy = useRef(false)
+
   async function save() {
+    if (busy.current || locked) return
+    busy.current = true
     setSaving(true)
     setError(null)
+    const sent = state
     try {
-      const res = await fetch(`/api/admin/cvl/${caseId}/forms/${map.code}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject,
-          answers: { fields: state.fields, tables: state.tables, signedBy: state.signedBy, signedDates: state.signedDates },
-          editedKeys: state.editedKeys,
-        }),
-      })
+      // A request that never comes back gives up with a message: the button is never left busy (24 Nov 2026).
+      const res = await fetchWithTimeout(
+        `/api/admin/cvl/${caseId}/forms/${map.code}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject,
+            answers: { fields: sent.fields, tables: sent.tables, signedBy: sent.signedBy, signedDates: sent.signedDates },
+            editedKeys: sent.editedKeys,
+          }),
+        },
+        SAVE_TIMEOUT_MS,
+      )
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Failed to save the draft')
-      setSavedState(state)
+      if (!res.ok) throw new Error(data.error || 'Failed to save the draft. Please try again.')
+      setSavedState(sent)
       setSaved({ at: data.updatedAt, by: data.updatedBy, version: data.formVersion })
       refreshPreview()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : 'Failed to save the draft. Please try again.')
     } finally {
+      busy.current = false
       setSaving(false)
     }
   }
 
   async function reset() {
+    if (busy.current || locked) return
     if (!window.confirm('Go back to the pre-filled answers? Everything typed on this form is cleared.')) return
+    busy.current = true
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/cvl/${caseId}/forms/${map.code}?subject=${encodeURIComponent(subject)}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to reset the draft')
+      const res = await fetchWithTimeout(`/api/admin/cvl/${caseId}/forms/${map.code}?subject=${encodeURIComponent(subject)}`, { method: 'DELETE' }, SAVE_TIMEOUT_MS)
+      if (!res.ok) throw new Error('Failed to reset the draft. Please try again.')
       router.refresh()
       setSaved(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : 'Failed to reset the draft. Please try again.')
     } finally {
+      busy.current = false
       setSaving(false)
     }
   }
@@ -315,6 +355,18 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
         Back to the CVL file
       </Link>
 
+      {/* A completed form: read-only, and plainly so (24 Nov 2026). */}
+      {locked && (
+        <div role="status" data-testid="locked-banner" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Lock className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+            This form is completed and locked — Unlock to edit
+            <span className="font-normal text-foreground/50">(completed {formatDate(locked.at)})</span>
+          </p>
+          <UnlockFormsButton caseId={caseId} count={locked.completed} />
+        </div>
+      )}
+
       <header className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-wider text-foreground/40">ASIC · version {map.version}</p>
@@ -325,19 +377,23 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             <Download className="h-3.5 w-3.5" />
             Download
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            Back to pre-filled
-          </Button>
-          <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty && !stale} title="Save the draft and update the preview (Ctrl+S)">
-            {dirty || stale ? (
-              'Save'
-            ) : (
-              <>
-                <Check className="h-3.5 w-3.5" /> Saved
-              </>
-            )}
-          </Button>
+          {!locked && (
+            <>
+              <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={saving}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                Back to pre-filled
+              </Button>
+              <Button type="button" size="sm" onClick={save} loading={saving} disabled={!dirty && !stale} title="Save the draft and update the preview (Ctrl+S)">
+                {dirty || stale ? (
+                  'Save'
+                ) : (
+                  <>
+                    <Check className="h-3.5 w-3.5" /> Saved
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
@@ -365,6 +421,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* The questions */}
         <div ref={questions} className="min-w-0 space-y-3" onFocus={onFocusIn}>
+          {/* A completed form: every answer shown, none can be changed. */}
+          <fieldset disabled={!!locked} className="min-w-0 space-y-3">
           {/* Marks the top of the questions, for the preview to show the first page from its top. */}
           <div data-form-top="" data-page={sectionSpot(map.sections[0] ?? { q: '', text: '', fields: [], tables: [], page: 1, kind: 'page' }, true)['data-page'] ?? 1} aria-hidden="true" className="-mb-3 h-0" />
           <nav aria-label="Questions" className="flex flex-wrap gap-1">
@@ -425,6 +483,15 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                       source={sourceOf(f.key)}
                       note={prefill.notes[f.key] ?? null}
                       onChange={(v) => setField(f.key, v)}
+                      unsureToggle={UNSURE_TOGGLE_KEYS.has(f.key)}
+                      action={
+                        // B15's reasons changed directly: copying from B14 has stopped; one click starts it again.
+                        map.code === '507b' && f.key === B15_REASONS && !locked && !blank(state.fields[B14_REASONS]) && !same(state.fields[B15_REASONS], state.fields[B14_REASONS]) ? (
+                          <button type="button" onClick={() => setField(B15_REASONS, state.fields[B14_REASONS])} className="mt-1 text-xs text-accent hover:underline">
+                            Copy from B14 again
+                          </button>
+                        ) : null
+                      }
                     />
                   ))}
               </div>
@@ -466,6 +533,7 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
             </section>
             ),
           )}
+          </fieldset>
         </div>
 
         {/* The official page, as it will print */}
@@ -605,6 +673,12 @@ function LivePreview({
   const [error, setError] = useState<string | null>(null)
   const [doc, setDoc] = useState<PdfDoc | null>(null)
   const [pendingDownload, setPendingDownload] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  // Fills that have ended (filled or failed), counted, so a download knows one ended after its press.
+  const fillsEnded = useRef(0)
+  const [fillTick, setFillTick] = useState(0)
+  const errorRef = useRef(error)
+  errorRef.current = error
   // Every page, one under the other, in a column that scrolls to the last.
   const viewer = useRef<HTMLDivElement>(null)
   const pageEls = useRef<(HTMLDivElement | null)[]>([])
@@ -642,7 +716,8 @@ function LivePreview({
       try {
         try {
           const { fillInBrowser } = await import('@/lib/forms/browserFill')
-          const fill = await fillInBrowser(code as FormCode, version, answers)
+          // A fill that never finishes falls back to the server, never holding the screen (24 Nov 2026).
+          const fill = await withTimeout(fillInBrowser(code as FormCode, version, answers), FILL_TIMEOUT_MS)
           if (cancelled || id !== latest.current) return
           setFilled({ pdf: fill.pdf, pageSources: fill.pageSources })
           setError(null)
@@ -650,12 +725,16 @@ function LivePreview({
         } catch {
           // Filled on the server instead, below.
         }
-        const res = await fetch(`/api/admin/cvl/${caseId}/preview`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ form: code, subject, answers }),
-        })
-        if (!res.ok) throw new Error('The preview could not be filled.')
+        const res = await fetchWithTimeout(
+          `/api/admin/cvl/${caseId}/preview`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ form: code, subject, answers }),
+          },
+          FILL_TIMEOUT_MS,
+        )
+        if (!res.ok) throw new Error('The preview could not be filled. Please try again.')
         const pdf = new Uint8Array(await res.arrayBuffer())
         let pageSources: number[] = []
         try {
@@ -667,9 +746,14 @@ function LivePreview({
         setFilled({ pdf, pageSources })
         setError(null)
       } catch (err) {
-        if (!cancelled && id === latest.current) setError(err instanceof Error ? err.message : 'The preview could not be filled.')
+        if (!cancelled && id === latest.current) setError(err instanceof Error ? err.message : 'The preview could not be filled. Please try again.')
       } finally {
-        if (!cancelled && id === latest.current) setLoading(false)
+        // Always: the spinner and any waiting download hear how it ended.
+        if (!cancelled && id === latest.current) {
+          setLoading(false)
+          fillsEnded.current++
+          setFillTick((n) => n + 1)
+        }
       }
     })()
     return () => {
@@ -795,17 +879,38 @@ function LivePreview({
   onRefreshRef.current = onRefresh
   const staleRef = useRef(stale)
   staleRef.current = stale
+  // The fill a download waits for must end after the press: a failure then says so, and the button
+  // is never left waiting (24 Nov 2026). A fill that failed before the press is tried again.
+  const fillsAtPress = useRef(0)
   useEffect(() => {
     if (downloadTick === 0) return
+    setDownloadError(null)
+    fillsAtPress.current = fillsEnded.current
     setPendingDownload(true)
-    if (staleRef.current) onRefreshRef.current()
+    if (staleRef.current || errorRef.current) onRefreshRef.current()
   }, [downloadTick])
 
   useEffect(() => {
-    if (!pendingDownload || loading || stale || !filled) return
+    if (!pendingDownload || loading || stale) return
+    if (error && fillsEnded.current > fillsAtPress.current) {
+      setPendingDownload(false)
+      setDownloadError(`The PDF could not be prepared: ${error} Please try Download again.`)
+      return
+    }
+    if (!filled || error) return
     setPendingDownload(false)
     saveFile()
-  }, [pendingDownload, loading, stale, filled, saveFile])
+  }, [pendingDownload, loading, stale, filled, error, fillTick, saveFile])
+
+  // However the fill goes, Download gives up after a while with a message.
+  useEffect(() => {
+    if (!pendingDownload) return
+    const timer = setTimeout(() => {
+      setPendingDownload(false)
+      setDownloadError('The PDF took too long to prepare. Please try Download again.')
+    }, DOWNLOAD_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [pendingDownload])
 
   return (
     <section aria-label={`Preview of ${title}`} className="space-y-2">
@@ -886,6 +991,16 @@ function LivePreview({
         )}
       </div>
       {filled && error && <p className="text-xs text-destructive">{error}</p>}
+      {pendingDownload && (
+        <p role="status" className="inline-flex items-center gap-1 text-xs text-foreground/50">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Preparing the PDF to download…
+        </p>
+      )}
+      {downloadError && (
+        <p role="alert" className="text-xs text-destructive">
+          {downloadError}
+        </p>
+      )}
     </section>
   )
 }
@@ -1080,18 +1195,24 @@ function FieldInput({
   source,
   note,
   onChange,
+  unsureToggle = false,
+  action = null,
 }: {
   field: EntryField
   value: FieldValue
   source: AmountSource | null
   note: string | null
   onChange: (v: FieldValue) => void
+  /** A date that can be "Unsure" (B24): a switch between "Unsure" and "Enter a date" (24 Nov 2026). */
+  unsureToggle?: boolean
+  /** Shown under the answer: a link that acts on it ("Copy from B14 again"). */
+  action?: React.ReactNode
 }) {
   const id = `f-${f.key}`
   const wide = f.type === 'lines' || f.type === 'choice' || f.label.length > 60
   const info = source ? <SourceButton source={source} label={f.label} /> : null
 
-  // Written by hand on the printout (signature dates, B6 log-ins, B1 address): not on this screen.
+  // Written by hand on the printout (B6 log-ins): not on this screen.
   if (f.handwritten) return null
 
   // Measured as the form prints it: shrunk to fit first, then whatever still doesn't fit is cut.
@@ -1164,7 +1285,9 @@ function FieldInput({
     // A date input shows only YYYY-MM-DD: a draft holding "28/09/2016" would
     // look empty while the PDF printed it. Shown as the date it is.
     const shown = type === 'date' ? isoDateForInput(value) : value
-    control = (
+    control = f.type === 'date' && unsureToggle ? (
+      <UnsureDate id={id} value={value} onChange={onChange} info={info} />
+    ) : (
       <div className="flex items-center gap-1">
         <input
           id={id}
@@ -1202,6 +1325,68 @@ function FieldInput({
       {control}
       {f.room && <TooLong id={fitId} over={over} room={f.room} />}
       {note && <p className="mt-1 text-xs text-warning">{note}</p>}
+      {action}
+    </div>
+  )
+}
+
+/**
+ * A date that may not be known (B24, 24 Nov 2026): "Unsure" (printed across the date boxes) or
+ * "Enter a date", switched either way at any time. Switching back to a date offers the last one
+ * typed on this screen.
+ */
+function UnsureDate({ id, value, onChange, info }: { id: string; value: FieldValue; onChange: (v: FieldValue) => void; info: React.ReactNode }) {
+  const unsure = isUnsure(value)
+  const [lastDate, setLastDate] = useState<FieldValue>(unsure ? null : value)
+  const shown = unsure ? '' : isoDateForInput(value)
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div role="radiogroup" aria-label="Unsure or a date" className="inline-flex overflow-hidden rounded-md border border-border text-xs">
+        {(
+          [
+            ['unsure', 'Unsure'],
+            ['date', 'Enter a date'],
+          ] as const
+        ).map(([mode, label]) => {
+          const on = (mode === 'unsure') === unsure
+          return (
+            <label
+              key={mode}
+              className={`relative cursor-pointer px-3 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-accent/40 ${mode === 'date' ? 'border-l border-border' : ''} ${on ? 'bg-accent font-medium text-white' : 'bg-input-bg text-foreground/60 hover:text-foreground'}`}
+            >
+              <input
+                type="radio"
+                name={`${id}-mode`}
+                checked={on}
+                onChange={() => {
+                  if (mode === 'unsure') {
+                    if (!unsure) setLastDate(value)
+                    onChange(UNSURE)
+                  } else onChange(lastDate ?? null)
+                }}
+                className="sr-only"
+              />
+              {label}
+            </label>
+          )
+        })}
+      </div>
+      {unsure ? (
+        <span className="text-xs text-foreground/50">Printed as &ldquo;Unsure&rdquo; across the date boxes</span>
+      ) : (
+        <input
+          id={id}
+          type="date"
+          value={shown === null || shown === undefined ? '' : String(shown)}
+          onChange={(e) => {
+            const raw = e.target.value
+            setLastDate(raw === '' ? null : raw)
+            onChange(raw === '' ? null : raw)
+          }}
+          className={`${inputClass} w-auto`}
+        />
+      )}
+      {info}
     </div>
   )
 }

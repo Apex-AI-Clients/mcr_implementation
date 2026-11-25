@@ -486,8 +486,20 @@ function readAddresses(section: SectionLines | undefined): {
 }
 
 function readDirectors(section: SectionLines | undefined): Director[] {
+  return readDirectorBlocks(section).map((b) => b.director)
+}
+
+/** "Not available in this ASIC extract" and the like: no address. */
+const NO_ADDRESS = /not available|not shown|suppressed|withheld/i
+
+/**
+ * Each current director, with the address printed in their block (their residential address, or
+ * ASIC's alternative address). The address is never part of AsicExtract (it never reaches the client
+ * file): only parseDirectorAddresses returns it, for Part B's B1 (Gabby, 24 Nov 2026).
+ */
+function readDirectorBlocks(section: SectionLines | undefined): { director: Director; address: string | null }[] {
   if (!section) return []
-  const directors: Director[] = []
+  const directors: { director: Director; address: string | null }[] = []
   const seen = new Set<string>()
   let role: 'director' | 'other' | null = null
   const lines = section.lines
@@ -516,12 +528,20 @@ function readDirectors(section: SectionLines | undefined): Director[] {
     // The rest of this person's block, up to the next person or role.
     let dateOfBirth: string | null = null
     let appointedOn: string | null = null
+    let address: string | null = null
     let ended = false
     for (; j < lines.length; j++) {
       const line = lines[j].text
       if (roleOf(line)) break
       const field = readLabel(line)
       if (field?.label === 'name') break
+      if (field?.label === 'address' && address === null) {
+        // The address, and the lines it wraps onto, up to the next label.
+        const parts = [stripDocumentNumber(field.value).text]
+        for (let k = j + 1; k < lines.length && !isLabelled(lines[k].text) && !roleOf(lines[k].text); k++) parts.push(stripDocumentNumber(lines[k].text).text)
+        const text = parts.filter(Boolean).join(' ').trim()
+        address = text && !NO_ADDRESS.test(text) ? tidyAddress(text) : ''
+      }
       if (field?.label === 'born' && dateOfBirth === null) {
         dateOfBirth = dobFromBornValue(field.value || lines[j + 1]?.text || '')
       }
@@ -534,9 +554,25 @@ function readDirectors(section: SectionLines | undefined): Director[] {
     const key = `${name.toUpperCase()}|${dateOfBirth ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
-    directors.push({ name: tidyRegisterName(name), dateOfBirth, ...(appointedOn ? { appointedOn } : {}) })
+    directors.push({ director: { name: tidyRegisterName(name), dateOfBirth, ...(appointedOn ? { appointedOn } : {}) }, address: address || null })
   }
   return directors
+}
+
+/**
+ * The current directors' addresses as the extract prints them (tidied), for Part B's B1 (Gabby,
+ * 24 Nov 2026). Read when the form is opened, from the extract kept on the file; never written to the
+ * client file. Empty when the PDF is not a readable ASIC extract.
+ */
+export function parseDirectorAddresses(rawLines: readonly string[]): { name: string; dateOfBirth: string | null; address: string | null }[] {
+  const lines = joinWrappedLabels(mergeSplitLabels(normalise(rawLines)))
+  const { body } = dropRepeatedCover(lines)
+  const { sections } = splitSections(body)
+  return readDirectorBlocks(sections.find((s) => s.section === 'officeholders')).map(({ director, address }) => ({
+    name: director.name,
+    dateOfBirth: director.dateOfBirth,
+    address,
+  }))
 }
 
 // ─── The parse ──────────────────────────────────────────────────────────────

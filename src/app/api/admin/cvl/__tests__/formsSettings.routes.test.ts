@@ -65,12 +65,12 @@ describe('PUT /api/admin/cvl/[caseId]/forms/[form]', () => {
       form_version: '20220801',
       subject: 'director:2',
       // The tables' "signed by" is signed by hand: not kept.
-      answers: { fields: { b1_name: 'Casey Example' }, tables: {}, signedBy: null },
+      // B1's address is kept since 24 Nov 2026 (0065); B6's password never is.
+      answers: { fields: { b1_name: 'Casey Example', b1_street: '1 Home St' }, tables: {}, signedBy: null },
       edited_keys: ['b1_name'],
       updated_by: 'Casey',
     })
     expect(JSON.stringify(row)).not.toContain('secret')
-    expect(JSON.stringify(row)).not.toContain('Home St')
     expect(opts).toEqual({ onConflict: 'case_id,form_code,subject' })
   })
 

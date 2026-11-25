@@ -22,7 +22,7 @@ interface FieldBase {
   page: number
   /**
    * Filled in by hand on the printout: the engine never draws it and the app
-   * never stores it (Part B B6 user name/password and the B1 address).
+   * never stores it (Part B B6 user name/password; the B1 address is typed since 24 Nov 2026).
    */
   handwritten?: boolean
   /**

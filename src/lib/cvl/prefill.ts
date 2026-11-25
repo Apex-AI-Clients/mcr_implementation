@@ -5,6 +5,7 @@ import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
 import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
 import { splitAddress } from './address'
+import { B24_DATE_KEYS, UNSURE } from '@/lib/forms/unsure'
 import type { BalanceSheetFigure, CvlContext } from './context'
 import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
@@ -167,6 +168,31 @@ function putRegistration(out: Prefill, ctx: CvlContext, key: string) {
   }
   const source = companySource(ctx, 'The company’s registration date.', 'organisation')
   out.fields[key] = { value: date, source: { ...source, rule: 'Trading may have started after registration: check with the director.' } }
+}
+
+const personKey = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, '')
+
+/**
+ * B1's address: the director's address on the kept ASIC extract (Gabby, 24 Nov 2026), split into
+ * the form's boxes, each editable. Matched by name (and a compatible year of birth). Nothing kept,
+ * or no address printed for them: blank, with a note.
+ */
+function putDirectorAddress(out: Prefill, ctx: CvlContext, d: { name: string; dateOfBirth: string | null }) {
+  const hit = (ctx.directorAddresses ?? []).find(
+    (a) => personKey(a.name) === personKey(d.name) && (!a.dateOfBirth || !d.dateOfBirth || a.dateOfBirth.slice(0, 4) === d.dateOfBirth.slice(0, 4)),
+  )
+  const parts = splitAddress(hit?.address)
+  if (!parts) {
+    out.notes.b1_street = ctx.asicExtract
+      ? 'The kept ASIC extract has no address for this director: type it in.'
+      : 'Upload the ASIC extract to fill the director’s address, or type it in.'
+    return
+  }
+  const source = companySource(ctx, `The director’s address on the ASIC extract: ${hit!.address}.`, 'directors')
+  put(out, 'b1_street', parts.street, source)
+  put(out, 'b1_suburb', parts.suburb, source)
+  put(out, 'b1_state', parts.state, source)
+  put(out, 'b1_postcode', parts.postcode, source)
 }
 
 function director(ctx: CvlContext, subject: Subject) {
@@ -409,9 +435,11 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
     // The appendix tables' "signed by" name (B2, B3, B21, B28) is left blank:
     // the director signs and names themselves there by hand.
     if (!d.appointedOn) out.notes.b1_role = ctx.asicExtract ? 'The kept ASIC extract has no appointment date for this director.' : 'Upload the ASIC extract again to fill the appointment date.'
+    putDirectorAddress(out, ctx, d)
   }
-  // B10 comes from Form 509's summary date, like the signature dates (see
-  // putSignatureDates), not from the registration date (Nov 2026).
+  // B10, "Date the Company started trading": the ASIC registration date (Gabby, 24 Nov 2026).
+  putRegistration(out, ctx, 'b10_date')
+  if (out.fields.b10_date) out.fields.b10_date.source = { ...out.fields.b10_date.source, from: ['From the ASIC extract: registration date', ...out.fields.b10_date.source.from] }
 
   // B1's and B5 Manager 1's phone and email: the company's own, as typed at
   // conversion or intake (Nov 2026). The accountant (B24) and the rest are
@@ -464,6 +492,9 @@ function putDefaultYes(code: FormCode, out: Prefill) {
   if (code === '507b') {
     const source = { from: ['MCR Partners helped complete this Report (B30).', 'Change it if someone else did.'] }
     for (const [key, value] of Object.entries(MCR_HELPER)) out.fields[key] ??= { value, source }
+    // B24's dates: "Unsure" unless a date is pre-filled, which is kept as it is (Gabby, 24 Nov 2026).
+    const unsure = { from: ['Printed as "Unsure" until the date is known.', 'Switch to "Enter a date" to type it.'] }
+    for (const key of B24_DATE_KEYS) out.fields[key] ??= { value: UNSURE, source: unsure }
   }
 }
 
@@ -478,11 +509,9 @@ function putDefaultYes(code: FormCode, out: Prefill) {
 /** Other dates filled from Form 509's summary date, like the signature dates (Nov 2026). */
 const SAME_DATE_KEYS: Partial<Record<FormCode, string[]>> = {
   '507a': ['f507a_report_date'],
-  '507b': ['b10_date'],
 }
 
 const OWN_SOURCE: Record<string, AmountSource> = {
-  b10_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the company started trading on another day.'] },
   f507a_report_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the report is dated another day.'] },
 }
 

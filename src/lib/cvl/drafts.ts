@@ -11,7 +11,7 @@ import type { Prefill } from './prefill'
  * (so the ⓘ is shown only on a value that is still the pre-filled one).
  *
  * What is written by hand on the printout is never saved: B6 user name and
- * password, and the B1 address. The database refuses them as well (0039,
+ * password (the B1 address is typed since 24 Nov 2026, 0065). The database refuses them as well (0039,
  * 0054). The dates beside a signature are saved since Nov 2026 (0054).
  */
 

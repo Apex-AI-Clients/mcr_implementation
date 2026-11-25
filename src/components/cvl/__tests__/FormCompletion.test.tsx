@@ -47,14 +47,22 @@ describe('CVL form completion', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /Unlock forms/ }))
     await waitFor(() => expect(refresh).toHaveBeenCalled())
-    expect(fetchMock.mock.calls[0]).toEqual(['/api/admin/cvl/case-1/forms/completion', { method: 'DELETE' }])
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/admin/cvl/case-1/forms/completion', expect.objectContaining({ method: 'DELETE' })])
   })
 
-  it('a completed form’s Fill in is off, and says when it was completed', () => {
-    render(<LockedFillButton at="2026-11-18T00:00:00Z" />)
-    const fill = screen.getByText('Fill in').closest('[aria-disabled]')!
-    expect(fill.getAttribute('aria-disabled')).toBe('true')
-    expect(fill.getAttribute('title')).toMatch(/^Completed on 18 Nov 2026\. Unlock the forms to edit it\.$/)
-    expect(fill.closest('a')).toBeNull()
+  it('a completed form opens read-only from "View", and says when it was completed (24 Nov 2026)', () => {
+    render(<LockedFillButton at="2026-11-18T00:00:00Z" href="/cvl/c1/forms/507b?subject=director%3A1" />)
+    const view = screen.getByRole('link', { name: /View/ })
+    expect(view.getAttribute('href')).toBe('/cvl/c1/forms/507b?subject=director%3A1')
+    expect(view.getAttribute('title')).toMatch(/^Completed on 18 Nov 2026\. Unlock the forms to edit it\.$/)
+  })
+
+  it('a dropped connection gives the button back with a message, never stuck on "Unlocking…"', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    render(<UnlockFormsButton caseId="case-1" count={1} />)
+    await userEvent.click(screen.getByRole('button', { name: /Unlock forms/ }))
+    expect(await screen.findByText('Could not reach the server. Please try again.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Unlock forms/ }).hasAttribute('disabled')).toBe(false)
   })
 })

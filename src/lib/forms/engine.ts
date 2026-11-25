@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib'
 import { pdfSafe } from '@/lib/pdfSafe'
 import { choiceValues } from './choice'
+import { UNSURE, isUnsure } from './unsure'
 import {
   CELL_LINE_SIZE,
   CELL_WRAP_SIZE,
@@ -188,6 +189,29 @@ function drawDate(pen: Pen, spot: DateSpot, value: FieldValue, warn?: { key: str
   drawText(pen, year, y0, spot.baseline, room, { size, min: MIN_SIZE })
 }
 
+/**
+ * "Unsure" across a date's boxes (Gabby, 24 Nov 2026): centred in the box, on a white backing just
+ * the size of the word, inside the box's own lines, so the printed "/ /" under it do not cross it.
+ * Nothing else of the page is covered.
+ */
+function drawUnsure(pen: Pen, f: Box & { slashes: [number, number]; slashWidth?: number }) {
+  const size = DEFAULT_SIZE
+  const sw = f.slashWidth ?? SLASH_WIDTH
+  // This date's own span (two dates can share one box, B24's start and end): its day to its year.
+  const left = Math.max(f.x0, f.slashes[0] - 22)
+  const right = Math.min(f.x1, f.slashes[1] + sw + 28)
+  const w = pen.font.widthOfTextAtSize(UNSURE, size)
+  const x = left + (right - left - w) / 2
+  const baseline = f.bot - 4.5
+  // Behind the word and both printed "/" (whichever is wider), from above the slashes' tops to just
+  // under the baseline; never past this date's own span.
+  const from = Math.max(left, Math.min(x - 2, f.slashes[0] - 1.5))
+  const to = Math.min(right, Math.max(x + w + 2, f.slashes[1] + sw + 1.5))
+  const above = size * 1.35
+  pen.page.drawRectangle({ x: from, y: y(pen, baseline + 2.5), width: to - from, height: above + 2.5, color: rgb(1, 1, 1) })
+  drawText(pen, UNSURE, x, baseline, w + 1, { size })
+}
+
 function drawField(pen: Pen, f: FormField, value: FieldValue) {
   const warn = { key: f.key, q: f.q }
   switch (f.type) {
@@ -224,6 +248,10 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       return
     }
     case 'date':
+      if (isUnsure(value)) {
+        drawUnsure(pen, f)
+        return
+      }
       drawDate(pen, { s1: f.slashes[0], s2: f.slashes[1], baseline: f.bot - 4.5, slashWidth: f.slashWidth, x1: f.x1 }, value, warn)
       return
     case 'datecells': {

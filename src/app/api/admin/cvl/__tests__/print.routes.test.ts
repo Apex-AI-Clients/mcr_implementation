@@ -131,7 +131,8 @@ describe('preview', () => {
     const t = await text(res)
     expect(t).toContain('Typed On Screen')
     expect(t).not.toContain('hunter2')
-    expect(t).not.toContain('Home Street')
+    // B1's address prints since 24 Nov 2026; B6's password never does.
+    expect(t).toContain('Home Street')
   })
 })
 

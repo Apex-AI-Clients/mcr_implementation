@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { formatDate } from '@/lib/utils'
+import { fetchWithTimeout } from '@/lib/fetchWithTimeout'
 import { CheckCircle2, Lock, Unlock } from 'lucide-react'
 
 /**
@@ -9,10 +12,15 @@ import { CheckCircle2, Lock, Unlock } from 'lucide-react'
  * migration 0063). A completed form cannot be edited until the forms are unlocked.
  */
 
+/** Never throws: a failure, a dropped connection or a timeout is the message to show (24 Nov 2026). */
 async function send(url: string, init: RequestInit): Promise<string | null> {
-  const res = await fetch(url, init)
-  if (res.ok) return null
-  return (await res.json().catch(() => ({})))?.error ?? 'Something went wrong'
+  try {
+    const res = await fetchWithTimeout(url, init, 30_000)
+    if (res.ok) return null
+    return (await res.json().catch(() => ({})))?.error ?? 'Something went wrong. Please try again.'
+  } catch (err) {
+    return err instanceof Error && err.name === 'TimeoutError' ? err.message : 'Could not reach the server. Please try again.'
+  }
 }
 
 export function CompleteFormButton({ caseId, form, subject, label }: { caseId: string; form: string; subject: string; label: string }) {
@@ -73,15 +81,15 @@ export function UnlockFormsButton({ caseId, count }: { caseId: string; count: nu
   )
 }
 
-/** The disabled "Fill in" of a completed form. */
-export function LockedFillButton({ at }: { at: string }) {
+/** A completed form's button: opens it read-only, under its "completed and locked" banner (24 Nov 2026). */
+export function LockedFillButton({ at, href }: { at: string; href: string }) {
   return (
-    <span
-      aria-disabled="true"
-      title={`Completed on ${new Date(at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}. Unlock the forms to edit it.`}
-      className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 text-xs font-medium text-foreground/40"
+    <Link
+      href={href}
+      title={`Completed on ${formatDate(at)}. Unlock the forms to edit it.`}
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface/60 px-3 text-xs font-medium text-foreground/60 hover:text-foreground"
     >
-      <Lock className="h-3.5 w-3.5" /> Fill in
-    </span>
+      <Lock className="h-3.5 w-3.5" /> View
+    </Link>
   )
 }

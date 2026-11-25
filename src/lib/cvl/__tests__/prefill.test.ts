@@ -238,16 +238,37 @@ describe('Part B', () => {
     expect(two.notes.b1_role).toBe('The kept ASIC extract has no appointment date for this director.')
   })
 
-  it('fills B10 from Form 509\u2019s saved summary date, not the registration date, and leaves B24 (the accountant) to be typed', () => {
+  it('fills B10 from the ASIC registration date (24 Nov 2026), and leaves B24 (the accountant) to be typed', () => {
+    // Since 24 Nov 2026: the ASIC registration date, with its ⓘ, whatever Form 509's summary date.
     const p = prefillForm('507b', 'director:1', { ...context(), summaryDate: '2026-11-14' })
-    expect(value(p, 'b10_date')).toBe('2026-11-14')
-    // Blank, with a note, until Form 509 is saved with that date.
-    const none = prefillForm('507b', 'director:1', context())
-    expect(none.fields.b10_date).toBeUndefined()
-    expect(none.notes.b10_date).toContain('once Form 509 is saved')
+    expect(value(p, 'b10_date')).toBe('2014-06-12')
+    expect(p.fields.b10_date.source.from[0]).toBe('From the ASIC extract: registration date')
+    const noDate = prefillForm('507b', 'director:1', { ...context(), company: { ...context().company!, registrationDate: null } })
+    expect(noDate.fields.b10_date).toBeUndefined()
+    expect(noDate.notes.b10_date).toBe('The kept ASIC extract has no registration date.')
     expect(p.fields.b24_name).toBeUndefined()
     expect(p.fields.b24_phone).toBeUndefined()
     expect(p.notes.b24_name).toBeUndefined()
+  })
+
+  it("fills B1's address from the director's address on the ASIC extract, split into its boxes (24 Nov 2026)", () => {
+    const ctx = { ...context(), directorAddresses: [{ name: 'Jordan Sample', dateOfBirth: '1970-03-14', address: '5 Example Lane, Sampleton NSW 2000' }] }
+    const p = prefillForm('507b', 'director:1', ctx)
+    expect([value(p, 'b1_street'), value(p, 'b1_suburb'), value(p, 'b1_state'), value(p, 'b1_postcode')]).toEqual(['5 Example Lane', 'Sampleton', 'NSW', '2000'])
+    expect(p.fields.b1_street.source.from.join(' ')).toContain('The director’s address on the ASIC extract: 5 Example Lane, Sampleton NSW 2000.')
+    // The other director's form is not given this one's address.
+    expect(prefillForm('507b', 'director:2', ctx).fields.b1_street).toBeUndefined()
+    // Nothing read: blank, with a note.
+    const none = prefillForm('507b', 'director:1', context())
+    expect(none.fields.b1_street).toBeUndefined()
+    expect(none.notes.b1_street).toBe('The kept ASIC extract has no address for this director: type it in.')
+  })
+
+  it('starts every B24 date at "Unsure" (24 Nov 2026)', () => {
+    const p = prefillForm('507b', 'director:1', context())
+    for (const key of ['b24_itr_start', 'b24_itr_end', 'b24_bas_start', 'b24_bas_end', 'b24_stp_start', 'b24_stp_end', 'b24_sgc_start', 'b24_sgc_end']) {
+      expect(value(p, key), key).toBe('Unsure')
+    }
   })
 
   it('never pre-fills anything written by hand', () => {

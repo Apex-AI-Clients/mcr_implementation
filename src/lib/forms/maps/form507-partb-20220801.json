@@ -280,8 +280,7 @@
    "x0": 53.54,
    "top": 478.56,
    "x1": 282.24,
-   "bot": 494.88,
-   "handwritten": true
+   "bot": 494.88
   },
   {
    "key": "b1_street",
@@ -292,8 +291,7 @@
    "x0": 53.15,
    "top": 512.24,
    "x1": 282.21,
-   "bot": 528.79,
-   "handwritten": true
+   "bot": 528.79
   },
   {
    "key": "b1_suburb",
@@ -304,8 +302,7 @@
    "x0": 53.49,
    "top": 545.76,
    "x1": 167.1,
-   "bot": 562.08,
-   "handwritten": true
+   "bot": 562.08
   },
   {
    "key": "b1_state",
@@ -317,8 +314,7 @@
    "top": 545.76,
    "x1": 241.3,
    "bot": 562.08,
-   "pad": 3,
-   "handwritten": true
+   "pad": 3
   },
   {
    "key": "b1_postcode",
@@ -330,8 +326,7 @@
    "top": 545.76,
    "x1": 282.19,
    "bot": 562.08,
-   "pad": 3,
-   "handwritten": true
+   "pad": 3
   },
   {
    "key": "b2",

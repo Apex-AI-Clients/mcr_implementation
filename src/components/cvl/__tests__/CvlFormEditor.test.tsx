@@ -787,7 +787,7 @@ describe('CvlFormEditor — B10 shows the date it prints', () => {
         saved={null}
       />,
     )
-    expect((document.getElementById('f-b10_date') as HTMLInputElement).value).toBe('2026-11-14')
+    expect((document.getElementById('f-b10_date') as HTMLInputElement).value).toBe('2014-06-12')
   })
 
   it('shows a DD/MM/YYYY date a draft holds, instead of an empty box', () => {

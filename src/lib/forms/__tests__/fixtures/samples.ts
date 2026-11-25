@@ -139,9 +139,11 @@ export const SAMPLE_PARTB: FormData = {
     b1_role: 'Director',
     b1_phone: '0400 000 001',
     b1_email: 'jordan@example.com',
-    // Handwritten on the printout: the engine must ignore these.
-    b1_address: 'Residential',
-    b1_street: '1 Should Not Print Street',
+    // B1's address: typed and printed since 24 Nov 2026.
+    b1_street: '5 Example Lane',
+    b1_suburb: 'Sampleton',
+    b1_state: 'NSW',
+    b1_postcode: '2000',
     b2: yes,
     b3: no,
     b4: no,

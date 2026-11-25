@@ -64,7 +64,7 @@ export function datedTables(map: Pick<FormMap, 'tables'>): string[] {
 
 /**
  * Keys that are written by hand on the printout and never stored: Part B
- * B6 user name/password and the B1 address. The drafts API drops them before
+ * B6 user name/password (the B1 address is typed since 24 Nov 2026). The drafts API drops them before
  * saving; the engine never draws them.
  *
  * The dates beside a signature were on this list until Nov 2026. They are
