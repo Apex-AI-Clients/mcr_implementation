@@ -78,22 +78,30 @@ describe('creditorDebt', () => {
 })
 
 describe('daysSinceLastPayment', () => {
-  it('measures to the statement date, not today', () => {
-    // Last payment 9 Apr 2026, statement 20 Apr 2026: 11 days.
-    expect(daysSinceLastPayment(ICA)).toBe(11)
+  it('measures from the last payment to the day given (the prediction gives today), as before 6 Oct 2026', () => {
+    // Last payment 9 Apr 2026; asked on 25 Nov 2026: 230 days. The account's newest row (20 Apr) does not matter.
+    expect(daysSinceLastPayment(ICA, '2026-11-25')).toBe(230)
+    expect(daysSinceLastPayment(ICA, '2026-04-20')).toBe(11)
   })
 
-  it('gives the same answer whatever day it is run', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-05-01T00:00:00Z'))
-    const first = daysSinceLastPayment(ICA)
-    vi.setSystemTime(new Date('2027-01-01T00:00:00Z'))
-    expect(daysSinceLastPayment(ICA)).toBe(first)
+  it('a payment on the newest row of the account is not 0 when asked later (the 25 Nov 2026 report: last payment 19 Nov)', () => {
+    const rows: IcaRow[] = [{ rowIndex: 0, processedDate: '2026-11-19T00:00:00.000Z', rawProcessed: '19 Nov 2026', balance: 1000, lodgementType: 'Payment' }]
+    expect(daysSinceLastPayment(rows, '2026-11-25')).toBe(6)
   })
 
-  it('returns the no-payment sentinel when there are none', () => {
-    expect(daysSinceLastPayment(ICA.filter((r) => r.lodgementType !== 'Payment'))).toBe(9999)
-    expect(daysSinceLastPayment(null)).toBe(9999)
+  it('counts only payment rows: never an allocation line nor a credit that is not a payment', () => {
+    const rows: IcaRow[] = [
+      { rowIndex: 0, processedDate: '2026-10-01T00:00:00.000Z', balance: null, lodgementType: 'PaymentAllocation' },
+      { rowIndex: 1, processedDate: '2026-10-02T00:00:00.000Z', balance: 500, lodgementType: 'CreditTransfer' },
+      { rowIndex: 2, processedDate: '2026-09-01T00:00:00.000Z', balance: 900, lodgementType: 'Payment' },
+    ]
+    expect(daysSinceLastPayment(rows, '2026-09-11')).toBe(10)
+  })
+
+  it('returns the no-payment sentinel when there are none, and never less than 0', () => {
+    expect(daysSinceLastPayment(ICA.filter((r) => r.lodgementType !== 'Payment'), '2026-11-25')).toBe(9999)
+    expect(daysSinceLastPayment(null, '2026-11-25')).toBe(9999)
+    expect(daysSinceLastPayment(ICA, '2026-01-01')).toBe(0)
   })
 })
 
@@ -105,6 +113,6 @@ describe('dates from rows stored in another time zone', () => {
       { rowIndex: 1, processedDate: '2026-02-03T18:30:00.000Z', rawProcessed: '04 Feb 2026', balance: 90_000, lodgementType: 'Payment' },
     ]
     expect(icaPosition(rows)).toMatchObject({ balance: 107_765.19, balanceDate: '2026-09-01', statementDate: '2026-09-01' })
-    expect(daysSinceLastPayment(rows)).toBe(209)
+    expect(daysSinceLastPayment(rows, '2026-09-01')).toBe(209)
   })
 })

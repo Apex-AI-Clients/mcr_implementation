@@ -101,21 +101,30 @@ export function icaDateRange(rows: readonly IcaRow[] | null | undefined): { firs
 }
 
 /**
- * Days from the last payment to the account's statement date — not to today,
- * so the figure does not change from one day to the next while the statement
- * stays the same. 9999 when no payment is on the account.
+ * Days from the last payment to `asOf` (ISO date): the definition Gabby's historical cases were
+ * recorded with (May–6 Oct 2026, restored 25 Nov 2026). The prediction passes today (Sydney);
+ * figures:check passes the day its snapshot was taken, so it stays the same from day to day.
+ *
+ *   payments   rows the analysis types as "Payment": a "Payment" / "Payment received" line (the
+ *              ICA engine's own wording for a payment, ica/wording.ts isPaymentTotal); never the
+ *              allocation lines that break one down, nor credits that are not payments
+ *              (credit transfers, Cash Flow Boost)
+ *   last       the newest such row's processed date, as printed
+ *   0 at least; 9999 when no payment is on the account
+ *
+ * From 6 Oct to 25 Nov 2026 it was measured to the account's newest date instead, which gave 0 to
+ * an account whose newest row is its last payment.
  */
-export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined): number {
+export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined, asOf: string): number {
   if (!rows || rows.length === 0) return 9999
-  const { statementDate } = icaPosition(rows)
   let last: Date | null = null
   for (const row of rows) {
     if (row.lodgementType !== 'Payment') continue
     const d = rowDate(row)
     if (d && (!last || d > last)) last = d
   }
-  if (!last || !statementDate) return 9999
-  return Math.max(0, differenceInCalendarDays(new Date(`${statementDate}T00:00:00Z`), last))
+  if (!last) return 9999
+  return Math.max(0, differenceInCalendarDays(new Date(`${asOf.slice(0, 10)}T00:00:00Z`), last))
 }
 
 export type CreditorDebtSource = 'ica' | 'balance_sheet' | 'staff'

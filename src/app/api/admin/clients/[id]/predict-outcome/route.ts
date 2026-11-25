@@ -82,6 +82,7 @@ import {
   type DirectorLoanOverride,
 } from '@/lib/sbr/inputPrecedence'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
+import { sydneyToday } from '@/lib/dpn/view'
 
 interface Params {
   params: Promise<{ id: string }>
@@ -304,11 +305,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       numberOfLateLodgements: lodgement!.number_of_late_lodgements,
       cumulativeDaysLate: lodgement!.cumulative_days_late,
     })
-    // Measured to the account's statement date, not today (creditorDebt.ts).
     // Rows saved before the CSV fix carry no balance: re-read from the CSV (icaRows.ts).
     const ica = await loadIcaRows(supabase, lodgement)
     const icaRows: IcaRow[] = ica.rows ?? (lodgement!.rows as unknown as IcaRow[])
-    const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows)
+    // Measured to today (Sydney), as Gabby's historical cases were recorded (restored 25 Nov 2026).
+    const daysSinceLastPayment = daysSinceLastPaymentOnAccount(icaRows, sydneyToday())
 
     // The loan account owed to the company (gross by default; directorLoan.ts).
     const directorLoanReceivableAmount = loan.amount
