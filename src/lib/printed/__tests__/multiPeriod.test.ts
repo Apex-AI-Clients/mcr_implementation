@@ -171,3 +171,26 @@ describe('entityOf', () => {
     expect(entityOf(['Profit and Loss', 'Jane Example', 'For the year ended 30 June 2026'], 'Profit and Loss')).toBeNull()
   })
 })
+
+describe('a profit and loss and balance sheet exported into one PDF', () => {
+  it('reads both statements, as an export, and takes both from that one file', async () => {
+    const { buildPrintedComparison } = await import('../compare')
+    const r = (x: number, label: string, ...f: string[]) => row(x, label, FIVE, ...f)
+    const plPage: PdfLine[] = [
+      title('Profit and Loss'),
+      title('Example Roasters Pty Ltd'),
+      title('For the year ended 30 June 2026'),
+      line(...FIVE.map((right, i): Cell => [right - 20, right, String(2026 - i)])),
+      title('Trading Income'),
+      r(64, 'Sales', '10.00', '20.00', '30.00', '40.00', '50.00'),
+      r(64, 'Total Trading Income', '10.00', '20.00', '30.00', '40.00', '50.00'),
+      r(57, 'Net Profit', '10.00', '20.00', '30.00', '40.00', '50.00'),
+    ]
+    const read = readStatements([plPage, fiveYearBalanceSheet()])
+    expect(read.statements.map((s) => s.kind)).toEqual(['profit_and_loss', 'balance_sheet'])
+    expect(read.report?.kind).toBe('export')
+    const c = buildPrintedComparison([{ documentId: 'one', filename: 'one.pdf', uploadedAt: '2026-11-20', read }])
+    expect(c.columns.map((x) => x.key)).toEqual(['FY2022', 'FY2023', 'FY2024', 'FY2025', 'FY2026'])
+    for (const p of c.periodSources) expect(p.statements.map((s) => s.source?.documentId)).toEqual(['one', 'one'])
+  })
+})
