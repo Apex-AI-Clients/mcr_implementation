@@ -40,6 +40,7 @@ const comparison = (c: ComparisonCell): PrintedComparison => ({
   documents: [{ documentId: 'd1', filename: 'fy25.pdf', status: 'read', found: null, used: true, message: null, issues: [] }],
   annualYears: 1,
   hiddenComparativeYears: [],
+  periodSources: [],
 })
 
 describe('scanned figures to check', () => {

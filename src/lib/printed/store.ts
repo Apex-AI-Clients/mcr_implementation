@@ -6,6 +6,7 @@ import { readStatements } from './readStatements'
 import type { PrintedRead, ReportKind, ScanSummary } from './types'
 import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
+import { loadSourceChoices } from './sourceChoices'
 
 /**
  * Server-only. A client's financial statement PDFs, read as printed and kept
@@ -220,12 +221,12 @@ export async function loadPrintedComparison(
       if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
     }
   }
-  // Staff corrections of figures read from a scan (scan_figure_choices).
-  const choices = await loadScanChoices(supabase, clientId)
+  // Staff corrections of figures read from a scan (scan_figure_choices); staff choices of source (0063).
+  const [choices, sourceChoices] = await Promise.all([loadScanChoices(supabase, clientId), loadSourceChoices(supabase, clientId)])
   const input: ComparisonDocument[] = docs.map((d) => {
     const read = reads.get(d.id)?.read ?? null
     return { documentId: d.id, filename: d.original_filename, uploadedAt: d.uploaded_at, read: read ? applyScanChoices(read, choices.get(d.id) ?? []) : null }
   })
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
-  return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
+  return { comparison: buildPrintedComparison(input, { comparativeYears, sourceChoices }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
 }

@@ -357,6 +357,51 @@ export type Database = {
           },
         ]
       }
+      comparison_source_choices: {
+        Row: {
+          chosen_at: string
+          chosen_by: string
+          client_id: string
+          document_id: string | null
+          id: string
+          period_key: string
+          statement_kind: string
+        }
+        Insert: {
+          chosen_at?: string
+          chosen_by: string
+          client_id: string
+          document_id?: string | null
+          id?: string
+          period_key: string
+          statement_kind: string
+        }
+        Update: {
+          chosen_at?: string
+          chosen_by?: string
+          client_id?: string
+          document_id?: string | null
+          id?: string
+          period_key?: string
+          statement_kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comparison_source_choices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comparison_source_choices_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_line_mappings: {
         Row: {
           auto_rule: string | null

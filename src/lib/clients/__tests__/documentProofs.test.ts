@@ -44,6 +44,7 @@ function comparison(cells: [ComparisonCell, ComparisonCell], over: Partial<Print
     ],
     annualYears: 2,
     hiddenComparativeYears: [],
+    periodSources: [],
     ...over,
   }
 }
