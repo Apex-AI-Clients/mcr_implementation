@@ -117,9 +117,9 @@ describe('financial statements', () => {
     expect(statusOf(none, 'financials').status).toBe('failed')
   })
 
-  it('one financial year on file is ready, with a note saying which and to upload an earlier one (25 Nov 2026)', () => {
+  it('one financial year on file "Needs more files" (amber, not a fault), saying which, without holding the prediction up (25 Nov 2026)', () => {
     const r = computeReadiness(input({ financials: { comparison: null, read: { annualYears: ['FY2026'], currentPeriod: false, balanceSheet: true } } }))
-    expect(statusOf(r, 'financials')).toMatchObject({ status: 'ready', detail: 'Only one financial year is on file (FY2026): upload an earlier year to compare.' })
+    expect(statusOf(r, 'financials')).toMatchObject({ status: 'needs_files', canRunNow: false, detail: 'Only one financial year is on file (FY2026): upload an earlier year to compare.' })
     expect(r.canPredict).toBe(true)
   })
 
@@ -130,14 +130,19 @@ describe('financial statements', () => {
     )
   })
 
-  it('only a current period on file is ready with its note; one year still needs its key figures confirmed', () => {
+  it('only a current period on file also needs more files; unconfirmed key figures are added to the same line, an uncertain scan still waits', () => {
     const current = computeReadiness(input({ financials: { comparison: null, read: { annualYears: [], currentPeriod: true, balanceSheet: true } } }))
     expect(statusOf(current, 'financials')).toMatchObject({
-      status: 'ready',
+      status: 'needs_files',
       detail: 'No full financial year is on file yet, only the current period: upload the latest annual statements to compare.',
     })
     const unconfirmed = computeReadiness(input({ financials: { comparison: null, mappingConfirmed: false, read: { annualYears: ['FY2026'], currentPeriod: false, balanceSheet: true } } }))
-    expect(statusOf(unconfirmed, 'financials').status).toBe('needs_review')
+    expect(statusOf(unconfirmed, 'financials')).toMatchObject({
+      status: 'needs_files',
+      detail: 'Only one financial year is on file (FY2026): upload an earlier year to compare. Then confirm the key figures on the comparison page.',
+    })
+    const held = computeReadiness(input({ financials: { comparison: null, heldReasons: ['Scanned pages not read yet'], read: { annualYears: ['FY2026'], currentPeriod: false, balanceSheet: true } } }))
+    expect(statusOf(held, 'financials')).toMatchObject({ status: 'needs_review', detail: 'Being prepared: Scanned pages not read yet.' })
   })
 
   it('never holds the prediction up for printed totals that do not add up: a note pointing to the comparison page', () => {

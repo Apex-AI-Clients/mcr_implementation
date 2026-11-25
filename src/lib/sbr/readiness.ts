@@ -20,9 +20,11 @@ export type ReadinessKey = 'financials' | 'lodgement' | 'dpn'
 /**
  * 'processing' only while a run is actually going. 'not_started': there is
  * work to do (files never read, a comparison out of date) and nothing is
- * running — offered as "Run now".
+ * running — offered as "Run now". 'needs_files': what was uploaded is fine, but
+ * more is needed (financial statements: only one year on file); shown in
+ * amber, never as a fault, and it does not hold the prediction up.
  */
-export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed' | 'needs_review'
+export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed' | 'needs_review' | 'needs_files'
 
 export const READINESS_LABEL: Record<ReadinessKey, string> = {
   financials: 'Financial statements',
@@ -37,6 +39,7 @@ export const STATUS_LABEL: Record<ReadinessStatus, string> = {
   ready: 'Ready',
   failed: 'Failed',
   needs_review: 'Needs review',
+  needs_files: 'Needs more files',
 }
 
 export interface ReadinessItem {
@@ -156,7 +159,15 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   if (!f.comparison && !somethingRead) {
     return item(input, 'financials', 'failed', 'No profit and loss or balance sheet could be read from the uploaded files.', href)
   }
-  const fewYears = !f.comparison && read ? fewYearsNote(read) : null
+  // Fewer than two years on file (25 Nov 2026): "Needs more files", in amber, saying which year is
+  // there; nothing is wrong with the PDF. An uncertain scan of it still says "Being prepared".
+  if (!f.comparison && read) {
+    if ((f.heldReasons ?? []).length > 0) {
+      return { ...item(input, 'financials', 'needs_review', `Being prepared: ${f.heldReasons!.join('; ')}.`, href), canRunNow: false }
+    }
+    const then = f.mappingConfirmed ? '' : ' Then confirm the key figures on the comparison page.'
+    return { ...item(input, 'financials', 'needs_files', `${fewYearsNote(read)}${then}`, href), canRunNow: false }
+  }
   if (!f.mappingConfirmed) {
     return item(
       input,
@@ -175,8 +186,7 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
     f.unreviewedFailures > 0
       ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are named under the year badges on the comparison page.`
       : null
-  const note = [fewYears, totals].filter(Boolean).join(' ') || null
-  return item(input, 'financials', 'ready', note, href)
+  return item(input, 'financials', 'ready', totals, href)
 }
 
 /** "Only one financial year is on file (FY2026): upload an earlier year to compare." */
@@ -264,7 +274,7 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
 
 /** Finished, one way or the other: waiting longer would not change it. */
 function settled(i: ReadinessItem): boolean {
-  return i.status === 'ready' || i.status === 'failed'
+  return i.status === 'ready' || i.status === 'failed' || i.status === 'needs_files'
 }
 
 /**
