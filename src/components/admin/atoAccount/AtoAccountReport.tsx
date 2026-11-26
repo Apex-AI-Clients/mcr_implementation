@@ -47,16 +47,6 @@ const TITLE: Record<AtoAccountPayload['kind'], string> = {
   super_guarantee: 'Superannuation guarantee account',
 }
 
-function downloadCsv(content: string, filename: string) {
-  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-surface/50 px-3 py-2">
@@ -382,18 +372,14 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
           </p>
         </div>
         <div className="no-print flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={lock !== null}
-            title={lock ?? undefined}
-            onClick={() => downloadCsv(atoAccountCsv(payload, clientName), `${fileName}.csv`)}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </Button>
           {verified && verification && (
-            <Button variant="ghost" size="sm" onClick={() => void downloadAnalysisXlsx(atoAccountCsv(payload, clientName), verification.asPrinted, fileName)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={lock !== null}
+              title={lock ?? undefined}
+              onClick={() => void downloadAnalysisXlsx(atoAccountCsv(payload, clientName), verification.asPrinted, fileName)}
+            >
               <Download className="h-3.5 w-3.5" />
               Excel
             </Button>

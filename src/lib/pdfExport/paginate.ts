@@ -40,7 +40,10 @@ export function paginate(blocks: Span[], pageHeight: number): Span[] {
     const top = Math.max(cursor, b[i].top)
     let j = i
     while (j < b.length && b[j].bottom - top <= pageHeight) j++
-    if (j < b.length && b[j].bottom - b[j].top > pageHeight) {
+    // The next block is sliced anyway (taller than a page), or ending the page before it would leave
+    // the page less than a third full (Gabby, 24 Nov 2026: page 1 held only the two top cards).
+    const short = j < b.length && j > i && b[j - 1].bottom - top < pageHeight / 3
+    if (j < b.length && (j === i || short || b[j].bottom - b[j].top > pageHeight)) {
       // The next block is sliced anyway: fill this page with its first part.
       pages.push({ top, bottom: top + pageHeight })
       cursor = top + pageHeight
@@ -56,9 +59,9 @@ export function paginate(blocks: Span[], pageHeight: number): Span[] {
 
 /**
  * The blocks of an element, relative to `originTop`: each visible child, and inside a child
- * taller than `pageHeight`, its own children (to `maxDepth` levels). DOM only.
+ * taller than `splitAbove` (a quarter of a page), its own children (to `maxDepth` levels). DOM only.
  */
-export function measureBlocks(el: Element, originTop: number, pageHeight: number, maxDepth = 6): Span[] {
+export function measureBlocks(el: Element, originTop: number, pageHeight: number, maxDepth = 6, splitAbove = pageHeight / 4): Span[] {
   const out: Span[] = []
   for (const child of Array.from(el.children)) {
     const html = child as HTMLElement
@@ -66,8 +69,10 @@ export function measureBlocks(el: Element, originTop: number, pageHeight: number
     const r = html.getBoundingClientRect()
     if (r.height === 0) continue
     const span = { top: r.top - originTop, bottom: r.bottom - originTop }
-    if (span.bottom - span.top > pageHeight && maxDepth > 0 && html.children.length > 0) {
-      const inner = measureBlocks(html, originTop, pageHeight, maxDepth - 1)
+    // A section taller than a quarter of a page is measured by its own blocks, so a page can end
+    // between its rows instead of the whole section moving to the next page.
+    if (span.bottom - span.top > splitAbove && maxDepth > 0 && html.children.length > 0) {
+      const inner = measureBlocks(html, originTop, pageHeight, maxDepth - 1, splitAbove)
       if (inner.length > 0) {
         // The section's own padding goes with its first and last blocks.
         inner[0].top = Math.min(inner[0].top, span.top)

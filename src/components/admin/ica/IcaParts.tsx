@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { BadgeCheck, Check, ChevronDown, ChevronUp, Copy, Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { dateField } from '@/lib/dates'
 import type { AsPrintedRow, IcaView } from '@/lib/ica/view'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
 
@@ -214,12 +215,16 @@ export function VerifiedComposition({ view, fileName }: { view: IcaView; fileNam
       </div>
       {otherLines.map(renderLine)}
       <div className="flex items-center justify-between py-2 text-sm font-semibold">
-        <span>= The ATO&apos;s balance{view.balanceDate ? ` at ${view.balanceDate}` : ''}</span>
+        <span>= The ATO&apos;s balance{view.balanceDate ? ` at ${dateField(view.balanceDate)}` : ''}</span>
         <span className="tabular-nums">{aud(c.total)}</span>
       </div>
       {c.notCounted > 0 && (
         <p className="text-xs text-foreground/40">
-          {c.notCounted} rows are not counted on their own: each is the total or the breakdown of a counted row.
+          {c.notCounted} rows are not counted on their own: each is the total or the breakdown of a counted row
+          {c.noAmountRows > 0
+            ? `; ${c.noAmountRows} of them are statement rows that print no amount of their own, their amounts being on the statement's own lines (GST, PAYG withholding, the super guarantee charge)`
+            : ''}
+          .
         </p>
       )}
     </div>

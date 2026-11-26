@@ -65,7 +65,9 @@ describe('AtoAccountReport', () => {
     render(<AtoAccountReport payload={payload()} clientName="Example Trading" />)
 
     expect(screen.getByText('Needs review')).toBeTruthy()
-    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true)
+    // No CSV export (item 11): the Excel download (when shown) and the PDF are the exports.
+    expect(screen.queryByRole('button', { name: /Export CSV/ })).toBeNull()
+    for (const b of screen.queryAllByRole('button', { name: /Excel/ })) expect((b as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(true)
 
     await userEvent.click(screen.getByRole('button', { name: 'Mark as reviewed' }))
@@ -76,7 +78,8 @@ describe('AtoAccountReport', () => {
   it('unlocks once reviewed, and says who reviewed it', () => {
     render(<AtoAccountReport payload={payload({ reviewedAt: '2026-10-26T01:00:00Z', reviewedBy: 'Staff Member' })} clientName="Example Trading" />)
     expect(screen.queryByText('Needs review')).toBeNull()
-    expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: /Export PDF/ }) as HTMLButtonElement).disabled).toBe(false)
+    for (const b of screen.queryAllByRole('button', { name: /Excel/ })) expect((b as HTMLButtonElement).disabled).toBe(false)
     expect(screen.getByText(/reviewed by Staff Member on 26 Oct 2026/)).toBeTruthy()
   })
 

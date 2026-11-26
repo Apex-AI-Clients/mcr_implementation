@@ -1,6 +1,6 @@
 import { aud, printedLineText, type AmountSource } from '@/lib/sources'
 import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
-import { formatExtractDate } from '@/lib/asic/dates'
+import { formatDob, formatExtractDate } from '@/lib/asic/dates'
 import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
 import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
@@ -422,8 +422,8 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
   if (!d) {
     out.warnings.push('This director is not on the client file: add the directors on the client page.')
   } else {
-    const born = d.dateOfBirth ? `, born ${d.dateOfBirth}` : ''
-    const appointed = d.appointedOn ? `, appointed ${d.appointedOn}` : ''
+    const born = d.dateOfBirth ? `, born ${formatDob(d.dateOfBirth)}` : ''
+    const appointed = d.appointedOn ? `, appointed ${formatDob(d.appointedOn)}` : ''
     const source = companySource(ctx, `Director: ${d.name}${born}${appointed}.`, 'directors')
     put(out, 'b1_name', d.name, source)
     put(out, 'b1_role', 'Director', source)

@@ -231,7 +231,7 @@ describe('Part B', () => {
     expect(value(one, 'b1_name')).toBe('Jordan Sample')
     expect(one.fields.b1_phone).toBeUndefined()
     expect(one.fields.b1_email).toBeUndefined()
-    expect(one.fields.b1_name.source.from[0]).toBe('Director: Jordan Sample, born 1970-03-14, appointed 2016-08-05.')
+    expect(one.fields.b1_name.source.from[0]).toBe('Director: Jordan Sample, born 14/03/1970, appointed 05/08/2016.')
 
     const two = prefillForm('507b', 'director:2', context())
     expect(value(two, 'b1_name')).toBe('Casey Example')

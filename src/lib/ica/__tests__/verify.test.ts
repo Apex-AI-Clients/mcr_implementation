@@ -160,6 +160,18 @@ describe('what the pages show', () => {
     expect(v.asPrinted[1]).toMatchObject({ description: '- PAYG Withholding', debit: '$400.00' })
   })
 
+  it('a statement row printing no amount of its own is never a $0.00 line: it is in the "not counted" note (item 12)', () => {
+    const rows: Cells[] = [
+      ['20 Sep 2026', '28 Jul 2026', "'Original Activity Statement for the period ending 30 Jun 26", '', '', '$1,000.00 DR'],
+      ...VERIFIES,
+    ]
+    const v = icaViewOf({ rows: storedRows(rows), label: 'Activity statement 002', ica_status: 'verified' })
+    expect(v.verified).toBe(true)
+    expect(v.composition?.lines.some((l) => /statement/i.test(l.label) && l.net === 0 && l.debit === 0)).toBe(false)
+    expect(v.composition?.lines.map((l) => l.label)).toContain('Payments')
+    expect(v.composition!.notCounted).toBeGreaterThanOrEqual(v.composition!.noAmountRows)
+  })
+
   it('any other file: no calculated figure at all — late lodgements (dates only) and the rows as printed', () => {
     for (const status of ['unverified', null, 'empty']) {
       const v = icaViewOf({ rows: storedRows(VERIFIES), label: 'Activity statement 002', ica_status: status })

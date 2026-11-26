@@ -1,3 +1,4 @@
+import { dateField } from '@/lib/dates'
 import type { DebtBreakdown, EnrichedRow, LodgementType } from './types'
 
 /**
@@ -246,7 +247,7 @@ export function debtComposition(rows: readonly EnrichedRow[], b: DebtBreakdown):
       key: 'atoBalance',
       label: 'ATO balance',
       amount: b.atoBalance,
-      explanation: `The ATO's own running balance on its newest row${b.atoBalanceDate ? ` (${b.atoBalanceDate})` : ''}.`,
+      explanation: `The ATO's own running balance on its newest row${b.atoBalanceDate ? ` (${dateField(b.atoBalanceDate)})` : ''}.`,
       rows: [],
     })
   }

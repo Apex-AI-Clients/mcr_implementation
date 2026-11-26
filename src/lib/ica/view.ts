@@ -56,7 +56,14 @@ export interface IcaView {
     lines: CompositionLineView[]
     atoDebt: number
     total: number
+    /** Rows not counted on their own, the statement rows that print no amount (below) included. */
     notCounted: number
+    /**
+     * Statement rows that print no amount of their own: their amounts are on the statement's own
+     * lines (GST, PAYG, the super guarantee charge; Gabby, 24 Nov 2026, item 12). Never a $0.00
+     * line: counted in `notCounted`.
+     */
+    noAmountRows: number
   } | null
   lodgedOver90: { statements: number; debit: number; byLine: { label: string; debit: number }[] } | null
   lateLodgements: { count: number; cumulativeDays: number } | null
@@ -118,6 +125,11 @@ export function icaViewOf(stored: {
   }
 
   const c = a.composition
+  // A statement line (activity statement, SGC statement…) whose rows print no amount at all: the
+  // statement rows whose amounts sit on their own sub-lines (GST, PAYG, the charge). Any other row is
+  // never hidden, even at $0.00 (a $0.00 payment is shown).
+  const noAmount = (l: (typeof c.lines)[number]) => l.debit === 0 && l.credit === 0 && /\bstatement\b/i.test(l.label)
+  const noAmountRows = c.lines.filter(noAmount).reduce((n, l) => n + l.parts.length, 0)
   const over = a.lodgedOver90DaysLate ?? []
   const byLine = new Map<string, number>()
   for (const s of over) for (const x of s.amounts) byLine.set(x.label, (byLine.get(x.label) ?? 0) + x.debit)
@@ -130,7 +142,7 @@ export function icaViewOf(stored: {
     balanceDate: a.reconciliation.atoBalanceDate,
     composition: {
       opening: dollars(c.opening),
-      lines: c.lines.map((l) => ({
+      lines: c.lines.filter((l) => !noAmount(l)).map((l) => ({
         key: l.key,
         label: l.label,
         section: l.section,
@@ -144,7 +156,8 @@ export function icaViewOf(stored: {
       })),
       atoDebt: dollars(c.atoDebt),
       total: dollars(c.total),
-      notCounted: c.notCounted.length,
+      notCounted: c.notCounted.length + noAmountRows,
+      noAmountRows,
     },
     lodgedOver90: {
       statements: over.length,
