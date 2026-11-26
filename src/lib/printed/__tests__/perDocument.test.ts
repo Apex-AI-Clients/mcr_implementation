@@ -72,10 +72,11 @@ describe('key figures per document', () => {
     expect(suggestMappingWithRules(c).total_current_assets.find((l) => l.possibleOnly)).toBeTruthy()
   })
 
-  it('offers drawings for the director loan account (Debit), never auto-selected', () => {
+  it('offers drawings printed positive under Equity for the Credit row (owed by the company, 24 Nov 2026), never auto-selected', () => {
     const c = buildPrintedComparison([fy25, fy26()])
     const { entries, possible } = autoMapping(c, [])
-    expect(possible.loan_receivable).toEqual([expect.objectContaining({ label: 'Owner A Drawings', why: 'Money taken out by the owner (printed under Equity)' })])
+    expect(possible.loan_receivable ?? []).toEqual([])
+    expect(possible.loan_payable).toEqual([expect.objectContaining({ label: 'Owner A Drawings', why: 'Drawings printed as a positive amount under Equity: owed by the company (Credit).' })])
     expect(entries.filter((e) => e.meaning === 'loan_receivable').map((e) => e.label)).toEqual(['Loans to Directors (NCA)'])
   })
 

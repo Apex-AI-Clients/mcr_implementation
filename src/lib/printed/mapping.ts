@@ -44,19 +44,30 @@ export interface MappedLine {
 }
 
 const LOAN_MEANINGS: Meaning[] = ['loan_receivable', 'loan_payable']
-const underLiabilities = (row: ComparisonRow) => /liabilit/i.test(row.path.join(' '))
+
+/** The balance sheet's credit side: liabilities, or equity (Gabby, 24 Nov 2026), never an asset section. */
+const EQUITY_SECTION = /\bequity\b|\bcapital\b|\bowners?'?s?'? funds\b|\bshareholders?'?s?'? funds\b|\bmembers?'? funds\b|\btrust funds\b|\bproprietorship\b|\breserves\b/i
+export function onCreditSide(row: ComparisonRow): boolean {
+  const path = row.path.join(' › ')
+  if (/liabilit/i.test(path)) return true
+  return EQUITY_SECTION.test(path) && !/\basset/i.test(path)
+}
+
+/** The section a line is printed under, as printed ("Equity", "Non-current Liabilities"). */
+const sectionName = (row: ComparisonRow) => row.path.filter((p) => p.trim() !== '').at(-1)?.trim() || (onCreditSide(row) ? 'Liabilities' : 'Assets')
 
 /**
- * A loan account line's amount as the meaning counts it (ported from the old
- * reader's loan rule). The same director loan is printed on either side of a
- * balance sheet, and its sign says which way the money is owed:
+ * A loan account line's amount as the meaning counts it: ONE sign-aware section rule, the same on
+ * the page, in the exports and in the prediction (Gabby, 24 Nov 2026; the user, 26 Nov 2026):
  *
- *   owed TO the company   under assets: as printed; under liabilities: the
- *                         printed figure negated — a NEGATIVE liability is
- *                         money the director owes the company
- *   owed BY the company   under liabilities: as printed; under assets: negated
+ *   ASSETS, positive                    → Director loan account (Debit): owed TO the company
+ *   LIABILITIES or EQUITY, positive     → Loan account director (Credit): owed BY the company
+ *   LIABILITIES or EQUITY, NEGATIVE     → Debit: a debit balance, owed to the company
+ *   ASSETS, negative                    → Credit: a credit balance, owed by the company
  *
- * Every other meaning is taken as printed.
+ * The meaning a line was confirmed under says which side it is read for; a line whose sign puts it
+ * on the other side counts against this one (loanSidesAt moves it across). Every other meaning is
+ * taken as printed.
  */
 export function readLoanLine(row: ComparisonRow, meaning: Meaning, printed: number): { value: number; rule: string | null } {
   // "Less Unexpired Interest" printed positive is taken off, as its printed total does (verify.ts).
@@ -64,19 +75,20 @@ export function readLoanLine(row: ComparisonRow, meaning: Meaning, printed: numb
     return { value: -printed, rule: `"${row.label.trim()}" is printed as a positive figure that the statement subtracts, so it is taken off.` }
   }
   if (!LOAN_MEANINGS.includes(meaning)) return { value: printed, rule: null }
-  const liability = underLiabilities(row)
-  const flip = meaning === 'loan_receivable' ? liability : !liability
+  const credit = onCreditSide(row)
+  const flip = meaning === 'loan_receivable' ? credit : !credit
   if (!flip) return { value: printed, rule: null }
+  const section = sectionName(row)
   return {
     value: printed === 0 ? 0 : -printed,
     rule:
-      meaning === 'loan_receivable'
-        ? printed < 0
-          ? 'A negative figure under liabilities means the director (or related party) owes the company.'
-          : 'A positive figure under liabilities is owed BY the company, so it counts against money owed to the company.'
-        : printed < 0
-          ? 'A negative figure under assets means the company owes the director (or related party).'
-          : 'A positive figure under assets is owed TO the company, so it counts against money owed by the company.',
+      printed < 0
+        ? credit
+          ? `Printed as a negative amount under ${section}: a debit balance, owed to the company.`
+          : `Printed as a negative amount under ${section}: a credit balance, owed by the company.`
+        : credit
+          ? `Printed as a positive amount under ${section}: owed by the company (Loan account director, Credit).`
+          : `Printed as a positive amount under ${section}: owed to the company (Director loan account, Debit).`,
   }
 }
 
@@ -274,7 +286,8 @@ export function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry
   const moved = (l: MappedLine, toCompany: boolean): MappedLine => ({
     ...l,
     value: -l.value,
-    rule: `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
+    // The section-and-sign rule (readLoanLine) says which side it is on; this is only the fallback.
+    rule: l.rule ?? `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
   })
   for (const l of recv.years[index].lines) (l.value >= 0 ? to : by).push(l.value >= 0 ? l : moved(l, false))
   for (const l of pay.years[index].lines) (l.value >= 0 ? by : to).push(l.value >= 0 ? l : moved(l, true))
@@ -399,6 +412,13 @@ export function predictionFinancials(
       ? (comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? [])
           .filter((r) => r.style === 'line' && r.cells[index].printed && !mappedKeys.has(r.key) && !dismissed.has(`loan_receivable|${r.key}`))
           .filter((r) => !BANK_FINANCE.test(r.label) && (LOAN_LIKE.test(r.label) || namesDirector(r.label, names.directors ?? [])))
+          // Only a line the section-and-sign rule puts on the Debit side (readLoanLine): positive under
+          // assets, negative under liabilities or equity. A positive equity line ("Owner A Drawings
+          // 44,952.22") is a Credit, never a Debit candidate (24 Nov 2026).
+          .filter((r) => {
+            const v = r.cells[index].value
+            return typeof v !== 'number' || v === 0 || (onCreditSide(r) ? v < 0 : v > 0)
+          })
           .map((r) => ({
             rowKey: r.key,
             label: r.label.trim(),

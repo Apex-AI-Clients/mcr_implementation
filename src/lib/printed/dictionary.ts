@@ -520,14 +520,19 @@ export function suggestMappingWithRules(comparison: PrintedComparison, names: Re
     total_assets: bestPerDocument(bs, TOTAL_ASSETS, n),
   }
   // Lines offered, never auto-selected: section totals the statement's arithmetic does not prove,
-  // and drawings (money taken out by the owner) for the director loan account (Debit).
+  // and drawings naming nobody (money taken out by the owner), on the side the one sign-aware section
+  // rule puts them (mapping.ts readLoanLine, 24 Nov 2026): positive under liabilities or equity is a
+  // Credit ("Owner A Drawings 44,952.22" in Equity), negative there a Debit; the reverse under assets.
+  const creditSide = (r: ComparisonRow) => under(r, /liabilit/) || (/\bequity\b|\bcapital\b|\bfunds\b|\breserves\b/.test(pathText(r)) && !under(r, /asset/))
+  const drawingsDebit = (r: ComparisonRow) => (creditSide(r) ? latest(r) <= 0 : latest(r) >= 0)
+  const drawingsLines = bs.filter((r) => r.style === 'line' && printedAnywhere(r) && DRAWINGS.test(r.label) && !keys_taken(r.key))
   const offered: Partial<Record<Meaning, { rowKey: string; why: string }[]>> = {
     total_current_assets: sections.current.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
     total_non_current_assets: sections.nonCurrent.filter((l) => l.possible).map((l) => ({ rowKey: l.rowKey, why: l.rule })),
-    loan_receivable: [
-      ...personOffered,
-      ...bs.filter((r) => r.style === 'line' && printedAnywhere(r) && DRAWINGS.test(r.label) && !keys_taken(r.key)).map((r) => ({ rowKey: r.key, why: DRAWINGS_HINT })),
-    ],
+    loan_receivable: [...personOffered, ...drawingsLines.filter(drawingsDebit).map((r) => ({ rowKey: r.key, why: DRAWINGS_HINT }))],
+    loan_payable: drawingsLines
+      .filter((r) => !drawingsDebit(r))
+      .map((r) => ({ rowKey: r.key, why: `Drawings printed as a positive amount under ${r.path.filter((p) => p.trim()).at(-1) ?? 'the balance sheet'}: owed by the company (Credit).` })),
   }
   const sectionRule = new Map([...sections.current, ...sections.nonCurrent].map((l) => [l.rowKey, l.rule]))
   const byKey = new Map([...bs, ...pl].map((r) => [r.key, r]))
