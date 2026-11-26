@@ -8,10 +8,11 @@
  * addresses masked. Never an amount, an ABN / ACN, a file name or a document.
  * The answer's placeholders are turned back into names here, on our side.
  *
- * The answer is not used as it is: printed/keyFigureChoice.ts checks it
- * against the rules, and anything they do not agree with, anything unclear,
- * and any line naming a [person n] is only offered to staff as a possible line.
- * Off (or failing): the rules decide alone; failures go to the developer alert.
+ * The AI only fills gaps (the user, 26 Nov 2026): only figures the rules chose
+ * no line for are asked, twice, and a line both asks agree on is only ever
+ * OFFERED to staff ("Possible line — use it?"), never chosen
+ * (printed/keyFigureDecision.ts). Off (or failing): the rules decide alone;
+ * failures go to the developer alert.
  */
 import { askClaude } from './openrouterClient'
 import { KEY_FIGURE_CHOICE_PROMPT_TEMPLATE } from './prompts'
@@ -130,11 +131,6 @@ export function parseKeyFigureAnswer(text: string, figures: AiKeyFigure[], lines
   return out
 }
 
-/** The figures to ask about for the meanings still open. */
-export function figuresFor(open: Meaning[]): AiKeyFigure[] {
-  return AI_KEY_FIGURES.filter((f) => AI_FIGURE_MEANINGS[f].some((m) => open.includes(m)))
-}
-
 export interface KeyFigureChoice {
   answer: AiKeyFigureAnswer
   /** Lines naming someone not on our records ([person n]), by row key. */
@@ -143,19 +139,40 @@ export interface KeyFigureChoice {
 }
 
 /**
- * Asks Claude (purpose 'labels', the label model). Throws when the AI is off
- * or the call fails: the caller decides with the rules alone.
+ * The answers two separate asks agree on (the user, 26 Nov 2026: "ask twice; offer only if both
+ * answers agree"). A figure counts only when both say the same kind and, for lines, the same set of
+ * lines; the first ask's reason is kept. Current Claude models refuse a temperature setting, so
+ * agreement between two asks is the consistency check.
  */
-export async function chooseKeyFigures(comparison: PrintedComparison, records: MaskRecords, open: Meaning[]): Promise<KeyFigureChoice | null> {
-  const figures = figuresFor(open)
+export function agreedAnswers(a: AiKeyFigureAnswer, b: AiKeyFigureAnswer): AiKeyFigureAnswer {
+  const out: AiKeyFigureAnswer = {}
+  for (const f of AI_KEY_FIGURES) {
+    const x = a[f]
+    const y = b[f]
+    if (!x || !y || x.kind !== y.kind) continue
+    const same = x.rowKeys.length === y.rowKeys.length && x.rowKeys.every((k) => y.rowKeys.includes(k))
+    if (x.kind === 'lines' && !same) continue
+    out[f] = x
+  }
+  return out
+}
+
+/**
+ * Asks Claude (purpose 'labels', the label model) about the gap figures only, twice, and keeps only
+ * what both asks agree on. Throws when the AI is off or a call fails: the caller keeps the rules alone.
+ */
+export async function chooseKeyFigures(comparison: PrintedComparison, records: MaskRecords, figures: AiKeyFigure[]): Promise<KeyFigureChoice | null> {
   if (figures.length === 0) return null
   const masker = new LabelMasker(records)
   const lines = maskedLines(comparison, masker)
   if (lines.length === 0) return null
-  const answer = await askClaude({ purpose: 'labels', prompt: keyFigurePrompt(figures, lines), maxTokens: 900, label: 'key-figure-choice', timeoutMs: 45_000 })
+  const prompt = keyFigurePrompt(figures, lines)
+  const ask = (n: number) => askClaude({ purpose: 'labels', prompt, maxTokens: 900, label: `key-figure-gaps-${n}`, timeoutMs: 45_000 })
+  const first = await ask(1)
+  const second = await ask(2)
   return {
-    answer: parseKeyFigureAnswer(answer.text, figures, lines, masker),
+    answer: agreedAnswers(parseKeyFigureAnswer(first.text, figures, lines, masker), parseKeyFigureAnswer(second.text, figures, lines, masker)),
     unknownPersonLines: new Set(lines.filter((l) => l.unknownPerson).map((l) => l.row.key)),
-    model: answer.model,
+    model: first.model,
   }
 }

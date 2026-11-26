@@ -8,9 +8,9 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import { beneficiaryNames, personAccount, type RelatedNames } from './dictionary'
 import { AUTO_BY, autoMapping, sameChoices, type PossibleLine } from './autoMapping'
 import { SBR_MEANINGS } from './meanings'
-import { decideKeyFigures, type DecisionOutcome, type KeyFigureDecision } from './keyFigureDecision'
+import { decideKeyFigures, gapFigures, type DecisionOutcome, type KeyFigureDecision } from './keyFigureDecision'
 import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
-import { chooseKeyFigures, figuresFor, type KeyFigureChoice } from '@/lib/ai/keyFigureChoice'
+import { chooseKeyFigures, type KeyFigureChoice } from '@/lib/ai/keyFigureChoice'
 import type { MaskRecords } from '@/lib/ai/maskLabels'
 import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
 import type { Json } from '@/types/database'
@@ -486,9 +486,11 @@ async function applyDecisions(
 
   // Claude, when the AI is on; the rules alone when it is off or fails (failures to the developer alert only).
   let choice: KeyFigureChoice | null = null
-  if (aiSummariesEnabled() && figuresFor(open).length > 0) {
+  // Only the figures the rules left as a gap go to the AI (the user, 26 Nov 2026): never one the rules chose.
+  const gaps = gapFigures(open, rules)
+  if (aiSummariesEnabled() && gaps.length > 0) {
     try {
-      choice = await chooseKeyFigures(comparison, await loadMaskRecords(supabase, clientId, comparison), open)
+      choice = await chooseKeyFigures(comparison, await loadMaskRecords(supabase, clientId, comparison), gaps)
     } catch (err) {
       await raiseDeveloperAlert(supabase, {
         kind: 'key_figure_ai',

@@ -3,7 +3,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { combinePdfs } from '../engine'
 import { fillOfficialForm } from '../fill'
-import { OVERFLOW_PARTB } from './fixtures/samples'
+import { OVERFLOW_PARTB, SAMPLE_PARTB } from './fixtures/samples'
+import { UNSURE } from '../unsure'
 import { SAMPLES } from './snapshots'
 import { caseJobs, fillAll } from '@/lib/cvl/generate'
 import { context } from '@/lib/cvl/__tests__/fixtures'
@@ -24,6 +25,15 @@ describe('write the sample PDFs', () => {
       writeFileSync(path.join(OUT, `sample-${name}.pdf`), r.pdf)
       parts.push(r.pdf)
     }
+    // Gabby's 24 Nov items on Part B in one page set: B1 address, B10 date, B24 "Unsure" (the income
+    // tax return dates) beside B24 real dates (the BAS dates). Its own file: the snapshots are unchanged.
+    const unsure = await fillOfficialForm('507b', {
+      ...SAMPLE_PARTB,
+      fields: { ...SAMPLE_PARTB.fields, b24_itr_start: UNSURE, b24_itr_end: UNSURE, b24_bas_start: '2026-04-01', b24_bas_end: '2026-06-30' },
+    })
+    expect(unsure.warnings).toEqual([])
+    writeFileSync(path.join(OUT, 'sample-form507-partb-b24-unsure.pdf'), unsure.pdf)
+    parts.push(unsure.pdf)
     const overflow = await fillOfficialForm('507b', OVERFLOW_PARTB)
     writeFileSync(path.join(OUT, 'sample-overflow-form507-partb.pdf'), overflow.pdf)
     writeFileSync(path.join(OUT, 'sample-all-forms.pdf'), await combinePdfs(parts, 'CVL forms (synthetic sample)'))

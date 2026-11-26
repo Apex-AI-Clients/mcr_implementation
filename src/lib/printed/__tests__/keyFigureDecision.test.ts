@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { buildPrintedComparison, type ComparisonDocument } from '../compare'
 import { autoMapping } from '../autoMapping'
-import { decideKeyFigures, loanSide } from '../keyFigureDecision'
+import { decideKeyFigures, gapFigures, loanSide } from '../keyFigureDecision'
 import { comparisonDocumentIds, reopenReason, type StoredDecision } from '../mappingStore'
 import { LabelMasker } from '@/lib/ai/maskLabels'
-import { keyFigurePrompt, maskedLines, parseKeyFigureAnswer, type AiKeyFigureAnswer, type KeyFigureChoice } from '@/lib/ai/keyFigureChoice'
+import { agreedAnswers, keyFigurePrompt, maskedLines, parseKeyFigureAnswer, type AiKeyFigureAnswer, type KeyFigureChoice } from '@/lib/ai/keyFigureChoice'
 import type { PrintedColumn, PrintedRow, PrintedStatement } from '../types'
 import type { Meaning } from '../meanings'
 
@@ -61,7 +61,7 @@ const decide = (answer: AiKeyFigureAnswer | null) => {
 }
 const of = (out: ReturnType<typeof decideKeyFigures>, m: Meaning) => out.find((d) => d.meaning === m)
 
-describe('decideKeyFigures', () => {
+describe('decideKeyFigures: the AI only fills gaps', () => {
   it('AI off: the rules alone, exactly as autoMapping decides', () => {
     const { rules, out } = decide(null)
     for (const d of out) {
@@ -71,64 +71,91 @@ describe('decideKeyFigures', () => {
     }
   })
 
-  it('AI and rules agree: the line, ⓘ "Chosen by AI: <reason>"', () => {
+  it('a figure the rules chose a line for is never asked and never changed, whatever the AI says', () => {
     const c = comparison()
-    const { out } = decide({ net_profit: { kind: 'lines', rowKeys: [key(c, 'Net Profit')], reason: 'The net profit line the profit and loss prints.' } })
-    const d = of(out, 'net_profit')!
-    expect(d.outcome).toBe('lines')
-    expect(d.chosenBy).toBe('ai')
-    expect(d.entries[0].autoRule).toBe('Chosen by AI: The net profit line the profit and loss prints.')
+    const rules = autoMapping(c, [], NAMES, { meanings: OPEN })
+    expect(gapFigures(OPEN, rules)).not.toContain('net_profit')
+    expect(gapFigures(OPEN, rules)).not.toContain('related_loans')
+    const { out } = decide({
+      net_profit: { kind: 'lines', rowKeys: [key(c, 'Sales')], reason: 'Wrong line.' },
+      related_loans: { kind: 'not_printed', rowKeys: [], reason: 'x' },
+    })
+    expect(of(out, 'net_profit')!.entries.map((e) => e.label)).toEqual(['Net Profit'])
+    expect(of(out, 'net_profit')!.possible).toEqual([])
+    expect(of(out, 'loan_receivable')!.entries.map((e) => e.label)).toEqual(['Loan - Jane Example'])
   })
 
-  it('AI unclear: nothing chosen, the lines wait for staff', () => {
-    const c = comparison()
-    const { out } = decide({ total_assets: { kind: 'unclear', rowKeys: [key(c, 'Total Assets')], reason: 'Not sure.' } })
-    const d = of(out, 'total_assets')!
-    expect(d.outcome).toBe('possible')
-    expect(d.entries).toEqual([])
-    expect(d.possible.map((p) => p.label)).toContain('Total Assets')
+  it('a gap: the AI line is offered as a possible line, never chosen; the rules’ answer stands', () => {
+    const c = gapComparison()
+    const rules = autoMapping(c, [], NAMES, { meanings: ['total_non_current_assets'] })
+    expect(gapFigures(['total_non_current_assets'], rules)).toEqual(['total_non_current_assets'])
+    const before = ruleDecisionOf(rules, 'total_non_current_assets')
+    const out = decideKeyFigures(c, ['total_non_current_assets'], rules, NAMES, {
+      answer: { total_non_current_assets: { kind: 'lines', rowKeys: [keyIn(c, 'Total long-term assets')], reason: 'The long-term assets total.' } },
+      unknownPersonLines: new Set(),
+      model: 'anthropic/test',
+    })
+    const d = out[0]
+    expect(d.outcome).toBe(before)
+    expect(d.entries.every((e) => e.nonePrinted)).toBe(true)
+    expect(d.possible.map((p) => p.label)).toContain('Total long-term assets')
+    expect(d.possible.find((p) => p.label === 'Total long-term assets')!.why).toMatch(/^Suggested by AI \(asked twice/)
   })
 
-  it('AI and rules disagree: possible lines, never auto-chosen', () => {
-    const c = comparison()
-    const { out } = decide({ net_profit: { kind: 'lines', rowKeys: [key(c, 'Sales')], reason: 'Wrong line.' } })
-    const d = of(out, 'net_profit')!
-    expect(d.outcome).toBe('possible')
-    expect(d.possible.map((p) => p.label).sort()).toEqual(['Net Profit', 'Sales'])
-  })
-
-  it('a line naming a [person n] is only ever a possible line', () => {
-    const c = comparison()
-    const lines = [key(c, 'Loan - Jane Example'), key(c, 'Owner A Drawings'), key(c, 'Matthew Nobody - Drawings')]
-    const { out } = decide({ related_loans: { kind: 'lines', rowKeys: lines, reason: 'The director and owner accounts.' } })
-    for (const m of ['loan_receivable', 'loan_payable'] as const) {
-      const d = of(out, m)
-      expect(d?.entries.some((e) => e.label === 'Matthew Nobody - Drawings') ?? false).toBe(false)
+  it('a gap the AI is unsure about, or says is not printed: the rules alone', () => {
+    const c = gapComparison()
+    const rules = autoMapping(c, [], NAMES, { meanings: ['total_non_current_assets'] })
+    for (const kind of ['unclear', 'not_printed'] as const) {
+      const out = decideKeyFigures(c, ['total_non_current_assets'], rules, NAMES, {
+        answer: { total_non_current_assets: { kind, rowKeys: [keyIn(c, 'Total long-term assets')], reason: 'x' } },
+        unknownPersonLines: new Set(),
+        model: 'anthropic/test',
+      })
+      expect(out[0].possible.some((p) => p.why.startsWith('Suggested by AI'))).toBe(false)
     }
-    expect(out.some((d) => d.possible.some((p) => p.label === 'Matthew Nobody - Drawings'))).toBe(true)
   })
 
-  it('a line the rules reject never voids the lines agreed on: it is offered instead', () => {
-    const c = comparison()
-    const { rules, out } = decide({ net_profit: { kind: 'lines', rowKeys: [key(c, 'Net Profit'), key(c, 'Sales')], reason: 'Net profit.' } })
-    expect(rules.entries.some((e) => e.meaning === 'net_profit')).toBe(true)
-    const d = of(out, 'net_profit')!
-    expect(d.outcome).toBe('lines')
-    expect(d.entries.map((e) => e.label)).toEqual(['Net Profit'])
-    expect(d.possible.map((p) => p.label)).toEqual(['Sales'])
-    const loans = decide({ related_loans: { kind: 'lines', rowKeys: [key(c, 'Loan - Jane Example'), key(c, 'Retained Earnings')], reason: 'x' } }).out
-    const debit = of(loans, 'loan_receivable')!
-    expect(debit.outcome).toBe('lines')
-    expect(debit.entries.map((e) => e.label)).toEqual(['Loan - Jane Example'])
-    expect(loans.some((x) => x.possible.some((p) => p.label === 'Retained Earnings'))).toBe(true)
+  it('ask twice: only an answer both asks agree on counts', () => {
+    const a = { total_assets: { kind: 'lines' as const, rowKeys: ['k1'], reason: 'r1' }, net_profit: { kind: 'lines' as const, rowKeys: ['k2'], reason: 'r' } }
+    const b = { total_assets: { kind: 'lines' as const, rowKeys: ['k1'], reason: 'r2' }, net_profit: { kind: 'lines' as const, rowKeys: ['k3'], reason: 'r' } }
+    expect(agreedAnswers(a, b)).toEqual({ total_assets: { kind: 'lines', rowKeys: ['k1'], reason: 'r1' } })
+    expect(agreedAnswers(a, {})).toEqual({})
   })
 
-  it('loans: the sign rule splits the AI\'s lines into Debit and Credit', () => {
+  it('loans: the sign rule says which side a line is read on', () => {
     const c = comparison()
     expect(loanSide(c.tables[1].rows.find((x) => x.label === 'Loan - Jane Example')!, c)).toBe('loan_receivable')
     expect(loanSide(c.tables[1].rows.find((x) => x.label === 'Owner A Drawings')!, c)).toBe('loan_payable')
   })
 })
+
+/** A balance sheet whose non-current total the rules do not recognise ("Total long-term assets"). */
+function gapComparison() {
+  const doc: ComparisonDocument = {
+    documentId: 'doc-gap',
+    filename: 'gap.pdf',
+    uploadedAt: '',
+    read: {
+      status: 'read',
+      pageCount: 1,
+      issues: [],
+      statements: [
+        st('balance_sheet', [
+          r([], 'Assets', 'heading', null),
+          r(CA, 'Business Account', 'line', 900),
+          r(CA, 'Total Current Assets', 'subtotal', 900),
+          r(['Assets', 'Long-term assets'], 'Equipment', 'line', 500),
+          r(['Assets', 'Long-term assets'], 'Total long-term assets', 'subtotal', 500),
+          r(['Assets'], 'Total Assets', 'subtotal', 1400),
+        ]),
+      ],
+    },
+  }
+  return buildPrintedComparison([doc])
+}
+const keyIn = (c: ReturnType<typeof gapComparison>, label: string) => c.tables.flatMap((t) => t.rows).find((x) => x.label === label)!.key
+const ruleDecisionOf = (rules: ReturnType<typeof autoMapping>, m: Meaning) =>
+  rules.entries.some((e) => e.meaning === m && !e.nonePrinted) ? 'lines' : rules.entries.some((e) => e.meaning === m) ? 'not_printed' : 'possible'
 
 describe('the prompt and the answer', () => {
   it('sends labels and headings only, names masked; restores names in the reason', () => {
