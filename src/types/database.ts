@@ -352,6 +352,48 @@ export type Database = {
         }
         Relationships: []
       }
+      key_figure_decisions: {
+        Row: {
+          ai_reason: string | null
+          chosen_by: string
+          client_id: string
+          decided_at: string
+          decided_by: string
+          document_ids: string[]
+          meaning: string
+          outcome: string
+          possible: Json
+          row_keys: string[]
+          rule: string | null
+        }
+        Insert: {
+          ai_reason?: string | null
+          chosen_by: string
+          client_id: string
+          decided_at?: string
+          decided_by: string
+          document_ids?: string[]
+          meaning: string
+          outcome: string
+          possible?: Json
+          row_keys?: string[]
+          rule?: string | null
+        }
+        Update: {
+          ai_reason?: string | null
+          chosen_by?: string
+          client_id?: string
+          decided_at?: string
+          decided_by?: string
+          document_ids?: string[]
+          meaning?: string
+          outcome?: string
+          possible?: Json
+          row_keys?: string[]
+          rule?: string | null
+        }
+        Relationships: []
+      }
       client_line_dismissals: {
         Row: {
           client_id: string
