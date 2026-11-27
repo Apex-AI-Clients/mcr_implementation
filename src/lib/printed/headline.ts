@@ -2,7 +2,7 @@ import type { PrintedComparison } from './compare'
 import { columnTitle, formatPrinted } from './csv'
 import { periodSourceCsv } from './periodSourceText'
 import { dateTimeText } from '@/lib/dates'
-import { loanSidesAt, resolveMeaning, type MappedLine, type MappingEntry } from './mapping'
+import { loanSideConflicts, loanSidesAt, resolveMeaning, type MappedLine, type MappingEntry } from './mapping'
 import type { Meaning } from './meanings'
 import { comparisonProof } from './proof'
 import { assetSectionTotals, personAccount, personKey, type Suggestions } from './dictionary'
@@ -47,7 +47,7 @@ export type HeadlineCell =
   /** The year is not proven yet. */
   | { kind: 'held'; reasons: string[] }
   /** Nothing to show: no line, nothing printed that year, or no ATO balance for that date (why). */
-  | { kind: 'blank'; why: string | null }
+  | { kind: 'blank'; why: string | null; conflict?: boolean }
 
 export interface HeadlineRow {
   key: string
@@ -106,6 +106,10 @@ export function headlineRows(comparison: PrintedComparison, mapping: MappingEntr
     const cells = comparison.columns.map((_, i): HeadlineCell => {
       const h = held(i)
       if (h) return h
+      // A stored loan line on the wrong side for its sign and section: no figure on either loan row
+      // until staff move it (never moved silently, 27 Nov 2026).
+      const conflicts = loanRow ? loanSideConflicts(comparison, loanUsed, i) : []
+      if (conflicts.length > 0) return { kind: 'blank', conflict: true, why: `${conflicts.map((c) => c.message).join(' ')} Move it on the Outcome prediction page.` }
       if (loanRow && byPerson) {
         const sides = loanSidesAt(comparison, loanUsed, i)
         const side = row.meaning === 'loan_receivable' ? sides.to : sides.by
@@ -168,7 +172,7 @@ export function headlineCsv(input: { clientName: string; comparison: PrintedComp
     lines.push(
       csvRow(
         r.label,
-        ...r.cells.map((c) => (c.kind === 'value' ? formatPrinted(c.value) : c.kind === 'ica' ? audBalance(Math.round(c.cell.value * 100)) : c.kind === 'held' ? BEING_PREPARED : '')),
+        ...r.cells.map((c) => (c.kind === 'value' ? formatPrinted(c.value) : c.kind === 'ica' ? audBalance(Math.round(c.cell.value * 100)) : c.kind === 'held' ? BEING_PREPARED : c.kind === 'blank' && c.conflict ? 'Move needed' : '')),
         note,
       ),
     )
@@ -197,7 +201,7 @@ export function headlineCardsCsv(input: { clientName: string; comparison: Printe
     const state = r.status === 'suggested' ? 'Suggested line, not confirmed yet' : r.status === 'not_found' ? 'No printed line matched' : r.notPrinted ? 'Not printed' : ''
     lines.push('', csvRow(r.label.toUpperCase(), r.meaning ? (printed.length ? `From ${printed.map((l) => `“${l}”`).join(', ')}` : '') : "The ATO's own balance at each period's end (verified ATO account)", state))
     r.cells.forEach((c, i) => {
-      const value = c.kind === 'value' ? formatPrinted(c.value) : c.kind === 'ica' ? audBalance(Math.round(c.cell.value * 100)) : c.kind === 'held' ? BEING_PREPARED : ''
+      const value = c.kind === 'value' ? formatPrinted(c.value) : c.kind === 'ica' ? audBalance(Math.round(c.cell.value * 100)) : c.kind === 'held' ? BEING_PREPARED : c.kind === 'blank' && c.conflict ? 'Move needed' : ''
       lines.push(csvRow(`${heads[i].title} (${heads[i].period})`, value, c.kind === 'value' && c.note ? c.note : ''))
     })
   }

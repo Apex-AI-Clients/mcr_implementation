@@ -179,6 +179,65 @@ export interface NotIdentified {
   possible?: PossibleLoanLine[]
   /** The lines already confirmed for it: "Use it" adds the possible line to these. */
   confirmedRowKeys?: string[]
+  /** Stored loan lines the sign-aware section rule puts on the other side: staff move them (never silently). */
+  conflicts?: LoanSideConflict[]
+}
+
+/**
+ * A stored loan choice (staff, rule or AI) that contradicts the ONE sign-aware section rule
+ * (readLoanLine; Gabby, 24 Nov 2026): e.g. "Owner A Drawings 44,952.22", printed positive under
+ * Equity, stored on the Director loan account (Debit). Flagged to staff, never applied silently
+ * (the user, 27 Nov 2026): until staff move it, the prediction waits.
+ */
+export interface LoanSideConflict {
+  rowKey: string
+  label: string
+  /** As printed in the latest balance sheet column. */
+  printed: number
+  /** The meaning it is stored under, and the one the rule puts it on. */
+  storedAs: 'loan_receivable' | 'loan_payable'
+  belongsTo: 'loan_receivable' | 'loan_payable'
+  /** Who chose it: a staff member, or 'auto' (the rules or the AI). */
+  chosenBy: string
+  message: string
+}
+
+/** Every stored loan line on the wrong side for its sign and section, in the given balance sheet column. */
+export function loanSideConflicts(comparison: PrintedComparison, mapping: MappingEntry[], index: number | undefined): LoanSideConflict[] {
+  if (index === undefined) return []
+  const rows = new Map(comparison.tables.filter((t) => t.kind === 'balance_sheet').flatMap((t) => t.rows.map((r) => [r.key, r] as const)))
+  const loans = mapping.filter((e) => !e.nonePrinted && LOAN_MEANINGS.includes(e.meaning))
+  // One account per person (groupPersons; Gabby, 25 Nov 2026): a person's own lines are netted, and the
+  // net decides the side, never one line's sign. Such lines are never a conflict.
+  const perPerson = new Map<string, number>()
+  for (const e of loans) {
+    const p = personAccount(rows.get(e.rowKey)?.label ?? '')
+    if (p) perPerson.set(personKey(p.name), (perPerson.get(personKey(p.name)) ?? 0) + 1)
+  }
+  const out: LoanSideConflict[] = []
+  for (const e of loans) {
+    const row = rows.get(e.rowKey)
+    const cell = row?.cells[index]
+    if (!row || !cell?.printed || typeof cell.value !== 'number' || cell.value === 0) continue
+    const person = personAccount(row.label)
+    if (person && (perPerson.get(personKey(person.name)) ?? 0) >= 2) continue
+    const printed = cell.value
+    const credit = onCreditSide(row)
+    const belongsTo = (credit ? printed < 0 : printed > 0) ? 'loan_receivable' : 'loan_payable'
+    if (belongsTo === e.meaning) continue
+    const section = sectionName(row)
+    const how = printed < 0 ? `printed as a negative amount under ${section}` : `printed under ${section}`
+    out.push({
+      rowKey: row.key,
+      label: row.label.trim() || '(no label)',
+      printed,
+      storedAs: e.meaning as LoanSideConflict['storedAs'],
+      belongsTo,
+      chosenBy: e.confirmedBy,
+      message: `“${row.label.trim()}” is ${how}, so it belongs to ${MEANING[belongsTo].label}, not ${MEANING[e.meaning].label} — move it?`,
+    })
+  }
+  return out
 }
 
 /** A line on the latest balance sheet that may be the director loan account (Debit): staff decide. */
@@ -457,6 +516,16 @@ export function predictionFinancials(
   if (!column) {
     notIdentified.loanReceivable = { message: 'No balance sheet has been read yet — upload the financial statements, then choose the line.', candidates: [] }
   }
+  // A stored loan line on the wrong side for its sign and section: never moved silently. The loan
+  // inputs wait until staff move it (the user, 27 Nov 2026).
+  const conflicts = loanSideConflicts(comparison, mapping, index)
+  if (column && conflicts.length > 0) {
+    notIdentified.loanReceivable = {
+      ...(notIdentified.loanReceivable ?? { candidates: [] }),
+      message: conflicts.map((c) => c.message).join(' '),
+      conflicts,
+    }
+  }
   if (column && atoCandidates.length > 0) {
     notIdentified.atoDebt = {
       message: `Not identified — the ${columnSourceLabel(column)} prints ${atoCandidates.map((l) => `“${l}”`).join(', ')}, not mapped to ATO-related debt. Choose the line.`,
@@ -468,7 +537,8 @@ export function predictionFinancials(
     confirmed: mappingConfirmed(mapping),
     balanceSheet: column ? { column, label: columnSourceLabel(column) } : null,
     loanReceivable: notIdentified.loanReceivable ? null : loanReceivable,
-    loanPayable: sides.by,
+    // A conflicting line waits for staff on both sides: never counted on the side its sign says, silently.
+    loanPayable: conflicts.length > 0 ? null : sides.by,
     notIdentified,
     atoDebt,
     creditCards: figure('credit_cards', { absolute: true }),

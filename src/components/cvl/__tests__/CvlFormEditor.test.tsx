@@ -739,6 +739,10 @@ describe('CvlFormEditor — signature dates', () => {
     renderForm('509')
     // A DD/MM/YYYY text box on any computer (24 Nov 2026), not the browser's own date box.
     expect(input('date_signed').type).toBe('text')
+    // The summary date starts "Unsure" (27 Nov 2026): Date signed stays empty, waiting for a date.
+    expect(document.getElementById('f-summary_date')).toBeNull()
+    expect(input('date_signed').value).toBe('')
+    fireEvent.click(document.getElementById('f-summary_date-mode')!.querySelectorAll('input')[1])
     fireEvent.change(input('summary_date'), { target: { value: '2026-11-14' } })
     expect(input('date_signed').value).toBe('14/11/2026')
     fireEvent.change(input('date_signed'), { target: { value: '2026-11-20' } })

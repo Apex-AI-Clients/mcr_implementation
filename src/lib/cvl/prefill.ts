@@ -3,9 +3,9 @@ import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
 import { formatDob, formatExtractDate } from '@/lib/asic/dates'
 import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
-import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
+import { formVersion, signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
 import { splitAddress } from './address'
-import { B24_DATE_KEYS, UNSURE } from '@/lib/forms/unsure'
+import { isDateKind, UNSURE } from '@/lib/forms/unsure'
 import type { BalanceSheetFigure, CvlContext } from './context'
 import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
@@ -458,6 +458,7 @@ export function prefillForm(code: FormCode, subject: Subject, ctx: CvlContext): 
   else prefillPartB(ctx, subject, out)
   putSignatureDates(code, ctx, out)
   putDefaultYes(code, out)
+  putUnsureDates(code, out)
   return out
 }
 
@@ -492,11 +493,35 @@ function putDefaultYes(code: FormCode, out: Prefill) {
   if (code === '507b') {
     const source = { from: ['MCR Partners helped complete this Report (B30).', 'Change it if someone else did.'] }
     for (const [key, value] of Object.entries(MCR_HELPER)) out.fields[key] ??= { value, source }
-    // B24's dates: "Unsure" unless a date is pre-filled, which is kept as it is (Gabby, 24 Nov 2026).
-    const unsure = { from: ['Printed as "Unsure" until the date is known.', 'Switch to "Enter a date" to type it.'] }
-    for (const key of B24_DATE_KEYS) out.fields[key] ??= { value: UNSURE, source: unsure }
   }
 }
+
+/**
+ * Every date that is not pre-filled starts at "Unsure" (Gabby, 24 Nov 2026 for B24; the user,
+ * 27 Nov 2026 for every date on every form): the boxes, and the date cells of the appendix tables'
+ * pre-filled rows. A date pre-filled (the ASIC extract, the client file) keeps its date; the
+ * signature dates and 507A's report date, filled from Form 509's "Date to which summary is made
+ * up" (A10 left for its signer), wait for it as before. Staff can switch any date to "Unsure" or
+ * to a date.
+ */
+const UNSURE_SOURCE: AmountSource = { from: ['Printed as "Unsure" until the date is known.', 'Switch to "Enter a date" to type it.'] }
+
+function putUnsureDates(code: FormCode, out: Prefill) {
+  const { map } = formVersion(code)
+  // Signature dates are written at signing (A10 by whoever completes it, 18 Nov 2026): never
+  // "Unsure" to start with, though staff can choose it.
+  const from509 = new Set([...signatureDateKeys(code), ...(SAME_DATE_KEYS[code] ?? [])])
+  for (const f of map.fields) {
+    if (f.handwritten || !isDateKind(f) || from509.has(f.key)) continue
+    out.fields[f.key] ??= { value: UNSURE, source: UNSURE_SOURCE }
+  }
+  for (const t of map.tables) {
+    const dates = t.columns.filter((c) => c.type === 'date').map((c) => c.key)
+    for (const r of out.tables[t.id] ?? []) for (const key of dates) if (isBlankValue(r.row[key])) r.row[key] = UNSURE
+  }
+}
+
+const isBlankValue = (v: FieldValue | undefined) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
 
 /**
  * Every date beside a signature (Nov 2026): Form 509's "Date signed", A9,

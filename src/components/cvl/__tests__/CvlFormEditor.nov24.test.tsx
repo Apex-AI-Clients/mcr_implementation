@@ -116,19 +116,22 @@ describe('B14 → B15, B24 "Unsure", completed forms', () => {
     expect((document.getElementById('f-b15_reasons') as HTMLTextAreaElement).value).toBe('Lost the main customer; costs rose; ATO debt')
   })
 
-  it('B24 dates start "Unsure" and switch either way', async () => {
+  it('every date can be "Unsure" or a date; B24 starts "Unsure" and switches either way', async () => {
     renderPartB()
+    // Every date on the form has the toggle (27 Nov 2026), B24's eight among them.
     const groups = screen.getAllByRole('radiogroup', { name: 'Unsure or a date' })
-    expect(groups).toHaveLength(8)
+    expect(groups.length).toBeGreaterThan(8)
+    const group = document.getElementById('f-b24_itr_start-mode')!
+    expect(groups).toContain(group)
     expect(document.getElementById('f-b24_itr_start')).toBeNull()
-    fireEvent.click(groups[0].querySelectorAll('input')[1])
+    fireEvent.click(group.querySelectorAll('input')[1])
     const input = document.getElementById('f-b24_itr_start') as HTMLInputElement
     fireEvent.change(input, { target: { value: '2025-07-01' } })
     expect((document.getElementById('f-b24_itr_start') as HTMLInputElement).value).toBe('2025-07-01')
-    fireEvent.click(groups[0].querySelectorAll('input')[0])
+    fireEvent.click(group.querySelectorAll('input')[0])
     expect(document.getElementById('f-b24_itr_start')).toBeNull()
     // Back to a date: the one typed before, shown DD/MM/YYYY.
-    fireEvent.click(groups[0].querySelectorAll('input')[1])
+    fireEvent.click(group.querySelectorAll('input')[1])
     expect((document.getElementById('f-b24_itr_start') as HTMLInputElement).value).toBe('01/07/2025')
   })
 

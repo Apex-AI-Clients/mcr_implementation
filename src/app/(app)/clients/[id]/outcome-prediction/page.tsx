@@ -6,7 +6,7 @@ import { loadPrintedComparison } from '@/lib/printed/store'
 import { applyAutoMapping, loadDismissedLines, loadMapping, loadRelatedNames } from '@/lib/printed/mappingStore'
 import { directorLoanInput, directorLoanYears } from '@/lib/sbr/directorLoan'
 import { balanceSheetLabel, loanHistory, predictionFinancials } from '@/lib/printed/mapping'
-import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
+import { creditorDebt, daysSinceLastPayment, describeDecision, icaDateRange, lastPaymentDate, longDate, type IcaRow } from '@/lib/sbr/creditorDebt'
 import { loadIcaRows } from '@/lib/sbr/icaRows'
 import { mappedCreditorHints, readSavedCreditors } from '@/lib/sbr/creditors'
 import { storedLateLodgements, unparsedDateRows, unparsedDatesMessage } from '@/lib/analysis/config'
@@ -163,6 +163,10 @@ export default async function OutcomePredictionPage({ params }: Props) {
     numberOfLateLodgements: late?.numberOfLateLodgements ?? null,
     // To today (Sydney), as the prediction counts it (creditorDebt.ts, restored 25 Nov 2026).
     daysSinceLastPayment: lodgement.data && unparsed === 0 && icaVerified ? daysSinceLastPayment(icaRows, sydneyToday()) : null,
+    // For the ⓘ: the payment it counts from and the day it counts to.
+    lastPaymentDate: lastPaymentDate(icaRows),
+    paymentDaysTo: sydneyToday(),
+    lodgementUrl: `/clients/${id}/lodgement-compliance-analysis`,
     // The account's whole history, so "no payments" shows what was searched.
     icaHistory: (() => {
       const { first, last } = icaDateRange(icaRows)

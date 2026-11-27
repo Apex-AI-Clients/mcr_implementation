@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isUnsure } from '@/lib/forms/unsure'
 import { datedTables, formVersion, handwrittenKeys, tableDateKey } from '@/lib/forms/registry'
 import type { FieldValue, FormCode, FormData, FormMap, TableRow } from '@/lib/forms/types'
 import type { Prefill } from './prefill'
@@ -88,7 +89,8 @@ export function savedA7Total(drafts: readonly { form_code: string; subject: stri
 export function savedSummaryDate(drafts: readonly { form_code: string; subject: string; answers: unknown }[]): string | null {
   const row = drafts.find((d) => d.form_code === '509' && d.subject === 'company')
   const value = row ? readDraft(row.answers)?.fields.summary_date : null
-  return typeof value === 'string' && value.trim() ? value.trim() : null
+  // "Unsure" is not a date: nothing is filled from it (27 Nov 2026).
+  return typeof value === 'string' && value.trim() && !isUnsure(value) ? value.trim() : null
 }
 
 const Value = z.union([z.string().max(5000), z.number().finite(), z.boolean(), z.null()])

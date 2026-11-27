@@ -118,6 +118,10 @@ export function HeadlineFiguresTable({ clientId, basePath = `/clients/${clientId
                       <span className="text-xs text-foreground/55" title={cell.reasons.join('; ')}>
                         {BEING_PREPARED}
                       </span>
+                    ) : cell.kind === 'blank' && cell.conflict ? (
+                      <span className="text-xs font-medium text-warning" title={cell.why ?? undefined}>
+                        Move needed
+                      </span>
                     ) : cell.kind === 'blank' ? (
                       <span className="text-foreground/40" title={cell.why ?? undefined}>
                         —
@@ -260,6 +264,10 @@ function HeadlineCards({
           c.kind === 'held' ? (
             <span className="text-foreground/55" title={c.reasons.join('; ')}>
               {BEING_PREPARED}
+            </span>
+          ) : c.kind === 'blank' && c.conflict ? (
+            <span className="text-xs font-medium text-warning" title={c.why ?? undefined}>
+              Move needed
             </span>
           ) : c.kind === 'blank' ? (
             <span className="text-foreground/40" title={c.why ?? undefined}>

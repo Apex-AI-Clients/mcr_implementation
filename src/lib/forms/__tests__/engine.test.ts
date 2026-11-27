@@ -344,3 +344,35 @@ describe('overflow', () => {
     expect(a6[1]).toContain('500')
   })
 })
+
+describe('"Unsure" in every kind of date (27 Nov 2026)', () => {
+  it('prints across Form 509’s digit boxes, with no warning', async () => {
+    const r = await fillOfficialForm('509', { ...SAMPLE_509, fields: { ...SAMPLE_509.fields, summary_date: 'Unsure' } })
+    expect(r.warnings).toEqual([])
+    expect((await pageTexts(r.pdf)).join(' ')).toContain('Unsure')
+  })
+
+  it('prints in a table date cell; a row of "Unsure" alone is an empty row, never printed', async () => {
+    const data: FormData = {
+      ...SAMPLE_PARTB,
+      tables: {
+        ...SAMPLE_PARTB.tables,
+        B28: [
+          { name: 'Example Adviser', nature: 'Cash flow advice', date: 'Unsure' },
+          { date: 'Unsure' },
+        ],
+      },
+    }
+    const r = await fillOfficialForm('507b', data)
+    expect(r.warnings).toEqual([])
+    const text = (await pageTexts(r.pdf)).join(' ')
+    expect(text).toContain('Example Adviser')
+    expect(text.match(/Unsure/g)?.length ?? 0).toBeGreaterThanOrEqual(1)
+  })
+
+  it('prints in a typed date (B10) as the word itself', async () => {
+    const r = await fillOfficialForm('507b', { ...SAMPLE_PARTB, fields: { ...SAMPLE_PARTB.fields, b10_date: 'Unsure' } })
+    expect(r.warnings).toEqual([])
+    expect((await pageTexts(r.pdf)).join(' ')).toContain('Unsure')
+  })
+})

@@ -371,7 +371,18 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       },
     }
     const c = buildPrintedComparison([doc], { comparativeYears: true })
-    const mapping = entries(c, { loan_receivable: ['Loan - Related Parties'], loan_payable: ['Loan - Director', 'Owner Example Person Funds Introduced'] })
+    // As stored, "Loan - Director" contradicts the sign-aware section rule: flagged, never moved
+    // silently; the prediction waits for staff (27 Nov 2026).
+    const stored = entries(c, { loan_receivable: ['Loan - Related Parties'], loan_payable: ['Loan - Director', 'Owner Example Person Funds Introduced'] })
+    const waiting = predictionFinancials(c, stored)
+    expect(waiting.loanReceivable).toBeNull()
+    expect(waiting.loanPayable).toBeNull()
+    expect(waiting.notIdentified.loanReceivable?.conflicts?.map((x) => [x.label, x.belongsTo])).toEqual([['Loan - Director', 'loan_receivable']])
+    expect(waiting.notIdentified.loanReceivable?.message).toBe(
+      '“Loan - Director” is printed as a negative amount under Current Liabilities, so it belongs to Director loan account (Debit), not Loan account director (Credit) — move it?',
+    )
+    // Once staff move it, it counts on the Debit side, as the 26 Oct rule reads it.
+    const mapping = entries(c, { loan_receivable: ['Loan - Related Parties', 'Loan - Director'], loan_payable: ['Owner Example Person Funds Introduced'] })
     const f = predictionFinancials(c, mapping)
     expect(f.notIdentified).toEqual({})
     expect(f.loanReceivable).toMatchObject({ amount: 130_167.87 })
@@ -379,7 +390,7 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       label: 'Loan - Director',
       printed: -130_167.87,
       value: 130_167.87,
-      rule: 'Printed negative, so it is owed TO the company, although it is confirmed as owed by it.',
+      rule: 'Printed as a negative amount under Current Liabilities: a debit balance, owed to the company.',
     })
     expect(f.loanPayable).toMatchObject({ amount: 40_667.15 })
   })

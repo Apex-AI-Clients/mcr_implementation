@@ -335,6 +335,67 @@ describe('days since last payment', () => {
   })
 })
 
+describe('where the lodgement inputs come from (27 Nov 2026)', () => {
+  const lodgement = { ...AUTO, lastPaymentDate: '2026-07-30', paymentDaysTo: '2026-11-27', lodgementUrl: '/clients/c1/lodgement-compliance-analysis' }
+
+  it('puts an ⓘ on each of the three, with a link to the lodgement analysis page', async () => {
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={lodgement} initialPrediction={null} readiness={READY} />)
+    for (const label of ['Cumulative days late', 'Number of late lodgements', 'Days since last payment']) {
+      await userEvent.click(screen.getByRole('button', { name: `Where ${label} comes from` }))
+      const panel = screen.getByRole('dialog', { name: `Where ${label} comes from` })
+      expect(panel.textContent).toMatch(/lodgement analysis|ATO account file/)
+      expect(panel.querySelector('a')?.getAttribute('href')).toBe('/clients/c1/lodgement-compliance-analysis')
+      await userEvent.keyboard('{Escape}')
+    }
+  })
+
+  it('shows the last payment date and the sum for days since last payment', async () => {
+    render(<OutcomePredictionClient clientId="c1" clientName="Example Trading" initialAuto={lodgement} initialPrediction={null} readiness={READY} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Where Days since last payment comes from' }))
+    const panel = screen.getByRole('dialog', { name: 'Where Days since last payment comes from' })
+    expect(panel.textContent).toContain('processed 30/07/2026')
+    expect(panel.textContent).toContain('27/11/2026 − 30/07/2026 = 120 days')
+  })
+})
+
+describe('director loan ⓘ', () => {
+  it('says where the figure is printed, with no link inside it', async () => {
+    render(
+      <OutcomePredictionClient
+        clientId="c1"
+        clientName="Example Trading"
+        initialAuto={{
+          ...AUTO,
+          directorLoanReceivableAmount: 5_000,
+          mappingUrl: '/clients/c1/financials-comparison/mapping',
+          directorLoan: {
+            notIdentified: null,
+            amount: 5_000,
+            basis: 'gross',
+            receivable: 5_000,
+            payable: 0,
+            net: 5_000,
+            receivableLines: [
+              { rowKey: 'r1', label: 'Loan - Director', printed: 5_000, value: 5_000, rule: null, source: { documentId: 'd1', page: 2, filename: 'fs.pdf', header: '2026', text: 'Loan - Director 5,000.00' } },
+            ],
+            payableLines: [],
+            source: 'FY2026 balance sheet',
+            asOf: '2026-06-30',
+            info: null,
+          },
+        } as never}
+        initialPrediction={null}
+        readiness={READY}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Where $5,000 comes from' }))
+    const panel = screen.getByRole('dialog', { name: 'Where $5,000 comes from' })
+    expect(panel.textContent).toContain('Loan - Director')
+    expect(panel.querySelector('a')).toBeNull()
+    expect([...panel.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Copy this line'])
+  })
+})
+
 describe('calculation steps', () => {
   it('shows the exact fraction the offer was worked out with, so the steps reconcile', () => {
     // 42.4125% x $303,827.46 = $128,860.8; / 0.875 = $147,269.5

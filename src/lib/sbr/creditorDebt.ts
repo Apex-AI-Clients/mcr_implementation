@@ -117,15 +117,26 @@ export function icaDateRange(rows: readonly IcaRow[] | null | undefined): { firs
  * an account whose newest row is its last payment.
  */
 export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined, asOf: string): number {
-  if (!rows || rows.length === 0) return 9999
+  const last = lastPayment(rows)
+  if (!last) return 9999
+  return Math.max(0, differenceInCalendarDays(new Date(`${asOf.slice(0, 10)}T00:00:00Z`), last))
+}
+
+/** The newest payment's processed date (as daysSinceLastPayment counts it), or null when the account has none. */
+function lastPayment(rows: readonly IcaRow[] | null | undefined): Date | null {
   let last: Date | null = null
-  for (const row of rows) {
+  for (const row of rows ?? []) {
     if (row.lodgementType !== 'Payment') continue
     const d = rowDate(row)
     if (d && (!last || d > last)) last = d
   }
-  if (!last) return 9999
-  return Math.max(0, differenceInCalendarDays(new Date(`${asOf.slice(0, 10)}T00:00:00Z`), last))
+  return last
+}
+
+/** The newest payment's processed date (ISO), shown beside "Days since last payment"; null when there is none. */
+export function lastPaymentDate(rows: readonly IcaRow[] | null | undefined): string | null {
+  const last = lastPayment(rows)
+  return last ? isoDate(last) : null
 }
 
 export type CreditorDebtSource = 'ica' | 'balance_sheet' | 'staff'

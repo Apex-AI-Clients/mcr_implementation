@@ -1,6 +1,6 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { PrintedComparison } from './compare'
-import type { MappingEntry } from './mapping'
+import { balanceSheetColumns, loanSideConflicts, type MappingEntry } from './mapping'
 import { MEANING, MEANINGS, type Meaning } from './meanings'
 import { fixSpelling } from './compare'
 import { READER_VERSION } from './store'
@@ -631,5 +631,50 @@ export async function storeStaffDecisions(
     if (error) console.error('[line-mapping] could not store the staff decisions:', error.message)
   } catch (err) {
     console.error('[line-mapping] could not store the staff decisions:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * "Move it": a stored loan line the sign-aware section rule puts on the other side (mapping.ts
+ * loanSideConflicts) moved there by staff, that line only, logged as their choice (the user,
+ * 27 Nov 2026). Refused unless the rule really does put it on `to` in the latest balance sheet.
+ */
+export async function moveLoanLine(
+  supabase: ServerClient,
+  clientId: string,
+  by: string,
+  move: { rowKey: string; from: 'loan_receivable' | 'loan_payable'; to: 'loan_receivable' | 'loan_payable' },
+  comparison: PrintedComparison,
+): Promise<void> {
+  const stored = await loadMapping(supabase, clientId)
+  const latest = balanceSheetColumns(comparison).pop()
+  const conflict = loanSideConflicts(comparison, stored, latest).find((c) => c.rowKey === move.rowKey && c.storedAs === move.from && c.belongsTo === move.to)
+  if (!conflict) throw new MappingError('That line is no longer on the other side: refresh the page.')
+  const rows = new Map(comparison.tables.flatMap((t) => t.rows.map((r) => [r.key, { kind: t.kind, path: r.path }] as const)))
+  const at = new Date().toISOString()
+  const del = await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', move.from).eq('row_key', move.rowKey)
+  if (del.error) throw new Error(`Could not move the line: ${del.error.message}`)
+  // A "not printed" answer on the side it moves to no longer holds: the line is printed there.
+  await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', move.to).eq('none_printed', true)
+  const entry: MappingEntry = { meaning: move.to, rowKey: move.rowKey, label: conflict.label, nonePrinted: false, confirmedBy: by, confirmedAt: at }
+  const ins = await supabase
+    .from('client_line_mappings')
+    .upsert(mappingRow(clientId, entry, rows.get(move.rowKey) ?? null), { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true })
+  if (ins.error) throw new Error(`Could not move the line: ${ins.error.message}`)
+  const rule = conflict.message.replace(/ — move it\?$/, '. Moved by staff.')
+  const { error: logError } = await supabase.from('client_line_mapping_changes').insert([
+    { client_id: clientId, meaning: move.from, action: 'removed', row_key: move.rowKey, label: conflict.label, changed_by: by, changed_at: at, rule },
+    { client_id: clientId, meaning: move.to, action: 'added', row_key: move.rowKey, label: conflict.label, changed_by: by, changed_at: at, rule },
+  ])
+  if (logError) console.error('[line-mapping] could not log the move:', logError.message)
+  const next = await loadMapping(supabase, clientId)
+  await storeStaffDecisions(supabase, clientId, by, next, [move.to], comparison)
+  // The side it left: staff's own choice if lines remain; otherwise open again for the rules.
+  if (!next.some((e) => e.meaning === move.from)) {
+    try {
+      await supabase.from('key_figure_decisions').delete().eq('client_id', clientId).eq('meaning', move.from)
+    } catch {
+      // Before migration 0067: nothing stored to open.
+    }
   }
 }

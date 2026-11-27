@@ -16,7 +16,7 @@ import type { EntryField, EntryMap, EntryTable } from '@/lib/cvl/entryMap'
 import type { Prefill } from '@/lib/cvl/prefill'
 import type { EntryState } from '@/lib/cvl/drafts'
 import { fetchWithTimeout, withTimeout } from '@/lib/fetchWithTimeout'
-import { isUnsure, UNSURE, UNSURE_TOGGLE_KEYS } from '@/lib/forms/unsure'
+import { isUnsure, UNSURE } from '@/lib/forms/unsure'
 import { UnlockFormsButton } from './FormCompletion'
 
 interface CvlFormEditorProps {
@@ -134,7 +134,8 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
       const fields = { ...s.fields, [key]: value }
       // Form 509: "Date signed" follows the summary date as it is typed, until
       // staff change "Date signed" themselves (Nov 2026).
-      if (map.code === '509' && key === SUMMARY_DATE_KEY && !s.editedKeys.includes(SIGNED_509_KEY)) {
+      // "Unsure" is not copied: the signature date waits for a real date.
+      if (map.code === '509' && key === SUMMARY_DATE_KEY && !s.editedKeys.includes(SIGNED_509_KEY) && !isUnsure(value)) {
         fields[SIGNED_509_KEY] = value
       }
       // Part A's A3: Yes to "a trustee of a Trust?" puts in the client file's
@@ -484,7 +485,6 @@ export function CvlFormEditor({ caseId, clientId, map, subject, subjects, prefil
                       source={sourceOf(f.key)}
                       note={prefill.notes[f.key] ?? null}
                       onChange={(v) => setField(f.key, v)}
-                      unsureToggle={UNSURE_TOGGLE_KEYS.has(f.key)}
                       action={
                         // B15's reasons changed directly: copying from B14 has stopped; one click starts it again.
                         map.code === '507b' && f.key === B15_REASONS && !locked && !blank(state.fields[B14_REASONS]) && !same(state.fields[B15_REASONS], state.fields[B14_REASONS]) ? (
@@ -1196,7 +1196,6 @@ function FieldInput({
   source,
   note,
   onChange,
-  unsureToggle = false,
   action = null,
 }: {
   field: EntryField
@@ -1205,7 +1204,6 @@ function FieldInput({
   note: string | null
   onChange: (v: FieldValue) => void
   /** A date that can be "Unsure" (B24): a switch between "Unsure" and "Enter a date" (24 Nov 2026). */
-  unsureToggle?: boolean
   /** Shown under the answer: a link that acts on it ("Copy from B14 again"). */
   action?: React.ReactNode
 }) {
@@ -1284,13 +1282,9 @@ function FieldInput({
   } else {
     // A draft holding "28/09/2016" (or ISO) shows as the date it is, always DD/MM/YYYY (DateInput).
     const shown = f.type === 'date' ? isoDateForInput(value) : value
-    control = f.type === 'date' && unsureToggle ? (
+    // Every date can be "Unsure" or a date (27 Nov 2026).
+    control = f.type === 'date' ? (
       <UnsureDate id={id} value={value} onChange={onChange} info={info} />
-    ) : f.type === 'date' ? (
-      <div className="flex items-center gap-1">
-        <DateInput id={id} value={shown === null || shown === undefined ? null : String(shown)} onChange={onChange} className={inputClass} />
-        {info}
-      </div>
     ) : (
       <div className="flex items-center gap-1">
         <input
@@ -1345,7 +1339,7 @@ function UnsureDate({ id, value, onChange, info }: { id: string; value: FieldVal
   const shown = unsure ? '' : isoDateForInput(value)
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div role="radiogroup" aria-label="Unsure or a date" className="inline-flex overflow-hidden rounded-md border border-border text-xs">
+      <div id={`${id}-mode`} role="radiogroup" aria-label="Unsure or a date" className="inline-flex overflow-hidden rounded-md border border-border text-xs">
         {(
           [
             ['unsure', 'Unsure'],
@@ -1560,6 +1554,44 @@ function InlineAnswer({ field: f, value, onChange }: { field: EntryField; value:
 
 /* ---------------- appendix tables ---------------- */
 
+/** A table's date cell: "Unsure" or a date, switched with one small button (27 Nov 2026). */
+function CellDate({ label, value, onChange }: { label: string; value: FieldValue; onChange: (v: FieldValue) => void }) {
+  const unsure = isUnsure(value)
+  const [lastDate, setLastDate] = useState<FieldValue>(unsure ? null : value)
+  return (
+    <span className="flex min-w-[150px] items-center gap-1">
+      {unsure ? (
+        <span className="flex-1 rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground/60">Unsure</span>
+      ) : (
+        <DateInput
+          aria-label={label}
+          value={value === null || value === undefined ? null : String(isoDateForInput(value))}
+          onChange={(iso) => {
+            setLastDate(iso)
+            onChange(iso)
+          }}
+          className="w-full rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
+        />
+      )}
+      <button
+        type="button"
+        aria-label={unsure ? `${label}: enter a date` : `${label}: mark as Unsure`}
+        aria-pressed={unsure}
+        onClick={() => {
+          if (unsure) onChange(lastDate ?? null)
+          else {
+            setLastDate(value)
+            onChange(UNSURE)
+          }
+        }}
+        className="shrink-0 rounded border border-border px-1.5 py-1 text-[11px] text-accent hover:bg-accent/10"
+      >
+        {unsure ? 'Date' : 'Unsure'}
+      </button>
+    </span>
+  )
+}
+
 function TableInput({ table, rows, sources, onChange }: { table: EntryTable; rows: TableRow[]; sources: AmountSource[]; onChange: (rows: TableRow[]) => void }) {
   const set = (i: number, key: string, v: FieldValue) => onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   const pages = Math.max(1, Math.ceil(rows.length / table.rowsPerPage))
@@ -1602,14 +1634,7 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
                         className="accent-accent"
                       />
                     ) : c.type === 'date' ? (
-                      <span className="block min-w-[130px]">
-                        <DateInput
-                          aria-label={`${c.label}, row ${i + 1}`}
-                          value={r[c.key] === null || r[c.key] === undefined ? null : String(isoDateForInput(r[c.key]))}
-                          onChange={(iso) => set(i, c.key, iso)}
-                          className="w-full rounded border border-border bg-input-bg px-2 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
-                        />
-                      </span>
+                      <CellDate label={`${c.label}, row ${i + 1}`} value={r[c.key]} onChange={(v) => set(i, c.key, v)} />
                     ) : (
                       <input
                         aria-label={`${c.label}, row ${i + 1}`}
@@ -1650,7 +1675,12 @@ function TableInput({ table, rows, sources, onChange }: { table: EntryTable; row
           </tbody>
         </table>
       </div>
-      <button type="button" onClick={() => onChange([...rows, {}])} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+      <button
+        type="button"
+        // A new row's dates start at "Unsure" (27 Nov 2026); a row with nothing else in it is never printed.
+        onClick={() => onChange([...rows, Object.fromEntries(table.columns.filter((c) => c.type === 'date').map((c) => [c.key, UNSURE]))])}
+        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+      >
         <Plus className="h-3.5 w-3.5" />
         Add a row
       </button>
