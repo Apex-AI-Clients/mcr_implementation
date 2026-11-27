@@ -88,9 +88,13 @@ describe('CVL form page', () => {
     await expect(open('999')).rejects.toThrow('notFound')
   })
 
-  it('a form marked complete opens nothing: back to the CVL file until the forms are unlocked', async () => {
+  it('a form marked complete opens read-only under its banner, saying how many forms the unlock opens (24 Nov 2026)', async () => {
     // The same list the mocked database reads.
     completed.push({ form_code: '507b', subject: 'director:2', completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' })
-    await expect(open('507b', 'director:2')).rejects.toThrow('redirect:/cvl/cl_1')
+    completed.push({ form_code: '509', subject: 'company', completed_by: 'Casey', completed_at: '2026-11-18T00:00:00Z' })
+    const page = (await open('507b', 'director:2')) as unknown as { props: { locked: { at: string; completed: number } | null } }
+    expect(page.props.locked).toEqual({ at: '2026-11-18T00:00:00Z', completed: 2 })
+    // Another director's Part B, not completed: open as usual.
+    expect(((await open('507b', 'director:1')) as unknown as { props: { locked: unknown } }).props.locked).toBeNull()
   })
 })

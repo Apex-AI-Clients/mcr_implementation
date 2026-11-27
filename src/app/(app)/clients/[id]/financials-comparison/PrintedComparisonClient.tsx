@@ -7,13 +7,15 @@ import { ArrowLeft, Download, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { HeadlineFiguresTable, type HeadlineView } from '@/components/admin/financials/HeadlineFiguresTable'
-import { ScanChecksPanel, ScanProgress, YearProofStrip } from '@/components/admin/financials/ScanFigures'
+import { ScanChecksPanel, ScanProgress } from '@/components/admin/financials/ScanFigures'
+import { PeriodSources } from '@/components/admin/financials/PeriodSources'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
 import type { Meaning } from '@/lib/printed/meanings'
 import type { PrintedComparison } from '@/lib/printed/compare'
-import { headlineCardsCsv, headlineCsv, headlineRows, type IcaHeadline } from '@/lib/printed/headline'
+import { headlineCsv, headlineRows, type IcaHeadline } from '@/lib/printed/headline'
+import { periodSheets } from '@/lib/printed/csv'
 
 /** Where the Cards / Table choice is kept (per browser). */
 const VIEW_KEY = 'mcr.financials-comparison.view'
@@ -79,15 +81,14 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
     }
   }
 
-  function exportCsv() {
-    const csv = view === 'cards' ? headlineCardsCsv({ clientName, comparison, rows }) : headlineCsv({ clientName, comparison, rows })
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${clientName.replace(/[^a-z0-9-]+/gi, '_')}_headline_figures.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+  /** Excel (item 11): the headline figures as one sheet, then each period's printed lines. SheetJS loads when asked. */
+  async function exportExcel() {
+    const XLSX = await import('xlsx')
+    const book = XLSX.utils.book_new()
+    const headline = XLSX.read(headlineCsv({ clientName, comparison, rows }), { type: 'string', raw: true })
+    XLSX.utils.book_append_sheet(book, headline.Sheets[headline.SheetNames[0]], 'Headline figures')
+    for (const sheet of periodSheets(comparison)) XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(sheet.rows), sheet.name)
+    XLSX.writeFile(book, `${clientName.replace(/[^a-z0-9-]+/gi, '_')}_headline_figures.xlsx`)
   }
 
   return (
@@ -124,9 +125,9 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
             {hasTables && (
               <>
                 <ExportPdfButton targetId="financials-export-root" fileName={`${clientName}_headline_figures`} />
-                <Button variant="ghost" size="sm" onClick={exportCsv}>
+                <Button variant="ghost" size="sm" onClick={() => void exportExcel()}>
                   <Download className="h-3.5 w-3.5" />
-                  Export CSV
+                  Excel
                 </Button>
               </>
             )}
@@ -141,7 +142,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
       </div>
 
       <ScanProgress clientId={clientId} files={comparison.documents.filter((d) => d.status === 'scan_pending').map((d) => ({ documentId: d.documentId, filename: d.filename }))} />
-      <YearProofStrip comparison={comparison} />
       <ScanChecksPanel clientId={clientId} comparison={comparison} />
 
       {!hasTables ? (
@@ -161,6 +161,8 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
             </label>
           )}
           <HeadlineFiguresTable clientId={clientId} basePath={basePath} view={view} comparison={comparison} rows={rows} mapping={mapping} suggestions={suggestions} possible={possible} />
+          {/* Each period's source and checks, below the figures, hidden until opened. */}
+          <PeriodSources clientId={clientId} comparison={comparison} />
         </>
       )}
     </div>

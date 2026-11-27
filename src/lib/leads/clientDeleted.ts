@@ -3,6 +3,7 @@ import { CONVERSION_ACTIVITY_BODY, FORMER_STAGE_LABELS, isCustomStage, STAGE_MET
 import { getCustomStages } from './customStages'
 import { formatFullDate } from './format'
 import type { BuiltInStage, StageSetting, LeadStage } from '@/types/leads'
+import { dateText } from '@/lib/dates'
 
 /**
  * A client file deleted for good leaves its lead pointing at nothing:
@@ -97,13 +98,13 @@ function builtInStageLabelled(label: string): BuiltInStage | undefined {
 }
 
 export function deletedNote(at: Date, by: string, stage: LeadStage, custom: readonly StageSetting[] = []): string {
-  const date = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(at)
+  const date = dateText(at)
   return `Client file deleted on ${date} by ${by}. Stage set back to ${stageLabel(stage, custom)}.`
 }
 
 /** On a lead that keeps other files: no stage change, just what happened. */
 export function deletedKeptNote(at: Date, by: string, remaining: number): string {
-  const date = new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(at)
+  const date = dateText(at)
   const files = remaining === 1 ? '1 other client file' : `${remaining} other client files`
   return `Client file deleted on ${date} by ${by}. The lead keeps ${files}, so it stays at Client.`
 }

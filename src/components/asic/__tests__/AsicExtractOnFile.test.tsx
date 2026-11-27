@@ -15,7 +15,7 @@ describe('AsicExtractOnFile', () => {
   it('says the extract is on file, with its date and a link to open it', async () => {
     vi.stubGlobal('fetch', answer({ extract: { id: 'ex1', extractedAt: '2026-10-03', uploadedAt: '2026-11-05T02:00:00Z' } }))
     render(<AsicExtractOnFile clientId="c1" />)
-    await waitFor(() => expect(screen.getByText(/ASIC extract on file, dated 3 October 2026/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/ASIC extract on file, dated 3 Oct 2026/)).toBeTruthy())
     expect(screen.getByRole('link', { name: 'Open' }).getAttribute('href')).toBe('/api/admin/clients/c1/asic-extract/ex1')
   })
 

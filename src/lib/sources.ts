@@ -57,12 +57,20 @@ export function printedLinesSource(
   }
   const rules = [...new Set(lines.map((l) => l.rule).filter((r): r is string => !!r))]
   const first = lines.find((l) => l.source)?.source ?? null
+  // One person's account (mapping.ts groupPersons): the person's own printed lines, each where printed.
+  const printedLines = lines.flatMap((l) => l.parts ?? [l])
   return {
-    from: [what, statement, ...lines.map((l) => printedLineText(l.label, l.printed, l.source))],
+    from: [
+      what,
+      statement,
+      ...lines.flatMap((l) =>
+        l.parts ? [`${l.label} — net ${aud(l.value)}:`, ...l.parts.map((p) => `  ${printedLineText(p.label, p.printed, p.source)}`)] : [printedLineText(l.label, l.printed, l.source)],
+      ),
+    ],
     rule: rules.length ? rules.join(' ') : null,
     calculation: lines.length > 1 ? `${lines.map((l) => aud(l.value)).join(' + ').replace(/\+ −/g, '− ')} = ${aud(total)}` : null,
     link: first ? { kind: 'pdf', documentId: first.documentId, page: first.page } : confirmUrl ? { kind: 'href', href: confirmUrl, label: 'Confirm key figures' } : null,
-    copy: lines.map((l) => l.source?.text ?? `${l.label} ${asPrinted(l.printed)}`).join('\n'),
+    copy: printedLines.map((l) => l.source?.text ?? `${l.label} ${asPrinted(l.printed)}`).join('\n'),
   }
 }
 

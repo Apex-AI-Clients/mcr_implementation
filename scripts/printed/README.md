@@ -30,6 +30,17 @@ have checked the file against the PDF.
 - `npm run printed:dump` writes each PDF's text layer with cell positions, to
   read alongside the page when writing or checking an expected file.
 
+## Answer keys
+
+`printed/<alias>/answer-key.json` (optional) holds figures staff gave as
+printed, per comparison column (`FY2026`, `current`), and `printed:check`
+checks them against the comparison built from that client's PDFs:
+
+- `figures`: `{ statement, label, values: { FY2026: 1234.56, … } }`: the printed line
+- `headline`: `{ key, values, note? }`: a headline figure (`total_current_assets`, …) and its ⓘ note
+- `badges`: `{ "<badge>": ["FY2026", …] }`: the periods that must earn each badge
+- `names`: `{ directors, parties }`: the names on file the headline rules use
+
 ## A new layout
 
 1. Add the PDF under `pdfs/<alias>/` and to `pdfs/manifest.json`.

@@ -74,7 +74,7 @@ const FINANCE_ONLY = /:\s*interest\b|\b(unexpired interest|chattel|hire purchase
 const pathText = (r: ComparisonRow) => r.path.join(' > ').toLowerCase()
 const isLiability = (r: ComparisonRow) => /liabilit/.test(pathText(r)) && !/equity|capital|reserves/.test((r.path[r.path.length - 1] ?? '').toLowerCase())
 
-function latestPrinted(r: ComparisonRow, columns: PrintedComparison['columns']): { value: number | null; column: string | null } {
+export function latestPrinted(r: ComparisonRow, columns: PrintedComparison['columns']): { value: number | null; column: string | null } {
   for (let i = r.cells.length - 1; i >= 0; i--) {
     const c = r.cells[i]
     if (c.printed && typeof c.value === 'number') return { value: c.value, column: columns[i]?.key ?? null }

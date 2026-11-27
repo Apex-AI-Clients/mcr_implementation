@@ -1,3 +1,4 @@
+import { dateField } from '@/lib/dates'
 import { parseActivityStatementCsv } from '../parseActivityStatement'
 import { markBreakdownRows } from '../paymentAllocations'
 import { RECONCILIATION_LABEL } from '../debtReconciliation'
@@ -292,7 +293,7 @@ export function analyseAccountCore(csvText: string): AtoAccountCore {
       key: 'atoBalance',
       label: 'ATO balance',
       amount: position.balance,
-      explanation: `The ATO's own running balance on its newest row${position.balanceDate ? ` (${position.balanceDate})` : ''}.`,
+      explanation: `The ATO's own running balance on its newest row${position.balanceDate ? ` (${dateField(position.balanceDate)})` : ''}.`,
       rows: [],
     })
   }

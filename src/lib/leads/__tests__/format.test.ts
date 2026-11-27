@@ -441,8 +441,8 @@ describe('dates', () => {
 
   it('anchors to Sydney, not the host timezone', () => {
     // 2026-09-01T22:00Z is already 2 Sep in Sydney (UTC+10).
-    expect(formatIsoDate('2026-09-01T22:00:00.000Z')).toBe('2026-09-02')
-    expect(formatShortDate('2026-09-01T22:00:00.000Z')).toBe('2 Sept')
+    expect(formatIsoDate('2026-09-01T22:00:00.000Z')).toBe('02/09/2026')
+    expect(formatShortDate('2026-09-01T22:00:00.000Z')).toBe('2 Sep')
   })
 
   it('formats short and full dates', () => {
@@ -459,8 +459,8 @@ describe('dates', () => {
   })
 
   it('falls back to a full date past 30 days', () => {
-    // en-AU does not abbreviate every month to three letters ("June", "Sept").
-    expect(formatAge('2026-06-01T02:00:00.000Z', NOW)).toBe('1 June 2026')
+    // Fixed three-letter months (src/lib/dates.ts), never the locale's "June" / "Sept".
+    expect(formatAge('2026-06-01T02:00:00.000Z', NOW)).toBe('1 Jun 2026')
   })
 })
 
@@ -475,7 +475,7 @@ describe('leadsToCsv', () => {
     // No history passed, so the notes columns are an explicit 0 and a blank
     // rather than absent — the header keeps its shape either way.
     expect(lines[1]).toBe(
-      '2026-08-26,2026-08-26,1,Test Lead,test@example.com.au,0402 915 338,100000,124999,,Company,VIC,,Lead,Facebook,2026-08-26,0,',
+      '26/08/2026,26/08/2026,1,Test Lead,test@example.com.au,0402 915 338,100000,124999,,Company,VIC,,Lead,Facebook,26/08/2026,0,',
     )
   })
 

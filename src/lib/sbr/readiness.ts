@@ -2,6 +2,7 @@ import type { DpnNoticeView } from '@/lib/dpn/view'
 import { noticeTypeLabel } from '@/lib/dpn/stored'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
+import { dateText } from '@/lib/dates'
 
 /**
  * Whether a client is ready for an SBR outcome prediction: three items, each
@@ -20,9 +21,11 @@ export type ReadinessKey = 'financials' | 'lodgement' | 'dpn'
 /**
  * 'processing' only while a run is actually going. 'not_started': there is
  * work to do (files never read, a comparison out of date) and nothing is
- * running — offered as "Run now".
+ * running — offered as "Run now". 'needs_files': what was uploaded is fine, but
+ * more is needed (financial statements: only one year on file); shown in
+ * amber, never as a fault, and it does not hold the prediction up.
  */
-export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed' | 'needs_review'
+export type ReadinessStatus = 'not_uploaded' | 'not_started' | 'processing' | 'ready' | 'failed' | 'needs_review' | 'needs_files'
 
 export const READINESS_LABEL: Record<ReadinessKey, string> = {
   financials: 'Financial statements',
@@ -37,6 +40,7 @@ export const STATUS_LABEL: Record<ReadinessStatus, string> = {
   ready: 'Ready',
   failed: 'Failed',
   needs_review: 'Needs review',
+  needs_files: 'Needs more files',
 }
 
 export interface ReadinessItem {
@@ -69,6 +73,12 @@ export interface ReadinessInput {
     unreviewedFailures: number
     /** Staff confirmed which printed lines mean what (printed/mapping.ts): the prediction's only source of figures. */
     mappingConfirmed: boolean
+    /**
+     * What was read when there is no comparison (fewer than two financial years): the years shown
+     * ("FY2026"), whether a current period was read, and whether any balance sheet was. Absent: as
+     * before (nothing read).
+     */
+    read?: { annualYears: string[]; currentPeriod: boolean; balanceSheet: boolean }
     /**
      * The year the prediction's figures come from (the latest balance sheet) is not proven:
      * an uncertain scan reading (printed/proof.ts). Its reasons; absent or empty: proven.
@@ -106,10 +116,7 @@ export interface Readiness {
   dpn: boolean | null
 }
 
-const shortDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(
-    new Date(iso),
-  )
+const shortDate = (iso: string) => dateText(iso)
 
 function item(input: ReadinessInput, key: ReadinessKey, status: ReadinessStatus, detail: string | null, href: string): ReadinessItem {
   return {
@@ -143,8 +150,22 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
   // Processing only while the run has PDFs of its own to read: a run reading a
   // notice or the ATO export leaves statements already read as they are.
   if (f.outOfDate) return item(input, 'financials', input.jobRunning ? 'processing' : 'not_started', null, href)
-  // Read, but fewer than two annual statements came out: nothing to compare.
-  if (!f.comparison) return item(input, 'financials', 'failed', null, href)
+  // Nothing read from the files: Failed, and why. Fewer than two years read is not a failure (25 Nov 2026):
+  // the checks below run as usual and the item says what is missing.
+  const read = f.read
+  const somethingRead = !!read && (read.annualYears.length > 0 || read.currentPeriod)
+  if (!f.comparison && !somethingRead) {
+    return item(input, 'financials', 'failed', 'No profit and loss or balance sheet could be read from the uploaded files.', href)
+  }
+  // Fewer than two years on file (25 Nov 2026): "Needs more files", in amber, saying which year is
+  // there; nothing is wrong with the PDF. An uncertain scan of it still says "Being prepared".
+  if (!f.comparison && read) {
+    if ((f.heldReasons ?? []).length > 0) {
+      return { ...item(input, 'financials', 'needs_review', `Being prepared: ${f.heldReasons!.join('; ')}.`, href), canRunNow: false }
+    }
+    const then = f.mappingConfirmed ? '' : ' Then confirm the key figures on the comparison page.'
+    return { ...item(input, 'financials', 'needs_files', `${fewYearsNote(read)}${then}`, href), canRunNow: false }
+  }
   if (!f.mappingConfirmed) {
     return item(
       input,
@@ -159,11 +180,20 @@ function financialsItem(input: ReadinessInput): ReadinessItem {
     return { ...item(input, 'financials', 'needs_review', `Being prepared: ${f.heldReasons!.join('; ')}.`, href), canRunNow: false }
   }
   // Printed totals that do not add up never stop the prediction (Gabby, 10 Nov 2026): a note, listed on the comparison page.
-  const note =
+  const totals =
     f.unreviewedFailures > 0
       ? `${f.unreviewedFailures === 1 ? '1 printed total does' : `${f.unreviewedFailures} printed totals do`} not add up: they are named under the year badges on the comparison page.`
       : null
-  return item(input, 'financials', 'ready', note, href)
+  return item(input, 'financials', 'ready', totals, href)
+}
+
+/** "Only one financial year is on file (FY2026): upload an earlier year to compare." */
+function fewYearsNote(read: NonNullable<ReadinessInput['financials']['read']>): string {
+  const years =
+    read.annualYears.length === 1
+      ? `Only one financial year is on file (${read.annualYears[0]}): upload an earlier year to compare.`
+      : 'No full financial year is on file yet, only the current period: upload the latest annual statements to compare.'
+  return read.balanceSheet ? years : `${years} No balance sheet is on file, so the prediction has no balance sheet figures.`
 }
 
 function lodgementItem(input: ReadinessInput): ReadinessItem {
@@ -242,7 +272,7 @@ function dpnItem(input: ReadinessInput): ReadinessItem {
 
 /** Finished, one way or the other: waiting longer would not change it. */
 function settled(i: ReadinessItem): boolean {
-  return i.status === 'ready' || i.status === 'failed'
+  return i.status === 'ready' || i.status === 'failed' || i.status === 'needs_files'
 }
 
 /**

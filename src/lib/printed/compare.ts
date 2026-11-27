@@ -1,5 +1,6 @@
 import { verifyStatement, type TotalCheck } from './verify'
 import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowStyle, PrintedStatement, PrintedStatementKind, ScanCell, ScanSummary } from './types'
+import { dateText } from '@/lib/dates'
 
 /**
  * The as-printed comparison: a client's financial statement PDFs, read by
@@ -7,17 +8,28 @@ import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedRow, PrintedRowS
  * invented: every figure is a printed figure, with the file, page and line it
  * came from.
  *
- *   Columns   every financial year with a report of its own, oldest first,
- *             then the current period (when it ends after the latest year).
- *             Years printed only as an older report's comparative column on
- *             request (comparativeYears).
- *   Sources   each year from its own report; a comparative column of a later
- *             report only when the year has no report of its own.
+ *   Columns   every financial year with annual statements of its own or a
+ *             column in a software export (Xero, MYOB), oldest first, then the
+ *             current period (when it ends after the latest year). Years
+ *             printed only as the prior-year column of later annual statements
+ *             on request (comparativeYears).
+ *   Sources   per year and statement (Gabby, 25 Nov 2026), never silently:
+ *               1 that year's own annual financial statements (main column)
+ *               2 an export's column (the export whose latest period it is
+ *                 first), then
+ *               3 the prior-year column of later annual statements (the
+ *                 nearest later first);
+ *             the same rank: the latest upload. Current period: the latest
+ *             period end, then the latest upload; a profit and loss and
+ *             balance sheet ending on different dates are flagged. A staff
+ *             choice ("Use this source instead") overrides, per year and
+ *             statement. `periodSources` says where each came from and where
+ *             else it is printed, with the lines that differ.
  *   Rows      the latest report's printed order. A line only an earlier year
  *             prints goes under the same heading, after the line it follows
  *             there. Nothing is dropped; a line a year does not print is blank.
- *   Restated  a later report printing a different figure for the same year
- *             and line: the own report's figure stays, with a note.
+ *   Restated  another report printing a different figure for the same period
+ *             and line: the source's figure stays, with a note.
  *   Checks    every printed total of every report used, against its lines
  *             (verify.ts). A failure is a hard check: Needs review.
  *   Scans     a figure read from a scanned page (by Claude, src/lib/scan)
@@ -40,6 +52,61 @@ export interface ComparisonColumn {
   financialYear: number
   periodStart: string | null
   periodEnd: string
+  /**
+   * Current period only: the date each statement ends on, when they differ (a profit and loss to
+   * 16 Nov beside a balance sheet as at 31 Oct). `periodEnd` is the later.
+   */
+  ends?: Partial<Record<PrintedStatementKind, string>>
+}
+
+/**
+ * annual_statements  the year's own annual financial statements (main column)
+ * export             a column of a software export (Xero, MYOB)
+ * comparative        the prior-year column of later annual statements
+ * current_period     a current-period report (annual statements or export)
+ */
+export type SourceKind = 'annual_statements' | 'export' | 'comparative' | 'current_period'
+
+export interface PeriodSource {
+  documentId: string
+  filename: string
+  uploadedAt: string
+  kind: SourceKind
+  /** "Annual financial statements", "Multi-year export (2026–2022)", "Prior-year column of the FY2027 financial statements". */
+  label: string
+  /** The column header it is printed under. */
+  header: string
+}
+
+export interface AlsoIn extends PeriodSource {
+  /** Lines printed with a different figure (or by one of the two only); empty: the same figures. */
+  differs: { key: string; label: string; path: string[]; source: PrintedAmount; other: PrintedAmount }[]
+}
+
+export interface StatementSource {
+  statement: PrintedStatementKind
+  /** Null: no report prints this statement for the period. */
+  source: PeriodSource | null
+  /** Staff chose this source ("Use this source instead"); null: chosen by the rules. */
+  chosen: { by: string; at: string } | null
+  /** Every other report printing this statement for the period, in rank order. */
+  alsoIn: AlsoIn[]
+}
+
+export interface PeriodSources {
+  column: string
+  statements: StatementSource[]
+  /** Current period: the profit and loss and balance sheet end on different dates (the message to show). */
+  endsDiffer: string | null
+}
+
+/** A staff choice of source for one period and statement (comparison_source_choices; null: back to the rules). */
+export interface SourceChoice {
+  column: string
+  statement: PrintedStatementKind
+  documentId: string | null
+  chosenBy: string
+  chosenAt: string
 }
 
 export interface CellSource {
@@ -120,6 +187,8 @@ export interface PrintedComparison {
   annualYears: number
   /** Years printed only as a comparative column, left out (unless asked for). */
   hiddenComparativeYears: number[]
+  /** One per column: where each statement's figures come from, and where else they are printed. */
+  periodSources: PeriodSources[]
 }
 
 export const NO_TEXT_LAYER_FOR_STAFF =
@@ -134,68 +203,136 @@ interface Instance {
   column: number
   /** The report's own period (its latest column), not a comparative. */
   own: boolean
+  /** The PDF is a software export (reportKind.ts); a read stored before 25 Nov 2026 counts as annual statements. */
+  isExport: boolean
 }
 
 const fyLabel = (fy: number) => `FY${fy}`
 
-
 function instancesOf(docs: ComparisonDocument[]): Instance[] {
   const out: Instance[] = []
   for (const doc of docs) {
+    const isExport = doc.read?.report?.kind === 'export'
     doc.read?.statements.forEach((statement, statementIndex) => {
       const latest = statement.columns.reduce((max, c) => (c.periodEnd > max ? c.periodEnd : max), '')
-      statement.columns.forEach((c, column) => out.push({ doc, statement, statementIndex, column, own: c.periodEnd === latest }))
+      statement.columns.forEach((c, column) => out.push({ doc, statement, statementIndex, column, own: c.periodEnd === latest, isExport }))
     })
   }
   return out
 }
 
+const ownEnd = (i: Instance) => i.statement.columns.reduce((max, c) => (c.periodEnd > max ? c.periodEnd : max), '')
+
 /** The report's own financial year, for "the FY2025 report". */
 function reportLabel(inst: Instance): string {
+  if (inst.isExport) return `the export "${inst.doc.filename}"`
   const own = inst.statement.columns.reduce((a, b) => (b.periodEnd > a.periodEnd ? b : a))
   return own.kind === 'annual' ? `the ${fyLabel(own.financialYear)} report` : 'the current period report'
 }
 
+/** 1 own annual statements, 2 an export's column, 3 later annual statements' prior-year column. */
+function tier(inst: Instance): 1 | 2 | 3 {
+  if (inst.isExport) return 2
+  return inst.own ? 1 : 3
+}
+
+function sourceKind(inst: Instance): SourceKind {
+  if (inst.statement.columns[inst.column].kind === 'current_period') return 'current_period'
+  return inst.isExport ? 'export' : inst.own ? 'annual_statements' : 'comparative'
+}
+
+function sourceLabel(inst: Instance): string {
+  const kind = sourceKind(inst)
+  if (kind === 'current_period') return inst.isExport ? 'Current-period report (export)' : 'Current-period financial statements'
+  if (kind === 'annual_statements') return 'Annual financial statements'
+  if (kind === 'comparative') {
+    const own = inst.statement.columns.reduce((a, b) => (b.periodEnd > a.periodEnd ? b : a))
+    return `Prior-year column of the ${fyLabel(own.financialYear)} financial statements`
+  }
+  const years = inst.statement.columns.filter((c) => c.kind === 'annual').map((c) => c.financialYear)
+  return years.length > 1 ? `Multi-year export (${Math.max(...years)}–${Math.min(...years)})` : 'Export'
+}
+
+function describeSource(inst: Instance): PeriodSource {
+  return {
+    documentId: inst.doc.documentId,
+    filename: inst.doc.filename,
+    uploadedAt: inst.doc.uploadedAt,
+    kind: sourceKind(inst),
+    label: sourceLabel(inst),
+    header: inst.statement.columns[inst.column].header,
+  }
+}
+
+/**
+ * Rank order for one period and statement. Annual: tier; within exports, the export whose latest
+ * period it is first (an export's own year before its earlier columns); within prior-year columns,
+ * the nearest later statements first; then the latest upload. Current period: the latest upload.
+ */
+function byRank(a: Instance, b: Instance): number {
+  const upload = b.doc.uploadedAt.localeCompare(a.doc.uploadedAt)
+  if (a.statement.columns[a.column].kind === 'current_period') return upload
+  const t = tier(a) - tier(b)
+  if (t) return t
+  if (tier(a) === 2 && a.own !== b.own) return a.own ? -1 : 1
+  if (tier(a) === 3) return ownEnd(a).localeCompare(ownEnd(b)) || upload
+  return upload
+}
+
 function chooseColumns(instances: Instance[], comparativeYears: boolean): { columns: ComparisonColumn[]; hiddenYears: number[] } {
-  const annual = new Map<number, PrintedColumn>()
-  const ownYears = new Set<number>()
-  let current: PrintedColumn | null = null
+  const annual = new Map<number, Instance[]>()
+  const latestCurrent = new Map<PrintedStatementKind, PrintedColumn>()
   for (const inst of instances) {
     const c = inst.statement.columns[inst.column]
-    if (c.kind === 'annual') {
-      if (!annual.has(c.financialYear) || inst.own) annual.set(c.financialYear, c)
-      if (inst.own) ownYears.add(c.financialYear)
-    } else if (!current || c.periodEnd > current.periodEnd) {
-      current = c
+    if (c.kind === 'annual') annual.set(c.financialYear, [...(annual.get(c.financialYear) ?? []), inst])
+    else {
+      const was = latestCurrent.get(inst.statement.kind)
+      if (!was || c.periodEnd > was.periodEnd) latestCurrent.set(inst.statement.kind, c)
     }
   }
-  // A year printed only as another report's comparative column: shown on request.
-  const hiddenYears = [...annual.keys()].filter((fy) => !ownYears.has(fy)).sort((a, b) => a - b)
-  const years = [...annual.keys()].filter((fy) => comparativeYears || ownYears.has(fy)).sort((a, b) => a - b)
+  // A year printed only as the prior-year column of later annual statements: shown on request.
+  const shownByRule = (fy: number) => annual.get(fy)!.some((i) => tier(i) < 3)
+  const hiddenYears = [...annual.keys()].filter((fy) => !shownByRule(fy)).sort((a, b) => a - b)
+  const years = [...annual.keys()].filter((fy) => comparativeYears || shownByRule(fy)).sort((a, b) => a - b)
   const columns: ComparisonColumn[] = years.map((fy) => {
-    const c = annual.get(fy)!
+    // The period as its best-ranked report prints it (a profit and loss's start, when there is one).
+    const ranked = [...annual.get(fy)!].sort(byRank)
+    const c = (ranked.find((i) => i.statement.kind === 'profit_and_loss') ?? ranked[0]).statement.columns[(ranked.find((i) => i.statement.kind === 'profit_and_loss') ?? ranked[0]).column]
     return { key: fyLabel(fy), kind: 'annual', financialYear: fy, periodStart: c.periodStart, periodEnd: c.periodEnd }
   })
   const lastEnd = columns.length ? columns[columns.length - 1].periodEnd : ''
-  if (current && current.periodEnd > lastEnd) {
-    columns.push({ key: 'current', kind: 'current_period', financialYear: current.financialYear, periodStart: current.periodStart, periodEnd: current.periodEnd })
+  // The current period: each statement's latest period end after the latest year.
+  const current = [...latestCurrent.entries()].filter(([, c]) => c.periodEnd > lastEnd)
+  if (current.length) {
+    const latest = current.reduce((a, b) => (b[1].periodEnd > a[1].periodEnd ? b : a))[1]
+    const pl = current.find(([k]) => k === 'profit_and_loss')?.[1]
+    const ends = Object.fromEntries(current.map(([k, c]) => [k, c.periodEnd])) as Partial<Record<PrintedStatementKind, string>>
+    const differ = new Set(Object.values(ends)).size > 1
+    columns.push({
+      key: 'current',
+      kind: 'current_period',
+      financialYear: latest.financialYear,
+      periodStart: (pl ?? latest).periodStart,
+      periodEnd: latest.periodEnd,
+      ...(differ ? { ends } : {}),
+    })
   }
   return { columns, hiddenYears: comparativeYears ? [] : hiddenYears }
 }
 
 function matches(inst: Instance, col: ComparisonColumn): boolean {
   const c = inst.statement.columns[inst.column]
-  return col.kind === 'annual' ? c.kind === 'annual' && c.financialYear === col.financialYear : c.kind === 'current_period' && c.periodEnd === col.periodEnd
+  if (col.kind === 'annual') return c.kind === 'annual' && c.financialYear === col.financialYear
+  return c.kind === 'current_period' && c.periodEnd === (col.ends?.[inst.statement.kind] ?? col.periodEnd)
 }
 
-/** The year's own report (latest upload), else the comparative in the nearest later report. */
-function sourceDocument(instances: Instance[], kind: PrintedStatementKind, col: ComparisonColumn): ComparisonDocument | null {
-  const candidates = instances.filter((i) => i.statement.kind === kind && matches(i, col))
-  if (candidates.length === 0) return null
-  const own = candidates.filter((i) => i.own).sort((a, b) => b.doc.uploadedAt.localeCompare(a.doc.uploadedAt))
-  if (own.length) return own[0].doc
-  const ownEnd = (i: Instance) => i.statement.columns.reduce((max, c) => (c.periodEnd > max ? c.periodEnd : max), '')
-  return [...candidates].sort((a, b) => ownEnd(a).localeCompare(ownEnd(b)) || b.doc.uploadedAt.localeCompare(a.doc.uploadedAt))[0].doc
+/** The period's reports of one statement, best first, and the one used: a staff choice, else the best. */
+function rankSources(instances: Instance[], kind: PrintedStatementKind, col: ComparisonColumn, choice: SourceChoice | undefined): { used: Instance | null; ranked: Instance[] } {
+  const ranked = instances.filter((i) => i.statement.kind === kind && matches(i, col)).sort(byRank)
+  // One per document (a report printing the statement twice keeps its first).
+  const docs = ranked.filter((i, k) => ranked.findIndex((j) => j.doc === i.doc) === k)
+  const chosen = choice?.documentId ? docs.find((i) => i.doc.documentId === choice.documentId) : undefined
+  return { used: chosen ?? docs[0] ?? null, ranked: docs }
 }
 
 // ─── Rows ─────────────────────────────────────────────────────────────────────
@@ -315,19 +452,58 @@ const KINDS: PrintedStatementKind[] = ['profit_and_loss', 'balance_sheet']
 export interface ComparisonOptions {
   /** Also show years printed only as a later report's comparative column ("Show earlier years…"). */
   comparativeYears?: boolean
+  /** Staff choices of source ("Use this source instead"), the whole log: the latest per period and statement counts. */
+  sourceChoices?: SourceChoice[]
 }
 
-export function buildPrintedComparison(docs: ComparisonDocument[], { comparativeYears = false }: ComparisonOptions = {}): PrintedComparison {
+/** "The profit and loss runs to 16 Nov 2026 but the balance sheet is as at 31 Oct 2026." */
+function endsDifferMessage(ends: Partial<Record<PrintedStatementKind, string>>): string {
+  const day = (iso: string) => dateText(iso)
+  const pl = ends.profit_and_loss
+  const bs = ends.balance_sheet
+  return pl && bs
+    ? `The current-period profit and loss runs to ${day(pl)} but the balance sheet is as at ${day(bs)}: they do not cover the same period.`
+    : 'The current-period statements end on different dates.'
+}
+
+/** The lines two reports of the same period print differently (or only one of them prints with a figure). */
+function differingLines(source: BlockRow[], other: BlockRow[]): AlsoIn['differs'] {
+  const out: AlsoIn['differs'] = []
+  const value = (b: BlockRow | undefined) => (b ? b.row.amounts[b.column] : null)
+  const keys = [...new Set([...source, ...other].filter((b) => b.row.style !== 'heading' && b.row.style !== 'ratio').map((b) => b.key))]
+  for (const key of keys) {
+    const s = source.find((b) => b.key === key)
+    const o = other.find((b) => b.key === key)
+    if (sameAmount(value(s), value(o))) continue
+    const row = (s ?? o)!.row
+    out.push({ key, label: row.label, path: row.path, source: value(s), other: value(o) })
+  }
+  return out
+}
+
+export function buildPrintedComparison(docs: ComparisonDocument[], { comparativeYears = false, sourceChoices = [] }: ComparisonOptions = {}): PrintedComparison {
   const instances = instancesOf(docs)
   const { columns, hiddenYears } = chooseColumns(instances, comparativeYears)
   const tables: ComparisonTable[] = []
   const failures: ComparisonFailure[] = []
   const usedDocs = new Set<string>()
+  // The latest staff choice per period and statement (the log is append-only).
+  const latestChoice = new Map<string, SourceChoice>()
+  for (const c of [...sourceChoices].sort((a, b) => a.chosenAt.localeCompare(b.chosenAt))) latestChoice.set(`${c.column}|${c.statement}`, c)
+  const periodSources: PeriodSources[] = columns.map((col) => ({
+    column: col.key,
+    statements: [],
+    endsDiffer: col.ends ? endsDifferMessage(col.ends) : null,
+  }))
 
   for (const kind of KINDS) {
-    const sources = columns.map((col) => sourceDocument(instances, kind, col))
+    const ranks = columns.map((col) => rankSources(instances, kind, col, latestChoice.get(`${col.key}|${kind}`)))
+    const sources = ranks.map((r) => r.used?.doc ?? null)
     const blocks = columns.map((col, i) => (sources[i] ? block(sources[i]!, kind, col, instances) : []))
-    if (blocks.every((b) => b.length === 0)) continue
+    if (blocks.every((b) => b.length === 0)) {
+      columns.forEach((_, i) => periodSources[i].statements.push({ statement: kind, source: null, chosen: null, alsoIn: [] }))
+      continue
+    }
 
     // The latest annual year's report sets the order; then newer to older; the current period last.
     const annualIdx = columns.map((c, i) => (c.kind === 'annual' ? i : -1)).filter((i) => i >= 0 && blocks[i].length)
@@ -370,17 +546,25 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
       }
     })
 
-    // Per column, each other report printing that year as a comparative: one block per report.
-    const comparatives = columns.map((col, i) => {
-      const out: { inst: Instance; rows: BlockRow[] }[] = []
-      for (const inst of instances) {
-        if (inst.statement.kind !== kind || inst.own || !matches(inst, col) || inst.doc === sources[i]) continue
-        if (out.some((o) => o.inst.doc === inst.doc)) continue
-        const rows = block(inst.doc, kind, col, instances)
-        canonical(rows)
-        out.push({ inst, rows })
-      }
-      return out
+    // Per column, each other report printing that period: one block per report, in rank order.
+    const comparatives = columns.map((col, i) =>
+      ranks[i].ranked
+        .filter((inst) => inst.doc !== sources[i])
+        .map((inst) => {
+          const rows = block(inst.doc, kind, col, instances)
+          canonical(rows)
+          return { inst, rows }
+        }),
+    )
+    columns.forEach((col, i) => {
+      const used = ranks[i].used
+      const choice = latestChoice.get(`${col.key}|${kind}`)
+      periodSources[i].statements.push({
+        statement: kind,
+        source: used ? describeSource(used) : null,
+        chosen: used && choice?.documentId === used.doc.documentId ? { by: choice.chosenBy, at: choice.chosenAt } : null,
+        alsoIn: comparatives[i].map(({ inst, rows }) => ({ ...describeSource(inst), differs: differingLines(blocks[i], rows) })),
+      })
     })
 
     const rows: ComparisonRow[] = order.map(({ key, row }) => ({
@@ -391,8 +575,8 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
       cells: columns.map((col, i) => {
         const found = blocks[i].find((b) => b.key === key)
         const restated: Restatement[] = []
-        if (col.kind === 'annual' && row.style !== 'heading') {
-          // Later reports printing this year as a comparative.
+        if (row.style !== 'heading') {
+          // Every other report printing this period (a later report's comparative, an export's column).
           for (const { inst, rows: otherRows } of comparatives[i]) {
             const other = otherRows.find((b) => b.key === key)
             if (!other) continue
@@ -423,7 +607,15 @@ export function buildPrintedComparison(docs: ComparisonDocument[], { comparative
     tables.push({ kind, title: titleSource?.statement.title ?? (kind === 'profit_and_loss' ? 'Profit and Loss' : 'Balance Sheet'), rows })
   }
 
-  return { columns, tables, failures, documents: describeDocuments(docs, usedDocs), annualYears: columns.filter((c) => c.kind === 'annual').length, hiddenComparativeYears: hiddenYears }
+  return {
+    columns,
+    tables,
+    failures,
+    documents: describeDocuments(docs, usedDocs),
+    annualYears: columns.filter((c) => c.kind === 'annual').length,
+    hiddenComparativeYears: hiddenYears,
+    periodSources,
+  }
 }
 
 

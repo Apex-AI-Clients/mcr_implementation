@@ -336,7 +336,8 @@ export function predictionInputs(alias: string, snapshot: Snapshot | null): Lodg
     atoDebtAsOf: debt.asOf,
     numberOfLateLodgements: lodgement?.summary.numberOfLateLodgements ?? null,
     cumulativeDaysLate: lodgement?.summary.cumulativeDaysLate ?? null,
-    daysSinceLastPayment: snapshot?.icaRows ? daysSinceLastPayment(snapshot.icaRows) : null,
+    // To the day the snapshot was taken (the prediction uses today): the same figure every day.
+    daysSinceLastPayment: snapshot?.icaRows ? daysSinceLastPayment(snapshot.icaRows, snapshot.takenAt) : null,
     dpn: dpn ? 'yes' : 'no',
   }
 }

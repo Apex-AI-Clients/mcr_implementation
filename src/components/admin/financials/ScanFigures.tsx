@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { parseAmount } from '@/lib/printed/amounts'
 import { columnTitle, formatPrinted } from '@/lib/printed/csv'
 import type { ComparisonCell, ComparisonColumn, ComparisonRow, PrintedComparison } from '@/lib/printed/compare'
-import { comparisonProof } from '@/lib/printed/proof'
 import type { PrintedAmount } from '@/lib/printed/types'
+import { dateText } from '@/lib/dates'
 
 /**
  * Figures read from a scanned page (src/lib/scan): the crop of the printed
@@ -96,7 +96,7 @@ export function ScanCorrection({ clientId, scan }: { clientId: string; scan: Sca
       {scan.status === 'chosen' && (
         <p className="text-foreground/70">
           Chosen by {scan.chosenBy}
-          {scan.chosenAt ? ` on ${new Date(scan.chosenAt).toLocaleDateString('en-AU')}` : ''}.
+          {scan.chosenAt ? ` on ${dateText(scan.chosenAt)}` : ''}.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -148,46 +148,6 @@ export function ScanChecksPanel({ clientId, comparison }: { clientId: string; co
         ))}
       </ul>
     </section>
-  )
-}
-
-/** Each year's proof (printed/proof.ts): the badge, the accountant's error noted, or "Being prepared" and why. */
-export function YearProofStrip({ comparison }: { comparison: PrintedComparison }) {
-  const proofs = comparisonProof(comparison)
-  if (proofs.length === 0) return null
-  const notes = proofs.filter((p) => p.status === 'printed_error').flatMap((p) => p.notes)
-  return (
-    <div className="space-y-2">
-    <ul data-testid="year-proofs" className="flex flex-wrap gap-2 text-xs">
-      {proofs.map((p) => {
-        const title = columnTitle(comparison.columns[p.index]).title
-        return (
-          <li
-            key={p.column}
-            className={`rounded-lg border px-2.5 py-1.5 ${
-              p.status === 'proven' ? 'border-success/35 bg-success/10 text-success' : p.status === 'held' ? 'border-border bg-surface/60 text-foreground/70' : 'border-warning/40 bg-warning/5 text-foreground/80'
-            }`}
-            title={[...p.reasons, ...p.notes].join('\n') || undefined}
-          >
-            <span className="font-semibold">{title}</span>
-            {p.status === 'proven' && <> · ✓ {p.badge}</>}
-            {p.status === 'held' && <> · Being prepared: {p.reasons.join('; ')}</>}
-            {p.status === 'printed_error' && (
-              <> · As printed: {p.notes.length} printed total{p.notes.length === 1 ? ' does' : 's do'} not add up (listed below)</>
-            )}
-          </li>
-        )
-      })}
-    </ul>
-    {/* The accountant's own totals that do not add up: shown as printed, named here; they never stop the prediction. */}
-    {notes.length > 0 && (
-      <ul data-testid="printed-total-notes" className="space-y-0.5 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-foreground/75">
-        {notes.map((n, i) => (
-          <li key={i}>{n}</li>
-        ))}
-      </ul>
-    )}
-    </div>
   )
 }
 

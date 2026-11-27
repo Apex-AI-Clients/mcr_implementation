@@ -41,6 +41,8 @@ import type { ComparableCase, SbrPrediction, SbrPredictionInput } from '@/lib/sb
 import type { DirectorLoanInput, DirectorLoanYear } from '@/lib/sbr/directorLoan'
 import { SourceButton, SourcedAmount } from '@/components/ui/SourcedAmount'
 import { calculated, enteredByStaff, printedLinesSource, type AmountSource } from '@/lib/sources'
+import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE } from '@/lib/analysis/config'
+import { dateField } from '@/lib/dates'
 import { VerifiedBadge } from '@/components/admin/ica/IcaParts'
 import {
   directorLoanLabel,
@@ -69,6 +71,12 @@ interface InitialAuto {
   daysSinceLastPayment: number | null
   /** The ATO account's first and last dates, e.g. "1 Jul 2020 – 1 Oct 2026"; null without rows. */
   icaHistory?: string | null
+  /** The newest payment's processed date (ISO) that "Days since last payment" counts from; null when none. */
+  lastPaymentDate?: string | null
+  /** The day it counts to (today, Sydney; ISO). */
+  paymentDaysTo?: string | null
+  /** The lodgement analysis page: the late lodgements and the ATO rows behind these three inputs. */
+  lodgementUrl?: string
   directorLoanReceivableAmount: number
   directorLoanDetected: boolean | null
   directorLoanReasoning: string | null
@@ -299,21 +307,49 @@ export function headlineExplanations(
 }
 
 /** The director loan input's source: the printed lines owed to the company (sbr/directorLoan.ts). */
-function directorLoanSource(loan: DirectorLoanInput | undefined, amount: number, mappingUrl?: string): AmountSource {
-  if (!loan) return { from: ['Director loan receivable amount', 'The loan lines confirmed on the latest balance sheet.'], link: mappingUrl ? { kind: 'href', href: mappingUrl, label: 'Confirm key figures' } : null }
-  const source = printedLinesSource(
-    `Director loan receivable amount (owed to the company${loan.basis === 'net' ? ', net of what the company owes' : ''})`,
-    `${loan.source ?? 'Latest balance sheet'}`,
-    loan.receivableLines,
-    loan.receivable,
-    { confirmUrl: mappingUrl },
-  )
+// No link inside this ⓘ (27 Nov 2026: its "Open PDF" / "Confirm key figures" link confused Gabby); it only says where the figure is printed.
+function directorLoanSource(loan: DirectorLoanInput | undefined, amount: number): AmountSource {
+  if (!loan) return { from: ['Director loan receivable amount', 'The loan lines confirmed on the latest balance sheet.'] }
+  const source: AmountSource = {
+    ...printedLinesSource(
+      `Director loan receivable amount (owed to the company${loan.basis === 'net' ? ', net of what the company owes' : ''})`,
+      `${loan.source ?? 'Latest balance sheet'}`,
+      loan.receivableLines,
+      loan.receivable,
+    ),
+    link: null,
+  }
   if (loan.note && loan.receivableLines.length === 0) {
-    return { from: ['Director loan receivable amount (owed to the company)', loan.note], link: mappingUrl ? { kind: 'href', href: mappingUrl, label: 'Confirm key figures' } : null }
+    return { from: ['Director loan receivable amount (owed to the company)', loan.note] }
   }
   return loan.basis === 'net'
     ? { ...source, calculation: `${formatAudCents(loan.receivable)} owed to the company − ${formatAudCents(loan.payable)} owed by it = ${formatAudCents(amount)}` }
     : source
+}
+
+/** Where the three lodgement inputs come from: the lodgement analysis of the ATO account file, with a link to it. */
+function lodgementSources(auto: InitialAuto): { cumulative: AmountSource; count: AmountSource; days: AmountSource } {
+  const link = auto.lodgementUrl ? { kind: 'href' as const, href: auto.lodgementUrl, label: 'Open the lodgement analysis' } : null
+  const rule = `${LATE_LODGEMENT_RULE[LATE_LODGEMENT_SCOPE]}. Days late = processed date − due (effective) date; a negative counts as 0.`
+  const from = 'From the lodgement analysis of the ATO account file (integrated client account), which lists each late lodgement.'
+  const last = auto.lastPaymentDate ?? null
+  const to = auto.paymentDaysTo ?? null
+  const days = auto.daysSinceLastPayment
+  return {
+    cumulative: { from: ['Cumulative days late', from, 'The days late of every late lodgement, added up.'], rule, link },
+    count: { from: ['Number of late lodgements', from, 'How many lodgements were lodged after their due date.'], rule, link },
+    days: {
+      from: [
+        'Days since last payment',
+        last
+          ? `The newest payment on the ATO account file (integrated client account), processed ${dateField(last)}, counted to today${to ? ` (${dateField(to)})` : ''}.`
+          : `No payment on the ATO account file (integrated client account)${auto.icaHistory ? `, ${auto.icaHistory}` : ''}: the prediction reads this as never paid.`,
+      ],
+      rule: 'A payment is a row the analysis reads as “Payment” or “Payment received”; credits that are not payments (credit transfers, Cash Flow Boost) are left out.',
+      calculation: last && to && days != null && days !== 9999 ? `${dateField(to)} − ${dateField(last)} = ${formatNumber(days)} days` : null,
+      link: link && { ...link, label: 'Open the lodgement analysis (ATO rows)' },
+    },
+  }
 }
 
 /** The ATO debt's source: the ATO account, the balance sheet's ATO lines, or staff. */
@@ -996,14 +1032,17 @@ function InputPanel(props: InputPanelProps) {
               label="Cumulative days late"
               value={formatNumber(auto.cumulativeDaysLate)}
               missing={auto.cumulativeDaysLate == null}
+              source={lodgementSources(auto).cumulative}
             />
             <ReadOnlyField
               label="Number of late lodgements"
               value={formatNumber(auto.numberOfLateLodgements)}
               missing={auto.numberOfLateLodgements == null}
+              source={lodgementSources(auto).count}
             />
             <ReadOnlyField
               label="Days since last payment"
+              source={lodgementSources(auto).days}
               value={
                 auto.daysSinceLastPayment === 9999
                   ? `No payments found in the ATO account${auto.icaHistory ? ` (${auto.icaHistory})` : ''}`
@@ -1023,6 +1062,9 @@ function InputPanel(props: InputPanelProps) {
                     </Link>
                   )}
                 </p>
+                {clientId && (auto.directorLoan.notIdentified.conflicts ?? []).length > 0 && (
+                  <LoanSideConflicts clientId={clientId} conflicts={auto.directorLoan.notIdentified.conflicts!} />
+                )}
                 {clientId && (auto.directorLoan.notIdentified.possible ?? []).length > 0 && (
                   <PossibleLoanLines clientId={clientId} notIdentified={auto.directorLoan.notIdentified} />
                 )}
@@ -1034,7 +1076,7 @@ function InputPanel(props: InputPanelProps) {
                 <>
                   <SourcedAmount
                     value={auto.directorLoanReceivableAmount}
-                    source={directorLoanSource(auto.directorLoan, auto.directorLoanReceivableAmount, auto.mappingUrl)}
+                    source={directorLoanSource(auto.directorLoan, auto.directorLoanReceivableAmount)}
                   />
                   {auto.directorLoan?.basis === 'net' ? ' (net)' : ''}
                 </>
@@ -1602,16 +1644,22 @@ function ReadOnlyField({
   hint,
   missing,
   softMissing,
+  source,
 }: {
   label: string
   value: React.ReactNode
   hint?: string
   missing?: boolean
   softMissing?: boolean
+  /** Where the figure comes from: an ⓘ beside the label. */
+  source?: AmountSource
 }) {
   return (
     <div>
-      <dt className="text-foreground/40">{label}</dt>
+      <dt className="flex items-baseline gap-1 text-foreground/40">
+        {label}
+        {source && <SourceButton source={source} label={label} />}
+      </dt>
       <dd
         className={cn('mt-0.5 font-medium', {
           'text-foreground': !missing && !softMissing,
@@ -3132,6 +3180,52 @@ function DirectorLoanYears({ years, notIdentified, basis }: { years: DirectorLoa
       </ul>
       <p className="mt-1 text-foreground/40">Only the latest balance sheet is used by the prediction; the earlier years are shown for context.</p>
     </div>
+  )
+}
+
+/**
+ * A stored loan line on the wrong side for its sign and section (mapping.ts loanSideConflicts): flagged,
+ * never moved silently (27 Nov 2026). "Move it" moves that line only; the prediction waits until then.
+ */
+function LoanSideConflicts({ clientId, conflicts }: { clientId: string; conflicts: NonNullable<NonNullable<DirectorLoanInput['notIdentified']>['conflicts']> }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  async function move(c: (typeof conflicts)[number]) {
+    setBusy(c.rowKey)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/clients/${clientId}/line-mapping/move`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rowKey: c.rowKey, from: c.storedAs, to: c.belongsTo }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not move the line')
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not move the line')
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <ul className="mt-2 space-y-1.5" data-testid="loan-side-conflicts">
+      {conflicts.map((c) => (
+        <li key={`${c.storedAs}|${c.rowKey}`} className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs">
+          <p className="text-foreground">{c.message}</p>
+          <p className="text-foreground/60">
+            ${Math.abs(c.printed).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} as printed
+            {c.chosenBy === 'auto' ? ' · chosen automatically' : ` · chosen by ${c.chosenBy}`}
+          </p>
+          <div className="mt-1">
+            <Button size="sm" variant="ghost" loading={busy === c.rowKey} disabled={busy !== null} onClick={() => move(c)}>
+              Move it
+            </Button>
+          </div>
+        </li>
+      ))}
+      {error && <li className="text-xs text-destructive">{error}</li>}
+    </ul>
   )
 }
 

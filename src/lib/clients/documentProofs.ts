@@ -92,13 +92,21 @@ export function documentProofs(input: DocumentProofInput): DocumentProofRow[] {
         rows.push({ ...row, status: 'being_prepared', text: BEING_PREPARED })
       } else if (own.length === 0) {
         // Read, but no year's figures come from it (a later report prints them, or nothing was found).
-        rows.push({ ...row, status: use.status === 'failed' ? 'being_prepared' : 'not_used', text: use.status === 'failed' ? BEING_PREPARED : (use.message ?? 'Not used: later reports cover its years') })
+        // Not read in full: "Being prepared" (the reader's own words go to the developer alert, 24 Nov 2026).
+        const unread = use.status === 'failed' || use.issues.length > 0
+        rows.push({ ...row, status: unread ? 'being_prepared' : 'not_used', text: unread ? BEING_PREPARED : (use.message ?? 'Not used: later reports cover its years') })
       } else if (own.some((y) => y.status === 'held')) {
         const held = own.filter((y) => y.status === 'held')
         rows.push({ ...row, status: 'being_prepared', text: `${BEING_PREPARED}: ${held.map((y) => title(y.index)).join(', ')} (${[...new Set(held.flatMap((y) => y.reasons))].join('; ')})` })
       } else if (own.some((y) => y.status === 'printed_error')) {
-        const notes = own.flatMap((y) => y.notes)
-        rows.push({ ...row, status: 'as_printed', text: `As printed: ${notes.length} printed total${notes.length === 1 ? ' does' : 's do'} not add up (${own.filter((y) => y.status === 'printed_error').map((y) => title(y.index)).join(', ')})` })
+        const failedChecks = own.flatMap((y) => y.crossChecks.filter((c) => c.status === 'failed'))
+        const totals = own.flatMap((y) => y.notes).length - failedChecks.length
+        const parts = [
+          ...(totals > 0 ? [`${totals} printed total${totals === 1 ? ' does' : 's do'} not add up`] : []),
+          ...(failedChecks.some((c) => c.check === 'pl_agrees_bs') ? ['the profit and loss does not agree with the balance sheet'] : []),
+          ...(failedChecks.some((c) => c.check === 'carries_forward') ? ['retained earnings do not carry forward from the previous year'] : []),
+        ]
+        rows.push({ ...row, status: 'as_printed', text: `As printed: ${parts.join('; ')} (${own.filter((y) => y.status === 'printed_error').map((y) => title(y.index)).join(', ')})` })
       } else {
         rows.push({ ...row, status: 'proven', text: `${STATEMENTS_BADGE} (${own.map((y) => title(y.index)).join(', ')})` })
       }

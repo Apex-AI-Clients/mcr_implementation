@@ -1,5 +1,6 @@
 'use client'
 
+import { dateField } from '@/lib/dates'
 import { useEffect, useRef, useState } from 'react'
 import { Building2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
@@ -457,7 +458,7 @@ function StatusNotice({ details, onDismiss }: { details: AbrEntityDetails; onDis
     <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
       <p className="text-xs font-medium text-destructive">
         ABN cancelled on the register
-        {details.abnStatusEffectiveFrom ? ` since ${details.abnStatusEffectiveFrom}` : ''}.
+        {details.abnStatusEffectiveFrom ? ` since ${dateField(details.abnStatusEffectiveFrom) || details.abnStatusEffectiveFrom}` : ''}.
       </p>
       <p className="mt-0.5 text-xs leading-relaxed text-foreground/50">
         The details are filled in; check them before converting.{' '}

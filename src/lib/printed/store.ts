@@ -3,9 +3,12 @@ import { FINANCIAL_STATEMENT_CATEGORIES } from '@/lib/constants'
 import { PdfTooLongError, PdfUnreadableError, readPrintedStatements } from './readPdf'
 import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from './compare'
 import { readStatements } from './readStatements'
-import type { PrintedRead, ScanSummary } from './types'
+import type { PrintedRead, ReportKind, ScanSummary } from './types'
 import { scannedPages } from '@/lib/scan/detect'
 import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
+import { loadSourceChoices } from './sourceChoices'
+import { alertFailedCrossChecks } from './crossCheckAlerts'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
 
 /**
  * Server-only. A client's financial statement PDFs, read as printed and kept
@@ -27,8 +30,11 @@ import { applyScanChoices, loadScanChoices } from '@/lib/scan/choices'
  * 2026-11-04.1: "Profit / Loss from sale of assets" inside a section is a line;
  * a "(%)" row is a ratio; scanned pages are read (src/lib/scan).
  * 2026-11-10.1: scanned pages are read by Claude alone (Tesseract removed).
+ * 2026-11-25.1: multi-year and current-period exports: a label wrapped around its
+ * figures, a header printed above its year, the entity name, annual statements or
+ * export (reportKind.ts); a negative liabilities total verifies.
  */
-export const READER_VERSION = '2026-11-10.1'
+export const READER_VERSION = '2026-11-25.1'
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -77,6 +83,7 @@ export async function loadStoredReads(supabase: ServerClient, clientId: string):
         statements: row.statements as unknown as PrintedRead['statements'],
         issues: row.issues as unknown as PrintedRead['issues'],
         ...((row as { scan?: unknown }).scan ? { scan: (row as { scan?: unknown }).scan as ScanSummary } : {}),
+        ...((row as { report?: unknown }).report ? { report: (row as { report?: unknown }).report as ReportKind } : {}),
       },
     })
   }
@@ -115,7 +122,7 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     return { documentId: doc.id, read, readAt }
   }
   const keptAt = read.status === 'scan_pending' ? null : await unchangedReadAt(supabase, doc.id, read)
-  const { error } = await supabase.from('printed_reads').upsert({
+  const row = {
     document_id: doc.id,
     client_id: clientId,
     reader_version: READER_VERSION,
@@ -125,8 +132,32 @@ export async function readAndStore(supabase: ServerClient, clientId: string, doc
     issues: read.issues as unknown as never,
     ...(read.scan ? { scan: read.scan as unknown as never } : {}),
     read_at: keptAt ?? readAt,
-  })
+  }
+  let { error } = await supabase.from('printed_reads').upsert({ ...row, ...(read.report ? { report: read.report as unknown as never } : {}) })
+  // Before migration 0064 there is no report column: keep the read without it (read as annual statements).
+  if (error && read.report && /report/.test(error.message)) ({ error } = await supabase.from('printed_reads').upsert(row))
   if (error) console.error('[printed-reads] could not keep the read:', error.message)
+  // What the reader could not read is the developer's to fix, not staff's to see (24 Nov 2026):
+  // ids, kinds and pages only, once per document and reader version.
+  if (read.issues.length > 0 && read.status !== 'no_text_layer') {
+    const kinds = [...new Set(read.issues.map((i) => i.kind))]
+    const pages = [...new Set(read.issues.map((i) => i.page).filter((p): p is number => p !== null))]
+    await raiseDeveloperAlert(supabase, {
+      kind: 'statement_read',
+      key: `statement_read:${doc.id}:${READER_VERSION}`,
+      subject: `Statements reader: ${read.issues.length} line(s) not read — client ${clientId.slice(0, 8)}`,
+      lines: [
+        'The financial statements reader could not read part of a file. Staff see "Being prepared" for it.',
+        '',
+        `Client id: ${clientId}`,
+        `Document id: ${doc.id}`,
+        `Reader version: ${READER_VERSION}`,
+        `Problems: ${read.issues.length} (${kinds.join(', ')})`,
+        `Pages: ${pages.join(', ') || 'whole file'}`,
+      ],
+      details: { clientId, documentId: doc.id, issues: read.issues.length, kinds: kinds.join(',') },
+    })
+  }
   return { documentId: doc.id, read, readAt: keptAt ?? readAt }
 }
 
@@ -169,9 +200,14 @@ async function unchangedReadAt(supabase: ServerClient, documentId: string, read:
   const same =
     data.status === read.status &&
     (data.page_count ?? 0) === read.pageCount &&
-    canonical(data.statements) === canonical(read.statements) &&
+    // The entity's name (added 25 Nov 2026) is not a figure: a read that differs only by it is unchanged.
+    canonical(withoutEntity(data.statements)) === canonical(withoutEntity(read.statements)) &&
     canonical(data.issues) === canonical(read.issues)
   return same ? data.read_at : null
+}
+
+function withoutEntity(statements: unknown): unknown {
+  return Array.isArray(statements) ? statements.map((s) => (s && typeof s === 'object' ? { ...(s as Record<string, unknown>), entity: undefined } : s)) : statements
 }
 
 /** JSON with object keys sorted: jsonb does not keep key order. */
@@ -203,17 +239,24 @@ export async function loadPrintedComparison(
 ): Promise<LoadedComparison> {
   const [docs, stored] = await Promise.all([loadFinancialDocuments(supabase, clientId), loadStoredReads(supabase, clientId)])
   const reads = new Map(stored)
+  let readNow = 0
   if (readMissing || force) {
     for (const doc of docs) {
-      if (force || !reads.has(doc.id)) reads.set(doc.id, await readAndStore(supabase, clientId, doc))
+      if (force || !reads.has(doc.id)) {
+        reads.set(doc.id, await readAndStore(supabase, clientId, doc))
+        readNow++
+      }
     }
   }
-  // Staff corrections of figures read from a scan (scan_figure_choices).
-  const choices = await loadScanChoices(supabase, clientId)
+  // Staff corrections of figures read from a scan (scan_figure_choices); staff choices of source (0064).
+  const [choices, sourceChoices] = await Promise.all([loadScanChoices(supabase, clientId), loadSourceChoices(supabase, clientId)])
   const input: ComparisonDocument[] = docs.map((d) => {
     const read = reads.get(d.id)?.read ?? null
     return { documentId: d.id, filename: d.original_filename, uploadedAt: d.uploaded_at, read: read ? applyScanChoices(read, choices.get(d.id) ?? []) : null }
   })
   const builtAt = [...reads.values()].map((r) => r.readAt).sort().pop() ?? null
-  return { comparison: buildPrintedComparison(input, { comparativeYears }), builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
+  const comparison = buildPrintedComparison(input, { comparativeYears, sourceChoices })
+  // Files read just now: a cross-check that fails alerts the developer, once (crossCheckAlerts.ts).
+  if (readNow > 0) await alertFailedCrossChecks(supabase, clientId, comparison)
+  return { comparison, builtAt, unread: docs.filter((d) => !reads.has(d.id)).length, documents: input }
 }

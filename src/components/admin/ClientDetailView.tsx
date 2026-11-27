@@ -153,7 +153,7 @@ export async function ClientDetailView({ id, mode }: ClientDetailViewProps) {
     docCategory: d.doc_category,
     status: d.status,
     uploadedAt: d.uploaded_at,
-    ...atoFileInfo(d, [client.name, rawCompany?.company_name, rawCompany?.trust_name]),
+    ...atoFileInfo(d),
   }))
 
   const accountantDetails: AccountantDetails | null = rawAccountant

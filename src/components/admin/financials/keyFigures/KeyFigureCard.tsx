@@ -15,12 +15,9 @@ import { formatPrinted } from '@/lib/printed/csv'
 import { isBeneficiaryAccount, isDiv7A } from '@/lib/printed/dictionary'
 import { KeyFigurePicker } from './KeyFigurePicker'
 import { YearValues, rowValues, totalsPerYear } from './YearValues'
+import { dateText } from '@/lib/dates'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-export const shortDate = (iso: string) => {
-  const d = new Date(iso)
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
-}
+export const shortDate = (iso: string) => dateText(iso)
 
 /** Saves one or more meanings (mappingStore.ts), then reloads the page's data. */
 export function useConfirmKeyFigures(clientId: string) {

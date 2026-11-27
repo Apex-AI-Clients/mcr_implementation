@@ -1,6 +1,7 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import { PdfTooLongError, PdfUnreadableError, readDirectorPenaltyNotice } from './extractText'
 import { noticeFieldsFromParse, type NoticeStatus, type StoredManualReason } from './stored'
+import { dateText } from '@/lib/dates'
 
 /**
  * Server-only. Reading an uploaded notice into director_penalty_notices, and
@@ -72,19 +73,13 @@ export async function readAndStoreNotice(
   }
 }
 
-const NOTE_DATE = new Intl.DateTimeFormat('en-AU', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'Australia/Sydney',
-})
 
 /** "Cleared automatically on 17 Oct 2026 when …". */
 export function clearedNote(clearedAt: Date, confirmedBy: string, confirmedAt: string): string {
   return (
     `"No director penalty notice has been issued" was cleared automatically on ` +
-    `${NOTE_DATE.format(clearedAt)}, when a director penalty notice was uploaded. ` +
-    `It had been ticked by ${confirmedBy} on ${NOTE_DATE.format(new Date(confirmedAt))}.`
+    `${dateText(clearedAt)}, when a director penalty notice was uploaded. ` +
+    `It had been ticked by ${confirmedBy} on ${dateText(confirmedAt)}.`
   )
 }
 

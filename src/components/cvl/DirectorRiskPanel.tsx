@@ -9,13 +9,14 @@ import { REPORTED_LATE_DAYS, type PotentialByType, type ReportedItem } from '@/l
 import type { DirectorRiskData } from '@/lib/cvl/directorRiskStore'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
+import { dateField } from '@/lib/dates'
 
 interface DirectorRiskPanelProps {
   clientId: string
   risk: DirectorRiskData
 }
 
-const ddmmyyyy = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/')
+const ddmmyyyy = (iso: string) => dateField(iso.slice(0, 10))
 const MAX_LISTED = 12
 
 /** One reported amount, in a line: what, how much, when reported against when due. */

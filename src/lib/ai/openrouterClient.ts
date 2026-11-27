@@ -8,7 +8,9 @@
  * independent reading of a scan (askClaudeImage, src/lib/scan); and
  * (approved verbally by Gabby, 16 Nov 2026) the anonymised rows of an ATO
  * account window no known rule matches (purpose 'ica', src/lib/ica/propose.ts),
- * used only when the ATO's own balance then matches to the cent. Nothing else.
+ * used only when the ATO's own balance then matches to the cent; and (26 Nov
+ * 2026) the key-figure choice (keyFigureChoice.ts): printed labels and
+ * headings only, every name masked by role (maskLabels.ts). Nothing else.
  *
  * Claude via OpenRouter, Anthropic only, no training, no logging; Anthropic may retain requests for a limited period for safety monitoring. Approved by Gabby on 4 November 2026.
  *

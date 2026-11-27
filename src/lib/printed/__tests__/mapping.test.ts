@@ -323,7 +323,7 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
     expect(receivable.years.at(-1)!.lines[0]).toMatchObject({
       printed: -130_167.87,
       value: 130_167.87,
-      rule: 'A negative figure under liabilities means the director (or related party) owes the company.',
+      rule: 'Printed as a negative amount under Current Liabilities: a debit balance, owed to the company.',
     })
     const payable = resolveMeaning(c, entries(c, { loan_payable: ['Owner Example Person Funds Introduced'] }), 'loan_payable')
     expect(payable.years.at(-1)).toMatchObject({ value: 40_667.15 })
@@ -371,7 +371,18 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       },
     }
     const c = buildPrintedComparison([doc], { comparativeYears: true })
-    const mapping = entries(c, { loan_receivable: ['Loan - Related Parties'], loan_payable: ['Loan - Director', 'Owner Example Person Funds Introduced'] })
+    // As stored, "Loan - Director" contradicts the sign-aware section rule: flagged, never moved
+    // silently; the prediction waits for staff (27 Nov 2026).
+    const stored = entries(c, { loan_receivable: ['Loan - Related Parties'], loan_payable: ['Loan - Director', 'Owner Example Person Funds Introduced'] })
+    const waiting = predictionFinancials(c, stored)
+    expect(waiting.loanReceivable).toBeNull()
+    expect(waiting.loanPayable).toBeNull()
+    expect(waiting.notIdentified.loanReceivable?.conflicts?.map((x) => [x.label, x.belongsTo])).toEqual([['Loan - Director', 'loan_receivable']])
+    expect(waiting.notIdentified.loanReceivable?.message).toBe(
+      '“Loan - Director” is printed as a negative amount under Current Liabilities, so it belongs to Director loan account (Debit), not Loan account director (Credit) — move it?',
+    )
+    // Once staff move it, it counts on the Debit side, as the 26 Oct rule reads it.
+    const mapping = entries(c, { loan_receivable: ['Loan - Related Parties', 'Loan - Director'], loan_payable: ['Owner Example Person Funds Introduced'] })
     const f = predictionFinancials(c, mapping)
     expect(f.notIdentified).toEqual({})
     expect(f.loanReceivable).toMatchObject({ amount: 130_167.87 })
@@ -379,7 +390,7 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       label: 'Loan - Director',
       printed: -130_167.87,
       value: 130_167.87,
-      rule: 'Printed negative, so it is owed TO the company, although it is confirmed as owed by it.',
+      rule: 'Printed as a negative amount under Current Liabilities: a debit balance, owed to the company.',
     })
     expect(f.loanPayable).toMatchObject({ amount: 40_667.15 })
   })
@@ -420,7 +431,8 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
     })
     const c = buildPrintedComparison([
       report('fy24', 2024, [r(CL, 'Loan - Director', 'line', -5_000), r(CL, 'Loans from Directors', 'line', 300)]),
-      report('fy25', 2025, [r(CL, 'Loans from Directors', 'line', 900), r(['Equity'], 'Owner A Drawings', 'line', 4_000)]),
+      // Printed negative under Equity: a debit balance, so a Debit candidate (the one sign-aware section rule, 26 Nov 2026).
+      report('fy25', 2025, [r(CL, 'Loans from Directors', 'line', 900), r(['Equity'], 'Owner A Drawings', 'line', -4_000)]),
     ])
     // "Loans from Directors" is the confirmed Credit line: never a candidate. The drawings are.
     const mapping = entries(c, { loan_receivable: ['Loan - Director'], loan_payable: ['Loans from Directors'] })
@@ -430,11 +442,35 @@ describe('director loan accounts printed under liabilities (the old reader\'s si
       "The confirmed lines aren't on the FY2025 balance sheet. The prediction uses the latest balance sheet (FY2025 balance sheet), which prints “Owner A Drawings”: use it, or say it is not a loan account.",
     )
     expect(f.notIdentified.loanReceivable?.possible).toEqual([
-      { rowKey: expect.any(String), label: 'Owner A Drawings', value: 4_000, hint: 'Money taken out by the owner (printed under Equity)' },
+      { rowKey: expect.any(String), label: 'Owner A Drawings', value: -4_000, hint: 'Money taken out by the owner (printed under Equity)' },
     ])
     // Staff said "Not a loan account": now $0, with where it was last printed.
     const dismissed = new Set([`loan_receivable|${f.notIdentified.loanReceivable!.possible![0].rowKey}`])
     expect(predictionFinancials(c, mapping, {}, dismissed).loanReceivable).toMatchObject({ amount: 0, note: 'Not printed on the FY2025 balance sheet; printed in the FY2024 balance sheet as $5,000.' })
+  })
+
+  it('drawings printed POSITIVE under Equity are a Credit (MBM "Owner A Drawings 44,952.22"): never a Debit candidate, so the Debit does not wait on them', () => {
+    const report = (id: string, year: number, rows: PrintedRow[]): ComparisonDocument => ({
+      documentId: id,
+      filename: `${id}.pdf`,
+      uploadedAt: '',
+      read: {
+        status: 'read',
+        pageCount: 1,
+        issues: [],
+        statements: [{ kind: 'balance_sheet', title: 'Balance Sheet', pages: [1], columns: [fy(year)], wholeDollars: true, rows: [r([], 'Liabilities', 'heading', null), r(['Liabilities'], 'Current Liabilities', 'heading', null), ...rows] }],
+      },
+    })
+    const c = buildPrintedComparison([
+      report('fy24', 2024, [r(CL, 'Loan - Director', 'line', -5_000)]),
+      report('fy25', 2025, [r(['Equity'], 'Owner A Drawings', 'line', 44_952.22)]),
+    ])
+    const f = predictionFinancials(c, entries(c, { loan_receivable: ['Loan - Director'] }))
+    expect(f.notIdentified.loanReceivable).toBeUndefined()
+    expect(f.loanReceivable).toMatchObject({ amount: 0, note: 'Not printed on the FY2025 balance sheet; printed in the FY2024 balance sheet as $5,000.' })
+    // Confirmed on the Credit row, it counts there as printed.
+    const credit = resolveMeaning(c, entries(c, { loan_payable: ['Owner A Drawings'] }), 'loan_payable')
+    expect(credit.years.at(-1)).toMatchObject({ value: 44_952.22 })
   })
 
   it('gives the loan for every balance sheet on file, oldest first, by the same rule (loanHistory)', () => {

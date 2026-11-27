@@ -22,7 +22,6 @@ import { LeadRecordHeader } from '@/components/leads/LeadRecordHeader'
 import { LeadActivityForm } from '@/components/leads/LeadActivityForm'
 import { LeadActivityTimeline } from '@/components/leads/LeadActivityTimeline'
 import { LeadEnquiries } from '@/components/leads/LeadEnquiries'
-import { LeadFormHealthWarnings } from '@/components/leads/LeadFormHealthWarnings'
 import { StageProgress } from '@/components/leads/StageProgress'
 import { StageSelect } from '@/components/leads/StageSelect'
 import { ConvertToClientDialog } from '@/components/leads/ConvertToClientDialog'
@@ -51,8 +50,6 @@ interface LeadRecordClientProps {
   enquiries: LeadSubmission[]
   /** The client files this lead's enquiries became, newest first, read server-side (0052). */
   clientFiles: ConvertedClientDetails[]
-  /** Warnings about the Facebook form(s) this lead came through (lib/leads/formHealth). */
-  formWarnings?: string[]
   /** Where "All leads" goes: the list the record was opened from. Default /leads. */
   backHref?: string
 }
@@ -77,7 +74,6 @@ export function LeadRecordClient({
   initialActivities,
   enquiries,
   clientFiles,
-  formWarnings = [],
   backHref = '/leads',
 }: LeadRecordClientProps) {
   const router = useRouter()
@@ -156,7 +152,6 @@ export function LeadRecordClient({
         <ReenquiryNotice lead={lead} onDismiss={() => dismissReenquiry(lead.id)} />
       )}
 
-      <LeadFormHealthWarnings warnings={formWarnings} />
 
       <ProgressCard
         lead={lead}

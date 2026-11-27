@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { LATE_LODGEMENT_RULE, LATE_LODGEMENT_SCOPE, countsAsLate, unparsedDatesMessage } from '@/lib/analysis/config'
-import { formatDateRelative, formatDate } from '@/lib/utils'
+import { formatDateRelative } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
   DpnRiskPanel,
@@ -16,12 +16,14 @@ import {
   formatDay,
   noticesSource,
 } from '@/components/admin/lodgement/DpnRiskPanel'
-import { CopyButton, downloadAnalysisXlsx, HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
+import { downloadAnalysisXlsx, HeldBackAccount, VerifiedBadge, VerifiedComposition } from '@/components/admin/ica/IcaParts'
 import type { LodgementAnalysisPayload, EnrichedRow, AnalysisWarning } from '@/lib/analysis/types'
 import type { DpnNoticeFigures } from '@/lib/dpn/noticeFigures'
 import { lateSinceNil, lateStatements } from '@/lib/analysis/lateList'
 import { byTaxType, noticeCellText } from '@/lib/dpn/byTaxType'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
+import { LateLodgementsList } from '@/components/admin/lodgement/LateLodgementsList'
+import { dateField, dateText } from '@/lib/dates'
 
 interface Props {
   clientId: string
@@ -61,17 +63,12 @@ function formatBalanceExport(value: number | null): string {
 
 function formatDateExport(d: Date | string | null | undefined): string {
   if (!d) return ''
-  const date = typeof d === 'string' ? new Date(d) : d
-  return date.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-')
+  return dateField(d)
 }
 
 function formatIsoExport(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-AU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  return dateText(iso)
 }
 
 /** A signed amount for the CSV: "-$1,234.00" for a negative. */
@@ -192,7 +189,7 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
     for (const l of v.composition.lines.filter((x) => debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
     lines.push(csvRow('= ATO debt', formatSignedExport(v.composition.atoDebt)))
     for (const l of v.composition.lines.filter((x) => !debt.has(x.section))) lines.push(csvRow(l.label, formatSignedExport(l.net), l.rows, l.search.join(' | ')))
-    lines.push(csvRow(`= The ATO's balance${v.balanceDate ? ` at ${v.balanceDate}` : ''}`, formatSignedExport(v.composition.total)))
+    lines.push(csvRow(`= The ATO's balance${v.balanceDate ? ` at ${dateText(v.balanceDate)}` : ''}`, formatSignedExport(v.composition.total)))
     lines.push('')
     lines.push(csvRow('ATO ROWS BY LINE'))
     lines.push(csvRow('Line', 'Processed date', 'Effective date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance'))
@@ -244,18 +241,6 @@ export function buildExportCsv(analysis: LodgementAnalysisPayload, notices: DpnN
 
   return lines.join('\r\n')
 }
-
-function downloadCsv(content: string, filename: string) {
-  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatTile({
   value,
@@ -327,51 +312,6 @@ export function LodgementKindLabel({ type }: { type: EnrichedRow['lodgementType'
     >
       {kind.label}
     </span>
-  )
-}
-
-function ContributingTable({ late }: { late: EnrichedRow[] }) {
-  if (late.length === 0) return <p className="text-xs text-foreground/40 italic">No late lodgements.</p>
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-border text-left text-foreground/40">
-            <th className="pb-2 pr-4 font-medium">Processed</th>
-            <th className="pb-2 pr-4 font-medium">Effective</th>
-            <th className="pb-2 pr-4 font-medium">Type</th>
-            <th className="pb-2 pr-4 font-medium">Description</th>
-            <th className="pb-2 font-medium text-right">Days Late</th>
-            <th className="no-print pb-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {late.map((row) => (
-            <tr key={row.rowIndex} className="border-b border-border/40 last:border-0">
-              <td className="py-1.5 pr-4 text-foreground/70 whitespace-nowrap">
-                {row.processedDate ? formatDate(new Date(row.processedDate as unknown as string).toISOString()) : '—'}
-              </td>
-              <td className="py-1.5 pr-4 text-foreground/70 whitespace-nowrap">
-                {row.effectiveDate ? formatDate(new Date(row.effectiveDate as unknown as string).toISOString()) : '—'}
-              </td>
-              <td className="py-1.5 pr-4 whitespace-nowrap">
-                <LodgementKindLabel type={row.lodgementType} />
-              </td>
-              <td className="py-1.5 pr-4 text-foreground/70 max-w-xs truncate" title={row.description}>
-                {row.description}
-              </td>
-              <td className="py-1.5 text-right font-semibold text-warning">
-                {row.lateLodgeDaysCleaned}
-              </td>
-              <td className="no-print py-1.5 pl-2 text-right">
-                <CopyButton text={`${row.description}\t${row.debit ?? row.credit ?? ''}`} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   )
 }
 
@@ -618,7 +558,6 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
   const [analysis, setAnalysis] = useState<LodgementAnalysisPayload | null>(initialAnalysis)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showTable, setShowTable] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
 
   async function runAnalysis() {
@@ -682,13 +621,6 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handleExport() {
-    if (!analysis) return
-    const csv = buildExportCsv(analysis, dpnNotices)
-    const name = analysis.sourceFilename.replace(/\.csv$/i, '')
-    downloadCsv(csv, `${name} — Late Lodgements.csv`)
-  }
-
   function getDaysSeverity(days: number): 'ok' | 'warning' | 'danger' {
     if (days === 0) return 'ok'
     if (days > 1000) return 'danger'
@@ -739,10 +671,6 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
               targetId="lodgement-export-root"
               fileName={`${analysis.sourceFilename.replace(/\.csv$/i, '')}_lodgement_analysis`}
             />
-            <Button variant="ghost" size="sm" onClick={handleExport}>
-              <Download className="h-3.5 w-3.5" />
-              Export
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -824,6 +752,12 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
             />
           </div>
 
+          {/* The lodgements the count includes, directly under the two cards (item 10), and the rule */}
+          <div className="space-y-2">
+            <LateLodgementsList late={lateRows} amendments={lateAmendments} fileName={fileBase} />
+            <p className="text-xs text-foreground/50">{LATE_LODGEMENT_RULE[LATE_LODGEMENT_SCOPE]}.</p>
+          </div>
+
           {verified && verification?.badge && (
             <div>
               <VerifiedBadge text={verification.badge} />
@@ -862,44 +796,6 @@ export function LodgementAnalysisCard({ clientId, basePath = `/clients/${clientI
               <VerifiedComposition view={verification} fileName={fileBase} />
             </div>
           )}
-
-          {/* Contributing lodgements, and the rule that decides them */}
-          <div className="border-t border-border/40 pt-4">
-            <p className="mb-2 text-xs text-foreground/50">{LATE_LODGEMENT_RULE[LATE_LODGEMENT_SCOPE]}.</p>
-          {(lateRows.length > 0 || lateAmendments.length > 0) && (
-            <div>
-              <button
-                onClick={() => setShowTable((v) => !v)}
-                className="flex items-center gap-1 text-xs text-foreground/50 hover:text-foreground transition-colors"
-              >
-                {showTable ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-                {showTable ? 'Hide' : 'Show'} contributing lodgements ({lateRows.length}
-                {lateRows.some((r) => r.lodgementType !== 'Original')
-                  ? `: ${lateRows.filter((r) => r.lodgementType === 'Original').length} original, ${lateRows.filter((r) => r.lodgementType !== 'Original').length} amended or other`
-                  : ''}
-                )
-              </button>
-              {showTable && (
-                <div className="mt-3 space-y-4">
-                  <ContributingTable late={lateRows} />
-                  {lateAmendments.length > 0 && (
-                    <div>
-                      <p className="mb-2 text-xs font-medium text-foreground/60">
-                        Amendments ({lateAmendments.length}), listed separately: corrections to statements already
-                        lodged, not counted as late lodgements. Days are from the original period&apos;s due date.
-                      </p>
-                      <ContributingTable late={lateAmendments} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          </div>
 
           <p className="text-xs text-foreground/30">
             Analysed {formatDateRelative(analysis.analysedAt)} · Source: {analysis.sourceFilename}

@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from 'pdf-lib'
 import { pdfSafe } from '@/lib/pdfSafe'
 import { choiceValues } from './choice'
+import { UNSURE, isUnsure } from './unsure'
 import {
   CELL_LINE_SIZE,
   CELL_WRAP_SIZE,
@@ -88,8 +89,9 @@ function isBlank(v: FieldValue): boolean {
   return v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
 }
 
+/** A row holding anything but "Unsure" dates: a row of "Unsure" alone is an empty row, never printed (27 Nov 2026). */
 function rowUsed(row: TableRow): boolean {
-  return Object.values(row).some((v) => !isBlank(v) && v !== false)
+  return Object.values(row).some((v) => !isBlank(v) && v !== false && !isUnsure(v))
 }
 
 /* ---------------- drawing ---------------- */
@@ -172,6 +174,12 @@ interface DateSpot {
 /** DD, MM and YYYY either side of the two printed "/". Falls back to YY when the year has no room. */
 function drawDate(pen: Pen, spot: DateSpot, value: FieldValue, warn?: { key: string; q?: string }) {
   if (isBlank(value)) return
+  // "Unsure" (27 Nov 2026: any date, the appendix tables' dates and "...and dated" too).
+  if (isUnsure(value)) {
+    const sw = spot.slashWidth ?? SLASH_WIDTH
+    drawUnsureSpan(pen, { left: spot.s1 - 22, right: Math.min(spot.x1 ?? Infinity, spot.s2 + sw + 28), s1: spot.s1, s2: spot.s2, sw, baseline: spot.baseline, size: spot.size ?? DEFAULT_SIZE })
+    return
+  }
   const p = dateParts(value)
   if (!p) {
     if (warn) pen.warnings.push({ ...warn, message: `"${value}" is not a date: use DD/MM/YYYY.` })
@@ -186,6 +194,50 @@ function drawDate(pen: Pen, spot: DateSpot, value: FieldValue, warn?: { key: str
   const room = Math.min(26, (spot.x1 ?? Infinity) - y0 - 1)
   const year = pen.font.widthOfTextAtSize(p.y, MIN_SIZE) <= room ? p.y : p.y.slice(2)
   drawText(pen, year, y0, spot.baseline, room, { size, min: MIN_SIZE })
+}
+
+/**
+ * "Unsure" across a date's boxes (Gabby, 24 Nov 2026): centred in the box, on a white backing just
+ * the size of the word, inside the box's own lines, so the printed "/ /" under it do not cross it.
+ * Nothing else of the page is covered.
+ */
+function drawUnsure(pen: Pen, f: Box & { slashes: [number, number]; slashWidth?: number }) {
+  const sw = f.slashWidth ?? SLASH_WIDTH
+  // This date's own span (two dates can share one box, B24's start and end): its day to its year.
+  drawUnsureSpan(pen, {
+    left: Math.max(f.x0, f.slashes[0] - 22),
+    right: Math.min(f.x1, f.slashes[1] + sw + 28),
+    s1: f.slashes[0],
+    s2: f.slashes[1],
+    sw,
+    baseline: f.bot - 4.5,
+    size: DEFAULT_SIZE,
+  })
+}
+
+/** "Unsure" centred in a date's span, on a white backing over the word and both printed "/". */
+function drawUnsureSpan(pen: Pen, a: { left: number; right: number; s1: number; s2: number; sw: number; baseline: number; size: number }) {
+  const w = pen.font.widthOfTextAtSize(UNSURE, a.size)
+  const x = a.left + (a.right - a.left - w) / 2
+  // Behind the word and both printed "/" (whichever is wider), from above the slashes' tops to just
+  // under the baseline; never past this date's own span.
+  const from = Math.max(a.left, Math.min(x - 2, a.s1 - 1.5))
+  const to = Math.min(a.right, Math.max(x + w + 2, a.s2 + a.sw + 1.5))
+  const above = a.size * 1.35
+  pen.page.drawRectangle({ x: from, y: y(pen, a.baseline + 2.5), width: to - from, height: above + 2.5, color: rgb(1, 1, 1) })
+  drawText(pen, UNSURE, x, a.baseline, w + 1, { size: a.size })
+}
+
+/** "Unsure" across a date printed one digit a box (Form 509): centred over the boxes, on a white backing. */
+function drawUnsureCells(pen: Pen, cells: Box[]) {
+  const first = cells[0]
+  const last = cells[cells.length - 1]
+  const size = DEFAULT_SIZE
+  const w = pen.font.widthOfTextAtSize(UNSURE, size)
+  const x = first.x0 + (last.x1 - first.x0 - w) / 2
+  const baseline = first.bot - 3.7
+  pen.page.drawRectangle({ x: x - 2, y: y(pen, baseline + 2.5), width: w + 4, height: size * 1.35 + 2.5, color: rgb(1, 1, 1) })
+  drawText(pen, UNSURE, x, baseline, w + 1, { size })
 }
 
 function drawField(pen: Pen, f: FormField, value: FieldValue) {
@@ -209,7 +261,7 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       if (isBlank(value)) return
       const pad = f.pad ?? 4
       let text = String(value)
-      if (f.format === 'date') {
+      if (f.format === 'date' && !isUnsure(value)) {
         const p = dateParts(value)
         if (p) text = `${p.d}/${p.m}/${p.y}`
       }
@@ -224,10 +276,18 @@ function drawField(pen: Pen, f: FormField, value: FieldValue) {
       return
     }
     case 'date':
+      if (isUnsure(value)) {
+        drawUnsure(pen, f)
+        return
+      }
       drawDate(pen, { s1: f.slashes[0], s2: f.slashes[1], baseline: f.bot - 4.5, slashWidth: f.slashWidth, x1: f.x1 }, value, warn)
       return
     case 'datecells': {
       if (isBlank(value)) return
+      if (isUnsure(value)) {
+        drawUnsureCells(pen, f.cells)
+        return
+      }
       const p = dateParts(value)
       if (!p) {
         pen.warnings.push({ ...warn, message: `"${value}" is not a date: use DD/MM/YYYY.` })

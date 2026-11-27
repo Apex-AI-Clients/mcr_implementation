@@ -1,10 +1,11 @@
 import { aud, printedLineText, type AmountSource } from '@/lib/sources'
 import type { FieldValue, FormCode, TableRow } from '@/lib/forms/types'
-import { formatExtractDate } from '@/lib/asic/dates'
+import { formatDob, formatExtractDate } from '@/lib/asic/dates'
 import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import type { Meaning } from '@/lib/printed/meanings'
-import { signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
+import { formVersion, signatureDateKeys, TABLE_DATED_KEY } from '@/lib/forms/registry'
 import { splitAddress } from './address'
+import { isDateKind, UNSURE } from '@/lib/forms/unsure'
 import type { BalanceSheetFigure, CvlContext } from './context'
 import { PLACEMENTS, missingSettings, type PlacementKey, type PlacementTarget } from './settings'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
@@ -167,6 +168,31 @@ function putRegistration(out: Prefill, ctx: CvlContext, key: string) {
   }
   const source = companySource(ctx, 'The company’s registration date.', 'organisation')
   out.fields[key] = { value: date, source: { ...source, rule: 'Trading may have started after registration: check with the director.' } }
+}
+
+const personKey = (name: string) => name.toUpperCase().replace(/[^A-Z]/g, '')
+
+/**
+ * B1's address: the director's address on the kept ASIC extract (Gabby, 24 Nov 2026), split into
+ * the form's boxes, each editable. Matched by name (and a compatible year of birth). Nothing kept,
+ * or no address printed for them: blank, with a note.
+ */
+function putDirectorAddress(out: Prefill, ctx: CvlContext, d: { name: string; dateOfBirth: string | null }) {
+  const hit = (ctx.directorAddresses ?? []).find(
+    (a) => personKey(a.name) === personKey(d.name) && (!a.dateOfBirth || !d.dateOfBirth || a.dateOfBirth.slice(0, 4) === d.dateOfBirth.slice(0, 4)),
+  )
+  const parts = splitAddress(hit?.address)
+  if (!parts) {
+    out.notes.b1_street = ctx.asicExtract
+      ? 'The kept ASIC extract has no address for this director: type it in.'
+      : 'Upload the ASIC extract to fill the director’s address, or type it in.'
+    return
+  }
+  const source = companySource(ctx, `The director’s address on the ASIC extract: ${hit!.address}.`, 'directors')
+  put(out, 'b1_street', parts.street, source)
+  put(out, 'b1_suburb', parts.suburb, source)
+  put(out, 'b1_state', parts.state, source)
+  put(out, 'b1_postcode', parts.postcode, source)
 }
 
 function director(ctx: CvlContext, subject: Subject) {
@@ -396,8 +422,8 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
   if (!d) {
     out.warnings.push('This director is not on the client file: add the directors on the client page.')
   } else {
-    const born = d.dateOfBirth ? `, born ${d.dateOfBirth}` : ''
-    const appointed = d.appointedOn ? `, appointed ${d.appointedOn}` : ''
+    const born = d.dateOfBirth ? `, born ${formatDob(d.dateOfBirth)}` : ''
+    const appointed = d.appointedOn ? `, appointed ${formatDob(d.appointedOn)}` : ''
     const source = companySource(ctx, `Director: ${d.name}${born}${appointed}.`, 'directors')
     put(out, 'b1_name', d.name, source)
     put(out, 'b1_role', 'Director', source)
@@ -409,9 +435,11 @@ function prefillPartB(ctx: CvlContext, subject: Subject, out: Prefill) {
     // The appendix tables' "signed by" name (B2, B3, B21, B28) is left blank:
     // the director signs and names themselves there by hand.
     if (!d.appointedOn) out.notes.b1_role = ctx.asicExtract ? 'The kept ASIC extract has no appointment date for this director.' : 'Upload the ASIC extract again to fill the appointment date.'
+    putDirectorAddress(out, ctx, d)
   }
-  // B10 comes from Form 509's summary date, like the signature dates (see
-  // putSignatureDates), not from the registration date (Nov 2026).
+  // B10, "Date the Company started trading": the ASIC registration date (Gabby, 24 Nov 2026).
+  putRegistration(out, ctx, 'b10_date')
+  if (out.fields.b10_date) out.fields.b10_date.source = { ...out.fields.b10_date.source, from: ['From the ASIC extract: registration date', ...out.fields.b10_date.source.from] }
 
   // B1's and B5 Manager 1's phone and email: the company's own, as typed at
   // conversion or intake (Nov 2026). The accountant (B24) and the rest are
@@ -430,6 +458,7 @@ export function prefillForm(code: FormCode, subject: Subject, ctx: CvlContext): 
   else prefillPartB(ctx, subject, out)
   putSignatureDates(code, ctx, out)
   putDefaultYes(code, out)
+  putUnsureDates(code, out)
   return out
 }
 
@@ -468,6 +497,33 @@ function putDefaultYes(code: FormCode, out: Prefill) {
 }
 
 /**
+ * Every date that is not pre-filled starts at "Unsure" (Gabby, 24 Nov 2026 for B24; the user,
+ * 27 Nov 2026 for every date on every form): the boxes, and the date cells of the appendix tables'
+ * pre-filled rows. A date pre-filled (the ASIC extract, the client file) keeps its date; the
+ * signature dates and 507A's report date, filled from Form 509's "Date to which summary is made
+ * up" (A10 left for its signer), wait for it as before. Staff can switch any date to "Unsure" or
+ * to a date.
+ */
+const UNSURE_SOURCE: AmountSource = { from: ['Printed as "Unsure" until the date is known.', 'Switch to "Enter a date" to type it.'] }
+
+function putUnsureDates(code: FormCode, out: Prefill) {
+  const { map } = formVersion(code)
+  // Signature dates are written at signing (A10 by whoever completes it, 18 Nov 2026): never
+  // "Unsure" to start with, though staff can choose it.
+  const from509 = new Set([...signatureDateKeys(code), ...(SAME_DATE_KEYS[code] ?? [])])
+  for (const f of map.fields) {
+    if (f.handwritten || !isDateKind(f) || from509.has(f.key)) continue
+    out.fields[f.key] ??= { value: UNSURE, source: UNSURE_SOURCE }
+  }
+  for (const t of map.tables) {
+    const dates = t.columns.filter((c) => c.type === 'date').map((c) => c.key)
+    for (const r of out.tables[t.id] ?? []) for (const key of dates) if (isBlankValue(r.row[key])) r.row[key] = UNSURE
+  }
+}
+
+const isBlankValue = (v: FieldValue | undefined) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
+
+/**
  * Every date beside a signature (Nov 2026): Form 509's "Date signed", A9,
  * Form 507A's "Date signed", B31 and the tables' "...and dated" start
  * from Form 509's "Date to which summary is made up" as saved — never from
@@ -478,11 +534,9 @@ function putDefaultYes(code: FormCode, out: Prefill) {
 /** Other dates filled from Form 509's summary date, like the signature dates (Nov 2026). */
 const SAME_DATE_KEYS: Partial<Record<FormCode, string[]>> = {
   '507a': ['f507a_report_date'],
-  '507b': ['b10_date'],
 }
 
 const OWN_SOURCE: Record<string, AmountSource> = {
-  b10_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the company started trading on another day.'] },
   f507a_report_date: { from: ['Form 509: Date to which summary is made up.', 'Change it here if the report is dated another day.'] },
 }
 

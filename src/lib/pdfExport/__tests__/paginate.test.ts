@@ -53,6 +53,36 @@ describe('paginate', () => {
     ])
   })
 
+  it('the two top cards, then a panel just shorter than a page: page 1 is filled, not left with the cards alone', () => {
+    // The lodgement page (Aziz Hoque, 20 Nov 2026 export): cards 0–150, then a 900-high panel measured whole.
+    const pages = paginate(
+      [
+        { top: 0, bottom: 150 },
+        { top: 170, bottom: 1070 },
+        { top: 1090, bottom: 1500 },
+      ],
+      1000,
+    )
+    expect(pages[0]).toEqual({ top: 0, bottom: 1000 })
+    expect(pages.every((p) => p.bottom - p.top <= 1000)).toBe(true)
+    expect(pages.at(-1)!.bottom).toBe(1500)
+  })
+
+  it('a page more than a third full may still end before a block that does not fit', () => {
+    expect(
+      paginate(
+        [
+          { top: 0, bottom: 500 },
+          { top: 520, bottom: 1300 },
+        ],
+        1000,
+      ),
+    ).toEqual([
+      { top: 0, bottom: 500 },
+      { top: 520, bottom: 1300 },
+    ])
+  })
+
   it('blocks side by side in a row are one block; every block is on a page', () => {
     expect(normaliseBlocks([{ top: 50, bottom: 120 }, { top: 0, bottom: 40 }, { top: 50, bottom: 100 }])).toEqual([
       { top: 0, bottom: 40 },
@@ -87,6 +117,17 @@ describe('measureBlocks', () => {
       { top: 220, bottom: 1200 },
       // The card's own bottom padding goes with its last block.
       { top: 1200, bottom: 2300 },
+    ])
+  })
+
+  it('looks inside a section taller than a quarter of a page, so a page can end between its rows', () => {
+    const panel = box(170, 1070, [box(170, 400), box(400, 700), box(700, 1070)])
+    const root = box(0, 1500, [box(0, 150), panel])
+    expect(measureBlocks(root, 0, 1000)).toEqual([
+      { top: 0, bottom: 150 },
+      { top: 170, bottom: 400 },
+      { top: 400, bottom: 700 },
+      { top: 700, bottom: 1070 },
     ])
   })
 })

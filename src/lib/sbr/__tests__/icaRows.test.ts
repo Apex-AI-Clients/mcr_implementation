@@ -50,7 +50,7 @@ describe('loadIcaRows', () => {
     const { client } = supabase(CSV)
     const result = await loadIcaRows(client, { document_id: 'doc', rows: STALE })
     // Payment on 10 Sep 2026, statement 26 Sep 2026.
-    expect(daysSinceLastPayment(result.rows)).toBe(16)
+    expect(daysSinceLastPayment(result.rows, '2026-09-26')).toBe(16)
   })
 
   it('falls back to the stored rows when the CSV cannot be read', async () => {

@@ -92,10 +92,8 @@ describe('maps', () => {
     expect(formVersion('507b').map.tables.map((t) => t.id)).toEqual(['B2', 'B3', 'B21', 'B28'])
   })
 
-  it('marks only B6 and the B1 address as handwritten', () => {
-    expect(handwrittenKeys('507b').sort()).toEqual(
-      ['b1_address', 'b1_postcode', 'b1_state', 'b1_street', 'b1_suburb', 'b6_password', 'b6_username'].sort(),
-    )
+  it('marks only B6 user name and password as handwritten (the B1 address is typed since 24 Nov 2026)', () => {
+    expect(handwrittenKeys('507b').sort()).toEqual(['b6_password', 'b6_username'])
     expect(handwrittenKeys('507a')).toEqual([])
     expect(handwrittenKeys('509')).toEqual([])
   })
@@ -192,12 +190,13 @@ describe('fill', () => {
     const r = await fillOfficialForm('507b', SAMPLE_PARTB)
     const all = (await pageTexts(r.pdf)).join('\n')
     expect(all).not.toContain('should-not-print')
-    expect(all).not.toContain('Should Not Print')
     expect(all).toContain('Casey Bookkeeper')
+    // B1's address is typed and printed since 24 Nov 2026.
+    expect(all).toContain('5 Example Lane')
   })
 
   it.each([['509', SAMPLE_509], ['507a', SAMPLE_PARTA], ['507b', SAMPLE_PARTB]] as const)(
-    '%s: handwritten answers in the data change nothing on the printout (B6 log-ins, B1 address)',
+    '%s: handwritten answers in the data change nothing on the printout (B6 log-ins)',
     async (code, sample) => {
       const keys = handwrittenKeys(code)
       const withAll = { ...sample, fields: { ...sample.fields } } as FormData
@@ -343,5 +342,37 @@ describe('overflow', () => {
     expect(a6).toHaveLength(2)
     expect(a6[0]).not.toContain('500')
     expect(a6[1]).toContain('500')
+  })
+})
+
+describe('"Unsure" in every kind of date (27 Nov 2026)', () => {
+  it('prints across Form 509’s digit boxes, with no warning', async () => {
+    const r = await fillOfficialForm('509', { ...SAMPLE_509, fields: { ...SAMPLE_509.fields, summary_date: 'Unsure' } })
+    expect(r.warnings).toEqual([])
+    expect((await pageTexts(r.pdf)).join(' ')).toContain('Unsure')
+  })
+
+  it('prints in a table date cell; a row of "Unsure" alone is an empty row, never printed', async () => {
+    const data: FormData = {
+      ...SAMPLE_PARTB,
+      tables: {
+        ...SAMPLE_PARTB.tables,
+        B28: [
+          { name: 'Example Adviser', nature: 'Cash flow advice', date: 'Unsure' },
+          { date: 'Unsure' },
+        ],
+      },
+    }
+    const r = await fillOfficialForm('507b', data)
+    expect(r.warnings).toEqual([])
+    const text = (await pageTexts(r.pdf)).join(' ')
+    expect(text).toContain('Example Adviser')
+    expect(text.match(/Unsure/g)?.length ?? 0).toBeGreaterThanOrEqual(1)
+  })
+
+  it('prints in a typed date (B10) as the word itself', async () => {
+    const r = await fillOfficialForm('507b', { ...SAMPLE_PARTB, fields: { ...SAMPLE_PARTB.fields, b10_date: 'Unsure' } })
+    expect(r.warnings).toEqual([])
+    expect((await pageTexts(r.pdf)).join(' ')).toContain('Unsure')
   })
 })

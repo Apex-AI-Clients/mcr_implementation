@@ -110,8 +110,13 @@ export async function loadReadiness(supabase: ServerClient, clientId: string): P
     jobRunning: liveJob !== null,
     financials: {
       fileCount: financialFileCount,
-      // Two years printed side by side is a comparison (as before); fewer is Failed.
+      // Two years printed side by side is a comparison (as before); fewer is Ready with a note, nothing read is Failed.
       comparison: printed.comparison.annualYears >= 2 && printed.builtAt ? { generatedAt: printed.builtAt, staleSince: null } : null,
+      read: {
+        annualYears: printed.comparison.columns.filter((c) => c.kind === 'annual').map((c) => c.key),
+        currentPeriod: printed.comparison.columns.some((c) => c.kind === 'current_period'),
+        balanceSheet: printed.comparison.tables.some((t) => t.kind === 'balance_sheet'),
+      },
       // PDFs not yet read by the current reader. A file that could not be
       // read is a read too (with why): not waiting work.
       outOfDate: printed.unread > 0,

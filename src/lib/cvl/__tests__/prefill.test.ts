@@ -64,7 +64,7 @@ describe('Form 509', () => {
     expect(amounts).toEqual([])
     // What is filled: the company (ASIC extract), the lodgement details (CVL settings) and the signer.
     expect(Object.keys(p.fields).sort()).toEqual(
-      ['capacity', 'company_acn', 'company_name', 'contact_name', 'email', 'entity_name', 'phone', 'postal_1', 'postal_2', 'signer_name'].sort(),
+      ['capacity', 'company_acn', 'company_name', 'contact_name', 'email', 'entity_name', 'phone', 'postal_1', 'postal_2', 'signer_name', 'summary_date'].sort(),
     )
   })
 
@@ -84,7 +84,8 @@ describe('Form 509', () => {
     expect(p.fields.entity_name?.source.from.join(' ')).toMatch(/Form 509 lodgement details/)
     // The liquidator and MCR company settings are not Form 509's: no warning about them here.
     expect(p.warnings.join(' ')).not.toMatch(/Not set yet in CVL settings/)
-    expect(p.fields.summary_date).toBeUndefined()
+    // Every date not pre-filled starts "Unsure" (27 Nov 2026).
+    expect(p.fields.summary_date?.value).toBe('Unsure')
   })
 
   it('uses the lodgement details as changed on the settings page, and their starting values again once cleared', () => {
@@ -131,7 +132,7 @@ describe('Part A', () => {
     expect(value(p, 'a3_registered_suburb')).toBe('North Melbourne')
     expect(value(p, 'a3_principal_postcode')).toBe('2000')
     expect(p.fields.company_name.source.link).toEqual({ kind: 'href', href: '/api/admin/clients/cl_1/asic-extract/ex-1?page=1', label: 'Open the ASIC extract at page 1' })
-    expect(p.fields.company_name.source.from[1]).toBe('ASIC extract dated 23 September 2026.')
+    expect(p.fields.company_name.source.from[1]).toBe('ASIC extract dated 23 Sep 2026.')
   })
 
   it('fills the External Administrator box, box for box, from its one setting', () => {
@@ -182,7 +183,7 @@ describe('Part A', () => {
     const ctx = context({ asicExtract: null })
     ctx.company!.registrationDate = null
     const p = prefillForm('507a', 'company', ctx)
-    expect(p.fields.a3_commenced).toBeUndefined()
+    expect(p.fields.a3_commenced?.value).toBe('Unsure')
     expect(p.notes.a3_commenced).toBe('Upload the ASIC extract again to fill (the company’s registration date).')
   })
 
@@ -231,23 +232,55 @@ describe('Part B', () => {
     expect(value(one, 'b1_name')).toBe('Jordan Sample')
     expect(one.fields.b1_phone).toBeUndefined()
     expect(one.fields.b1_email).toBeUndefined()
-    expect(one.fields.b1_name.source.from[0]).toBe('Director: Jordan Sample, born 1970-03-14, appointed 2016-08-05.')
+    expect(one.fields.b1_name.source.from[0]).toBe('Director: Jordan Sample, born 14/03/1970, appointed 05/08/2016.')
 
     const two = prefillForm('507b', 'director:2', context())
     expect(value(two, 'b1_name')).toBe('Casey Example')
     expect(two.notes.b1_role).toBe('The kept ASIC extract has no appointment date for this director.')
   })
 
-  it('fills B10 from Form 509\u2019s saved summary date, not the registration date, and leaves B24 (the accountant) to be typed', () => {
+  it('fills B10 from the ASIC registration date (24 Nov 2026), and leaves B24 (the accountant) to be typed', () => {
+    // Since 24 Nov 2026: the ASIC registration date, with its ⓘ, whatever Form 509's summary date.
     const p = prefillForm('507b', 'director:1', { ...context(), summaryDate: '2026-11-14' })
-    expect(value(p, 'b10_date')).toBe('2026-11-14')
-    // Blank, with a note, until Form 509 is saved with that date.
-    const none = prefillForm('507b', 'director:1', context())
-    expect(none.fields.b10_date).toBeUndefined()
-    expect(none.notes.b10_date).toContain('once Form 509 is saved')
+    expect(value(p, 'b10_date')).toBe('2014-06-12')
+    expect(p.fields.b10_date.source.from[0]).toBe('From the ASIC extract: registration date')
+    const noDate = prefillForm('507b', 'director:1', { ...context(), company: { ...context().company!, registrationDate: null } })
+    expect(noDate.fields.b10_date?.value).toBe('Unsure')
+    expect(noDate.notes.b10_date).toBe('The kept ASIC extract has no registration date.')
     expect(p.fields.b24_name).toBeUndefined()
     expect(p.fields.b24_phone).toBeUndefined()
     expect(p.notes.b24_name).toBeUndefined()
+  })
+
+  it("fills B1's address from the director's address on the ASIC extract, split into its boxes (24 Nov 2026)", () => {
+    const ctx = { ...context(), directorAddresses: [{ name: 'Jordan Sample', dateOfBirth: '1970-03-14', address: '5 Example Lane, Sampleton NSW 2000' }] }
+    const p = prefillForm('507b', 'director:1', ctx)
+    expect([value(p, 'b1_street'), value(p, 'b1_suburb'), value(p, 'b1_state'), value(p, 'b1_postcode')]).toEqual(['5 Example Lane', 'Sampleton', 'NSW', '2000'])
+    expect(p.fields.b1_street.source.from.join(' ')).toContain('The director’s address on the ASIC extract: 5 Example Lane, Sampleton NSW 2000.')
+    // The other director's form is not given this one's address.
+    expect(prefillForm('507b', 'director:2', ctx).fields.b1_street).toBeUndefined()
+    // Nothing read: blank, with a note.
+    const none = prefillForm('507b', 'director:1', context())
+    expect(none.fields.b1_street).toBeUndefined()
+    expect(none.notes.b1_street).toBe('The kept ASIC extract has no address for this director: type it in.')
+  })
+
+  it('starts every date not pre-filled at "Unsure", never a signature date (27 Nov 2026)', () => {
+    const p = prefillForm('507b', 'director:1', context())
+    // Not pre-filled: "Unsure".
+    for (const key of ['b11_date', 'b13_start', 'b15_date', 'b19_date_lent', 'b23_first_payment']) expect(value(p, key), key).toBe('Unsure')
+    // Pre-filled from the ASIC extract: the date.
+    expect(value(p, 'b10_date')).toBe('2014-06-12')
+    // A signature date waits for Form 509's summary date; A10 is left for its signer.
+    expect(p.fields.b31_date).toBeUndefined()
+    expect(prefillForm('507a', 'company', context()).fields.a10_date).toBeUndefined()
+  })
+
+  it('starts every B24 date at "Unsure" (24 Nov 2026)', () => {
+    const p = prefillForm('507b', 'director:1', context())
+    for (const key of ['b24_itr_start', 'b24_itr_end', 'b24_bas_start', 'b24_bas_end', 'b24_stp_start', 'b24_stp_end', 'b24_sgc_start', 'b24_sgc_end']) {
+      expect(value(p, key), key).toBe('Unsure')
+    }
   })
 
   it('never pre-fills anything written by hand', () => {

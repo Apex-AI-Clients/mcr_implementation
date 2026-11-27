@@ -9,6 +9,7 @@ import {
   companyDetailsUpdate,
   hasCompanyDetails,
 } from '@/lib/clients/companyDetails'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
 
 export async function GET(req: NextRequest) {
   const user = await requireStaffUser()
@@ -97,8 +98,15 @@ export async function POST(req: NextRequest) {
       .eq('client_id', clientId)
 
     if (error) {
-      console.error('[POST /api/portal/company-details] update', error)
-      return NextResponse.json({ error: `Failed to update: ${error.message}` }, { status: 500 })
+      console.error('[POST /api/portal/company-details] update', error.code ?? 'unknown')
+      // The database's own words go to the developer, never to the client's screen (24 Nov 2026).
+      await raiseDeveloperAlert(supabase, {
+        kind: 'portal_save',
+        key: `portal_save:${clientId}:update:${error.code ?? 'unknown'}`,
+        subject: 'Client portal: company details could not be saved',
+        lines: ['A client could not save their company details.', '', `Client id: ${clientId}`, `Step: update`, `Database code: ${error.code ?? 'unknown'}`],
+      })
+      return NextResponse.json({ error: 'Your details could not be saved just now. Please try again in a moment.' }, { status: 500 })
     }
   } else {
     const { error } = await supabase
@@ -106,8 +114,15 @@ export async function POST(req: NextRequest) {
       .insert(companyDetailsInsert(clientId, details))
 
     if (error) {
-      console.error('[POST /api/portal/company-details] insert', error)
-      return NextResponse.json({ error: `Failed to save: ${error.message}` }, { status: 500 })
+      console.error('[POST /api/portal/company-details] insert', error.code ?? 'unknown')
+      // The database's own words go to the developer, never to the client's screen (24 Nov 2026).
+      await raiseDeveloperAlert(supabase, {
+        kind: 'portal_save',
+        key: `portal_save:${clientId}:insert:${error.code ?? 'unknown'}`,
+        subject: 'Client portal: company details could not be saved',
+        lines: ['A client could not save their company details.', '', `Client id: ${clientId}`, `Step: insert`, `Database code: ${error.code ?? 'unknown'}`],
+      })
+      return NextResponse.json({ error: 'Your details could not be saved just now. Please try again in a moment.' }, { status: 500 })
     }
   }
 

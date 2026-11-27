@@ -1,8 +1,9 @@
 import type { CellSource, ComparisonColumn, ComparisonRow, PrintedComparison } from './compare'
 import { KEY_FIGURES, MEANING, MEANINGS, type Meaning } from './meanings'
-import { DRAWINGS_HINT, lineRank, namesDirector, suggestMapping, type RelatedNames } from './dictionary'
+import { DRAWINGS_HINT, lineRank, namesDirector, personAccount, personKey, suggestMapping, type RelatedNames } from './dictionary'
 import { SUBTRACTED } from './verify'
 import { comparisonProof, heldMessage } from './proof'
+import { dateText } from '@/lib/dates'
 
 /**
  * A client's confirmed mapping (migration 0034) applied to the as-printed
@@ -38,22 +39,35 @@ export interface MappedLine {
   source: CellSource | null
   /** The reading rule applied to the printed amount, in plain English; null when it is taken as printed. */
   rule: string | null
+  /** One person's account (groupPersons): the person's own printed lines it adds up. */
+  parts?: MappedLine[]
 }
 
 const LOAN_MEANINGS: Meaning[] = ['loan_receivable', 'loan_payable']
-const underLiabilities = (row: ComparisonRow) => /liabilit/i.test(row.path.join(' '))
+
+/** The balance sheet's credit side: liabilities, or equity (Gabby, 24 Nov 2026), never an asset section. */
+const EQUITY_SECTION = /\bequity\b|\bcapital\b|\bowners?'?s?'? funds\b|\bshareholders?'?s?'? funds\b|\bmembers?'? funds\b|\btrust funds\b|\bproprietorship\b|\breserves\b/i
+export function onCreditSide(row: ComparisonRow): boolean {
+  const path = row.path.join(' › ')
+  if (/liabilit/i.test(path)) return true
+  return EQUITY_SECTION.test(path) && !/\basset/i.test(path)
+}
+
+/** The section a line is printed under, as printed ("Equity", "Non-current Liabilities"). */
+const sectionName = (row: ComparisonRow) => row.path.filter((p) => p.trim() !== '').at(-1)?.trim() || (onCreditSide(row) ? 'Liabilities' : 'Assets')
 
 /**
- * A loan account line's amount as the meaning counts it (ported from the old
- * reader's loan rule). The same director loan is printed on either side of a
- * balance sheet, and its sign says which way the money is owed:
+ * A loan account line's amount as the meaning counts it: ONE sign-aware section rule, the same on
+ * the page, in the exports and in the prediction (Gabby, 24 Nov 2026; the user, 26 Nov 2026):
  *
- *   owed TO the company   under assets: as printed; under liabilities: the
- *                         printed figure negated — a NEGATIVE liability is
- *                         money the director owes the company
- *   owed BY the company   under liabilities: as printed; under assets: negated
+ *   ASSETS, positive                    → Director loan account (Debit): owed TO the company
+ *   LIABILITIES or EQUITY, positive     → Loan account director (Credit): owed BY the company
+ *   LIABILITIES or EQUITY, NEGATIVE     → Debit: a debit balance, owed to the company
+ *   ASSETS, negative                    → Credit: a credit balance, owed by the company
  *
- * Every other meaning is taken as printed.
+ * The meaning a line was confirmed under says which side it is read for; a line whose sign puts it
+ * on the other side counts against this one (loanSidesAt moves it across). Every other meaning is
+ * taken as printed.
  */
 export function readLoanLine(row: ComparisonRow, meaning: Meaning, printed: number): { value: number; rule: string | null } {
   // "Less Unexpired Interest" printed positive is taken off, as its printed total does (verify.ts).
@@ -61,19 +75,20 @@ export function readLoanLine(row: ComparisonRow, meaning: Meaning, printed: numb
     return { value: -printed, rule: `"${row.label.trim()}" is printed as a positive figure that the statement subtracts, so it is taken off.` }
   }
   if (!LOAN_MEANINGS.includes(meaning)) return { value: printed, rule: null }
-  const liability = underLiabilities(row)
-  const flip = meaning === 'loan_receivable' ? liability : !liability
+  const credit = onCreditSide(row)
+  const flip = meaning === 'loan_receivable' ? credit : !credit
   if (!flip) return { value: printed, rule: null }
+  const section = sectionName(row)
   return {
     value: printed === 0 ? 0 : -printed,
     rule:
-      meaning === 'loan_receivable'
-        ? printed < 0
-          ? 'A negative figure under liabilities means the director (or related party) owes the company.'
-          : 'A positive figure under liabilities is owed BY the company, so it counts against money owed to the company.'
-        : printed < 0
-          ? 'A negative figure under assets means the company owes the director (or related party).'
-          : 'A positive figure under assets is owed TO the company, so it counts against money owed by the company.',
+      printed < 0
+        ? credit
+          ? `Printed as a negative amount under ${section}: a debit balance, owed to the company.`
+          : `Printed as a negative amount under ${section}: a credit balance, owed by the company.`
+        : credit
+          ? `Printed as a positive amount under ${section}: owed by the company (Loan account director, Credit).`
+          : `Printed as a positive amount under ${section}: owed to the company (Director loan account, Debit).`,
   }
 }
 
@@ -108,9 +123,13 @@ export function resolveMeaning(comparison: PrintedComparison, mapping: MappingEn
   // year's layout: in a year that prints more than one of them, only the best-ranked counts, never the sum.
   const single = !MEANING[meaning].multiple
   const rank = (r: ComparisonRow) => lineRank(meaning, r.label)
+  // Asset section totals proven to add up together ("Total Bank" and "Total Current Assets",
+  // dictionary.ts assetSectionTotals): counted together, never one of them alone.
+  const addedUp = new Set(entries.filter((e) => /^From “.*”, added up:/.test(e.autoRule ?? '')).map((e) => e.rowKey))
   const years = comparison.columns.map((column, i) => {
     const printedRows = mapped.filter((r) => r.cells[i].printed && typeof r.cells[i].value === 'number')
-    const counted = single && printedRows.length > 1 ? [printedRows.reduce((best, r) => (rank(r) < rank(best) ? r : best))] : printedRows
+    const sections = printedRows.filter((r) => addedUp.has(r.key))
+    const counted = single && sections.length > 1 ? sections : single && printedRows.length > 1 ? [printedRows.reduce((best, r) => (rank(r) < rank(best) ? r : best))] : printedRows
     const lines = counted.map((r): MappedLine => {
       const cell = r.cells[i]
       const read = readLoanLine(r, meaning, cell.value as number)
@@ -160,6 +179,65 @@ export interface NotIdentified {
   possible?: PossibleLoanLine[]
   /** The lines already confirmed for it: "Use it" adds the possible line to these. */
   confirmedRowKeys?: string[]
+  /** Stored loan lines the sign-aware section rule puts on the other side: staff move them (never silently). */
+  conflicts?: LoanSideConflict[]
+}
+
+/**
+ * A stored loan choice (staff, rule or AI) that contradicts the ONE sign-aware section rule
+ * (readLoanLine; Gabby, 24 Nov 2026): e.g. "Owner A Drawings 44,952.22", printed positive under
+ * Equity, stored on the Director loan account (Debit). Flagged to staff, never applied silently
+ * (the user, 27 Nov 2026): until staff move it, the prediction waits.
+ */
+export interface LoanSideConflict {
+  rowKey: string
+  label: string
+  /** As printed in the latest balance sheet column. */
+  printed: number
+  /** The meaning it is stored under, and the one the rule puts it on. */
+  storedAs: 'loan_receivable' | 'loan_payable'
+  belongsTo: 'loan_receivable' | 'loan_payable'
+  /** Who chose it: a staff member, or 'auto' (the rules or the AI). */
+  chosenBy: string
+  message: string
+}
+
+/** Every stored loan line on the wrong side for its sign and section, in the given balance sheet column. */
+export function loanSideConflicts(comparison: PrintedComparison, mapping: MappingEntry[], index: number | undefined): LoanSideConflict[] {
+  if (index === undefined) return []
+  const rows = new Map(comparison.tables.filter((t) => t.kind === 'balance_sheet').flatMap((t) => t.rows.map((r) => [r.key, r] as const)))
+  const loans = mapping.filter((e) => !e.nonePrinted && LOAN_MEANINGS.includes(e.meaning))
+  // One account per person (groupPersons; Gabby, 25 Nov 2026): a person's own lines are netted, and the
+  // net decides the side, never one line's sign. Such lines are never a conflict.
+  const perPerson = new Map<string, number>()
+  for (const e of loans) {
+    const p = personAccount(rows.get(e.rowKey)?.label ?? '')
+    if (p) perPerson.set(personKey(p.name), (perPerson.get(personKey(p.name)) ?? 0) + 1)
+  }
+  const out: LoanSideConflict[] = []
+  for (const e of loans) {
+    const row = rows.get(e.rowKey)
+    const cell = row?.cells[index]
+    if (!row || !cell?.printed || typeof cell.value !== 'number' || cell.value === 0) continue
+    const person = personAccount(row.label)
+    if (person && (perPerson.get(personKey(person.name)) ?? 0) >= 2) continue
+    const printed = cell.value
+    const credit = onCreditSide(row)
+    const belongsTo = (credit ? printed < 0 : printed > 0) ? 'loan_receivable' : 'loan_payable'
+    if (belongsTo === e.meaning) continue
+    const section = sectionName(row)
+    const how = printed < 0 ? `printed as a negative amount under ${section}` : `printed under ${section}`
+    out.push({
+      rowKey: row.key,
+      label: row.label.trim() || '(no label)',
+      printed,
+      storedAs: e.meaning as LoanSideConflict['storedAs'],
+      belongsTo,
+      chosenBy: e.confirmedBy,
+      message: `“${row.label.trim()}” is ${how}, so it belongs to ${MEANING[belongsTo].label}, not ${MEANING[e.meaning].label} — move it?`,
+    })
+  }
+  return out
 }
 
 /** A line on the latest balance sheet that may be the director loan account (Debit): staff decide. */
@@ -189,11 +267,7 @@ export interface PredictionFinancials {
   tradeSuppliers: MappedFigure | null
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const dayLabel = (iso: string) => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const dayLabel = (iso: string) => dateText(iso)
 
 export function columnSourceLabel(c: ComparisonColumn): string {
   return c.kind === 'annual' ? `${c.key} balance sheet` : `current period at ${dayLabel(c.periodEnd)}`
@@ -211,13 +285,57 @@ function printedNilAt(comparison: PrintedComparison, mapping: MappingEntry[], me
   return rows.length > 0 && rows.every((row) => row.cells[index].printed && row.cells[index].value === null)
 }
 
+const money2 = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * One account per person (Gabby, 25 Nov 2026): a name printed with two or more of its own account
+ * lines ("Matthew Trow - Drawings", "- Share of Profit", "- Capital Introduced") is one director loan
+ * account, its lines added up. Netted within the person, never across people: a person owing the
+ * company is on the Debit side (owed TO), one the company owes on the Credit side (owed BY); a person
+ * netting to nil stays on the Debit side at $0, so the ⓘ still lists them. The person's line carries
+ * its own lines (`parts`). In place, on the two sides as loanSidesAt sorted them (values positive).
+ */
+export function groupPersons(to: MappedLine[], by: MappedLine[]): void {
+  const groups = new Map<string, { name: string; to: MappedLine[]; by: MappedLine[] }>()
+  for (const [side, lines] of [['to', to], ['by', by]] as const) {
+    for (const l of lines) {
+      const p = personAccount(l.label)
+      if (!p) continue
+      const g = groups.get(personKey(p.name)) ?? { name: p.name, to: [], by: [] }
+      g[side].push(l)
+      groups.set(personKey(p.name), g)
+    }
+  }
+  for (const g of groups.values()) {
+    const parts = [...g.to, ...g.by]
+    if (parts.length < 2) continue
+    for (const l of parts) {
+      const list = g.to.includes(l) ? to : by
+      list.splice(list.indexOf(l), 1)
+    }
+    const owedTo = Math.round((g.to.reduce((s, l) => s + l.value, 0) - g.by.reduce((s, l) => s + l.value, 0)) * 100) / 100
+    const printed = Math.round(parts.reduce((s, l) => s + l.printed, 0) * 100) / 100
+    const way = owedTo > 0 ? `owes the company ${money2(owedTo)}` : owedTo < 0 ? `is owed ${money2(-owedTo)} by the company` : 'nets to nil'
+    const line: MappedLine = {
+      label: g.name,
+      value: Math.abs(owedTo),
+      printed,
+      source: parts[0].source,
+      rule: `One account per person: ${parts.map((l) => `“${l.label.trim()}” ${money2(l.printed)}`).join(' + ')} = ${money2(printed)} as printed, so ${g.name} ${way}.`,
+      parts,
+    }
+    ;(owedTo >= 0 ? to : by).push(line)
+  }
+}
+
 /**
  * The loan accounts in one balance sheet column, each line on the side its
  * printed sign says, whichever of the two meanings it was confirmed under
  * (old reader: a negative loan under liabilities is a receivable, wherever the
- * model had filed it). Null on a side: not identified for that column.
+ * model had filed it); a person's own lines netted into one account
+ * (groupPersons). Null on a side: not identified for that column.
  */
-function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], index: number): { to: MappedFigure | null; by: MappedFigure | null } {
+export function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], index: number): { to: MappedFigure | null; by: MappedFigure | null } {
   const column = comparison.columns[index]
   const base = { source: columnSourceLabel(column), asOf: column.periodEnd }
   const recv = resolveMeaning(comparison, mapping, 'loan_receivable')
@@ -227,10 +345,12 @@ function loanSidesAt(comparison: PrintedComparison, mapping: MappingEntry[], ind
   const moved = (l: MappedLine, toCompany: boolean): MappedLine => ({
     ...l,
     value: -l.value,
-    rule: `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
+    // The section-and-sign rule (readLoanLine) says which side it is on; this is only the fallback.
+    rule: l.rule ?? `${l.printed < 0 ? 'Printed negative' : 'Printed positive'}, so it is owed ${toCompany ? 'TO' : 'BY'} the company, although it is confirmed as owed ${toCompany ? 'by' : 'to'} it.`,
   })
   for (const l of recv.years[index].lines) (l.value >= 0 ? to : by).push(l.value >= 0 ? l : moved(l, false))
   for (const l of pay.years[index].lines) (l.value >= 0 ? by : to).push(l.value >= 0 ? l : moved(l, true))
+  groupPersons(to, by)
   const sum = (lines: MappedLine[]) => Math.round(lines.reduce((t, l) => t + l.value, 0) * 100) / 100
   const side = (lines: MappedLine[], r: ResolvedMeaning, meaning: Meaning): MappedFigure | null => {
     if (lines.length > 0) return { ...base, amount: sum(lines), lines }
@@ -351,6 +471,13 @@ export function predictionFinancials(
       ? (comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? [])
           .filter((r) => r.style === 'line' && r.cells[index].printed && !mappedKeys.has(r.key) && !dismissed.has(`loan_receivable|${r.key}`))
           .filter((r) => !BANK_FINANCE.test(r.label) && (LOAN_LIKE.test(r.label) || namesDirector(r.label, names.directors ?? [])))
+          // Only a line the section-and-sign rule puts on the Debit side (readLoanLine): positive under
+          // assets, negative under liabilities or equity. A positive equity line ("Owner A Drawings
+          // 44,952.22") is a Credit, never a Debit candidate (24 Nov 2026).
+          .filter((r) => {
+            const v = r.cells[index].value
+            return typeof v !== 'number' || v === 0 || (onCreditSide(r) ? v < 0 : v > 0)
+          })
           .map((r) => ({
             rowKey: r.key,
             label: r.label.trim(),
@@ -389,6 +516,16 @@ export function predictionFinancials(
   if (!column) {
     notIdentified.loanReceivable = { message: 'No balance sheet has been read yet — upload the financial statements, then choose the line.', candidates: [] }
   }
+  // A stored loan line on the wrong side for its sign and section: never moved silently. The loan
+  // inputs wait until staff move it (the user, 27 Nov 2026).
+  const conflicts = loanSideConflicts(comparison, mapping, index)
+  if (column && conflicts.length > 0) {
+    notIdentified.loanReceivable = {
+      ...(notIdentified.loanReceivable ?? { candidates: [] }),
+      message: conflicts.map((c) => c.message).join(' '),
+      conflicts,
+    }
+  }
   if (column && atoCandidates.length > 0) {
     notIdentified.atoDebt = {
       message: `Not identified — the ${columnSourceLabel(column)} prints ${atoCandidates.map((l) => `“${l}”`).join(', ')}, not mapped to ATO-related debt. Choose the line.`,
@@ -400,7 +537,8 @@ export function predictionFinancials(
     confirmed: mappingConfirmed(mapping),
     balanceSheet: column ? { column, label: columnSourceLabel(column) } : null,
     loanReceivable: notIdentified.loanReceivable ? null : loanReceivable,
-    loanPayable: sides.by,
+    // A conflicting line waits for staff on both sides: never counted on the side its sign says, silently.
+    loanPayable: conflicts.length > 0 ? null : sides.by,
     notIdentified,
     atoDebt,
     creditCards: figure('credit_cards', { absolute: true }),

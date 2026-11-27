@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, CheckCircle2, Circle, Clock, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Clock, Loader2, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { STATUS_LABEL, type Readiness, type ReadinessItem, type ReadinessStatus } from '@/lib/sbr/readiness'
@@ -16,17 +16,20 @@ interface ReadinessChecklistProps {
   readiness: Readiness
 }
 
-const BADGE: Record<ReadinessStatus, 'muted' | 'accent' | 'success' | 'destructive'> = {
+const BADGE: Record<ReadinessStatus, 'muted' | 'accent' | 'success' | 'warning' | 'destructive'> = {
   not_uploaded: 'muted',
   not_started: 'muted',
   processing: 'accent',
   ready: 'success',
   failed: 'destructive',
   needs_review: 'destructive',
+  // Nothing wrong with the files: more are needed (one financial year on file).
+  needs_files: 'warning',
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {
   if (status === 'ready') return <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+  if (status === 'needs_files') return <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
   if (status === 'processing') return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden="true" />
   if (status === 'not_started') return <Clock className="h-4 w-4 shrink-0 text-foreground/40" aria-hidden="true" />
   if (status === 'failed' || status === 'needs_review') return <XCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />

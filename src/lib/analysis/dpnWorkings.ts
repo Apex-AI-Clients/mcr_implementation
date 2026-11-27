@@ -1,4 +1,5 @@
 import type { DpnRiskBreakdown } from './types'
+import { dateText } from '@/lib/dates'
 
 /**
  * The DPN estimate's workings in plain English (computeDpnRisk), shared by the
@@ -49,5 +50,5 @@ function money(n: number): string {
 }
 
 function day(iso: string): string {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return dateText(iso)
 }

@@ -319,6 +319,81 @@ export type Database = {
           },
         ]
       }
+      developer_alerts: {
+        Row: {
+          created_at: string
+          details: Json
+          email_error: string | null
+          emailed_at: string | null
+          id: string
+          key: string
+          kind: string
+          resolved_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          key: string
+          kind: string
+          resolved_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          key?: string
+          kind?: string
+          resolved_at?: string | null
+        }
+        Relationships: []
+      }
+      key_figure_decisions: {
+        Row: {
+          ai_reason: string | null
+          chosen_by: string
+          client_id: string
+          decided_at: string
+          decided_by: string
+          document_ids: string[]
+          meaning: string
+          outcome: string
+          possible: Json
+          row_keys: string[]
+          rule: string | null
+        }
+        Insert: {
+          ai_reason?: string | null
+          chosen_by: string
+          client_id: string
+          decided_at?: string
+          decided_by: string
+          document_ids?: string[]
+          meaning: string
+          outcome: string
+          possible?: Json
+          row_keys?: string[]
+          rule?: string | null
+        }
+        Update: {
+          ai_reason?: string | null
+          chosen_by?: string
+          client_id?: string
+          decided_at?: string
+          decided_by?: string
+          document_ids?: string[]
+          meaning?: string
+          outcome?: string
+          possible?: Json
+          row_keys?: string[]
+          rule?: string | null
+        }
+        Relationships: []
+      }
       client_line_dismissals: {
         Row: {
           client_id: string
@@ -353,6 +428,51 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comparison_source_choices: {
+        Row: {
+          chosen_at: string
+          chosen_by: string
+          client_id: string
+          document_id: string | null
+          id: string
+          period_key: string
+          statement_kind: string
+        }
+        Insert: {
+          chosen_at?: string
+          chosen_by: string
+          client_id: string
+          document_id?: string | null
+          id?: string
+          period_key: string
+          statement_kind: string
+        }
+        Update: {
+          chosen_at?: string
+          chosen_by?: string
+          client_id?: string
+          document_id?: string | null
+          id?: string
+          period_key?: string
+          statement_kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comparison_source_choices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comparison_source_choices_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
             referencedColumns: ["id"]
           },
         ]
@@ -2037,6 +2157,7 @@ export type Database = {
           statements: Json
           status: string
           scan: Json | null
+          report: Json | null
         }
         Insert: {
           client_id: string
@@ -2048,6 +2169,7 @@ export type Database = {
           statements?: Json
           status: string
           scan?: Json | null
+          report?: Json | null
         }
         Update: {
           client_id?: string
@@ -2059,6 +2181,7 @@ export type Database = {
           statements?: Json
           status?: string
           scan?: Json | null
+          report?: Json | null
         }
         Relationships: [
           {

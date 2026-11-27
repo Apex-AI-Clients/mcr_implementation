@@ -23,6 +23,7 @@ function comparison(cells: ComparisonCell[], over: Partial<PrintedComparison> = 
     documents: [{ documentId: 'fy25', filename: 'fy25.pdf', status: 'read', found: null, used: true, message: null, issues: [] }],
     annualYears: 1,
     hiddenComparativeYears: [],
+    periodSources: [],
     ...over,
   }
 }

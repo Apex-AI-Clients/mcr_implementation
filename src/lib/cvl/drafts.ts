@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isUnsure } from '@/lib/forms/unsure'
 import { datedTables, formVersion, handwrittenKeys, tableDateKey } from '@/lib/forms/registry'
 import type { FieldValue, FormCode, FormData, FormMap, TableRow } from '@/lib/forms/types'
 import type { Prefill } from './prefill'
@@ -11,7 +12,7 @@ import type { Prefill } from './prefill'
  * (so the ⓘ is shown only on a value that is still the pre-filled one).
  *
  * What is written by hand on the printout is never saved: B6 user name and
- * password, and the B1 address. The database refuses them as well (0039,
+ * password (the B1 address is typed since 24 Nov 2026, 0065). The database refuses them as well (0039,
  * 0054). The dates beside a signature are saved since Nov 2026 (0054).
  */
 
@@ -88,7 +89,8 @@ export function savedA7Total(drafts: readonly { form_code: string; subject: stri
 export function savedSummaryDate(drafts: readonly { form_code: string; subject: string; answers: unknown }[]): string | null {
   const row = drafts.find((d) => d.form_code === '509' && d.subject === 'company')
   const value = row ? readDraft(row.answers)?.fields.summary_date : null
-  return typeof value === 'string' && value.trim() ? value.trim() : null
+  // "Unsure" is not a date: nothing is filled from it (27 Nov 2026).
+  return typeof value === 'string' && value.trim() && !isUnsure(value) ? value.trim() : null
 }
 
 const Value = z.union([z.string().max(5000), z.number().finite(), z.boolean(), z.null()])

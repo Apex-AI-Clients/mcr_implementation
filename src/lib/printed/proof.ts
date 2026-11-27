@@ -1,8 +1,17 @@
 import type { PrintedComparison } from './compare'
+import { crossChecks, type CrossCheck } from './crossChecks'
 
 /**
- * Which years of the financial statements are proven (Gabby, 18 Nov 2026).
+ * Which years of the financial statements are proven (Gabby, 18 Nov 2026; cross-checks 25 Nov 2026).
  * Pure, over the built comparison.
+ *
+ * Besides every total adding up, two checks across statements (crossChecks.ts), each only where it
+ * applies (a check that does not apply is no badge and no failure):
+ *   "Profit and loss agrees with balance sheet"  P&L net profit = balance sheet current year earnings
+ *   "Carries forward from the previous year"     retained earnings = last period's retained earnings
+ *                                                + its current year earnings
+ * A failed one: the period is shown as printed with a note naming the check (printed_error), never
+ * blocking the prediction (Gabby, 25 Nov 2026).
  *
  *   proven         every printed total in the year adds up (verify.ts), and
  *                  every figure read from a scan has both readings agreeing
@@ -30,8 +39,19 @@ export interface YearProof {
   financialYear: number
   currentPeriod: boolean
   status: 'proven' | 'printed_error' | 'held'
+  /** The totals badge, when the year is proven (every total adds up and every cross-check that applies passes). */
   badge: string | null
-  /** printed_error: the lines whose printed totals do not add up, as the comparison words them. */
+  /**
+   * Every badge the year earns, in order: the totals badge when every total adds up (even if a
+   * cross-check fails), then each cross-check that applies and passes. None while held.
+   */
+  badges: string[]
+  /** The cross-checks that apply to this period, passed or failed (crossChecks.ts). */
+  crossChecks: CrossCheck[]
+  /**
+   * printed_error: the lines whose printed totals do not add up, as the comparison words them, then
+   * each failed cross-check's note.
+   */
   notes: string[]
   /** held: why, in plain words (counts and pages; no figures). */
   reasons: string[]
@@ -42,6 +62,7 @@ export interface YearProof {
 
 export function comparisonProof(comparison: PrintedComparison): YearProof[] {
   const docStatus = new Map(comparison.documents.map((d) => [d.documentId, d]))
+  const checks = crossChecks(comparison)
   return comparison.columns.map((col, index) => {
     const cells = comparison.tables.flatMap((t) => t.rows.map((r) => r.cells[index]).filter((c) => c?.printed))
     const documentIds = [...new Set(cells.map((c) => c.source?.documentId).filter((d): d is string => !!d))]
@@ -64,7 +85,10 @@ export function comparisonProof(comparison: PrintedComparison): YearProof[] {
     if (scan.claudeOnly) reasons.push(`${scan.claudeOnly} scanned figure${scan.claudeOnly === 1 ? '' : 's'} not read a second time yet: refresh the file`)
     if (unread.length) reasons.push('Scanned pages not read yet')
     if (scan.scanned > 0 && failures.length > 0) reasons.push(`${failures.length} printed total${failures.length === 1 ? '' : 's'} on a scanned page do${failures.length === 1 ? 'es' : ''} not add up`)
-    const status: YearProof['status'] = reasons.length ? 'held' : failures.length ? 'printed_error' : 'proven'
+    const cross = checks[index] ?? []
+    const crossFailed = cross.filter((c) => c.status === 'failed')
+    const status: YearProof['status'] = reasons.length ? 'held' : failures.length || crossFailed.length ? 'printed_error' : 'proven'
+    const badges = status === 'held' ? [] : [...(failures.length ? [] : [STATEMENTS_BADGE]), ...cross.filter((c) => c.status === 'passed').map((c) => c.badge)]
     return {
       column: col.key,
       index,
@@ -72,7 +96,9 @@ export function comparisonProof(comparison: PrintedComparison): YearProof[] {
       currentPeriod: col.kind === 'current_period',
       status,
       badge: status === 'proven' ? STATEMENTS_BADGE : null,
-      notes: status === 'printed_error' ? failures.map((f) => f.message) : [],
+      badges,
+      crossChecks: cross,
+      notes: status === 'printed_error' ? [...failures.map((f) => f.message), ...crossFailed.map((c) => c.note!)] : [],
       reasons,
       documentIds,
       scan,

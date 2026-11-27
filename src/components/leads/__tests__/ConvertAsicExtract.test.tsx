@@ -179,7 +179,7 @@ describe('Convert to client — filling from an extract', () => {
     expect(field(dialog, 'Director 2 date of birth').value).toBe('02/11/1981')
     expect(within(dialog).getByRole('group', { name: 'Directors' })).toBeTruthy()
     expect(within(dialog).getByRole('status').textContent).toContain(
-      'Filled from ASIC extract dated 23 September 2026. Check the fields below.',
+      'Filled from ASIC extract dated 23 Sep 2026. Check the fields below.',
     )
   })
 

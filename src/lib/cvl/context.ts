@@ -10,6 +10,21 @@ import { readDirectors } from '@/lib/clients/companyDetails'
 import type { Director } from '@/lib/asic/types'
 import type { AsicSectionPages } from '@/lib/asic/readUpload'
 import { loadCvlSettings, type CvlSettings } from './settings'
+import { extractPdfLines } from '@/lib/asic/extractText'
+import { parseDirectorAddresses } from '@/lib/asic/parse'
+
+/** The kept ASIC extract's director addresses (parseDirectorAddresses), read in memory. Never throws: empty instead. */
+async function loadDirectorAddresses(supabase: ServerClient, filePath: string | null): Promise<NonNullable<CvlContext['directorAddresses']>> {
+  if (!filePath) return []
+  try {
+    const { data, error } = await supabase.storage.from('documents').download(filePath)
+    if (error || !data) return []
+    const { lines } = await extractPdfLines(new Uint8Array(await data.arrayBuffer()))
+    return parseDirectorAddresses(lines)
+  } catch {
+    return []
+  }
+}
 
 type ServerClient = ReturnType<typeof getSupabaseServerClient>
 
@@ -49,6 +64,12 @@ export interface CvlContext {
   } | null
   /** The newest ASIC extract kept on the file (migration 0041), for ⓘ links at a page. */
   asicExtract: { id: string; extractedAt: string | null; pages: Partial<AsicSectionPages> } | null
+  /**
+   * Each current director's address as that extract prints it, for Part B's B1 (Gabby, 24 Nov 2026).
+   * Read from the kept PDF when the form is opened, in memory; never written to the client file.
+   * Empty with no extract kept, or when it cannot be read.
+   */
+  directorAddresses?: { name: string; dateOfBirth: string | null; address: string | null }[]
   accountant: { companyName: string | null; contactPerson: string | null; phone: string | null; email: string | null } | null
   /** The latest balance sheet's confirmed lines, per meaning: only those with a figure. */
   balanceSheet: Partial<Record<Meaning, BalanceSheetFigure>>
@@ -94,7 +115,7 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
     supabase.from('company_details').select('*').eq('client_id', clientId).maybeSingle(),
     supabase
       .from('client_asic_extracts')
-      .select('id, extracted_at, section_pages')
+      .select('id, extracted_at, section_pages, file_path')
       .eq('client_id', clientId)
       .order('uploaded_at', { ascending: false })
       .limit(1)
@@ -109,7 +130,10 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
     loadCvlSettings(supabase),
   ])
   // Staff choices, and the auto-selections for the rest (printed/autoMapping.ts).
-  const { mapping } = await withAutoMapping(supabase, clientId, comparison, stored)
+  const [{ mapping }, directorAddresses] = await Promise.all([
+    withAutoMapping(supabase, clientId, comparison, stored),
+    loadDirectorAddresses(supabase, extract.data?.file_path ?? null),
+  ])
   const c = company.data
   return {
     clientId,
@@ -134,6 +158,7 @@ export async function loadCvlContext(supabase: ServerClient, clientId: string): 
     asicExtract: extract.data
       ? { id: extract.data.id, extractedAt: extract.data.extracted_at, pages: (extract.data.section_pages ?? {}) as Partial<AsicSectionPages> }
       : null,
+    directorAddresses,
     accountant: accountant.data
       ? {
           companyName: accountant.data.company_name,

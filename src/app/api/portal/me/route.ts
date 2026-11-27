@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       docCategory: d.doc_category,
       status: d.status,
       uploadedAt: d.uploaded_at,
-      ...atoFileInfo(d, [client.name, rawCompany?.company_name, rawCompany?.trust_name]),
+      ...atoFileInfo(d),
     }))
 
     const { data: rawAccountant } = await supabase

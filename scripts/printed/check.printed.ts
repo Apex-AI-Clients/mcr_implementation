@@ -1,10 +1,14 @@
 import { it } from 'vitest'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { readPrintedStatements } from '@/lib/printed/readPdf'
 import { verifyStatements } from '@/lib/printed/verify'
 import { buildPrintedComparison, type ComparisonDocument, type PrintedComparison } from '@/lib/printed/compare'
 import type { PrintedRead } from '@/lib/printed/types'
+import { autoMapping } from '@/lib/printed/autoMapping'
+import { suggestMapping } from '@/lib/printed/dictionary'
+import { headlineRows } from '@/lib/printed/headline'
+import { comparisonProof } from '@/lib/printed/proof'
 import { PDF_DIR, PRINTED_DIR, readExpected, readManifest, type ExpectedDocument } from './regression'
 
 /**
@@ -170,4 +174,72 @@ it('shows every printed figure in the comparison, years in order', async () => {
   }
   process.stdout.write(['── comparison ──', ...lines, ''].join('\n'))
   if (failed) throw new Error(`${failed} client comparison(s) leave out printed figures or misorder years`)
+})
+
+/**
+ * <alias>/answer-key.json (gitignored): figures staff gave as printed, per comparison column, checked
+ * against the comparison built from the PDFs (no database): printed lines by statement and label,
+ * headline figures (with their ⓘ note), and the badges each period must earn (proof.ts).
+ */
+interface AnswerKey {
+  figures: { statement: string; label: string; values: Record<string, number | null> }[]
+  headline?: { key: string; values: Record<string, number>; note?: string }[]
+  badges?: Record<string, string[]>
+  names?: { directors?: string[]; parties?: string[] }
+}
+
+it('matches every client answer key', async () => {
+  const only = process.env.PRINTED_ALIAS?.trim()
+  const lines: string[] = []
+  let failed = 0
+  for (const [alias, entry] of Object.entries(readManifest())) {
+    if (only && alias !== only) continue
+    const file = path.join(PRINTED_DIR, alias, 'answer-key.json')
+    if (!existsSync(file)) continue
+    const key = JSON.parse(readFileSync(file, 'utf8')) as AnswerKey
+    const docs: ComparisonDocument[] = []
+    for (const doc of entry.documents) {
+      docs.push({ documentId: doc.documentId, filename: doc.documentId, uploadedAt: '', read: await readPrintedStatements(new Uint8Array(readFileSync(path.join(PDF_DIR, alias, doc.file)))) })
+    }
+    const comparison = buildPrintedComparison(docs)
+    const misses: string[] = []
+    let checked = 0
+    const at = (column: string) => comparison.columns.findIndex((c) => c.key === column)
+    for (const f of key.figures) {
+      const row = comparison.tables.find((t) => t.kind === f.statement)?.rows.find((r) => r.label.trim() === f.label && r.style !== 'heading')
+      for (const [column, want] of Object.entries(f.values)) {
+        checked++
+        const i = at(column)
+        const got = row && i >= 0 ? row.cells[i].value : undefined
+        if (i < 0) misses.push(`${column}: not a column (${comparison.columns.map((c) => c.key).join(' ')})`)
+        else if (typeof want === 'number' ? typeof got !== 'number' || Math.abs(got - want) > 0.005 : got !== null) misses.push(`${column} "${f.label}": ${fmt(got)}, answer key ${fmt(want)}`)
+      }
+    }
+    if (key.headline?.length) {
+      const names = key.names ?? {}
+      const auto = autoMapping(comparison, [], names)
+      const rows = headlineRows(comparison, auto.entries, suggestMapping(comparison, names), { status: 'none', cells: [] })
+      for (const h of key.headline) {
+        const row = rows.find((r) => r.key === h.key)
+        for (const [column, want] of Object.entries(h.values)) {
+          checked++
+          const cell = row?.cells[at(column)]
+          if (cell?.kind !== 'value' || Math.abs(cell.value - want) > 0.005) misses.push(`${column} headline ${h.key}: ${cell?.kind === 'value' ? cell.value : cell?.kind}, answer key ${want}`)
+          else if (h.note && cell.note !== h.note) misses.push(`${column} headline ${h.key}: note ${fmt(cell.note)}, answer key ${fmt(h.note)}`)
+        }
+      }
+    }
+    const proofs = comparisonProof(comparison)
+    for (const [badge, columns] of Object.entries(key.badges ?? {})) {
+      for (const column of columns) {
+        checked++
+        if (!proofs[at(column)]?.badges.includes(badge)) misses.push(`${column}: no "${badge}" (${proofs[at(column)]?.notes.join(' ') ?? 'no column'})`)
+      }
+    }
+    lines.push(`  ${misses.length ? 'FAIL' : 'pass'}  ${alias}  ${checked} answer-key figures and badges`)
+    for (const m of misses.slice(0, MAX_DIFFS)) lines.push(`    ${m}`)
+    if (misses.length) failed++
+  }
+  process.stdout.write(['── answer keys ──', ...lines, ''].join('\n'))
+  if (failed) throw new Error(`${failed} client(s) differ from their answer keys`)
 })

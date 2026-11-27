@@ -1,12 +1,19 @@
 import type { getSupabaseServerClient } from '@/lib/supabase/server'
 import type { PrintedComparison } from './compare'
-import type { MappingEntry } from './mapping'
+import { balanceSheetColumns, loanSideConflicts, type MappingEntry } from './mapping'
 import { MEANING, MEANINGS, type Meaning } from './meanings'
 import { fixSpelling } from './compare'
 import { READER_VERSION } from './store'
 import { readDirectors } from '@/lib/clients/companyDetails'
-import type { RelatedNames } from './dictionary'
+import { beneficiaryNames, personAccount, type RelatedNames } from './dictionary'
 import { AUTO_BY, autoMapping, sameChoices, type PossibleLine } from './autoMapping'
+import { SBR_MEANINGS } from './meanings'
+import { decideKeyFigures, gapFigures, type DecisionOutcome, type KeyFigureDecision } from './keyFigureDecision'
+import { aiSummariesEnabled } from '@/lib/ai/openrouterClient'
+import { chooseKeyFigures, type KeyFigureChoice } from '@/lib/ai/keyFigureChoice'
+import type { MaskRecords } from '@/lib/ai/maskLabels'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
+import type { Json } from '@/types/database'
 
 /**
  * Server-only. A client's confirmed line mapping (migration 0034): read it,
@@ -153,6 +160,7 @@ export async function saveMapping(
       .insert(changes.map((c) => ({ client_id: clientId, ...c, changed_by: by, changed_at: at })))
     if (error) console.error('[line-mapping] could not log the changes:', error.message)
   }
+  await storeStaffDecisions(supabase, clientId, by, next, answered.map((m) => m.key), comparison)
   return next
 }
 
@@ -221,11 +229,26 @@ export async function applyAutoMapping(
   stored: MappingEntry[],
   names: RelatedNames,
 ): Promise<EffectiveMapping> {
+  const isAuto = (e: MappingEntry) => e.confirmedBy === AUTO_BY && !!e.autoRule
+  if (loaded.unread > 0) return { mapping: [...stored.filter((e) => !isAuto(e)), ...stored.filter(isAuto)], possible: {} }
+  // Stored decisions (migration 0067): each key figure decided once per set of documents.
+  const decisions = await loadDecisions(supabase, clientId)
+  if (decisions !== null) return applyDecisions(supabase, clientId, loaded.comparison, stored, names, decisions)
+  return legacyAutoMapping(supabase, clientId, loaded, stored, names)
+}
+
+/** Before migration 0067: the auto-selections worked out again on every load (as before 26 Nov 2026). */
+async function legacyAutoMapping(
+  supabase: ServerClient,
+  clientId: string,
+  loaded: { comparison: PrintedComparison; unread: number },
+  stored: MappingEntry[],
+  names: RelatedNames,
+): Promise<EffectiveMapping> {
   const { comparison } = loaded
   const isAuto = (e: MappingEntry) => e.confirmedBy === AUTO_BY && !!e.autoRule
   const staff = stored.filter((e) => !isAuto(e))
   const kept = stored.filter(isAuto)
-  if (loaded.unread > 0) return { mapping: [...staff, ...kept], possible: {} }
   const { entries, possible, replaced } = autoMapping(comparison, staff, names, { staleBefore: await readerReleasedAt(supabase) })
   if (replaced.length === 0 && sameChoices(kept, entries)) return { mapping: [...staff, ...kept], possible }
   const staffKept = staff.filter((e) => !replaced.includes(e))
@@ -328,3 +351,330 @@ export async function withAutoMapping(
   return { ...(await applyAutoMapping(supabase, clientId, loaded, stored, names)), names }
 }
 
+// ── Stored key-figure decisions (migration 0067; item 9b/9c, the user's conditions, 26 Nov 2026) ──
+
+export interface StoredDecision {
+  meaning: Meaning
+  outcome: DecisionOutcome
+  chosenBy: 'ai' | 'rule' | 'staff'
+  decidedBy: string
+  decidedAt: string
+  rule: string | null
+  aiReason: string | null
+  rowKeys: string[]
+  possible: PossibleLine[]
+  documentIds: string[]
+}
+
+/** The client's stored decisions; null before migration 0067 is applied. */
+export async function loadDecisions(supabase: ServerClient, clientId: string): Promise<Map<Meaning, StoredDecision> | null> {
+  let result
+  try {
+    result = await supabase.from('key_figure_decisions').select('*').eq('client_id', clientId)
+  } catch {
+    return null
+  }
+  const { data, error } = result
+  if (error) return null
+  return new Map(
+    (data ?? []).map((r) => [
+      r.meaning as Meaning,
+      {
+        meaning: r.meaning as Meaning,
+        outcome: r.outcome as DecisionOutcome,
+        chosenBy: r.chosen_by as StoredDecision['chosenBy'],
+        decidedBy: r.decided_by,
+        decidedAt: r.decided_at,
+        rule: r.rule,
+        aiReason: r.ai_reason,
+        rowKeys: (r.row_keys ?? []).map(fixSpelling),
+        possible: Array.isArray(r.possible) ? (r.possible as unknown as PossibleLine[]) : [],
+        documentIds: [...(r.document_ids ?? [])].sort(),
+      },
+    ]),
+  )
+}
+
+/** The files the comparison's figures come from: a different set re-opens a decision. */
+export function comparisonDocumentIds(comparison: PrintedComparison): string[] {
+  const ids = new Set<string>()
+  for (const t of comparison.tables) for (const r of t.rows) for (const c of r.cells) if (c.printed && c.source) ids.add(c.source.documentId)
+  return [...ids].sort()
+}
+
+/** Why a stored decision is open again; null while it stands. */
+export function reopenReason(d: StoredDecision | undefined, documentIds: string[], rowKeys: Set<string>): string | null {
+  if (!d) return 'not decided yet'
+  if (d.chosenBy === 'staff') return 'staff cleared their choice'
+  if (d.documentIds.length !== documentIds.length || d.documentIds.some((id, i) => id !== documentIds[i])) return 'the documents changed'
+  if (d.outcome === 'lines' && (d.rowKeys.length === 0 || d.rowKeys.some((k) => !rowKeys.has(k)))) return 'a chosen line is no longer printed'
+  return null
+}
+
+/** The names Claude sees masked, by role (maskLabels.ts): read only when Claude is asked. */
+export async function loadMaskRecords(supabase: ServerClient, clientId: string, comparison: PrintedComparison): Promise<MaskRecords> {
+  const [{ data: details }, { data: client }] = await Promise.all([
+    supabase.from('company_details').select('directors, company_name, trust_name').eq('client_id', clientId).maybeSingle(),
+    supabase.from('clients').select('name').eq('id', clientId).maybeSingle(),
+  ])
+  const labels = (comparison.tables.find((t) => t.kind === 'balance_sheet')?.rows ?? []).map((r) => r.label)
+  const shares = labels.flatMap((l) => {
+    const p = personAccount(l)
+    return p && /^share of/i.test(p.kind) ? [p.name] : []
+  })
+  const trust = details?.trust_name?.trim() || null
+  const company = details?.company_name?.trim() || null
+  return {
+    client: [client?.name ?? '', trust ?? '', trust ? '' : (company ?? '')],
+    directors: readDirectors(details?.directors ?? null).map((d) => d.name),
+    // A trust client's company is its trustee: a related company.
+    relatedCompanies: trust && company ? [company] : [],
+    beneficiaries: [...beneficiaryNames(labels), ...shares],
+  }
+}
+
+function decisionEntries(d: StoredDecision, comparison: PrintedComparison): MappingEntry[] {
+  const rows = new Map(comparison.tables.flatMap((t) => t.rows.map((r) => [r.key, r] as const)))
+  const autoRule = d.rule ?? (d.chosenBy === 'ai' ? `Chosen by AI: ${d.aiReason ?? ''}` : 'Chosen by the rules.')
+  if (d.outcome === 'not_printed') return [{ meaning: d.meaning, rowKey: '', label: null, nonePrinted: true, confirmedBy: AUTO_BY, confirmedAt: d.decidedAt, autoRule }]
+  if (d.outcome !== 'lines') return []
+  return d.rowKeys.map((k) => ({ meaning: d.meaning, rowKey: k, label: rows.get(k)?.label || '(no label)', nonePrinted: false, confirmedBy: AUTO_BY, confirmedAt: d.decidedAt, autoRule }))
+}
+
+/**
+ * Decided once: staff choices as they are; a stored decision stands until the
+ * documents change, a chosen line is no longer printed, or staff clear their
+ * choice. Only the meanings open are decided (Claude with the rules on top,
+ * or the rules alone), stored, and logged. Never on a page load or a release
+ * otherwise.
+ */
+async function applyDecisions(
+  supabase: ServerClient,
+  clientId: string,
+  comparison: PrintedComparison,
+  stored: MappingEntry[],
+  names: RelatedNames,
+  decisions: Map<Meaning, StoredDecision>,
+): Promise<EffectiveMapping> {
+  const isAuto = (e: MappingEntry) => e.confirmedBy === AUTO_BY && !!e.autoRule
+  const staff = stored.filter((e) => !isAuto(e))
+  const kept = stored.filter(isAuto)
+  const documentIds = comparisonDocumentIds(comparison)
+  const rowKeys = new Set(comparison.tables.flatMap((t) => t.rows.filter((r) => r.style !== 'heading').map((r) => r.key)))
+  const staffMeanings = new Set(staff.map((e) => e.meaning))
+  // Staff answers' notes ("now matched…") and every meaning's rule reading, on the figures as printed now.
+  // No staff answer is switched on a release (staleBefore null): a release never re-decides.
+  const rules = autoMapping(comparison, staff, names, { staleBefore: null })
+  const possible: EffectiveMapping['possible'] = {}
+  for (const m of staffMeanings) if (rules.possible[m]) possible[m] = rules.possible[m]
+
+  const open: Meaning[] = []
+  const standing: StoredDecision[] = []
+  for (const { key: m } of SBR_MEANINGS) {
+    if (staffMeanings.has(m)) continue
+    const d = decisions.get(m)
+    if (reopenReason(d, documentIds, rowKeys) === null) standing.push(d!)
+    else open.push(m)
+  }
+  const mapping: MappingEntry[] = [...staff]
+  for (const d of standing) {
+    mapping.push(...decisionEntries(d, comparison))
+    const lines = d.possible.filter((p) => rowKeys.has(p.rowKey))
+    if (lines.length) possible[d.meaning] = lines
+  }
+  if (open.length === 0) return { mapping, possible }
+
+  // Claude, when the AI is on; the rules alone when it is off or fails (failures to the developer alert only).
+  let choice: KeyFigureChoice | null = null
+  // Only the figures the rules left as a gap go to the AI (the user, 26 Nov 2026): never one the rules chose.
+  const gaps = gapFigures(open, rules)
+  if (aiSummariesEnabled() && gaps.length > 0) {
+    try {
+      choice = await chooseKeyFigures(comparison, await loadMaskRecords(supabase, clientId, comparison), gaps)
+    } catch (err) {
+      await raiseDeveloperAlert(supabase, {
+        kind: 'key_figure_ai',
+        key: `key_figure_ai:${clientId}:${documentIds.join(',').slice(0, 300)}`,
+        subject: 'Key figures: the AI choice failed, the rules decided alone',
+        lines: [`Client id: ${clientId}`, `Key figures open: ${open.length}`, `Error: ${err instanceof Error ? err.name : 'unknown'}`],
+        details: { client_id: clientId, open: open.length, error: err instanceof Error ? err.name : 'unknown' },
+      })
+    }
+  }
+  const decided = decideKeyFigures(comparison, open, rules, names, choice)
+  const at = new Date().toISOString()
+
+  const fresh: { decision: KeyFigureDecision; entries: MappingEntry[] }[] = []
+  for (const d of decided) {
+    const previous = decisions.get(d.meaning)
+    const row = {
+      client_id: clientId,
+      meaning: d.meaning,
+      outcome: d.outcome,
+      chosen_by: d.chosenBy,
+      decided_by: AUTO_BY,
+      decided_at: at,
+      rule: d.rule,
+      ai_reason: d.aiReason,
+      row_keys: d.outcome === 'lines' ? d.entries.filter((e) => !e.nonePrinted).map((e) => e.rowKey) : [],
+      possible: d.possible as unknown as Json,
+      document_ids: documentIds,
+    }
+    // Claimed once: a first decision is inserted only if none is there; a re-opened one replaced only
+    // if it is still the one read. Another request that got there first wins, and its decision is used.
+    const claim = previous
+      ? await supabase.from('key_figure_decisions').update(row).eq('client_id', clientId).eq('meaning', d.meaning).eq('decided_at', previous.decidedAt).select('meaning')
+      : await supabase.from('key_figure_decisions').upsert(row, { onConflict: 'client_id,meaning', ignoreDuplicates: true }).select('meaning')
+    if (claim.error || !claim.data?.length) {
+      const now = (await loadDecisions(supabase, clientId))?.get(d.meaning)
+      if (now && reopenReason(now, documentIds, rowKeys) === null) {
+        mapping.push(...decisionEntries(now, comparison))
+        const lines = now.possible.filter((p) => rowKeys.has(p.rowKey))
+        if (lines.length) possible[d.meaning] = lines
+        continue
+      }
+    }
+    const entries = d.entries.map((e) => ({ ...e, confirmedAt: at }))
+    mapping.push(...entries)
+    if (d.possible.length) possible[d.meaning] = d.possible
+    fresh.push({ decision: d, entries })
+  }
+  await copyDecisionsToMapping(supabase, clientId, comparison, kept, fresh, at)
+  return { mapping, possible }
+}
+
+/** The decided meanings' auto lines, copied to client_line_mappings (as before 0067) and logged. */
+async function copyDecisionsToMapping(
+  supabase: ServerClient,
+  clientId: string,
+  comparison: PrintedComparison,
+  kept: MappingEntry[],
+  fresh: { decision: KeyFigureDecision; entries: MappingEntry[] }[],
+  at: string,
+): Promise<void> {
+  if (fresh.length === 0) return
+  const rows = new Map(comparison.tables.flatMap((t) => t.rows.map((r) => [r.key, { kind: t.kind, path: r.path }] as const)))
+  const id = (e: MappingEntry) => `${e.meaning}|${e.rowKey}|${e.nonePrinted}`
+  const log: { meaning: Meaning; action: string; row_key: string; label: string | null; rule: string | null }[] = []
+  try {
+    for (const { decision, entries } of fresh) {
+      const before = kept.filter((e) => e.meaning === decision.meaning)
+      const beforeIds = new Set(before.map(id))
+      const after = new Set(entries.map(id))
+      const gone = before.filter((e) => !after.has(id(e)))
+      const added = entries.filter((e) => !beforeIds.has(id(e)))
+      if (gone.length) {
+        const { error } = await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', decision.meaning).eq('confirmed_by', AUTO_BY)
+        if (error) throw error
+      }
+      // All of them again after a delete (it took the meaning's auto lines); else only the new ones.
+      const write = gone.length ? entries : added
+      if (write.length) {
+        const { error } = await supabase
+          .from('client_line_mappings')
+          .upsert(write.map((e) => ({ ...mappingRow(clientId, e, rows.get(e.rowKey) ?? null), auto_rule: e.autoRule ?? null })), { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true })
+        // The balance sheet totals before migration 0061: the decision still holds them.
+        if (error && !TOTAL_MEANINGS.has(decision.meaning)) throw error
+      }
+      log.push(
+        ...added.map((e) => ({ meaning: e.meaning, action: e.nonePrinted ? 'auto_none_printed' : 'auto_selected', row_key: e.rowKey, label: e.label, rule: decision.rule })),
+        ...gone.map((e) => ({
+          meaning: e.meaning,
+          action: 'auto_removed',
+          row_key: e.rowKey,
+          label: e.label,
+          rule: decision.outcome === 'possible' ? `Waits for staff: ${decision.possible.length} possible line(s)${decision.aiReason ? `. AI: ${decision.aiReason}` : ''}` : decision.rule,
+        })),
+      )
+    }
+    if (log.length) {
+      const { error } = await supabase.from('client_line_mapping_changes').insert(log.map((c) => ({ client_id: clientId, ...c, changed_by: AUTO_BY, changed_at: at })))
+      if (error) console.error('[line-mapping] could not log the decisions:', error.message)
+    }
+  } catch (err) {
+    // The decisions are stored (0067): the copy is for the history only.
+    console.error('[line-mapping] could not copy the decisions:', err instanceof Error ? err.message : err)
+  }
+}
+
+/** Staff's answers, stored as their decisions (who, when): a staff answer is never re-decided. */
+export async function storeStaffDecisions(
+  supabase: ServerClient,
+  clientId: string,
+  by: string,
+  saved: MappingEntry[],
+  meanings: Meaning[],
+  comparison: PrintedComparison,
+): Promise<void> {
+  if (meanings.length === 0) return
+  const documentIds = comparisonDocumentIds(comparison)
+  const rows = meanings.map((m) => {
+    const mine = saved.filter((e) => e.meaning === m)
+    const none = mine.some((e) => e.nonePrinted)
+    return {
+      client_id: clientId,
+      meaning: m,
+      outcome: none ? 'not_printed' : 'lines',
+      chosen_by: 'staff',
+      decided_by: by,
+      decided_at: mine[0]?.confirmedAt || new Date().toISOString(),
+      rule: null,
+      ai_reason: null,
+      row_keys: none ? [] : mine.map((e) => e.rowKey),
+      possible: [] as unknown as Json,
+      document_ids: documentIds,
+    }
+  })
+  try {
+    const { error } = await supabase.from('key_figure_decisions').upsert(rows, { onConflict: 'client_id,meaning' })
+    // Before migration 0067: the staff answer is in client_line_mappings as always.
+    if (error) console.error('[line-mapping] could not store the staff decisions:', error.message)
+  } catch (err) {
+    console.error('[line-mapping] could not store the staff decisions:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * "Move it": a stored loan line the sign-aware section rule puts on the other side (mapping.ts
+ * loanSideConflicts) moved there by staff, that line only, logged as their choice (the user,
+ * 27 Nov 2026). Refused unless the rule really does put it on `to` in the latest balance sheet.
+ */
+export async function moveLoanLine(
+  supabase: ServerClient,
+  clientId: string,
+  by: string,
+  move: { rowKey: string; from: 'loan_receivable' | 'loan_payable'; to: 'loan_receivable' | 'loan_payable' },
+  comparison: PrintedComparison,
+): Promise<void> {
+  const stored = await loadMapping(supabase, clientId)
+  const latest = balanceSheetColumns(comparison).pop()
+  const conflict = loanSideConflicts(comparison, stored, latest).find((c) => c.rowKey === move.rowKey && c.storedAs === move.from && c.belongsTo === move.to)
+  if (!conflict) throw new MappingError('That line is no longer on the other side: refresh the page.')
+  const rows = new Map(comparison.tables.flatMap((t) => t.rows.map((r) => [r.key, { kind: t.kind, path: r.path }] as const)))
+  const at = new Date().toISOString()
+  const del = await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', move.from).eq('row_key', move.rowKey)
+  if (del.error) throw new Error(`Could not move the line: ${del.error.message}`)
+  // A "not printed" answer on the side it moves to no longer holds: the line is printed there.
+  await supabase.from('client_line_mappings').delete().eq('client_id', clientId).eq('meaning', move.to).eq('none_printed', true)
+  const entry: MappingEntry = { meaning: move.to, rowKey: move.rowKey, label: conflict.label, nonePrinted: false, confirmedBy: by, confirmedAt: at }
+  const ins = await supabase
+    .from('client_line_mappings')
+    .upsert(mappingRow(clientId, entry, rows.get(move.rowKey) ?? null), { onConflict: 'client_id,meaning,row_key', ignoreDuplicates: true })
+  if (ins.error) throw new Error(`Could not move the line: ${ins.error.message}`)
+  const rule = conflict.message.replace(/ — move it\?$/, '. Moved by staff.')
+  const { error: logError } = await supabase.from('client_line_mapping_changes').insert([
+    { client_id: clientId, meaning: move.from, action: 'removed', row_key: move.rowKey, label: conflict.label, changed_by: by, changed_at: at, rule },
+    { client_id: clientId, meaning: move.to, action: 'added', row_key: move.rowKey, label: conflict.label, changed_by: by, changed_at: at, rule },
+  ])
+  if (logError) console.error('[line-mapping] could not log the move:', logError.message)
+  const next = await loadMapping(supabase, clientId)
+  await storeStaffDecisions(supabase, clientId, by, next, [move.to], comparison)
+  // The side it left: staff's own choice if lines remain; otherwise open again for the rules.
+  if (!next.some((e) => e.meaning === move.from)) {
+    try {
+      await supabase.from('key_figure_decisions').delete().eq('client_id', clientId).eq('meaning', move.from)
+    } catch {
+      // Before migration 0067: nothing stored to open.
+    }
+  }
+}

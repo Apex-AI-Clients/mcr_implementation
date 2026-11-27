@@ -1,4 +1,5 @@
 import { differenceInCalendarDays } from 'date-fns'
+import { dateText } from '@/lib/dates'
 
 /**
  * The creditor debt an SBR offer is sized against, and the dates the
@@ -101,21 +102,41 @@ export function icaDateRange(rows: readonly IcaRow[] | null | undefined): { firs
 }
 
 /**
- * Days from the last payment to the account's statement date — not to today,
- * so the figure does not change from one day to the next while the statement
- * stays the same. 9999 when no payment is on the account.
+ * Days from the last payment to `asOf` (ISO date): the definition Gabby's historical cases were
+ * recorded with (May–6 Oct 2026, restored 25 Nov 2026). The prediction passes today (Sydney);
+ * figures:check passes the day its snapshot was taken, so it stays the same from day to day.
+ *
+ *   payments   rows the analysis types as "Payment": a "Payment" / "Payment received" line (the
+ *              ICA engine's own wording for a payment, ica/wording.ts isPaymentTotal); never the
+ *              allocation lines that break one down, nor credits that are not payments
+ *              (credit transfers, Cash Flow Boost)
+ *   last       the newest such row's processed date, as printed
+ *   0 at least; 9999 when no payment is on the account
+ *
+ * From 6 Oct to 25 Nov 2026 it was measured to the account's newest date instead, which gave 0 to
+ * an account whose newest row is its last payment.
  */
-export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined): number {
-  if (!rows || rows.length === 0) return 9999
-  const { statementDate } = icaPosition(rows)
+export function daysSinceLastPayment(rows: readonly IcaRow[] | null | undefined, asOf: string): number {
+  const last = lastPayment(rows)
+  if (!last) return 9999
+  return Math.max(0, differenceInCalendarDays(new Date(`${asOf.slice(0, 10)}T00:00:00Z`), last))
+}
+
+/** The newest payment's processed date (as daysSinceLastPayment counts it), or null when the account has none. */
+function lastPayment(rows: readonly IcaRow[] | null | undefined): Date | null {
   let last: Date | null = null
-  for (const row of rows) {
+  for (const row of rows ?? []) {
     if (row.lodgementType !== 'Payment') continue
     const d = rowDate(row)
     if (d && (!last || d > last)) last = d
   }
-  if (!last || !statementDate) return 9999
-  return Math.max(0, differenceInCalendarDays(new Date(`${statementDate}T00:00:00Z`), last))
+  return last
+}
+
+/** The newest payment's processed date (ISO), shown beside "Days since last payment"; null when there is none. */
+export function lastPaymentDate(rows: readonly IcaRow[] | null | undefined): string | null {
+  const last = lastPayment(rows)
+  return last ? isoDate(last) : null
 }
 
 export type CreditorDebtSource = 'ica' | 'balance_sheet' | 'staff'
@@ -150,13 +171,9 @@ function whyNotIca(icaRows: readonly IcaRow[] | null | undefined): string {
   return 'the lodgement analysis rows carry no balance owing (re-run the lodgement analysis)'
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "26 Sep 2026" — fixed three-letter months (the en-AU locale gives "Sept", "June"). */
-export const longDate = (iso: string) => {
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`)
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`
-}
+export const longDate = (iso: string) => dateText(iso.slice(0, 10))
 
 /**
  * The creditor debt, from the best source available — never from two added

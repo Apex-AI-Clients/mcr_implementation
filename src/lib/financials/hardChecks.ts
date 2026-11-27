@@ -1,4 +1,5 @@
 import type { FinancialCheck, FinancialCheckKind } from './types'
+import { dateField } from '@/lib/dates'
 
 /**
  * Hard checks: a statement's own arithmetic (totals, the balance-sheet
@@ -55,6 +56,6 @@ export function exportsLocked(failures: FinancialCheck[], generatedAt: string | 
 export function reviewLine(failures: FinancialCheck[], generatedAt: string | null, checked: FiguresChecked | null): string | null {
   const fingerprint = hardChecksFingerprint(generatedAt, failures)
   if (fingerprint === null || checked?.fingerprint !== fingerprint) return null
-  const date = new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }).format(new Date(checked.at))
+  const date = dateField(checked.at)
   return `Reviewed by ${checked.by} on ${date}`
 }

@@ -1,6 +1,7 @@
 import type { PdfCell, PdfLine } from '@/lib/pdf/pageLines'
 import { isLoneMinus, parseAmount } from './amounts'
 import { columnPeriod, titlePeriod } from './periods'
+import { entityOf, reportKind } from './reportKind'
 import { structureRows, type UnstructuredRow } from './structure'
 import type { PrintedAmount, PrintedColumn, PrintedRead, PrintedStatement, PrintedStatementKind, ReadIssue } from './types'
 
@@ -80,6 +81,15 @@ function isHeaderContinuation(line: PdfLine, anchors: Anchor[]): boolean {
   )
 }
 
+const MONTH_WORD = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i
+
+/** The first part of a wrapped header, printed above the year: month words only, each cell ending where a column ends. */
+function isHeaderAbove(line: PdfLine, anchors: Anchor[]): boolean {
+  return line.cells.every(
+    (c) => MONTH_WORD.test(c.text) && !YEAR.test(c.text) && c.text.trim().split(/\s+/).length <= 4 && !parseAmount(c.text) && anchors.some((a) => !a.notes && Math.abs(a.right - c.right) <= HEADER_ALIGN),
+  )
+}
+
 function isSentence(text: string): boolean {
   const words = text.trim().split(/\s+/)
   return words.length >= 8 || (words.length >= 2 && /\.$/.test(text.trim()) && !/\d\.$/.test(text.trim()))
@@ -146,7 +156,18 @@ function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated:
     anchors = lines[header].cells
       .filter((c) => !/^(\$|a\$|aud|\.)$/i.test(c.text.trim()))
       .map((c) => ({ header: c.text.trim(), x: c.x, right: c.right, notes: NOTES_HEADER.test(c.text.trim()) }))
-    titleBlock = lines.slice(0, header).map((l) => l.text)
+    // A header whose first part is printed above the year ("1 JULY-16 NOV" over "2026"): that line
+    // joins the column below it, and is not part of the title block.
+    let headerTop = header
+    const above = header - 1 > title.index ? lines[header - 1] : null
+    if (above && isHeaderAbove(above, anchors)) {
+      for (const cell of above.cells) {
+        const anchor = anchors.find((a) => !a.notes && Math.abs(a.right - cell.right) <= HEADER_ALIGN)!
+        anchor.header = `${cell.text.trim()} ${anchor.header}`
+      }
+      headerTop = header - 1
+    }
+    titleBlock = lines.slice(0, headerTop).map((l) => l.text)
     first = header + 1
     // A header that wraps ("1 JULY 2025-4 MAY" over "2026"): its next line joins the column above.
     while (first < lines.length && isHeaderContinuation(lines[first], anchors)) {
@@ -201,10 +222,31 @@ function readPage(page: number, lines: PdfLine[], issues: ReadIssue[], repeated:
         continue
       }
     }
+    // A label wrapped over two lines with its figures printed between them, level with the middle
+    // (Xero, narrow label column): "Less Accumulated Depreciation on Office" / figures / "Equipment".
+    // One line, when the label's second part is at the first part's indent and nothing below it
+    // is indented under it as a section would be.
+    const opened = rows[rows.length - 1]
+    const rest = lines[i + 1]
+    if (labelCells.length === 0 && opened && !opened.hasAmounts && opened.page === page && rest && wrapsAround(opened.x, rest, lines[i + 2], zoneStart)) {
+      const row = readRow(page, line, labelCells, amountCells, anchors, columns, issues)
+      if (!row) continue
+      const tail = rest.text.trim()
+      rows[rows.length - 1] = { ...row, x: opened.x, label: `${opened.label} ${tail}`, text: `${opened.text} / ${line.text} / ${rest.text}` }
+      i++
+      continue
+    }
     const row = readRow(page, line, labelCells, amountCells, anchors, columns, issues)
     if (row) rows.push(row)
   }
   return { page, kind: title.kind, title: title.title, titleBlock, anchors, rows }
+}
+
+/** The rest of a wrapped label: a label-only line at the same indent, not a section (nothing indented under it). */
+function wrapsAround(x: number, rest: PdfLine, after: PdfLine | undefined, zoneStart: number): boolean {
+  if (rest.cells.length === 0 || rest.cells.some((c) => c.x >= zoneStart)) return false
+  if (Math.abs(rest.cells[0].x - x) > 1 || isSentence(rest.text) || /^total\b/i.test(rest.text.trim())) return false
+  return !after || after.cells[0].x <= x + 1
 }
 
 /**
@@ -378,11 +420,13 @@ export function readStatements(pages: PdfLine[][]): PrintedRead {
       columns,
       rows: structureRows(head.kind, rows).map(({ page, path, label, style, amounts, text }) => ({ page, path, label, style, amounts, text })),
       wholeDollars: !rows.some((r) => r.cents),
+      entity: entityOf(head.titleBlock, head.title),
     })
   }
 
   if (statements.length === 0 && issues.length === 0) {
     issues.push({ kind: 'no_statements', page: null, text: null, message: 'No page is titled as a profit and loss or a balance sheet.' })
   }
-  return { status: statements.length ? 'read' : 'no_statements', pageCount: pages.length, statements, issues }
+  const report = reportKind(pages, statements, reads.some((r) => r.anchors.some((a) => a.notes)))
+  return { status: statements.length ? 'read' : 'no_statements', pageCount: pages.length, statements, issues, report }
 }

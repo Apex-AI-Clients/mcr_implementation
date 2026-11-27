@@ -125,7 +125,7 @@ describe('Enquiries on the lead record', () => {
     renderRecord()
     const items = within(enquiriesSection()).getAllByRole('listitem')
     expect(items).toHaveLength(2)
-    expect(within(items[0]).getByText('10 Sept 2026, 2:05 pm')).toBeTruthy()
+    expect(within(items[0]).getByText('10 Sep 2026, 2:05 pm')).toBeTruthy()
     expect(within(items[0]).getByText('Website')).toBeTruthy()
     expect(within(items[0]).getByText('Latest')).toBeTruthy()
     expect(within(items[0]).getByText('After conversion or closure')).toBeTruthy()
@@ -152,7 +152,7 @@ describe('Enquiries on the lead record', () => {
 
   it('says so in the header when there has been more than one enquiry', () => {
     renderRecord()
-    expect(screen.getByText(/2 enquiries, latest 10 Sept 2026/)).toBeTruthy()
+    expect(screen.getByText(/2 enquiries, latest 10 Sep 2026/)).toBeTruthy()
   })
 })
 
@@ -161,7 +161,7 @@ describe('"Enquired again" notice', () => {
     renderRecord()
     const notice = screen.getByText('New enquiry after closure').closest('[role="status"]') as HTMLElement
     expect(notice).toBeTruthy()
-    expect(within(notice).getByText(/enquired again on 10 Sept 2026/)).toBeTruthy()
+    expect(within(notice).getByText(/enquired again on 10 Sep 2026/)).toBeTruthy()
   })
 
   it('is not shown when there is nothing new', () => {

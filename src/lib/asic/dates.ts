@@ -1,3 +1,4 @@
+import { dateText } from '@/lib/dates'
 /**
  * Dates on an ASIC extract, and dates of birth as staff type them.
  *
@@ -143,10 +144,7 @@ export function parseExtractDateTime(value: string): string | null {
 
 /** "2026-09-23T14:07:38+10:00" -> "23 September 2026", in the extract's own zone. */
 export function formatExtractDate(iso: string | null | undefined): string {
+  // The date part as printed (the extract's own day, whatever its zone): "23 Sep 2026" (dates.ts).
   if (!iso) return ''
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!match) return ''
-  const month = MONTHS[Number(match[2]) - 1]
-  if (!month) return ''
-  return `${Number(match[3])} ${month.charAt(0).toUpperCase()}${month.slice(1)} ${match[1]}`
+  return dateText(iso.slice(0, 10))
 }

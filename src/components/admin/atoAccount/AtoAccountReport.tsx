@@ -17,6 +17,7 @@ import { SG_HIGHLIGHT, type SgQuarter, type SuperGuaranteeSummary } from '@/lib/
 import { cn } from '@/lib/utils'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { aud, calculated, type AmountSource } from '@/lib/sources'
+import { dateText } from '@/lib/dates'
 
 /** The ATO rows are listed under the debt composition, line by line. */
 const ROWS_LINK = { kind: 'href' as const, href: '#account-composition', label: 'Show the ATO rows' }
@@ -30,11 +31,7 @@ const cents = (n: number) => aud(n)
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const longDate = (iso: string | null | undefined) => {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const longDate = (iso: string | null | undefined) => dateText(iso) || '—'
 const period = (p: { from: string; to: string } | null) => (p ? `${longDate(p.from)} – ${longDate(p.to)}` : '—')
 /** "for the period from 01 Jan 26 to 31 Mar 26": a quarter as the ATO's descriptions word it. */
 export function atoPeriodPhrase(p: { from: string; to: string }): string {
@@ -48,16 +45,6 @@ export function atoPeriodPhrase(p: { from: string; to: string }): string {
 const TITLE: Record<AtoAccountPayload['kind'], string> = {
   income_tax: 'Income tax account',
   super_guarantee: 'Superannuation guarantee account',
-}
-
-function downloadCsv(content: string, filename: string) {
-  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
@@ -385,18 +372,14 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
           </p>
         </div>
         <div className="no-print flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={lock !== null}
-            title={lock ?? undefined}
-            onClick={() => downloadCsv(atoAccountCsv(payload, clientName), `${fileName}.csv`)}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </Button>
           {verified && verification && (
-            <Button variant="ghost" size="sm" onClick={() => void downloadAnalysisXlsx(atoAccountCsv(payload, clientName), verification.asPrinted, fileName)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={lock !== null}
+              title={lock ?? undefined}
+              onClick={() => void downloadAnalysisXlsx(atoAccountCsv(payload, clientName), verification.asPrinted, fileName)}
+            >
               <Download className="h-3.5 w-3.5" />
               Excel
             </Button>
@@ -404,14 +387,6 @@ export function AtoAccountReport({ payload, clientName }: { payload: AtoAccountP
           <ExportPdfButton targetId="ato-account-export-root" fileName={fileName} lockedReason={lock} />
         </div>
       </div>
-
-      {payload.entityMatches === false && (
-        <p role="alert" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          This account is for {payload.entityName}, which does not match the client&rsquo;s company or trust name. Check it is the
-          right client.
-        </p>
-      )}
 
       {verified && verification?.badge && <VerifiedBadge text={verification.badge} />}
 

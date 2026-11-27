@@ -6,7 +6,10 @@ import {
   getLeadById,
   getSubmissionsForLead,
 } from '@/lib/leads/queries'
+import { after } from 'next/server'
 import { getFacebookFormHealth, getWebsiteFormHealth } from '@/lib/leads/formHealth'
+import { raiseDeveloperAlert } from '@/lib/alerts/developerAlert'
+import { getSupabaseServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +54,23 @@ export default async function LeadRecordPage({ params, searchParams }: Props) {
     // Website enquiries with no form id are checked together, as 'unknown' (0053).
     getWebsiteFormHealth(enquiries.filter((e) => e.source === 'website').map((e) => e.metaFormId ?? 'unknown')),
   ])
+  // A form sending something the CRM cannot read is the developer's to fix, never a warning on
+  // Gabby's screen (24 Nov 2026): each goes to the developer alert, once while it is open. Form ids
+  // and question names only. After the page is sent, so it never waits on the email.
   const formWarnings = [...facebookWarnings, ...websiteWarnings]
+  if (formWarnings.length) {
+    after(async () => {
+      const supabase = getSupabaseServerClient()
+      for (const warning of formWarnings) {
+        await raiseDeveloperAlert(supabase, {
+          kind: 'lead_form',
+          key: `lead_form:${warning}`.slice(0, 500),
+          subject: 'Lead form check: a form needs a field map change',
+          lines: [warning, '', `Seen on lead id: ${id}`],
+        })
+      }
+    })
+  }
 
   return (
     <LeadRecordClient
@@ -60,7 +79,6 @@ export default async function LeadRecordPage({ params, searchParams }: Props) {
       initialActivities={activities}
       enquiries={enquiries}
       clientFiles={clientFiles}
-      formWarnings={formWarnings}
       backHref={backHref}
     />
   )

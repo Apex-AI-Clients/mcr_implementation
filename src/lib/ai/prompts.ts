@@ -20,6 +20,34 @@ PRINTED LINES (id, statement › headings › label):
 Respond with a single JSON object and nothing else, mapping each meaning key to a list of line ids, e.g. {"loan_payable": [12], "ato_debt": []}.
 `.trim()
 
+/**
+ * The key-figure choice (item 9b; src/lib/ai/keyFigureChoice.ts): Claude
+ * chooses the printed lines for the key figures. Labels and headings only,
+ * names masked by role (maskLabels.ts), long digit strings and addresses
+ * masked, no amounts, no file names. Our rules check every answer
+ * (printed/keyFigureChoice.ts): an answer they do not agree with, or that
+ * names a [person n], is only ever offered to staff as a possible line.
+ */
+export const KEY_FIGURE_CHOICE_PROMPT_TEMPLATE = `
+You choose which printed lines of an Australian business's financial statements are each of a few key figures. You see each line's label and the section headings it sits under: no amounts.
+
+Names are replaced: [client] is the business itself (or its trust), [director n] a director, [beneficiary n] a beneficiary of the trust, [related company n] a related company (such as the trustee company), [person n] someone else. The same placeholder is always the same person. [number] and [address] are masked.
+
+KEY FIGURES:
+{meanings}
+
+LINES (id: statement › headings › label; "(total)" marks a printed total or subtotal):
+{lines}
+
+For every key figure, answer with exactly one of:
+- {"lines": [ids], "reason": "..."}: the line, or lines, that are this figure. A figure marked "one line" takes exactly one.
+- {"notPrinted": true, "reason": "..."}: no line is this figure.
+- {"unclear": true, "lines": [ids you considered], "reason": "..."}: you cannot tell. Use this whenever you are not sure: staff will decide.
+"reason" is one short plain-English sentence a bookkeeper would understand, using the labels as printed (with their placeholders).
+
+Respond with ONE JSON object and nothing else, keyed by the figure keys above, e.g. {"net_profit": {"lines": [41], "reason": "The net profit line the profit and loss prints."}}. No markdown, no code fence.
+`.trim()
+
 export const LODGEMENT_SUMMARY_PROMPT_TEMPLATE = `
 You are summarising an Australian ATO lodgement compliance analysis for a Small Business Restructure (SBR) practitioner. Write a clear, factual summary that a non-technical staff member can read in 20 seconds.
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseAsicExtract, WARNINGS } from '../parse'
+import { parseAsicExtract, parseDirectorAddresses, WARNINGS } from '../parse'
 import type { AsicExtract, AsicParseResult } from '../types'
 import {
   JANE,
@@ -447,5 +447,32 @@ describe('parseAsicExtract — partial extracts', () => {
     const extract = parsed(lines)
     expect(extract.extractedAt).toBeNull()
     expect(extract.warnings).toContain(WARNINGS.noDate)
+  })
+})
+
+describe('parseDirectorAddresses (Part B B1, 24 Nov 2026)', () => {
+  it("reads each current director's address, wrapped or not, never into the extract itself", () => {
+    const lines = [
+      ...cover(),
+      ...organisation(),
+      ...addresses(),
+      'Officeholders and Other Roles',
+      'Director',
+      'Name: JANE SAMPLE 7EBH40554',
+      'Address: 5 EXAMPLE LANE,',
+      'SAMPLETON NSW 2000',
+      'Born: 14/03/1970, BIRTHVILLE, VIC',
+      'Appointment date: 05/08/2016',
+      'Name: RAJ EXAMPLE',
+      'Address: Not available in this ASIC extract',
+      'Born: 02/11/1981, TESTVILLE, NSW',
+      ...end(),
+    ]
+    expect(parseDirectorAddresses(lines)).toEqual([
+      { name: 'Jane Sample', dateOfBirth: '1970-03-14', address: '5 Example Lane, Sampleton NSW 2000' },
+      { name: 'Raj Example', dateOfBirth: '1981-11-02', address: null },
+    ])
+    // The extract the client file is filled from has no director address.
+    expect(JSON.stringify(parsed(lines).directors)).not.toContain('Example Lane')
   })
 })

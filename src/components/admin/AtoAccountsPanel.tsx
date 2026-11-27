@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { AlertTriangle, ChevronRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/utils'
@@ -8,13 +8,10 @@ import type { AtoAccountKind } from '@/lib/analysis/atoAccountKind'
 import { SourcedAmount } from '@/components/ui/SourcedAmount'
 import { unparsedDatesMessage } from '@/lib/analysis/config'
 import { TOTALS_HELD_BACK } from '@/lib/ica/status'
+import { dateText } from '@/lib/dates'
 
 const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' })
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const longDate = (iso: string) => {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
-}
+const longDate = (iso: string) => dateText(iso)
 
 /** "$91,591.70 DR" / "$1,200.00 CR": as the ATO prints a balance. */
 export function drCr(value: number): string {
@@ -114,12 +111,6 @@ export function AtoAccountsPanel({
                   <Badge variant="warning" className="ml-2">
                     Needs review
                   </Badge>
-                )}
-                {a.entityMatches === false && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-warning">
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                    Different entity
-                  </span>
                 )}
               </span>
               <span className="flex shrink-0 items-center gap-2 tabular-nums">

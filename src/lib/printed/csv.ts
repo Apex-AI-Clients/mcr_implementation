@@ -1,5 +1,6 @@
 import type { ComparisonColumn, PrintedComparison } from './compare'
 import type { PrintedAmount } from './types'
+import { dateText, dateTimeText } from '@/lib/dates'
 
 /**
  * The as-printed comparison as CSV. Pure. Every figure exactly as printed
@@ -8,11 +9,9 @@ import type { PrintedAmount } from './types'
  * under NEEDS REVIEW with who checked them, when.
  */
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function shortDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${d} ${MONTHS[m - 1]} ${y}`
+  return dateText(iso)
 }
 
 /** "FY2024" or "Current period"; the period under it: "1 Jul 2023 – 30 Jun 2024". */
@@ -41,7 +40,7 @@ export function comparisonCsv(input: {
   reviewedBy: string | null
 }): string {
   const { comparison: c } = input
-  const lines: string[] = [row('Financial statements as printed', input.clientName), row('Generated', new Date().toISOString())]
+  const lines: string[] = [row('Financial statements as printed', input.clientName), row('Generated', dateTimeText(new Date()))]
   if (c.failures.length) {
     lines.push('', row('NEEDS REVIEW'))
     for (const f of c.failures) lines.push(row(f.column === 'current' ? 'Current period' : f.column, f.message))
@@ -57,4 +56,34 @@ export function comparisonCsv(input: {
     }
   }
   return lines.join('\r\n')
+}
+
+export interface Sheet {
+  name: string
+  rows: (string | number)[][]
+}
+
+/**
+ * The comparison page's Excel download (Gabby, 24 Nov 2026, item 11), after the headline figures
+ * sheet: one sheet per period with every line its statements print, in printed order. An amount
+ * is the printed figure (a bracketed one negative); "-" a nil as printed; a ratio as printed.
+ */
+export function periodSheets(comparison: PrintedComparison): Sheet[] {
+  const used = new Set<string>()
+  return comparison.columns.map((column, i) => {
+    const head = columnTitle(column)
+    let name = head.title.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)
+    for (let n = 2; used.has(name); n++) name = `${head.title.slice(0, 27)} (${n})`
+    used.add(name)
+    const rows: (string | number)[][] = [[`${head.title} (${head.period})`], [], ['Statement', 'Section', 'Line', 'As printed']]
+    for (const table of comparison.tables) {
+      for (const r of table.rows) {
+        const c = r.cells[i]
+        if (r.style !== 'heading' && !c?.printed) continue
+        const value = r.style === 'heading' || !c ? '' : typeof c.value === 'number' ? c.value : formatPrinted(c.value)
+        rows.push([table.title, r.path.filter((p) => p.trim() !== '').join(' › '), r.label || '(no label)', value])
+      }
+    }
+    return { name, rows }
+  })
 }

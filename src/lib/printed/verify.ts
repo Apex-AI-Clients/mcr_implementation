@@ -54,6 +54,12 @@ interface Term {
   value: number
   /** As printed. */
   raw: number
+  /**
+   * Another reading of the same figure, tried alongside `value`: a balance sheet's liabilities total
+   * printed negative is either already deducted ("(36,417)") or a negative liability, subtracted
+   * as one (Xero: "Total Liabilities (56,633.92)" when drawings exceed what is owed).
+   */
+  alt?: number
   text: string
 }
 
@@ -75,7 +81,7 @@ interface ColumnSum {
   matched: boolean
 }
 
-const sum = (terms: Term[], key: 'value' | 'raw') => terms.reduce((s, t) => s + t[key], 0)
+const sum = (terms: Term[], key: 'value' | 'raw' | 'alt') => terms.reduce((s, t) => s + (key === 'alt' ? (t.alt ?? t.value) : t[key]), 0)
 
 /**
  * A printed total is the sum of the entries just above it in its section,
@@ -96,7 +102,7 @@ function matchSuffix(
   let hit: { start: number; calculated: number } | null = null
   for (let start = 0; start < entries.length; start++) {
     const run = entries.slice(start)
-    const readings = [sum(run, 'value'), sum(run, 'raw'), ...(negativeSection ? [-sum(run, 'value'), -sum(run, 'raw')] : [])]
+    const readings = [sum(run, 'value'), sum(run, 'raw'), ...(run.some((t) => t.alt !== undefined) ? [sum(run, 'alt')] : []), ...(negativeSection ? [-sum(run, 'value'), -sum(run, 'raw')] : [])]
     candidates.push(...readings)
     const found = readings.find((r) => Math.abs(r - printed) <= tol(run.length))
     if (found !== undefined && !hit) hit = { start, calculated: found }
@@ -133,8 +139,10 @@ function columnSums(st: PrintedStatement, column: number, tol: (n: number) => nu
       const parent = row.path.slice(0, -1)
       const sign = pl ? polarity(section) * (parent.length ? polarity(parent[parent.length - 1]) : 1) : parent.length ? 1 : polarity(section)
       const value = sign < 0 ? (printed > 0 ? -printed : printed) : printed
+      // A balance sheet's liabilities printed negative may be a negative liability: subtracted, it adds.
+      const alt = !pl && sign < 0 && printed < 0 ? -printed : undefined
       const pkey = key(parent)
-      scopes.set(pkey, [...entries(pkey), { value, raw: printed, text: `${value < 0 && printed > 0 ? '− ' : ''}${label}` }])
+      scopes.set(pkey, [...entries(pkey), { value, raw: printed, ...(alt !== undefined ? { alt } : {}), text: `${value < 0 && printed > 0 ? '− ' : ''}${label}` }])
       return
     }
     // A result: it stands for what it totals.

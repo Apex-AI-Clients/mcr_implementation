@@ -86,7 +86,8 @@ describe('cleanAnswers', () => {
       signedDates: { B2: '2026-10-29', ZZ: '2026-01-01' },
     })
     expect(cleaned).toEqual({
-      fields: { b1_name: 'Jordan Sample', b31_date: '2026-10-29' },
+      // B1's address is typed and kept since 24 Nov 2026; B6's log-ins never are.
+      fields: { b1_name: 'Jordan Sample', b1_street: '1 Home St', b31_date: '2026-10-29' },
       tables: { B28: [{ name: 'Adviser', amount: 100 }] },
       // Signed by hand on the tables: never kept. Their date is.
       signedBy: null,

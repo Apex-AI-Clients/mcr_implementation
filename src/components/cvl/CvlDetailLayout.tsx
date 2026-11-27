@@ -214,7 +214,7 @@ export function CvlDetailLayout({ client, originLeadId, cvlCase, drafts, company
                   </div>
                   <div className="flex items-start gap-2">
                     {f.done ? (
-                      <LockedFillButton at={f.done.at} />
+                      <LockedFillButton at={f.done.at} href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`} />
                     ) : (
                       <Link
                         href={`${base}/forms/${f.code}?subject=${encodeURIComponent(f.subject)}`}
