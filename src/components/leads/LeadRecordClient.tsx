@@ -345,11 +345,6 @@ function KeyFacts({ lead, activities }: { lead: Lead; activities: LeadActivity[]
       <FactTile
         label="Business type"
         empty={entityType === null}
-        hint={
-          lead.entityType === 'trust' && !lead.entityTypeLabel ? (
-            <span className="text-warning">A trust cannot take the SBR path.</span>
-          ) : undefined
-        }
         large
       >
         {entityType ?? 'Not given'}

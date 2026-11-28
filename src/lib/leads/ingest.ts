@@ -338,8 +338,7 @@ function appendRawDebt(message: string | null, raw: string): string {
  * An entity answer to the SBR-qualifying path, or null.
  *
  * Null means "we were not told", and it has to stay null: the two values are
- * not interchangeable to whoever works the lead, and a Trust cannot take the
- * SBR path. Normalised on lookup so the option key Meta sends (`pty_ltd`) and
+ * not interchangeable to whoever works the lead. Normalised on lookup so the option key Meta sends (`pty_ltd`) and
  * the display value the website posts ("Company") read through one table.
  */
 export function mapEntityType(raw: string | null): EntityType | null {

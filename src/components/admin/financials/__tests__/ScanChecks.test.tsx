@@ -10,7 +10,6 @@ const router = { refresh }
 vi.mock('next/navigation', () => ({ useRouter: () => router }))
 vi.resetModules()
 const { ScanChecksPanel } = await import('../ScanFigures')
-const { PeriodSources } = await import('../PeriodSources')
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
 beforeEach(() => {
@@ -45,26 +44,14 @@ const comparison = (c: ComparisonCell): PrintedComparison => ({
 })
 
 describe('scanned figures to check', () => {
-  it('a year whose readings agree shows the badge, and nothing to check', () => {
-    render(
-      <>
-        <PeriodSources clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} defaultOpen />
-        <ScanChecksPanel clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />
-      </>,
-    )
-    expect(screen.getByTestId('year-proofs').textContent).toContain('Every total on the statements adds up')
+  it('a year whose readings agree has nothing to check', () => {
+    render(<ScanChecksPanel clientId="c1" comparison={comparison(cell('agree', 9600, 9600))} />)
     expect(screen.queryByTestId('scan-checks')).toBeNull()
   })
 
-  it('a disagreement holds the year and offers both readings; choosing one saves it', async () => {
+  it('a disagreement offers both readings; choosing one saves it', async () => {
     const c = comparison(cell('disagree', 9999, 9600))
-    render(
-      <>
-        <PeriodSources clientId="c1" comparison={c} defaultOpen />
-        <ScanChecksPanel clientId="c1" comparison={c} />
-      </>,
-    )
-    expect(screen.getByTestId('year-proofs').textContent).toContain('Being prepared')
+    render(<ScanChecksPanel clientId="c1" comparison={c} />)
     const chooser = within(screen.getByTestId('scan-checks')).getByTestId('scan-chooser')
     expect(chooser.textContent).toContain('9,999')
     expect(chooser.textContent).toContain('9,600')

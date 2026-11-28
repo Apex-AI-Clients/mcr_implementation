@@ -361,13 +361,13 @@ export const DEBT_FLOORS: { value: string; label: string; floor: number }[] = [
 // Entity type
 // ============================================================
 
-/** Trust is amber: it cannot take the SBR path, so it should catch the eye. */
+/** Both plain: a trust can take the SBR path too (28 Nov 2026: no warning on a trust). */
 export const ENTITY_TYPE_META: Record<
   EntityType,
   { label: string; badge: 'muted' | 'warning' }
 > = {
   company: { label: 'Company', badge: 'muted' },
-  trust: { label: 'Trust', badge: 'warning' },
+  trust: { label: 'Trust', badge: 'muted' },
 }
 
 export const ALL_ENTITY_TYPES = Object.keys(ENTITY_TYPE_META) as EntityType[]

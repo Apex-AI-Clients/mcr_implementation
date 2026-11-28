@@ -146,8 +146,7 @@ export function LeadTableRow({
       <td className="px-3 py-3.5 w-[160px] min-w-[160px] whitespace-nowrap text-left">
         <DebtInput lead={lead} />
       </td>
-      {/* A qualifying signal, not metadata — a Trust can't take the SBR path,
-          so it shouldn't take someone a phone call to find out. */}
+      {/* Company or trust, at a glance. */}
       <td className="px-3 py-3.5 whitespace-nowrap">
         {lead.entityTypeLabel ? (
           <Badge variant="muted">{lead.entityTypeLabel}</Badge>

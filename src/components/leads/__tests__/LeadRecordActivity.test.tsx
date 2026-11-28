@@ -169,9 +169,9 @@ describe('Lead record — key facts and contact', () => {
     expect(within(facts()).queryByText('as typed')).toBeNull()
   })
 
-  it('warns on a trust', () => {
+  it('never says a trust cannot take the SBR path: a trust can (28 Nov 2026)', () => {
     renderRecord(makeLead({ entityType: 'trust' }))
-    expect(screen.getByText('A trust cannot take the SBR path.')).toBeTruthy()
+    expect(screen.queryByText(/trust cannot take the SBR/i)).toBeNull()
   })
 
   it('links the email and phone so they can be used straight away', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { creditorDebt, daysSinceLastPayment, icaPosition, type IcaRow } from '../creditorDebt'
+import { creditorDebt, daysSinceLastPayment, icaPosition, lastPaymentDate, type IcaRow } from '../creditorDebt'
 
 /** The creditor (ATO) debt and the payment gap. SYNTHETIC account rows. */
 
@@ -114,5 +114,17 @@ describe('dates from rows stored in another time zone', () => {
     ]
     expect(icaPosition(rows)).toMatchObject({ balance: 107_765.19, balanceDate: '2026-09-01', statementDate: '2026-09-01' })
     expect(daysSinceLastPayment(rows, '2026-09-01')).toBe(209)
+  })
+
+  it('reads a date a spreadsheet re-saved as "20-Oct-26" as 20 October, not the stored day before (28 Nov 2026 report)', () => {
+    const rows: IcaRow[] = [
+      { rowIndex: 0, processedDate: '2026-10-19T18:30:00.000Z', rawProcessed: '20-Oct-26', balance: 50_000, lodgementType: 'Payment' },
+      { rowIndex: 1, processedDate: '2026-10-12T18:30:00.000Z', rawProcessed: '13-Oct-26', balance: 52_400, lodgementType: 'Payment' },
+    ]
+    expect(lastPaymentDate(rows)).toBe('2026-10-20')
+    expect(daysSinceLastPayment(rows, '2026-11-28')).toBe(39)
+    expect(icaPosition(rows)).toMatchObject({ statementDate: '2026-10-20' })
+    // Day-first slashes too.
+    expect(lastPaymentDate([{ rowIndex: 0, processedDate: '2026-10-19T18:30:00.000Z', rawProcessed: '20/10/2026', lodgementType: 'Payment' }])).toBe('2026-10-20')
   })
 })
