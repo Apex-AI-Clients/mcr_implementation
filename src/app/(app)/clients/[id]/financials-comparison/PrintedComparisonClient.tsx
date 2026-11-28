@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/Button'
 import { ExportPdfButton } from '@/components/admin/ExportPdfButton'
 import { HeadlineFiguresTable, type HeadlineView } from '@/components/admin/financials/HeadlineFiguresTable'
 import { ScanChecksPanel, ScanProgress } from '@/components/admin/financials/ScanFigures'
-import { PeriodSources } from '@/components/admin/financials/PeriodSources'
 import type { MappingEntry } from '@/lib/printed/mapping'
 import type { Suggestions } from '@/lib/printed/dictionary'
 import type { PossibleLine } from '@/lib/printed/autoMapping'
@@ -161,8 +160,6 @@ export function PrintedComparisonClient({ clientId, basePath = `/clients/${clien
             </label>
           )}
           <HeadlineFiguresTable clientId={clientId} basePath={basePath} view={view} comparison={comparison} rows={rows} mapping={mapping} suggestions={suggestions} possible={possible} />
-          {/* Each period's source and checks, below the figures, hidden until opened. */}
-          <PeriodSources clientId={clientId} comparison={comparison} />
         </>
       )}
     </div>

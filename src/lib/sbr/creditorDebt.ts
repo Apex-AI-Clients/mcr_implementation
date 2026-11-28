@@ -1,5 +1,6 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { dateText } from '@/lib/dates'
+import { parseAtoDate } from '@/lib/analysis/parseActivityStatement'
 
 /**
  * The creditor debt an SBR offer is sized against, and the dates the
@@ -47,6 +48,11 @@ const MONTH: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, 
 function rowDate(row: IcaRow): Date | null {
   const m = row.rawProcessed?.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\w*\s+(\d{4})$/)
   if (m && MONTH[m[2].toLowerCase()] !== undefined) return new Date(Date.UTC(Number(m[3]), MONTH[m[2].toLowerCase()], Number(m[1])))
+  // Any other way a spreadsheet re-saves it ("20-Oct-26", "20/10/2026"): the analysis's own reader, so the
+  // day printed is the day used. Before 28 Nov 2026 these fell back to the stored ISO date, a day early for
+  // rows stored by a machine ahead of UTC ("2026-10-19T18:30Z" for "20-Oct-26").
+  const printed = row.rawProcessed ? parseAtoDate(row.rawProcessed) : null
+  if (printed) return new Date(Date.UTC(printed.getFullYear(), printed.getMonth(), printed.getDate()))
   return dateOf(row.processedDate)
 }
 
